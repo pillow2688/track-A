@@ -2,6 +2,13 @@
 
 This file applies to the entire `llm4hls_harness/` tree.
 
+## 文档语言约定
+
+- 所有新增或实质修改的用户文档都必须提供简体中文内容。
+- 如果英文与中文使用独立文件，中文文件采用 `_CN.md` 后缀，并在两个版本顶部添加双向链接。
+- 同一次变更必须同步更新中英文版本，避免命令、配置、验收结果或风险说明不一致。
+- 面向用户的最终交付说明默认使用中文。
+
 ## Mission
 
 Build a budget-aware LangGraph agent for FPT 2026 Track A. The system must repair or optimize an HLS kernel, validate it with real Vitis results, preserve the best verified candidate, and stop within configurable Token, tool, credit, and time budgets.

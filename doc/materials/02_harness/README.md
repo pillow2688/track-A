@@ -27,3 +27,4 @@ YYYY-MM-DD-sample-task-run-log-summary.md
 ## Current Notes
 
 - [2026-07-10 FPT26 Reference Harness 分析](2026-07-10-reference-harness-analysis.md)
+- [2026-07-14 官方 Reference Harness 与内部 V0 对比](2026-07-14-official-reference-vs-internal-v0.md)

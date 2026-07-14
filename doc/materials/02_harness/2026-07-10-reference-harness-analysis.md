@@ -3,8 +3,9 @@
 Status: verified<br>
 Owner: team<br>
 Checked: 2026-07-10<br>
-Source: https://anonymous.4open.science/r/fpt26-harness/README.md<br>
-Local copy: `_external/fpt26-harness/`<br>
+Rechecked: 2026-07-14<br>
+Source: https://anonymous.4open.science/r/fpt26-harness<br>
+Local copy: `_external/fpt26-harness/`（仅公开快照，未解压 hidden 或 `reference/*.cpp`）<br>
 Expires/Risk: medium，正式评测接口可能更新
 
 ## 它是什么
@@ -144,7 +145,7 @@ otherwise:
 
 ## 对团队的直接结论
 
-1. 不重写 Vitis 工具；先复用 ToolServer 边界。
+1. 不从零发明 Vitis 工具语义；在自包含项目中复现 ToolServer 边界，不把官方仓库作为运行时依赖。
 2. 永远维护 `best_verified_code` 与 verification level。
 3. structural task 从一开始就预留最终 cosim credits。
 4. 每次修改都要记录 hypothesis、tool evidence、accept/reject reason。

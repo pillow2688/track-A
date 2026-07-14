@@ -2,7 +2,9 @@
 
 本仓库用于团队协作开发 FPT 2026 Track A 的 LLM4HLS Agent。
 
-当前阶段以比赛调研、HLS/Agent 学习、架构讨论和实现契约为主，所有文档统一放在 [`doc/`](doc/) 中。后续 Agent 源码、测试和 Docker 文件放在仓库根目录的独立代码目录，不与讨论资料混放。
+当前已经建立内部里程碑 V0 的无 LLM 确定性验证闭环。文档统一放在 [`doc/`](doc/) 中，Agent 源码和测试位于 [`llm4hls_harness/`](llm4hls_harness/)；下载的官方参考仓库只保存在被 Git 忽略的 `_external/` 中，不作为运行时依赖。
+
+官方 reference harness 的功能宽度大致达到内部 V2 原型，并触及 hidden grading、deadlock task 和容器等 V4 素材；但它缺少不可变 baseline、持久 ledger、幂等恢复和 candidate registry，因此不能按本项目标准视为完整 V0。详细映射见[官方 Reference Harness 与内部 V0 对比](doc/materials/02_harness/2026-07-14-official-reference-vs-internal-v0.md)。
 
 ## Start Here
 
@@ -12,6 +14,8 @@
 4. [Budget-Aware LangGraph LLM4HLS Agent 设计总规范](doc/materials/04_agent_basics/2026-07-14-budget-aware-langgraph-llm4hls-agent-design.md)
 5. [资料总索引](doc/materials/00_index/README.md)
 6. [Agent 开发规则](llm4hls_harness/AGENTS.md)
+7. [内部 V0 中文说明](llm4hls_harness/README_CN.md)
+8. [官方 Reference Harness 与内部 V0 对比](doc/materials/02_harness/2026-07-14-official-reference-vs-internal-v0.md)
 
 ## Repository Layout
 
@@ -21,7 +25,11 @@ doc/
   docs/       面向团队阅读的成品文档
   materials/  官方资料、学习笔记、设计讨论、实验模板
 llm4hls_harness/
-  AGENTS.md   Agent 代码目录的开发规则和验收边界
+  AGENTS.md       Agent 代码目录的开发规则和验收边界
+  README_CN.md    内部 V0 中文使用说明
+  llm4hls_agent/  自包含的 V0 实现
+  tests/           快速单元测试
+_external/         本地只读参考仓库，不提交、不作为包依赖
 ```
 
 ## Team Rules
