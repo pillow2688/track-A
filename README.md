@@ -11,6 +11,7 @@
 3. [Track A 0 基础入门手册](doc/docs/track-a-zero-foundation-guide.md)
 4. [Budget-Aware LangGraph LLM4HLS Agent 设计总规范](doc/materials/04_agent_basics/2026-07-14-budget-aware-langgraph-llm4hls-agent-design.md)
 5. [资料总索引](doc/materials/00_index/README.md)
+6. [Agent 开发规则](llm4hls_harness/AGENTS.md)
 
 ## Repository Layout
 
@@ -19,6 +20,8 @@ doc/
   README.md   原知识库入口
   docs/       面向团队阅读的成品文档
   materials/  官方资料、学习笔记、设计讨论、实验模板
+llm4hls_harness/
+  AGENTS.md   Agent 代码目录的开发规则和验收边界
 ```
 
 ## Team Rules
