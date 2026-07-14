@@ -1,0 +1,43 @@
+# Secrets and local configuration
+.env
+.env.*
+*.key
+*.pem
+*.p12
+*.pfx
+secrets.*
+credentials.*
+
+# Local agent and editor state
+.agents/
+.codex/
+.vscode/
+.idea/
+
+# External repositories and environments
+_external/
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+
+# HLS and experiment outputs
+runs/
+*.log
+*.jou
+*.str
+*.rpt
+*.wdb
+*.vcd
+*.xpr
+.Xil/
+solution*
+csim_proj/
+synth_proj/
+cosim_proj/
+
+# OS noise
+.DS_Store
+Thumbs.db
+desktop.ini
