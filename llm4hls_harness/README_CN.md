@@ -88,6 +88,23 @@ python3 -m llm4hls_agent accept-v1 \
 `acceptance_result.json`，以及包含四场景矩阵、报告/Manifest 链接和完整复现命令的
 英文 `acceptance_report.md` 与中文 `acceptance_report_CN.md`。
 
+需要直接人工审核时，可在不重新运行模型或 Vitis、也不修改任何 JSON、ledger、Trace、
+Manifest、action 或 Candidate 产物的前提下，离线聚合现有证据：
+
+```bash
+python3 -m llm4hls_agent review-v1 --runs-root runs
+```
+
+命令直接在 `runs/` 根目录平铺生成三个文件：
+
+- `V1_ACCEPTANCE_REPORT_CN.md`：完整中文单文件审核入口；
+- `V1_ACCEPTANCE_REPORT.md`：完整英文单文件审核入口；
+- `V1_ACCEPTANCE_DASHBOARD.html`：自包含的中英双语静态 Dashboard。
+
+报告会重新计算并交叉核对机器验收、Baseline 错误、模型/fallback、Patch 范围与接口、
+Final gates、Candidate 提升/回滚、Tokens、工具调用、Credits、Ledger、Trace、action
+记录和 Manifest hash。所有原始证据链接都相对于 `runs/`。
+
 ## 官方参考实现对应内部哪个阶段
 
 官方实现不能直接归入一个内部阶段，需要分别看“功能宽度”和“工程深度”：

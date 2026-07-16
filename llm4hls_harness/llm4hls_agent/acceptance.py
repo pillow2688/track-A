@@ -620,12 +620,11 @@ def _evaluate_case(
     }
 
 
-def evaluate_acceptance(
+def compute_acceptance(
     spec_path: str | Path,
     run_dirs: Mapping[str, str | Path],
-    output_dir: str | Path,
 ) -> dict[str, object]:
-    """Evaluate all specified cases without mutating their evidence directories."""
+    """Compute acceptance without writing any output or mutating evidence."""
 
     path = Path(spec_path).resolve()
     try:
@@ -652,13 +651,6 @@ def evaluate_acceptance(
         identifiers.add(case_id)
         cases.append(value)
     resolved_runs = {key: Path(value).resolve() for key, value in run_dirs.items()}
-    output_root = Path(output_dir).resolve()
-    for run_root in resolved_runs.values():
-        try:
-            output_root.relative_to(run_root)
-        except ValueError:
-            continue
-        raise AcceptanceError("acceptance output directory must be outside evidence runs")
     evaluated = [
         _evaluate_case(case, resolved_runs.get(str(case["case_id"])), spec)
         for case in sorted(cases, key=lambda item: str(item["case_id"]))
@@ -698,6 +690,25 @@ def evaluate_acceptance(
             str(case["case_id"]): case["manifest_digest"] for case in evaluated
         },
     }
+    return result
+
+
+def evaluate_acceptance(
+    spec_path: str | Path,
+    run_dirs: Mapping[str, str | Path],
+    output_dir: str | Path,
+) -> dict[str, object]:
+    """Evaluate cases and write the legacy machine acceptance output."""
+
+    resolved_runs = {key: Path(value).resolve() for key, value in run_dirs.items()}
+    output_root = Path(output_dir).resolve()
+    for run_root in resolved_runs.values():
+        try:
+            output_root.relative_to(run_root)
+        except ValueError:
+            continue
+        raise AcceptanceError("acceptance output directory must be outside evidence runs")
+    result = compute_acceptance(spec_path, resolved_runs)
     _write_json(output_root / "acceptance_result.json", result)
-    _write_acceptance_report(output_root, result, resolved_runs, path)
+    _write_acceptance_report(output_root, result, resolved_runs, Path(spec_path).resolve())
     return result

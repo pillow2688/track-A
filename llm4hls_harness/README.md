@@ -122,6 +122,25 @@ machine-readable `acceptance_result.json`, English `acceptance_report.md`, and
 Chinese `acceptance_report_CN.md`. Both report matrices link all four evidence
 reports and Manifests and include the exact evaluation reproduction command.
 
+For direct human review, aggregate the existing evidence offline without
+rerunning the model or Vitis and without modifying any JSON, ledger, Trace,
+Manifest, action, or Candidate artifact:
+
+```bash
+python3 -m llm4hls_agent review-v1 --runs-root runs
+```
+
+The command writes three flat files directly under `runs/`:
+
+- `V1_ACCEPTANCE_REPORT.md` — complete English single-file review;
+- `V1_ACCEPTANCE_REPORT_CN.md` — complete Chinese single-file review;
+- `V1_ACCEPTANCE_DASHBOARD.html` — self-contained bilingual static dashboard.
+
+They recompute and cross-check the recorded acceptance, Baseline failures,
+model/fallback state, Patch scope and interface, final gates, Candidate
+promotion/rollback, Tokens, tool calls, Credits, Ledger, Trace, action records,
+and Manifest hashes. All raw evidence links are relative to `runs/`.
+
 ## How the official reference maps to our milestones
 
 The official example does not fit one internal milestone; its feature breadth

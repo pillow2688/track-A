@@ -78,6 +78,31 @@ class RepairingBackend(PassingBackend):
 
 
 class CliTests(unittest.TestCase):
+    def test_review_v1_prints_flat_offline_report_references(self) -> None:
+        expected = {
+            "status": "PASS",
+            "acceptance_result_ref": "v1-acceptance/acceptance_result.json",
+            "report_ref": "V1_ACCEPTANCE_REPORT.md",
+            "report_cn_ref": "V1_ACCEPTANCE_REPORT_CN.md",
+            "dashboard_ref": "V1_ACCEPTANCE_DASHBOARD.html",
+            "review_data_digest": "abc",
+            "summary": {"acceptance_cases": 4},
+        }
+        stdout = io.StringIO()
+        with patch(
+            "llm4hls_agent.cli.generate_review_reports", return_value=expected
+        ) as generate, redirect_stdout(stdout):
+            return_code = main(["review-v1", "--runs-root", "runs"])
+
+        self.assertEqual(return_code, 0)
+        self.assertEqual(json.loads(stdout.getvalue()), expected)
+        arguments = generate.call_args.args
+        self.assertEqual(arguments[3], Path("runs"))
+        self.assertEqual(
+            arguments[1]["functional_mismatch"],
+            Path("runs/v1-functional-final-2"),
+        )
+
     def test_run_command_writes_result_and_prints_machine_readable_summary(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -22,6 +22,7 @@ from .openai_provider import (
     OpenAICompatibleRepairProvider,
 )
 from .repair import PatchLimits, PatchProposal, StaticPatchProvider, V1Error, run_v1
+from .review import ReviewError, generate_review_reports
 from .task import TaskPackageError, load_public_task
 from .tools import ToolBackend, ToolConfig
 from .workflow import RunArtifactError, RunConfig, run_v0
@@ -164,6 +165,21 @@ def build_parser() -> argparse.ArgumentParser:
     accept.add_argument("--synthesis-run", type=Path, required=True)
     accept.add_argument("--patch-invalid-run", type=Path, required=True)
     accept.add_argument("--output-dir", type=Path, required=True)
+    review = subparsers.add_parser(
+        "review-v1",
+        help="offline: aggregate existing V1 evidence into flat human-review reports",
+    )
+    review.add_argument("--runs-root", type=Path, default=Path("runs"))
+    review.add_argument(
+        "--spec",
+        type=Path,
+        default=Path(__file__).resolve().parent / "config" / "v1_acceptance.json",
+    )
+    review.add_argument("--functional-run", type=Path)
+    review.add_argument("--compile-run", type=Path)
+    review.add_argument("--synthesis-run", type=Path)
+    review.add_argument("--patch-invalid-run", type=Path)
+    review.add_argument("--acceptance-result", type=Path)
     return parser
 
 
@@ -284,6 +300,29 @@ def main(
             )
         )
         return 0 if result["overall_status"] == "PASS" else 2
+    if args.command == "review-v1":
+        runs_root = Path(args.runs_root)
+        try:
+            summary = generate_review_reports(
+                args.spec,
+                {
+                    "functional_mismatch": args.functional_run
+                    or runs_root / "v1-functional-final-2",
+                    "compile_error": args.compile_run or runs_root / "v1-compile-final",
+                    "synthesis_error": args.synthesis_run
+                    or runs_root / "v1-synthesis-final-2",
+                    "patch_invalid": args.patch_invalid_run
+                    or runs_root / "v1-patch-invalid",
+                },
+                args.acceptance_result
+                or runs_root / "v1-acceptance" / "acceptance_result.json",
+                runs_root,
+            )
+        except ReviewError as exc:
+            _print_error(exc)
+            return 3
+        print(json.dumps(summary, sort_keys=True))
+        return 0 if summary["status"] == "PASS" else 2
     if args.command != "run":
         raise AssertionError(f"unsupported command: {args.command}")
     try:
