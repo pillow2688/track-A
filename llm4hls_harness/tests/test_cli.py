@@ -78,6 +78,65 @@ class RepairingBackend(PassingBackend):
 
 
 class CliTests(unittest.TestCase):
+    def test_optimize_command_builds_v2_config_and_prints_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task_dir = root / "task"
+            task_dir.mkdir()
+            make_task(task_dir)
+            expected = {
+                "schema_version": 1,
+                "workflow": "V2_CANDIDATE_PPA",
+                "task_id": "cli_fixture",
+                "status": "DONE",
+                "stop_reason": "NO_IMPROVEMENT_LIMIT",
+                "best_candidate_id": "candidate_002",
+                "final_candidate_id": "candidate_002",
+                "rounds": [{}, {}, {}, {}],
+                "budget": {"credits_used": 126, "tokens_used": 700},
+            }
+            stdout = io.StringIO()
+            with patch.dict(
+                "os.environ",
+                {
+                    "OPENAI_BASE_URL": "https://api.deepseek.com",
+                    "OPENAI_API_KEY": "secret-test-key",
+                    "LLM4HLS_MODEL": "deepseek-v4-pro",
+                },
+                clear=False,
+            ), patch(
+                "llm4hls_agent.cli.run_v2", return_value=expected
+            ) as run, redirect_stdout(stdout):
+                return_code = main(
+                    [
+                        "optimize",
+                        str(task_dir),
+                        "--run-dir",
+                        str(root / "run"),
+                        "--credit-limit",
+                        "160",
+                        "--max-optimization-rounds",
+                        "4",
+                        "--max-no-improvement-rounds",
+                        "2",
+                    ]
+                )
+
+            summary = json.loads(stdout.getvalue())
+            self.assertEqual(return_code, 0)
+            self.assertEqual(summary["status"], "DONE")
+            self.assertEqual(summary["rounds_completed"], 4)
+            self.assertEqual(summary["credits_used"], 126)
+            self.assertEqual(summary["tokens_used"], 700)
+            run_config = run.call_args.args[2]
+            optimization_config = run.call_args.args[3]
+            provider = run.call_args.args[4]
+            self.assertEqual(run_config.budget.credit_limit, 160)
+            self.assertEqual(run_config.budget.tool_limits["llm"], 6)
+            self.assertEqual(optimization_config.max_rounds, 4)
+            self.assertEqual(optimization_config.max_no_improvement_rounds, 2)
+            self.assertEqual(provider.config.model, "deepseek-v4-pro")
+
     def test_review_v1_prints_flat_offline_report_references(self) -> None:
         expected = {
             "status": "PASS",

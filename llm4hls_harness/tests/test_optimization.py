@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import patch
 
 from llm4hls_agent.budget import BudgetConfig
 from llm4hls_agent.optimization import (
@@ -224,6 +225,27 @@ class PPASequenceBackend:
         return BackendResult(True, "pass", 0, 0.1)
 
 
+class FinalBestFailureBackend(PPASequenceBackend):
+    def __init__(self) -> None:
+        super().__init__()
+        self.factor_two_cosim_calls = 0
+
+    def run(self, kind: str, *, kernel_bytes: bytes, **kwargs: object) -> BackendResult:
+        factor = self.factor(kernel_bytes)
+        if kind == "cosim" and factor == 2:
+            self.factor_two_cosim_calls += 1
+            if self.factor_two_cosim_calls == 2:
+                self.calls.append((kind, factor))
+                return BackendResult(
+                    False,
+                    "cosim_fail",
+                    1,
+                    0.1,
+                    ["final-only injected CoSim failure"],
+                )
+        return super().run(kind, kernel_bytes=kernel_bytes, **kwargs)
+
+
 class V2WorkflowTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
@@ -359,6 +381,85 @@ class V2WorkflowTests(unittest.TestCase):
         self.assertEqual(
             (self.run_root / "budget_ledger.jsonl").read_bytes(), ledger_before
         )
+
+    def test_final_failure_uses_ranked_verified_fallback(self) -> None:
+        fallback_run_config = replace(
+            self.run_config,
+            budget=BudgetConfig(
+                credit_limit=200,
+                costs={"csim": 1, "synth": 4, "cosim": 20, "llm": 0},
+                tool_limits={"csim": 7, "synth": 7, "cosim": 7, "llm": 6},
+                token_limit=32768,
+                runtime_limit_seconds=3600.0,
+            ),
+        )
+
+        result = run_v2(
+            self.task,
+            self.root / "fallback-run",
+            fallback_run_config,
+            self.optimization_config,
+            SequenceOptimizationProvider(),
+            backend=FinalBestFailureBackend(),
+        )
+
+        self.assertEqual(result["status"], "DONE")
+        self.assertEqual(result["stop_reason"], "FALLBACK_VERIFIED")
+        self.assertEqual(result["best_candidate_id"], "candidate_002")
+        self.assertEqual(result["final_candidate_id"], "candidate_004")
+        self.assertEqual(
+            result["fallback"],
+            {
+                "from": "candidate_002",
+                "to": "candidate_004",
+                "reason": "COSIM_COSIM_FAIL",
+            },
+        )
+
+    def test_restart_after_completed_round_does_not_repeat_first_round(self) -> None:
+        from llm4hls_agent import optimization
+
+        original_gate = optimization._ensure_round_affordable
+        calls = 0
+
+        def interrupt_before_second_round(budget, config):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise KeyboardInterrupt("injected after durable round one")
+            return original_gate(budget, config)
+
+        with patch(
+            "llm4hls_agent.optimization._ensure_round_affordable",
+            side_effect=interrupt_before_second_round,
+        ), self.assertRaises(KeyboardInterrupt):
+            run_v2(
+                self.task,
+                self.run_root,
+                self.run_config,
+                self.optimization_config,
+                SequenceOptimizationProvider(),
+                backend=self.backend,
+            )
+        ledger_after_round_one = json.loads(
+            (self.run_root / "budget_state.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(ledger_after_round_one["tool_used"]["llm"], 1)
+        self.assertEqual(ledger_after_round_one["credits_used"], 50)
+
+        result = run_v2(
+            self.task,
+            self.run_root,
+            self.run_config,
+            self.optimization_config,
+            SequenceOptimizationProvider(),
+            backend=self.backend,
+        )
+
+        self.assertEqual(result["status"], "DONE")
+        self.assertEqual(result["rounds"][0]["candidate_id"], "candidate_001")
+        self.assertEqual(result["budget"]["tool_used"]["llm"], 4)
+        self.assertEqual(result["budget"]["credits_used"], 126)
 
 
 if __name__ == "__main__":

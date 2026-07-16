@@ -6,6 +6,7 @@ import hashlib
 import json
 import math
 from dataclasses import asdict, dataclass, field
+from functools import cmp_to_key
 from pathlib import Path
 from typing import Mapping, Protocol
 
@@ -356,6 +357,16 @@ def _read_report(run_root: Path, result_ref: str) -> dict[str, object]:
     return report
 
 
+def _read_score(run_root: Path, score_ref: str) -> CandidateScore:
+    try:
+        value = json.loads((run_root / score_ref).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"cannot read Candidate score {score_ref}: {exc}") from exc
+    if not isinstance(value, dict):
+        raise ValueError(f"Candidate score {score_ref} is not an object")
+    return CandidateScore.from_dict(value)
+
+
 def _candidate_source(
     run_root: Path, registry: Mapping[str, object], candidate_id: str
 ) -> bytes:
@@ -391,6 +402,29 @@ def _ensure_round_affordable(
         raise BudgetExceeded("optimization LLM call limit is exhausted")
     if int(snapshot["tokens_remaining"]) <= 0:
         raise BudgetExceeded("optimization token budget is exhausted")
+
+
+def _ensure_final_affordable(budget: BudgetLedger) -> None:
+    snapshot = budget.snapshot()
+    required = sum(budget.cost(stage) for stage in ("csim", "synth", "cosim"))
+    remaining = snapshot["credits_remaining"]
+    if remaining is not None and int(remaining) < required:
+        raise BudgetExceeded(
+            f"final validation requires {required} credits but {remaining} remain"
+        )
+    for stage in ("csim", "synth", "cosim"):
+        limit = budget.config.tool_limits[stage]
+        used = int(snapshot["tool_used"][stage]) + int(snapshot["tool_pending"][stage])
+        if limit is not None and used >= limit:
+            raise BudgetExceeded(f"final validation requires another {stage} call")
+
+
+def _rank_scores(values: list[CandidateScore]) -> list[CandidateScore]:
+    def compare(left: CandidateScore, right: CandidateScore) -> int:
+        winner = compare_scores(left, right).winner
+        return -1 if winner == left.candidate_id else 1
+
+    return sorted(values, key=cmp_to_key(compare))
 
 
 def _score_from_validation(
@@ -528,10 +562,61 @@ def run_v2(
     attempted: list[str] = []
     failures: list[tuple[str, str]] = []
     no_improvement = 0
-    best_id = str(registry.get("best_candidate_id") or "candidate_000")
+    best_id = "candidate_000"
     exploration_stop_reason = "MAX_OPTIMIZATION_ROUNDS"
 
-    for round_index in range(1, optimization_config.max_rounds + 1):
+    round_paths = sorted((run_root / "optimization_rounds").glob("round_*.json"))
+    for expected_index, round_path in enumerate(round_paths, start=1):
+        try:
+            round_record = json.loads(round_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ValueError(f"cannot recover {round_path.name}: {exc}") from exc
+        if (
+            not isinstance(round_record, dict)
+            or round_record.get("round_index") != expected_index
+            or round_record.get("optimization_class") not in ALLOWED_OPTIMIZATIONS
+            or not isinstance(round_record.get("decision"), str)
+        ):
+            raise ValueError(f"invalid durable optimization round: {round_path.name}")
+        optimization_class = str(round_record["optimization_class"])
+        attempted.append(optimization_class)
+        selector = round_record.get("selector")
+        metrics_digest = (
+            str(selector.get("metrics_digest"))
+            if isinstance(selector, Mapping)
+            else ""
+        )
+        candidate_id = round_record.get("candidate_id")
+        if isinstance(candidate_id, str):
+            candidate_record = candidates.get(candidate_id)
+            if not isinstance(candidate_record, Mapping):
+                raise ValueError(
+                    f"durable round Candidate is missing: {candidate_id}"
+                )
+            score_ref = candidate_record.get("score_ref")
+            metrics_ref = candidate_record.get("metrics_ref")
+            if isinstance(score_ref, str) and isinstance(metrics_ref, str):
+                scores[candidate_id] = _read_score(run_root, score_ref)
+                metrics_by_candidate[candidate_id] = _read_report(
+                    run_root, metrics_ref
+                )
+        if round_record["decision"] == "PROMOTED":
+            if not isinstance(candidate_id, str) or candidate_id not in scores:
+                raise ValueError("promoted durable round has no scored Candidate")
+            best_id = candidate_id
+            no_improvement = 0
+        else:
+            failures.append((optimization_class, metrics_digest))
+            no_improvement += 1
+        recovered = dict(round_record)
+        recovered["result_ref"] = str(round_path.relative_to(run_root)).replace(
+            "\\", "/"
+        )
+        rounds.append(recovered)
+    if registry.get("best_candidate_id") != best_id:
+        raise ValueError("Candidate Registry best disagrees with durable rounds")
+
+    for round_index in range(len(rounds) + 1, optimization_config.max_rounds + 1):
         try:
             _ensure_round_affordable(budget, optimization_config)
         except BudgetExceeded:
@@ -737,25 +822,83 @@ def run_v2(
         backend=backend,
         validation_scope="final",
     )
+    final_attempts: list[dict[str, object]] = [
+        {
+            "candidate_id": best_id,
+            "status": final_validation.status,
+            "stop_reason": final_validation.stop_reason,
+            "validation": final_validation.validation,
+            "clock_constraint": final_validation.clock_constraint,
+        }
+    ]
+    fallback: dict[str, object] | None = None
+    final_id: str | None = best_id if final_validation.status == "DONE" else None
+    overall_stop_reason = exploration_stop_reason
+    if final_validation.status != "DONE":
+        initial_failure = final_validation.stop_reason
+        eligible = _rank_scores(
+            [
+                score
+                for candidate_id, score in scores.items()
+                if candidate_id != best_id
+                and score.verification_tier >= optimization_config.scoring.required_verification_tier
+                and score.hard_constraints_passed
+            ]
+        )
+        for fallback_score in eligible:
+            try:
+                _ensure_final_affordable(budget)
+            except BudgetExceeded:
+                break
+            fallback_id = fallback_score.candidate_id
+            fallback_source = _candidate_source(run_root, registry, fallback_id)
+            attempt = validate_candidate(
+                task,
+                fallback_source,
+                fallback_id,
+                run_root,
+                run_config,
+                backend=backend,
+                validation_scope="final",
+            )
+            final_attempts.append(
+                {
+                    "candidate_id": fallback_id,
+                    "status": attempt.status,
+                    "stop_reason": attempt.stop_reason,
+                    "validation": attempt.validation,
+                    "clock_constraint": attempt.clock_constraint,
+                }
+            )
+            if attempt.status == "DONE":
+                final_validation = attempt
+                final_id = fallback_id
+                fallback = {
+                    "from": best_id,
+                    "to": fallback_id,
+                    "reason": initial_failure,
+                }
+                overall_stop_reason = "FALLBACK_VERIFIED"
+                break
     with _RunLock(run_root):
         registry = manager.load_registry()
         candidates = registry["candidates"]
-        candidate = candidates[best_id]
+        candidate = candidates[final_id or best_id]
         candidate["final_validation"] = final_validation.validation
-        if final_validation.status == "DONE":
-            candidate["status"] = "FINAL"
-            registry["final_candidate_id"] = best_id
+        if final_id is not None and final_validation.status == "DONE":
+            candidate["status"] = "FINAL" if final_id == best_id else "FINAL_FALLBACK"
+            registry["final_candidate_id"] = final_id
             status = "DONE"
         else:
             status = "FAILED"
-            exploration_stop_reason = "FINAL_VALIDATION_FAILED"
+            overall_stop_reason = "FINAL_VALIDATION_FAILED"
         manager.save_registry(registry)
     result = {
         "schema_version": 1,
         "workflow": "V2_CANDIDATE_PPA",
         "task_id": task.id,
         "status": status,
-        "stop_reason": exploration_stop_reason,
+        "stop_reason": overall_stop_reason,
         "exploration_stop_reason": exploration_stop_reason,
         "baseline_candidate_id": "candidate_000",
         "best_candidate_id": registry.get("best_candidate_id"),
@@ -763,9 +906,10 @@ def run_v2(
         "rounds": rounds,
         "no_improvement_rounds": no_improvement,
         "final_validation": final_validation.validation,
+        "final_attempts": final_attempts,
         "final_clock_constraint": final_validation.clock_constraint,
         "budget": final_validation.budget,
-        "fallback": None,
+        "fallback": fallback,
         "artifacts": {
             "candidate_registry": "candidate_registry.json",
             "budget_ledger": "budget_ledger.jsonl",
@@ -778,7 +922,7 @@ def run_v2(
         run_root / "trace.jsonl",
         "V2_RUN_COMPLETED",
         status=status,
-        stop_reason=exploration_stop_reason,
+        stop_reason=overall_stop_reason,
         best_candidate_id=registry.get("best_candidate_id"),
         final_candidate_id=registry.get("final_candidate_id"),
         credits_used=final_validation.budget["credits_used"],

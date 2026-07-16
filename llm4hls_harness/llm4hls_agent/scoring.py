@@ -91,6 +91,30 @@ class CandidateScore:
             "credits_used": self.credits_used,
         }
 
+    @classmethod
+    def from_dict(cls, value: Mapping[str, object]) -> "CandidateScore":
+        failures = value.get("hard_failures")
+        components = value.get("components")
+        if not isinstance(failures, list) or not isinstance(components, Mapping):
+            raise ValueError("stored Candidate score has invalid collections")
+        ppa = value.get("ppa_cost")
+        official = value.get("official_score")
+        return cls(
+            candidate_id=str(value["candidate_id"]),
+            verification_tier=int(value["verification_tier"]),
+            hard_constraints_passed=value["hard_constraints_passed"] is True,
+            hard_failures=tuple(str(item) for item in failures),
+            ppa_cost=float(ppa) if ppa is not None else None,
+            components=MappingProxyType(
+                {str(key): float(item) for key, item in components.items()}
+            ),
+            input_tokens=int(value["input_tokens"]),
+            output_tokens=int(value["output_tokens"]),
+            cached_input_tokens=int(value["cached_input_tokens"]),
+            credits_used=int(value["credits_used"]),
+            official_score=float(official) if official is not None else None,
+        )
+
 
 @dataclass(frozen=True)
 class Comparison:
