@@ -189,6 +189,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     optimize.add_argument("--max-optimization-rounds", type=int, default=4)
     optimize.add_argument("--max-no-improvement-rounds", type=int, default=2)
+    optimize.add_argument("--max-final-attempts", type=int, default=2)
     optimize.add_argument("--final-reserve-credits", type=int, default=25)
     optimize.add_argument("--max-changed-lines", type=int, default=30)
     reject_v2 = subparsers.add_parser(
@@ -703,6 +704,7 @@ def _main_optimize(args: argparse.Namespace, *, backend: ToolBackend | None) -> 
                 max_rounds=args.max_optimization_rounds,
                 max_no_improvement_rounds=args.max_no_improvement_rounds,
                 max_llm_calls=args.max_llm_calls,
+                max_final_attempts=args.max_final_attempts,
                 final_reserve_credits=args.final_reserve_credits,
                 patch_limits=PatchLimits(max_changed_lines=args.max_changed_lines),
             ),

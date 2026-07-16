@@ -265,6 +265,20 @@ def unified_diff_targets_kernel(patch: str, *, kernel_name: str) -> bool:
     return True
 
 
+def canonicalize_unified_diff_paths(patch: str, *, kernel_name: str) -> str:
+    """Canonicalize only validated Git/bare file headers for comparison."""
+
+    if not unified_diff_targets_kernel(patch, kernel_name=kernel_name):
+        raise PatchValidationError("unified diff does not target only the kernel")
+    lines = patch.splitlines()
+    old_index = next(index for index, line in enumerate(lines) if line.startswith("--- "))
+    new_index = next(index for index, line in enumerate(lines) if line.startswith("+++ "))
+    lines[old_index] = f"--- {kernel_name}"
+    lines[new_index] = f"+++ {kernel_name}"
+    canonical = "\n".join(lines)
+    return canonical + ("\n" if patch.endswith("\n") else "")
+
+
 def normalize_unified_diff_headers(patch: str) -> str:
     """Recompute hunk counts without changing paths or hunk body content.
 

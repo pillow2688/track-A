@@ -121,7 +121,8 @@ python3 -m llm4hls_agent optimize examples/u55c_v2_optimize_task \
   --vitis-root "$LLM4HLS_VITIS_HLS_ROOT" \
   --clock-ns 10 --minimum-frequency-mhz 100 \
   --credit-limit 160 --max-optimization-rounds 4 \
-  --max-no-improvement-rounds 2 --final-reserve-credits 25 \
+  --max-no-improvement-rounds 2 --max-final-attempts 2 \
+  --final-reserve-credits 25 \
   --csim-timeout 180 --synth-timeout 900 --cosim-timeout 900
 ```
 

@@ -151,7 +151,7 @@ class SequenceOptimizationProvider:
         return {
             "provider": "openai-compatible",
             "model": "deepseek-v4-pro",
-            "http_body": {"prompt": context.to_dict()},
+            "http_body": {"prompt": context.to_dict(), "max_tokens": 1000},
         }
 
     def propose_optimization(self, context: OptimizationContext) -> PatchProposal:
@@ -193,7 +193,7 @@ class ExcerptFailureProvider:
         return {
             "provider": "openai-compatible",
             "model": "deepseek-v4-pro",
-            "http_body": {"prompt": context.to_dict()},
+            "http_body": {"prompt": context.to_dict(), "max_tokens": 1000},
         }
 
     def propose_optimization(self, _context: OptimizationContext) -> PatchProposal:
@@ -539,6 +539,33 @@ class V2WorkflowTests(unittest.TestCase):
         self.assertEqual(result["rounds"], [])
         self.assertEqual(result["budget"]["credits_used"], 50)
 
+    def test_llm_call_is_denied_before_provider_when_token_reserve_is_too_low(self) -> None:
+        limited = replace(
+            self.run_config,
+            budget=replace(self.run_config.budget, token_limit=1000),
+        )
+        provider = SequenceOptimizationProvider()
+
+        with patch.object(
+            provider,
+            "propose_optimization",
+            wraps=provider.propose_optimization,
+        ) as propose:
+            result = run_v2(
+                self.task,
+                self.root / "token-reserve-run",
+                limited,
+                self.optimization_config,
+                provider,
+                backend=PPASequenceBackend(),
+            )
+
+        self.assertEqual(propose.call_count, 0)
+        self.assertEqual(result["status"], "DONE")
+        self.assertEqual(result["exploration_stop_reason"], "TOKEN_RESERVE_REACHED")
+        self.assertEqual(result["budget"]["tool_used"]["llm"], 0)
+        self.assertEqual(result["rounds"], [])
+
     def test_provider_failure_persists_response_and_auditable_refs(self) -> None:
         run_root = self.root / "provider-failure"
 
@@ -626,6 +653,36 @@ class V2WorkflowTests(unittest.TestCase):
             },
         )
 
+    def test_final_attempt_limit_prevents_unbounded_fallback(self) -> None:
+        limited_attempts = replace(
+            self.optimization_config,
+            max_final_attempts=1,
+        )
+        fallback_run_config = replace(
+            self.run_config,
+            budget=BudgetConfig(
+                credit_limit=200,
+                costs={"csim": 1, "synth": 4, "cosim": 20, "llm": 0},
+                tool_limits={"csim": 7, "synth": 7, "cosim": 7, "llm": 6},
+                token_limit=32768,
+                runtime_limit_seconds=3600.0,
+            ),
+        )
+
+        result = run_v2(
+            self.task,
+            self.root / "fallback-limit-run",
+            fallback_run_config,
+            limited_attempts,
+            SequenceOptimizationProvider(),
+            backend=FinalBestFailureBackend(),
+        )
+
+        self.assertEqual(result["status"], "FAILED")
+        self.assertEqual(result["stop_reason"], "FINAL_VALIDATION_FAILED")
+        self.assertEqual(len(result["final_attempts"]), 1)
+        self.assertIsNone(result["final_candidate_id"])
+
     def test_restart_after_completed_round_does_not_repeat_first_round(self) -> None:
         from llm4hls_agent import optimization
 
@@ -670,6 +727,92 @@ class V2WorkflowTests(unittest.TestCase):
         self.assertEqual(result["rounds"][0]["candidate_id"], "candidate_001")
         self.assertEqual(result["budget"]["tool_used"]["llm"], 4)
         self.assertEqual(result["budget"]["credits_used"], 126)
+
+    def test_recovery_rejects_tampered_durable_round_binding(self) -> None:
+        from llm4hls_agent import optimization
+
+        original_gate = optimization._ensure_round_affordable
+        calls = 0
+
+        def interrupt_before_second_round(budget, config):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise KeyboardInterrupt("injected after durable round one")
+            return original_gate(budget, config)
+
+        with patch(
+            "llm4hls_agent.optimization._ensure_round_affordable",
+            side_effect=interrupt_before_second_round,
+        ), self.assertRaises(KeyboardInterrupt):
+            run_v2(
+                self.task,
+                self.run_root,
+                self.run_config,
+                self.optimization_config,
+                SequenceOptimizationProvider(),
+                backend=self.backend,
+            )
+        ledger_before = (self.run_root / "budget_ledger.jsonl").read_bytes()
+        round_path = self.run_root / "optimization_rounds/round_001.json"
+        round_record = json.loads(round_path.read_text(encoding="utf-8"))
+        round_record["parent_candidate_id"] = "candidate_999"
+        round_path.write_text(json.dumps(round_record), encoding="utf-8")
+
+        with self.assertRaisesRegex(ValueError, "durable round binding"):
+            run_v2(
+                self.task,
+                self.run_root,
+                self.run_config,
+                self.optimization_config,
+                SequenceOptimizationProvider(),
+                backend=self.backend,
+            )
+
+        self.assertEqual(
+            (self.run_root / "budget_ledger.jsonl").read_bytes(), ledger_before
+        )
+
+    def test_recovery_rejects_tampered_comparison_evidence(self) -> None:
+        from llm4hls_agent import optimization
+
+        run_root = self.root / "comparison-recovery"
+        original_gate = optimization._ensure_round_affordable
+        calls = 0
+
+        def interrupt_before_second_round(budget, config):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise KeyboardInterrupt("injected after durable round one")
+            return original_gate(budget, config)
+
+        with patch(
+            "llm4hls_agent.optimization._ensure_round_affordable",
+            side_effect=interrupt_before_second_round,
+        ), self.assertRaises(KeyboardInterrupt):
+            run_v2(
+                self.task,
+                run_root,
+                self.run_config,
+                self.optimization_config,
+                SequenceOptimizationProvider(),
+                backend=PPASequenceBackend(),
+            )
+        comparison_path = run_root / "comparisons/candidate_001.json"
+        comparison = json.loads(comparison_path.read_text(encoding="utf-8"))
+        comparison["winner"] = "candidate_000"
+        comparison_path.write_text(json.dumps(comparison), encoding="utf-8")
+
+        with self.assertRaisesRegex(ValueError, "comparison binding"):
+            run_v2(
+                self.task,
+                run_root,
+                self.run_config,
+                self.optimization_config,
+                SequenceOptimizationProvider(),
+                backend=PPASequenceBackend(),
+            )
 
 
 if __name__ == "__main__":

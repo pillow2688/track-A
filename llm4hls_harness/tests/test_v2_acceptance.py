@@ -190,6 +190,65 @@ class V2AcceptanceTests(unittest.TestCase):
             result["checks"]["public_inputs_and_kernel_only_patches_bound"]
         )
 
+    def test_rebuilt_manifest_cannot_hide_patch_source_lineage_mismatch(self) -> None:
+        registry_path = self.optimization_run / "candidate_registry.json"
+        registry = json.loads(registry_path.read_text(encoding="utf-8"))
+        candidate = registry["candidates"]["candidate_001"]
+        patch_path = self.optimization_run / candidate["patch_ref"]
+        patch_path.chmod(0o644)
+        patch = patch_path.read_text(encoding="utf-8").replace(
+            "+    int factor = 1;", "+    int factor = 7;", 1
+        )
+        patch_path.write_text(patch, encoding="utf-8")
+        patch_sha256 = hashlib.sha256(patch.encode("utf-8")).hexdigest()
+        candidate["patch_sha256"] = patch_sha256
+        metadata_path = (
+            self.optimization_run
+            / "candidates"
+            / "candidate_001"
+            / "candidate.json"
+        )
+        metadata_path.chmod(0o644)
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        metadata["patch_sha256"] = patch_sha256
+        metadata_path.write_text(json.dumps(metadata, sort_keys=True), encoding="utf-8")
+        registry_path.write_text(json.dumps(registry, sort_keys=True), encoding="utf-8")
+        build_artifact_manifest(self.optimization_run)
+
+        result = compute_v2_acceptance(
+            self.spec, self.optimization_run, self.rejection_run
+        )
+
+        self.assertEqual(result["overall_status"], "FAIL")
+        self.assertFalse(result["checks"]["candidate_tree_valid"])
+        self.assertIn("CANDIDATE_TREE_INVALID", result["reason_codes"])
+
+    def test_provider_patch_and_class_must_bind_to_candidate(self) -> None:
+        registry = json.loads(
+            (self.optimization_run / "candidate_registry.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        changed = 0
+        for candidate_id, candidate in registry["candidates"].items():
+            if candidate_id == "candidate_000" or changed >= 3:
+                continue
+            action_path = self.optimization_run / candidate["llm_ref"]
+            action = json.loads(action_path.read_text(encoding="utf-8"))
+            action["change_class"] = "LOOP_RESTRUCTURE"
+            action_path.write_text(json.dumps(action, sort_keys=True), encoding="utf-8")
+            changed += 1
+        self.assertEqual(changed, 3)
+        build_artifact_manifest(self.optimization_run)
+
+        result = compute_v2_acceptance(
+            self.spec, self.optimization_run, self.rejection_run
+        )
+
+        self.assertEqual(result["overall_status"], "FAIL")
+        self.assertFalse(result["checks"]["two_real_llm_candidates"])
+        self.assertIn("INSUFFICIENT_REAL_LLM_CANDIDATES", result["reason_codes"])
+
     def test_tampered_score_fails_closed_at_manifest(self) -> None:
         score_path = self.optimization_run / "scores" / "candidate_002.json"
         score = json.loads(score_path.read_text(encoding="utf-8"))

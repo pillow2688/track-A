@@ -10,7 +10,14 @@ from pathlib import Path
 from typing import Mapping
 
 from .artifacts import ArtifactManifestError, manifest_digest, verify_artifact_manifest
-from .repair import unified_diff_targets_kernel
+from .repair import (
+    PatchValidationError,
+    apply_unified_diff,
+    canonicalize_unified_diff_paths,
+    normalize_unified_diff_headers,
+    relocate_unified_diff_hunks,
+    unified_diff_targets_kernel,
+)
 from .scoring import CandidateScore, ScoringConfig, compare_scores, score_candidate
 
 
@@ -108,6 +115,10 @@ def _candidate_tree(
     paths: set[str],
     registry: Mapping[str, object],
 ) -> tuple[bool, dict[str, Mapping[str, object]]]:
+    task_spec = _covered_json(root, paths, "task_spec.json")
+    kernel_name = task_spec.get("kernel_file")
+    if not isinstance(kernel_name, str):
+        return False, {}
     raw = registry.get("candidates")
     if not isinstance(raw, Mapping) or "candidate_000" not in raw:
         return False, {}
@@ -137,6 +148,27 @@ def _candidate_tree(
             except (V2AcceptanceError, OSError):
                 return False, candidates
             if _sha256(patch) != candidate.get("patch_sha256"):
+                return False, candidates
+            parent_record = candidates.get(parent)
+            if not isinstance(parent_record, Mapping):
+                return False, candidates
+            try:
+                parent_source = _covered_path(
+                    root, paths, parent_record.get("source_ref")
+                ).read_bytes()
+                application = apply_unified_diff(
+                    parent_source,
+                    patch.decode("utf-8"),
+                    kernel_name=kernel_name,
+                )
+            except (
+                V2AcceptanceError,
+                OSError,
+                UnicodeDecodeError,
+                PatchValidationError,
+            ):
+                return False, candidates
+            if application.patched_bytes != source:
                 return False, candidates
             try:
                 metadata = _covered_json(
@@ -441,6 +473,9 @@ def _real_llm_candidate_count(
             action = _covered_json(root, paths, candidate.get("llm_ref"))
             request_ref = candidate.get("llm_request_ref")
             request = _covered_json(root, paths, request_ref)
+            stored_patch = _covered_path(
+                root, paths, candidate.get("patch_ref")
+            ).read_text(encoding="utf-8")
         except V2AcceptanceError:
             continue
         parent_id = candidate.get("parent_id")
@@ -452,6 +487,31 @@ def _real_llm_candidate_count(
                 root, paths, parent.get("source_ref")
             ).read_text(encoding="utf-8")
         except (V2AcceptanceError, OSError, UnicodeDecodeError):
+            continue
+        provider_patch = action.get("patch")
+        optimization_class = candidate.get("optimization_class")
+        if not isinstance(provider_patch, str) or not isinstance(
+            optimization_class, str
+        ):
+            continue
+        try:
+            normalized_provider_patch = normalize_unified_diff_headers(provider_patch)
+            normalized_provider_patch = relocate_unified_diff_hunks(
+                parent_source,
+                normalized_provider_patch,
+                kernel_name=str(kernel_name),
+            )
+        except PatchValidationError:
+            continue
+        if (
+            canonicalize_unified_diff_paths(
+                normalized_provider_patch, kernel_name=str(kernel_name)
+            )
+            != canonicalize_unified_diff_paths(
+                stored_patch, kernel_name=str(kernel_name)
+            )
+            or action.get("change_class") != optimization_class
+        ):
             continue
         context = request.get("context")
         provider_request = request.get("provider_request")
@@ -475,6 +535,7 @@ def _real_llm_candidate_count(
             or not 1 <= len(hls_rules) <= 3
             or context.get("hls_rules") != hls_rules
             or context.get("parent_candidate_id") != parent_id
+            or context.get("allowed_optimization_class") != optimization_class
             or context.get("source_excerpt") != parent_source
             or not isinstance(context.get("current_validation"), Mapping)
             or not isinstance(context.get("current_clock_constraint"), Mapping)

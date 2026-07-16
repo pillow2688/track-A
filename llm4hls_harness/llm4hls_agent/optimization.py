@@ -136,13 +136,18 @@ class OptimizationConfig:
     max_rounds: int = 4
     max_no_improvement_rounds: int = 2
     max_llm_calls: int = 6
+    max_final_attempts: int = 2
     final_reserve_credits: int = 25
     patch_limits: PatchLimits = field(
         default_factory=lambda: PatchLimits(max_changed_lines=30, max_hunks=4)
     )
 
     def __post_init__(self) -> None:
-        if self.max_rounds <= 0 or self.max_no_improvement_rounds <= 0:
+        if (
+            self.max_rounds <= 0
+            or self.max_no_improvement_rounds <= 0
+            or self.max_final_attempts <= 0
+        ):
             raise ValueError("optimization round limits must be positive")
         if self.max_llm_calls < self.max_rounds:
             raise ValueError("LLM call limit cannot be lower than the round limit")
@@ -155,6 +160,7 @@ class OptimizationConfig:
             "max_rounds": self.max_rounds,
             "max_no_improvement_rounds": self.max_no_improvement_rounds,
             "max_llm_calls": self.max_llm_calls,
+            "max_final_attempts": self.max_final_attempts,
             "final_reserve_credits": self.final_reserve_credits,
             "patch_limits": asdict(self.patch_limits),
         }
@@ -169,6 +175,23 @@ def _canonical_digest(value: object) -> str:
         allow_nan=False,
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _stable_context_value(value: Mapping[str, object]) -> dict[str, object]:
+    stable = dict(value)
+    stable.pop("remaining_tokens", None)
+    stable.pop("remaining_credits", None)
+    validation = stable.get("current_validation")
+    if isinstance(validation, Mapping):
+        stable["current_validation"] = {
+            str(stage): ({
+                str(key): item
+                for key, item in record.items()
+                if key != "cached"
+            } if isinstance(record, Mapping) else record)
+            for stage, record in validation.items()
+        }
+    return stable
 
 
 def _atomic_text(path: Path, value: str) -> None:
@@ -474,6 +497,41 @@ def _persist_request_audit(path: Path, value: Mapping[str, object]) -> None:
     _atomic_json(path, value)
 
 
+def _ensure_provider_tokens_affordable(
+    budget: BudgetLedger,
+    request_audit: Mapping[str, object],
+) -> None:
+    """Fail before an API call unless its bounded request can fit the token budget."""
+
+    provider_request = request_audit.get("provider_request")
+    request_value = provider_request if isinstance(provider_request, Mapping) else {}
+    http_body = request_value.get("http_body")
+    if not isinstance(http_body, Mapping):
+        raise ValueError("optimization provider must describe its bounded HTTP body")
+    max_output_tokens = http_body.get("max_tokens")
+    if (
+        not isinstance(max_output_tokens, int)
+        or isinstance(max_output_tokens, bool)
+        or max_output_tokens <= 0
+    ):
+        raise ValueError("optimization provider must declare a positive max_tokens")
+    encoded = json.dumps(
+        http_body,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode("utf-8")
+    input_token_upper_bound = len(encoded) + 512
+    required = input_token_upper_bound + max_output_tokens
+    remaining = int(budget.snapshot()["tokens_remaining"])
+    if remaining < required:
+        raise BudgetExceeded(
+            "optimization provider request requires a conservative reserve of "
+            f"{required} tokens but {remaining} remain"
+        )
+
+
 def _proposal_from_dict(value: Mapping[str, object]) -> PatchProposal:
     if value.get("ok") is not True:
         raise RepairProviderError(str(value.get("error", "provider action failed")))
@@ -508,9 +566,7 @@ def _call_optimization_provider(
     code_hash: str,
     tool_config_hash: str,
 ) -> tuple[PatchProposal | None, str, str, str | None]:
-    stable_context = context.to_dict()
-    stable_context.pop("remaining_tokens", None)
-    stable_context.pop("remaining_credits", None)
+    stable_context = _stable_context_value(context.to_dict())
     payload = {
         "kind": "llm",
         "purpose": "ppa_optimization",
@@ -543,6 +599,7 @@ def _call_optimization_provider(
         return _proposal_from_dict(value), result_ref, request_ref, None
     if budget.has_pending(action_id) or budget.is_ambiguous(action_id):
         raise RepairProviderError(f"optimization action {action_id} is not recoverable")
+    _ensure_provider_tokens_affordable(budget, request_audit)
     _persist_request_audit(request_path, request_audit)
     budget.reserve(
         action_id=action_id,
@@ -627,6 +684,46 @@ def _read_score(run_root: Path, score_ref: str) -> CandidateScore:
     if not isinstance(value, dict):
         raise ValueError(f"Candidate score {score_ref} is not an object")
     return CandidateScore.from_dict(value)
+
+
+def _recovered_validation_is_bound(
+    run_root: Path,
+    validation: Mapping[str, object],
+    *,
+    candidate_id: str,
+    code_hash: str,
+) -> bool:
+    for stage in ("csim", "synth", "cosim"):
+        record = validation.get(stage)
+        if not isinstance(record, Mapping):
+            return False
+        status = record.get("status")
+        if status == "NOT_RUN":
+            continue
+        result_ref = record.get("result_ref")
+        if not isinstance(result_ref, str):
+            return False
+        try:
+            action = json.loads(
+                (run_root / result_ref).read_text(encoding="utf-8")
+            )
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            return False
+        if not isinstance(action, Mapping):
+            return False
+        expected_status = "PASS" if action.get("ok") is True else "FAIL"
+        if (
+            status != expected_status
+            or action.get("kind") != stage
+            or action.get("candidate_id") != candidate_id
+            or action.get("code_hash") != code_hash
+            or action.get("action_id") != record.get("action_id")
+            or action.get("result_ref") != result_ref
+            or action.get("validation_scope", "exploration") != "exploration"
+            or record.get("validation_scope", "exploration") != "exploration"
+        ):
+            return False
+    return True
 
 
 def _candidate_source(
@@ -957,12 +1054,16 @@ def run_v2(
             )
         except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise ValueError(f"completed V2 run is unreadable: {exc}") from exc
+        stored_optimization_compatible = (
+            dict(stored_optimization) if isinstance(stored_optimization, dict) else {}
+        )
+        stored_optimization_compatible.setdefault("max_final_attempts", 2)
         if (
             not isinstance(completed, dict)
             or completed.get("workflow") != "V2_CANDIDATE_PPA"
             or completed.get("status") != "DONE"
             or completed.get("task_id") != task.id
-            or stored_optimization != optimization_snapshot
+            or stored_optimization_compatible != optimization_snapshot
             or stored_run != run_config.to_dict()
             or not isinstance(registry, dict)
             or registry.get("best_candidate_id") != completed.get("best_candidate_id")
@@ -1001,6 +1102,8 @@ def run_v2(
     _atomic_json(run_root / "optimization_config.json", optimization_snapshot)
     manager = CandidateManager(run_root, task)
     registry = manager.load_registry()
+    candidates = registry["candidates"]
+    baseline_record = candidates["candidate_000"]
     baseline_ref = str(baseline["validation"]["synth"]["result_ref"])
     baseline_metrics = _read_report(run_root, baseline_ref)
     baseline_validation = CandidateValidation(
@@ -1011,6 +1114,12 @@ def run_v2(
         metrics_ref=baseline_ref,
         budget=baseline["budget"],
     )
+    baseline_credits = sum(
+        int(run_config.budget.costs[stage])
+        for stage in ("csim", "synth", "cosim")
+        if isinstance(baseline["validation"].get(stage), Mapping)
+        and baseline["validation"][stage].get("status") == "PASS"
+    )
     baseline_score = _score_from_validation(
         candidate_id="candidate_000",
         baseline_metrics=baseline_metrics,
@@ -1018,7 +1127,7 @@ def run_v2(
         validation=baseline_validation,
         config=optimization_config.scoring,
         proposal=None,
-        credits_used=int(baseline["budget"]["credits_used"]),
+        credits_used=baseline_credits,
     )
     scores: dict[str, CandidateScore] = {"candidate_000": baseline_score}
     metrics_by_candidate: dict[str, dict[str, object]] = {
@@ -1031,10 +1140,9 @@ def run_v2(
         "candidate_000": baseline["clock_constraint"]
     }
     _atomic_json(run_root / "scores/candidate_000.json", baseline_score.to_dict())
-    candidates = registry["candidates"]
-    baseline_record = candidates["candidate_000"]
     baseline_record["score_ref"] = "scores/candidate_000.json"
     baseline_record["metrics_ref"] = baseline_ref
+    baseline_record["credits_used"] = baseline_credits
     manager.save_registry(registry)
 
     budget = BudgetLedger(run_root / "budget_ledger.jsonl", run_config.budget)
@@ -1059,8 +1167,124 @@ def run_v2(
         ):
             raise ValueError(f"invalid durable optimization round: {round_path.name}")
         optimization_class = str(round_record["optimization_class"])
-        attempted.append(optimization_class)
         selector = round_record.get("selector")
+        current_source = _candidate_source(run_root, registry, best_id)
+        expected_selector = select_optimization(
+            metrics_by_candidate[best_id],
+            source=current_source.decode("utf-8"),
+            attempted=tuple(attempted),
+            failures=tuple(failures),
+        )
+        if (
+            round_record.get("parent_candidate_id") != best_id
+            or not isinstance(selector, Mapping)
+            or _canonical_digest(dict(selector))
+            != _canonical_digest(asdict(expected_selector))
+            or expected_selector.optimization_class != optimization_class
+        ):
+            raise ValueError(
+                f"durable round binding is invalid: {round_path.name}"
+            )
+        request_ref = round_record.get("request_ref")
+        provider_ref = round_record.get("provider_ref")
+        if not isinstance(request_ref, str) or not isinstance(provider_ref, str):
+            raise ValueError(f"durable round evidence is missing: {round_path.name}")
+        try:
+            request_value = json.loads(
+                (run_root / request_ref).read_text(encoding="utf-8")
+            )
+            provider_value = json.loads(
+                (run_root / provider_ref).read_text(encoding="utf-8")
+            )
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ValueError(
+                f"durable round evidence is unreadable: {round_path.name}: {exc}"
+            ) from exc
+        if not isinstance(request_value, dict) or not isinstance(provider_value, dict):
+            raise ValueError(f"durable round evidence is invalid: {round_path.name}")
+        request_context = request_value.get("context")
+        if not isinstance(request_context, Mapping):
+            raise ValueError(f"durable round context is missing: {round_path.name}")
+        expected_context = OptimizationContext(
+            task_id=task.id,
+            parent_candidate_id=best_id,
+            round_index=expected_index,
+            allowed_optimization_class=optimization_class,
+            bottleneck=expected_selector.bottleneck,
+            evidence=expected_selector.evidence,
+            baseline_metrics=baseline_metrics,
+            current_metrics=metrics_by_candidate[best_id],
+            current_validation=validation_by_candidate[best_id],
+            current_clock_constraint=clock_by_candidate[best_id],
+            source_excerpt=current_source.decode("utf-8"),
+            hls_rules=_HLS_RULES[optimization_class],
+            failed_actions=tuple(
+                {"optimization_class": item, "metrics_digest": digest}
+                for item, digest in failures
+                if item == optimization_class
+            ),
+            remaining_tokens=0,
+            remaining_credits=None,
+            final_reserve_credits=optimization_config.final_reserve_credits,
+            top=task.top,
+            kernel_name=task.kernel_name,
+            part=run_config.tool.part,
+            clock_ns=run_config.tool.clock_ns,
+        )
+        stable_context = _stable_context_value(expected_context.to_dict())
+        context_digest = _canonical_digest(stable_context)
+        action_id = _canonical_digest(
+            {
+                "kind": "llm",
+                "purpose": "ppa_optimization",
+                "candidate_id": best_id,
+                "code_hash": str(candidates[best_id]["code_hash"]),
+                "tool_config_hash": run_config.tool.hash_for(
+                    "csim", backend_fingerprint="optimization-context"
+                ),
+                "provider": _provider_fingerprint(provider),
+                "context": stable_context,
+            }
+        )
+        if (
+            _canonical_digest(_stable_context_value(request_context))
+            != context_digest
+        ):
+            actual_context = _stable_context_value(request_context)
+            differing = sorted(
+                key
+                for key in set(actual_context) | set(stable_context)
+                if _canonical_digest(actual_context.get(key))
+                != _canonical_digest(stable_context.get(key))
+            )
+            raise ValueError(
+                "durable round context binding is invalid for fields "
+                f"{differing}: {round_path.name}"
+            )
+        if (
+            request_value.get("action_id") != action_id
+            or request_ref != f"llm_actions/{action_id}/request.json"
+            or provider_ref != f"llm_actions/{action_id}/result.json"
+        ):
+            raise ValueError(
+                f"durable round action binding is invalid: {round_path.name}"
+            )
+        if round_record.get("context_digest", context_digest) != context_digest:
+            raise ValueError(
+                f"durable round context digest is invalid: {round_path.name}"
+            )
+        completed_provider = budget.completed_event(action_id)
+        provider_bytes = (run_root / provider_ref).read_bytes()
+        if (
+            completed_provider is None
+            or completed_provider.get("result_ref") != provider_ref
+            or completed_provider.get("result_sha256")
+            != hashlib.sha256(provider_bytes).hexdigest()
+        ):
+            raise ValueError(
+                f"durable round Provider ledger binding is invalid: {round_path.name}"
+            )
+        attempted.append(optimization_class)
         metrics_digest = (
             str(selector.get("metrics_digest"))
             if isinstance(selector, Mapping)
@@ -1073,23 +1297,171 @@ def run_v2(
                 raise ValueError(
                     f"durable round Candidate is missing: {candidate_id}"
                 )
+            if (
+                candidate_record.get("parent_id") != best_id
+                or candidate_record.get("round") != expected_index
+                or candidate_record.get("optimization_class") != optimization_class
+                or candidate_record.get("llm_ref") != provider_ref
+                or candidate_record.get("llm_request_ref") != request_ref
+                or provider_value.get("ok") is not True
+            ):
+                raise ValueError(
+                    f"durable round Candidate binding is invalid: {candidate_id}"
+                )
+            proposal = _proposal_from_dict(provider_value)
+            stored_patch_path = run_root / str(candidate_record.get("patch_ref", ""))
+            stored_source_path = run_root / str(candidate_record.get("source_ref", ""))
+            try:
+                stored_patch = stored_patch_path.read_text(encoding="utf-8")
+                normalized_patch = normalize_unified_diff_headers(proposal.patch)
+                normalized_patch = relocate_unified_diff_hunks(
+                    current_source,
+                    normalized_patch,
+                    kernel_name=task.kernel_name,
+                )
+                application = apply_unified_diff(
+                    current_source,
+                    normalized_patch,
+                    kernel_name=task.kernel_name,
+                    limits=optimization_config.patch_limits,
+                )
+                stored_source = stored_source_path.read_bytes()
+            except (OSError, UnicodeDecodeError, PatchValidationError) as exc:
+                raise ValueError(
+                    f"durable round Patch binding is invalid: {candidate_id}: {exc}"
+                ) from exc
+            if (
+                normalized_patch != stored_patch
+                or application.patched_bytes != stored_source
+                or application.patched_sha256 != candidate_record.get("code_hash")
+                or proposal.change_class != optimization_class
+                or proposal.input_tokens != candidate_record.get("input_tokens")
+                or proposal.output_tokens != candidate_record.get("output_tokens")
+                or proposal.cached_input_tokens
+                != candidate_record.get("cached_input_tokens")
+            ):
+                raise ValueError(
+                    f"durable round Provider/Patch binding is invalid: {candidate_id}"
+                )
+            candidate_validation = candidate_record.get("validation")
+            candidate_clock = candidate_record.get("clock_constraint")
+            if (
+                not isinstance(candidate_validation, Mapping)
+                or not isinstance(candidate_clock, Mapping)
+                or not _recovered_validation_is_bound(
+                    run_root,
+                    candidate_validation,
+                    candidate_id=candidate_id,
+                    code_hash=str(candidate_record.get("code_hash")),
+                )
+            ):
+                raise ValueError(
+                    f"durable Candidate validation binding is invalid: {candidate_id}"
+                )
             score_ref = candidate_record.get("score_ref")
             metrics_ref = candidate_record.get("metrics_ref")
             if isinstance(score_ref, str) and isinstance(metrics_ref, str):
-                scores[candidate_id] = _read_score(run_root, score_ref)
-                metrics_by_candidate[candidate_id] = _read_report(
-                    run_root, metrics_ref
+                candidate_metrics = _read_report(run_root, metrics_ref)
+                recovered_validation = CandidateValidation(
+                    status="DONE",
+                    stop_reason="CANDIDATE_VERIFIED",
+                    validation={str(k): dict(v) for k, v in candidate_validation.items() if isinstance(v, Mapping)},
+                    clock_constraint=dict(candidate_clock),
+                    metrics_ref=metrics_ref,
+                    budget={},
                 )
-                candidate_validation = candidate_record.get("validation")
-                candidate_clock = candidate_record.get("clock_constraint")
-                if not isinstance(candidate_validation, Mapping) or not isinstance(
-                    candidate_clock, Mapping
+                recomputed_score = _score_from_validation(
+                    candidate_id=candidate_id,
+                    baseline_metrics=baseline_metrics,
+                    candidate_metrics=candidate_metrics,
+                    validation=recovered_validation,
+                    config=optimization_config.scoring,
+                    proposal=proposal,
+                    credits_used=int(candidate_record.get("credits_used", -1)),
+                )
+                stored_score = _read_score(run_root, score_ref)
+                if (
+                    _canonical_digest(stored_score.to_dict())
+                    != _canonical_digest(recomputed_score.to_dict())
+                    or round_record.get("score_ref") != score_ref
                 ):
                     raise ValueError(
-                        f"durable Candidate validation is missing: {candidate_id}"
+                        f"durable Candidate score binding is invalid: {candidate_id}"
                     )
+                comparison_ref = candidate_record.get("comparison_ref")
+                if not isinstance(comparison_ref, str):
+                    raise ValueError(
+                        f"durable Candidate comparison is missing: {candidate_id}"
+                    )
+                try:
+                    stored_comparison = json.loads(
+                        (run_root / comparison_ref).read_text(encoding="utf-8")
+                    )
+                except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+                    raise ValueError(
+                        f"durable Candidate comparison is unreadable: {candidate_id}"
+                    ) from exc
+                expected_comparison = compare_scores(
+                    recomputed_score, scores[best_id]
+                ).to_dict()
+                expected_round_decision = (
+                    "PROMOTED"
+                    if expected_comparison["strictly_better"] is True
+                    else "REJECTED_NOT_BETTER"
+                )
+                if not isinstance(stored_comparison, dict) or (
+                    _canonical_digest(stored_comparison)
+                    != _canonical_digest(expected_comparison)
+                ):
+                    stored_value = (
+                        stored_comparison
+                        if isinstance(stored_comparison, dict)
+                        else {}
+                    )
+                    differing = sorted(
+                        key
+                        for key in set(stored_value) | set(expected_comparison)
+                        if _canonical_digest(stored_value.get(key))
+                        != _canonical_digest(expected_comparison.get(key))
+                    )
+                    raise ValueError(
+                        "durable Candidate comparison binding is invalid for fields "
+                        f"{differing}: {candidate_id}; "
+                        f"stored={stored_value.get('incumbent_key')}; "
+                        f"expected={expected_comparison.get('incumbent_key')}"
+                    )
+                if (
+                    _canonical_digest(round_record.get("comparison"))
+                    != _canonical_digest(expected_comparison)
+                ):
+                    raise ValueError(
+                        f"durable round comparison binding is invalid: {candidate_id}"
+                    )
+                if (
+                    round_record.get("comparison_ref") != comparison_ref
+                    or round_record.get("decision") != expected_round_decision
+                ):
+                    raise ValueError(
+                        f"durable comparison decision binding is invalid: {candidate_id}"
+                    )
+                scores[candidate_id] = recomputed_score
+                metrics_by_candidate[candidate_id] = candidate_metrics
                 validation_by_candidate[candidate_id] = candidate_validation
                 clock_by_candidate[candidate_id] = candidate_clock
+            elif round_record.get("decision") != "REJECTED_VALIDATION":
+                raise ValueError(
+                    f"durable rejected Candidate binding is invalid: {candidate_id}"
+                )
+        else:
+            expected_rejection = (
+                "PATCH_REJECTED"
+                if provider_value.get("ok") is True
+                else "PROVIDER_REJECTED"
+            )
+            if round_record.get("decision") != expected_rejection:
+                raise ValueError(
+                    f"durable rejected round binding is invalid: {round_path.name}"
+                )
         if round_record["decision"] == "PROMOTED":
             if not isinstance(candidate_id, str) or candidate_id not in scores:
                 raise ValueError("promoted durable round has no scored Candidate")
@@ -1155,22 +1527,31 @@ def run_v2(
             part=run_config.tool.part,
             clock_ns=run_config.tool.clock_ns,
         )
-        proposal, provider_ref, request_ref, provider_error = _call_optimization_provider(
-            provider,
-            context,
-            run_root=run_root,
-            budget=budget,
-            parent_id=best_id,
-            code_hash=str(candidates[best_id]["code_hash"]),
-            tool_config_hash=run_config.tool.hash_for(
-                "csim", backend_fingerprint="optimization-context"
-            ),
-        )
+        try:
+            proposal, provider_ref, request_ref, provider_error = (
+                _call_optimization_provider(
+                    provider,
+                    context,
+                    run_root=run_root,
+                    budget=budget,
+                    parent_id=best_id,
+                    code_hash=str(candidates[best_id]["code_hash"]),
+                    tool_config_hash=run_config.tool.hash_for(
+                        "csim", backend_fingerprint="optimization-context"
+                    ),
+                )
+            )
+        except BudgetExceeded:
+            exploration_stop_reason = "TOKEN_RESERVE_REACHED"
+            break
         round_record: dict[str, object] = {
             "round_index": round_index,
             "parent_candidate_id": best_id,
             "optimization_class": decision.optimization_class,
             "selector": asdict(decision),
+            "context_digest": _canonical_digest(
+                _stable_context_value(context.to_dict())
+            ),
             "provider_ref": provider_ref,
             "request_ref": request_ref,
             "candidate_id": None,
@@ -1349,7 +1730,7 @@ def run_v2(
                 and score.hard_constraints_passed
             ]
         )
-        for fallback_score in eligible:
+        for fallback_score in eligible[: optimization_config.max_final_attempts - 1]:
             try:
                 _ensure_final_affordable(budget)
             except BudgetExceeded:
@@ -1396,6 +1777,7 @@ def run_v2(
         else:
             status = "FAILED"
             overall_stop_reason = "FINAL_VALIDATION_FAILED"
+            registry["final_candidate_id"] = None
         manager.save_registry(registry)
     result = {
         "schema_version": 1,

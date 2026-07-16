@@ -228,6 +228,7 @@ class CliTests(unittest.TestCase):
             self.assertEqual(run_config.budget.tool_limits["llm"], 6)
             self.assertEqual(optimization_config.max_rounds, 4)
             self.assertEqual(optimization_config.max_no_improvement_rounds, 2)
+            self.assertEqual(optimization_config.max_final_attempts, 2)
             self.assertEqual(provider.config.model, "deepseek-v4-pro")
 
     def test_review_v1_prints_flat_offline_report_references(self) -> None:
