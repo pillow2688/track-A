@@ -145,6 +145,15 @@ class SequenceOptimizationProvider:
     def fingerprint(self) -> str:
         return "sequence-optimization-provider-v1"
 
+    def describe_optimization_request(
+        self, context: OptimizationContext
+    ) -> dict[str, object]:
+        return {
+            "provider": "openai-compatible",
+            "model": "deepseek-v4-pro",
+            "http_body": {"prompt": context.to_dict()},
+        }
+
     def propose_optimization(self, context: OptimizationContext) -> PatchProposal:
         replacements = {1: (0, 1), 2: (1, 2), 3: (2, 3), 4: (2, 4)}
         old, new = replacements[context.round_index]
@@ -433,6 +442,32 @@ class V2WorkflowTests(unittest.TestCase):
         self.assertTrue((self.run_root / "experimental_report.md").is_file())
         manifest = verify_artifact_manifest(self.run_root)
         self.assertEqual(manifest["workflow"], "V2_CANDIDATE_PPA")
+        for round_record in result["rounds"]:
+            self.assertIn("request_ref", round_record)
+            request_ref = round_record["request_ref"]
+            request = json.loads(
+                (self.run_root / request_ref).read_text(encoding="utf-8")
+            )
+            self.assertEqual(request["sent_files"], ["kernel.cpp"])
+            self.assertEqual(
+                request["code_ranges"],
+                [{"file": "kernel.cpp", "start_line": 1, "end_line": 5}],
+            )
+            self.assertIn("current_validation", request["context"])
+            self.assertIn("current_clock_constraint", request["context"])
+            self.assertGreaterEqual(len(request["hls_rules"]), 1)
+            self.assertLessEqual(len(request["hls_rules"]), 3)
+            sent_payload = json.dumps(
+                {
+                    "context": request["context"],
+                    "provider_request": request["provider_request"],
+                },
+                sort_keys=True,
+            )
+            self.assertNotIn("kernel_tb.cpp", sent_payload)
+            self.assertNotIn("hidden/", sent_payload)
+            self.assertNotIn("reference/", sent_payload)
+            self.assertNotIn("/home/", sent_payload)
         for stage in ("csim", "synth", "cosim"):
             ref = result["final_validation"][stage]["result_ref"]
             action = json.loads((self.run_root / ref).read_text(encoding="utf-8"))

@@ -159,6 +159,7 @@ def _candidate_tree(
                 "output_tokens",
                 "cached_input_tokens",
                 "llm_ref",
+                "llm_request_ref",
                 "round",
                 "optimization_class",
             }
@@ -428,6 +429,9 @@ def _real_llm_candidate_count(
     candidates: Mapping[str, Mapping[str, object]],
     spec: Mapping[str, object],
 ) -> int:
+    task_spec = _covered_json(root, paths, "task_spec.json")
+    kernel_name = task_spec.get("kernel_file")
+    public_tb = task_spec.get("public_tb")
     count = 0
     for candidate_id, candidate in candidates.items():
         if candidate_id == "candidate_000" or candidate.get("kind") != "optimization":
@@ -439,10 +443,74 @@ def _real_llm_candidate_count(
             continue
         try:
             action = _covered_json(root, paths, candidate.get("llm_ref"))
+            request_ref = candidate.get("llm_request_ref")
+            request = _covered_json(root, paths, request_ref)
         except V2AcceptanceError:
             continue
+        parent_id = candidate.get("parent_id")
+        parent = candidates.get(parent_id) if isinstance(parent_id, str) else None
+        if not isinstance(parent, Mapping):
+            continue
+        try:
+            parent_source = _covered_path(
+                root, paths, parent.get("source_ref")
+            ).read_text(encoding="utf-8")
+        except (V2AcceptanceError, OSError, UnicodeDecodeError):
+            continue
+        context = request.get("context")
+        provider_request = request.get("provider_request")
+        code_ranges = request.get("code_ranges")
+        hls_rules = request.get("hls_rules")
+        if (
+            not isinstance(context, Mapping)
+            or not isinstance(provider_request, Mapping)
+            or not isinstance(code_ranges, list)
+            or not isinstance(hls_rules, list)
+            or request.get("sent_files") != [kernel_name]
+            or request.get("context_mode") != "MINIMAL"
+            or code_ranges
+            != [
+                {
+                    "file": kernel_name,
+                    "start_line": 1,
+                    "end_line": max(1, len(parent_source.splitlines())),
+                }
+            ]
+            or not 1 <= len(hls_rules) <= 3
+            or context.get("hls_rules") != hls_rules
+            or context.get("parent_candidate_id") != parent_id
+            or context.get("source_excerpt") != parent_source
+            or not isinstance(context.get("current_validation"), Mapping)
+            or not isinstance(context.get("current_clock_constraint"), Mapping)
+            or provider_request.get("provider") != candidate.get("provider")
+            or provider_request.get("model") != candidate.get("model")
+        ):
+            continue
+        request_text = json.dumps(
+            {"context": context, "provider_request": provider_request},
+            sort_keys=True,
+            ensure_ascii=False,
+        )
+        forbidden = (
+            "/home/",
+            "/opt/",
+            "/tmp/",
+            "hidden/",
+            "reference/",
+            str(public_tb) if isinstance(public_tb, str) else "\x00",
+            "OPENAI_API_KEY",
+            "Authorization",
+        )
+        if any(token in request_text for token in forbidden):
+            continue
+        request_action_id = (
+            Path(str(request_ref)).parts[1]
+            if isinstance(request_ref, str) and len(Path(request_ref).parts) >= 3
+            else None
+        )
         if (
             action.get("ok") is True
+            and request.get("action_id") == request_action_id
             and action.get("provider") == candidate.get("provider")
             and action.get("model") == candidate.get("model")
             and int(action.get("input_tokens", 0)) > 0

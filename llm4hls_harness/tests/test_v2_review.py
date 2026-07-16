@@ -68,6 +68,8 @@ class V2ReviewTests(unittest.TestCase):
             "Baseline PPA",
             "LOOP_PIPELINE",
             "deepseek-v4-pro",
+            "Sent files / code ranges",
+            "Complete user prompt sent to Provider",
             "Full unified diff",
             "Final Vitis validation",
             "Safety rejection",
@@ -81,6 +83,7 @@ class V2ReviewTests(unittest.TestCase):
             "候选树",
             "基线 PPA",
             "最终 Vitis 验证",
+            "发送文件 / 代码范围",
             "安全拒绝",
             "原始证据索引",
         ):

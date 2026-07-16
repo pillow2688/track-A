@@ -36,6 +36,25 @@ ALLOWED_OPTIMIZATIONS = (
     "LOOP_RESTRUCTURE",
 )
 
+_HLS_RULES = {
+    "LOOP_PIPELINE": (
+        "Apply PIPELINE only to the selected bottleneck loop.",
+        "Preserve the loop bounds, interfaces, and arithmetic semantics.",
+    ),
+    "LOOP_UNROLL": (
+        "Apply UNROLL only to the selected loop and use a bounded factor.",
+        "Do not change the function interface or numerical result.",
+    ),
+    "MEMORY_LAYOUT": (
+        "Change only kernel-local HLS memory layout pragmas.",
+        "Preserve array element order, ports, and observable semantics.",
+    ),
+    "LOOP_RESTRUCTURE": (
+        "Restructure only the selected loop without changing iteration coverage.",
+        "Preserve interfaces, ordering dependencies, and numerical semantics.",
+    ),
+}
+
 
 @dataclass(frozen=True)
 class OptimizationDecision:
@@ -56,7 +75,10 @@ class OptimizationContext:
     evidence: tuple[str, ...]
     baseline_metrics: Mapping[str, object]
     current_metrics: Mapping[str, object]
+    current_validation: Mapping[str, object]
+    current_clock_constraint: Mapping[str, object]
     source_excerpt: str
+    hls_rules: tuple[str, ...]
     failed_actions: tuple[Mapping[str, object], ...]
     remaining_tokens: int
     remaining_credits: int | None
@@ -73,6 +95,10 @@ class OptimizationContext:
             raise ValueError("optimization round index must be positive")
         if self.remaining_tokens < 0 or self.final_reserve_credits < 0:
             raise ValueError("optimization budget values must be non-negative")
+        if not 1 <= len(self.hls_rules) <= 3 or any(
+            not isinstance(rule, str) or not rule.strip() for rule in self.hls_rules
+        ):
+            raise ValueError("optimization context requires one to three HLS rules")
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -84,7 +110,10 @@ class OptimizationContext:
             "evidence": list(self.evidence),
             "baseline_metrics": dict(self.baseline_metrics),
             "current_metrics": dict(self.current_metrics),
+            "current_validation": dict(self.current_validation),
+            "current_clock_constraint": dict(self.current_clock_constraint),
             "source_excerpt": self.source_excerpt,
+            "hls_rules": list(self.hls_rules),
             "failed_actions": [dict(item) for item in self.failed_actions],
             "remaining_tokens": self.remaining_tokens,
             "remaining_credits": self.remaining_credits,
@@ -389,6 +418,61 @@ def _provider_fingerprint(provider: OptimizationProvider) -> str:
     return value
 
 
+def _request_audit(
+    provider: OptimizationProvider,
+    context: OptimizationContext,
+    *,
+    action_id: str,
+) -> dict[str, object]:
+    describe = getattr(provider, "describe_optimization_request", None)
+    provider_request: Mapping[str, object] = {}
+    if callable(describe):
+        described = describe(context)
+        if not isinstance(described, Mapping):
+            raise ValueError("optimization request description must be an object")
+        provider_request = described
+    source_lines = context.source_excerpt.splitlines()
+    return {
+        "schema_version": 1,
+        "action_id": action_id,
+        "purpose": "ppa_optimization",
+        "provider_fingerprint": _provider_fingerprint(provider),
+        "sent_files": [context.kernel_name],
+        "code_ranges": [
+            {
+                "file": context.kernel_name,
+                "start_line": 1,
+                "end_line": max(1, len(source_lines)),
+            }
+        ],
+        "hls_rules": list(context.hls_rules),
+        "context_mode": "MINIMAL",
+        "context": context.to_dict(),
+        "provider_request": dict(provider_request),
+        "excluded_categories": [
+            "complete repository",
+            "complete logs",
+            "testbench",
+            "hidden/reference content",
+            "unrelated source",
+            "machine absolute paths",
+            "API keys and sensitive configuration",
+        ],
+    }
+
+
+def _persist_request_audit(path: Path, value: Mapping[str, object]) -> None:
+    if path.is_file():
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise RepairProviderError(f"optimization request audit is unreadable: {exc}") from exc
+        if existing != dict(value):
+            raise RepairProviderError("optimization request audit does not match invocation")
+        return
+    _atomic_json(path, value)
+
+
 def _proposal_from_dict(value: Mapping[str, object]) -> PatchProposal:
     if value.get("ok") is not True:
         raise RepairProviderError(str(value.get("error", "provider action failed")))
@@ -422,7 +506,7 @@ def _call_optimization_provider(
     parent_id: str,
     code_hash: str,
     tool_config_hash: str,
-) -> tuple[PatchProposal | None, str]:
+) -> tuple[PatchProposal | None, str, str, str | None]:
     stable_context = context.to_dict()
     stable_context.pop("remaining_tokens", None)
     stable_context.pop("remaining_credits", None)
@@ -438,17 +522,27 @@ def _call_optimization_provider(
     action_id = _canonical_digest(payload)
     result_ref = f"llm_actions/{action_id}/result.json"
     result_path = run_root / result_ref
+    request_ref = f"llm_actions/{action_id}/request.json"
+    request_path = run_root / request_ref
+    request_audit = _request_audit(provider, context, action_id=action_id)
     completed = budget.completed_event(action_id)
     if completed is not None:
+        if not request_path.is_file():
+            raise RepairProviderError("cached optimization request audit is missing")
         encoded = result_path.read_bytes()
         if hashlib.sha256(encoded).hexdigest() != completed.get("result_sha256"):
             raise RepairProviderError("cached optimization result digest mismatch")
         value = json.loads(encoded.decode("utf-8"))
         if not isinstance(value, dict):
             raise RepairProviderError("cached optimization result is not an object")
-        return _proposal_from_dict(value), result_ref
+        if value.get("ok") is not True:
+            return None, result_ref, request_ref, str(
+                value.get("error", "provider action failed")
+            )
+        return _proposal_from_dict(value), result_ref, request_ref, None
     if budget.has_pending(action_id) or budget.is_ambiguous(action_id):
         raise RepairProviderError(f"optimization action {action_id} is not recoverable")
+    _persist_request_audit(request_path, request_audit)
     budget.reserve(
         action_id=action_id,
         kind="llm",
@@ -503,8 +597,8 @@ def _call_optimization_provider(
         tokens_used=input_tokens + output_tokens,
     )
     if proposal is None:
-        return None, str(value["error"])
-    return proposal, result_ref
+        return None, result_ref, request_ref, str(value["error"])
+    return proposal, result_ref, request_ref, None
 
 
 def _read_report(run_root: Path, result_ref: str) -> dict[str, object]:
@@ -918,6 +1012,12 @@ def run_v2(
     metrics_by_candidate: dict[str, dict[str, object]] = {
         "candidate_000": baseline_metrics
     }
+    validation_by_candidate: dict[str, Mapping[str, object]] = {
+        "candidate_000": baseline["validation"]
+    }
+    clock_by_candidate: dict[str, Mapping[str, object]] = {
+        "candidate_000": baseline["clock_constraint"]
+    }
     _atomic_json(run_root / "scores/candidate_000.json", baseline_score.to_dict())
     candidates = registry["candidates"]
     baseline_record = candidates["candidate_000"]
@@ -968,6 +1068,16 @@ def run_v2(
                 metrics_by_candidate[candidate_id] = _read_report(
                     run_root, metrics_ref
                 )
+                candidate_validation = candidate_record.get("validation")
+                candidate_clock = candidate_record.get("clock_constraint")
+                if not isinstance(candidate_validation, Mapping) or not isinstance(
+                    candidate_clock, Mapping
+                ):
+                    raise ValueError(
+                        f"durable Candidate validation is missing: {candidate_id}"
+                    )
+                validation_by_candidate[candidate_id] = candidate_validation
+                clock_by_candidate[candidate_id] = candidate_clock
         if round_record["decision"] == "PROMOTED":
             if not isinstance(candidate_id, str) or candidate_id not in scores:
                 raise ValueError("promoted durable round has no scored Candidate")
@@ -1012,10 +1122,14 @@ def run_v2(
             evidence=decision.evidence,
             baseline_metrics=baseline_metrics,
             current_metrics=current_metrics,
+            current_validation=validation_by_candidate[best_id],
+            current_clock_constraint=clock_by_candidate[best_id],
             source_excerpt=current_source.decode("utf-8"),
+            hls_rules=_HLS_RULES[decision.optimization_class],
             failed_actions=tuple(
                 {"optimization_class": item, "metrics_digest": digest}
                 for item, digest in failures
+                if item == decision.optimization_class
             ),
             remaining_tokens=int(snapshot["tokens_remaining"]),
             remaining_credits=(
@@ -1029,7 +1143,7 @@ def run_v2(
             part=run_config.tool.part,
             clock_ns=run_config.tool.clock_ns,
         )
-        proposal, provider_ref = _call_optimization_provider(
+        proposal, provider_ref, request_ref, provider_error = _call_optimization_provider(
             provider,
             context,
             run_root=run_root,
@@ -1046,10 +1160,12 @@ def run_v2(
             "optimization_class": decision.optimization_class,
             "selector": asdict(decision),
             "provider_ref": provider_ref,
+            "request_ref": request_ref,
             "candidate_id": None,
             "decision": "PROVIDER_REJECTED",
         }
         if proposal is None:
+            round_record["error"] = provider_error
             failures.append((decision.optimization_class, decision.metrics_digest))
             no_improvement += 1
         else:
@@ -1080,6 +1196,7 @@ def run_v2(
                             "round": round_index,
                             "optimization_class": decision.optimization_class,
                             "llm_ref": provider_ref,
+                            "llm_request_ref": request_ref,
                             "provider": proposal.provider,
                             "model": proposal.model,
                             "revision": proposal.revision,
@@ -1138,6 +1255,8 @@ def run_v2(
                         candidate["comparison_ref"] = comparison_ref
                         scores[candidate_id] = score
                         metrics_by_candidate[candidate_id] = candidate_metrics
+                        validation_by_candidate[candidate_id] = validation.validation
+                        clock_by_candidate[candidate_id] = validation.clock_constraint
                         round_record["score_ref"] = score_ref
                         round_record["comparison_ref"] = comparison_ref
                         round_record["comparison"] = comparison.to_dict()

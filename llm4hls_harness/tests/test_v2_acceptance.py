@@ -184,6 +184,33 @@ class V2AcceptanceTests(unittest.TestCase):
         self.assertEqual(accepted["overall_status"], "FAIL")
         self.assertIn("FINAL_VALIDATION_INVALID", accepted["reason_codes"])
 
+    def test_rebuilt_manifest_cannot_hide_forbidden_provider_context(self) -> None:
+        registry = json.loads(
+            (self.optimization_run / "candidate_registry.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        for candidate_id, candidate in registry["candidates"].items():
+            if candidate_id == "candidate_000":
+                continue
+            request_ref = candidate.get("llm_request_ref")
+            if not request_ref:
+                continue
+            request_path = self.optimization_run / request_ref
+            request = json.loads(request_path.read_text(encoding="utf-8"))
+            request["sent_files"] = ["kernel_tb.cpp"]
+            request_path.write_text(json.dumps(request), encoding="utf-8")
+        build_artifact_manifest(self.optimization_run)
+
+        accepted = compute_v2_acceptance(
+            self.spec, self.optimization_run, self.rejection_run
+        )
+
+        self.assertEqual(accepted["overall_status"], "FAIL")
+        self.assertIn(
+            "INSUFFICIENT_REAL_LLM_CANDIDATES", accepted["reason_codes"]
+        )
+
     def test_writer_emits_deterministic_machine_and_bilingual_reports(self) -> None:
         output = self.root / "acceptance"
 

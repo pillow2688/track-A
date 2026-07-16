@@ -114,6 +114,8 @@ def _artifact_type(path: str) -> str:
         return "candidate_metadata"
     if path.startswith("llm_actions/") and path.endswith("/result.json"):
         return "llm_action_result"
+    if path.startswith("llm_actions/") and path.endswith("/request.json"):
+        return "llm_action_request"
     if path.startswith("actions/") and path.endswith("/result.json"):
         return "tool_action_result"
     if path.startswith("actions/"):

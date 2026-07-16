@@ -115,7 +115,10 @@ def build_optimization_prompt(context: OptimizationContext) -> str:
         "evidence": list(context.evidence),
         "baseline_metrics": dict(context.baseline_metrics),
         "current_metrics": dict(context.current_metrics),
+        "current_validation": dict(context.current_validation),
+        "current_clock_constraint": dict(context.current_clock_constraint),
         "failed_actions": [dict(item) for item in context.failed_actions],
+        "hls_rules": list(context.hls_rules),
     }
     constraints = {
         "top": context.top,
@@ -238,12 +241,9 @@ class _Completion:
     duration_seconds: float
 
 
-def _request_completion(
-    config: OpenAICompatibleConfig,
-    transport: Transport,
-    *,
-    prompt: str,
-) -> _Completion:
+def _completion_body(
+    config: OpenAICompatibleConfig, *, prompt: str
+) -> dict[str, object]:
     body: dict[str, object] = {
         "model": config.model,
         "messages": [
@@ -259,6 +259,16 @@ def _request_completion(
     }
     if "api.deepseek.com" in config.base_url and config.model.startswith("deepseek-"):
         body["thinking"] = {"type": "disabled"}
+    return body
+
+
+def _request_completion(
+    config: OpenAICompatibleConfig,
+    transport: Transport,
+    *,
+    prompt: str,
+) -> _Completion:
+    body = _completion_body(config, prompt=prompt)
     encoded = json.dumps(body, separators=(",", ":"), ensure_ascii=False).encode(
         "utf-8"
     )
@@ -417,6 +427,17 @@ class OpenAICompatibleOptimizationProvider:
                 format(self.config.temperature, ".12g"),
             ]
         )
+
+    def describe_optimization_request(
+        self, context: OptimizationContext
+    ) -> dict[str, object]:
+        prompt = build_optimization_prompt(context)
+        return {
+            "provider": "openai-compatible",
+            "model": self.config.model,
+            "endpoint": self.config.chat_completions_url,
+            "http_body": _completion_body(self.config, prompt=prompt),
+        }
 
     def propose_optimization(self, context: OptimizationContext) -> PatchProposal:
         completion = _request_completion(

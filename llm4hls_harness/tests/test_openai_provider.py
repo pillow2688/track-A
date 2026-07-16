@@ -57,7 +57,14 @@ def optimization_context() -> OptimizationContext:
         evidence=("Interval max=16",),
         baseline_metrics={"latency": {"worst": 4098}, "interval": {"max": 16}},
         current_metrics={"latency": {"worst": 4098}, "interval": {"max": 16}},
+        current_validation={
+            "csim": {"status": "PASS"},
+            "synth": {"status": "PASS"},
+            "cosim": {"status": "PASS"},
+        },
+        current_clock_constraint={"passed": True, "estimated_period_ns": 2.0},
         source_excerpt="#pragma HLS PIPELINE II=16\nc[i] = a[i] + b[i];",
+        hls_rules=("Apply PIPELINE only to the selected loop.",),
         failed_actions=(),
         remaining_tokens=4096,
         remaining_credits=135,
@@ -172,6 +179,15 @@ class OpenAICompatibleProviderTests(unittest.TestCase):
         self.assertIn("maximum interval is 16", prompt)
         self.assertNotIn("secret-test-key", prompt)
         self.assertNotIn("kernel_tb.cpp", prompt)
+        provider = OpenAICompatibleOptimizationProvider(self.config())
+        audit = provider.describe_optimization_request(optimization_context())
+        encoded = json.dumps(audit, sort_keys=True)
+        self.assertEqual(audit["provider"], "openai-compatible")
+        self.assertEqual(audit["model"], DEFAULT_MODEL)
+        self.assertIn("current_validation", encoded)
+        self.assertIn("hls_rules", encoded)
+        self.assertNotIn("secret-test-key", encoded)
+        self.assertNotIn("kernel_tb.cpp", encoded)
 
     def test_optimization_provider_accepts_exact_class_and_usage(self) -> None:
         provider = OpenAICompatibleOptimizationProvider(

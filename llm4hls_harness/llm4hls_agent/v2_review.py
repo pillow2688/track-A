@@ -155,6 +155,26 @@ def _collect_review_data(
             if isinstance(record.get("provider_ref"), str)
             else {}
         )
+        request = (
+            _read_json(optimization_root / str(record["request_ref"]))
+            if isinstance(record.get("request_ref"), str)
+            else {}
+        )
+        provider_request = request.get("provider_request")
+        provider_request_value = (
+            provider_request if isinstance(provider_request, Mapping) else {}
+        )
+        http_body = provider_request_value.get("http_body")
+        http_body_value = http_body if isinstance(http_body, Mapping) else {}
+        messages = http_body_value.get("messages")
+        prompt = ""
+        if isinstance(messages, list):
+            for message in messages:
+                if isinstance(message, Mapping) and message.get("role") == "user":
+                    prompt = str(message.get("content", ""))
+                    break
+        elif http_body_value:
+            prompt = json.dumps(http_body_value, indent=2, sort_keys=True)
         candidate_id = record.get("candidate_id")
         candidate_raw = candidates.get(candidate_id)
         candidate = candidate_raw if isinstance(candidate_raw, Mapping) else {}
@@ -193,6 +213,12 @@ def _collect_review_data(
                 "output_tokens": provider.get("output_tokens", 0),
                 "cached_input_tokens": provider.get("cached_input_tokens", 0),
                 "fallback": candidate.get("fallback", "NOT_USED"),
+                "sent_files": request.get("sent_files", []),
+                "code_ranges": request.get("code_ranges", []),
+                "context_mode": request.get("context_mode"),
+                "hls_rules": request.get("hls_rules", []),
+                "request_prompt": prompt,
+                "request_ref": record.get("request_ref"),
                 "changed_lines": changed,
                 "patch": patch_display,
                 "patch_complete": patch_complete,
@@ -398,6 +424,16 @@ def _render_report(
                 f"- {'Provider / 模型' if chinese else 'Provider / Model'}: `{value.get('provider')} / {value.get('model')}`",
                 f"- Tokens input/output/cached: `{value.get('input_tokens')}/{value.get('output_tokens')}/{value.get('cached_input_tokens')}`",
                 f"- Fallback: `{value.get('fallback')}`",
+                f"- {'发送文件 / 代码范围' if chinese else 'Sent files / code ranges'}: `{value.get('sent_files')} / {value.get('code_ranges')}`",
+                f"- {'上下文模式' if chinese else 'Context mode'}: `{value.get('context_mode')}`",
+                f"- {'相关 HLS 规则' if chinese else 'Relevant HLS rules'}: `{value.get('hls_rules')}`",
+                f"- {'请求证据' if chinese else 'Request evidence'}: `{value.get('request_ref')}`",
+                "",
+                f"**{'发送给 Provider 的完整用户 Prompt' if chinese else 'Complete user prompt sent to Provider'}**",
+                "",
+                "```text",
+                str(value.get("request_prompt", "")),
+                "```",
                 f"- {'候选 / 决策' if chinese else 'Candidate / decision'}: `{value.get('candidate_id')} / {value.get('decision')}`",
                 f"- {'改动行数' if chinese else 'Changed lines'}: `{value.get('changed_lines')}`",
                 f"- {'完整 unified diff' if chinese else 'Full unified diff'}: `{'yes' if value.get('patch_complete') else 'first 30 lines'}`",
