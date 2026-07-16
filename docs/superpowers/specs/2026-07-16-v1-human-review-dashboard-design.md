@@ -1,6 +1,6 @@
 # V1 单文件优先验收报告与静态 Dashboard 设计
 
-Status: approved design<br>
+Status: revised design awaiting user re-review<br>
 Owner: team<br>
 Date: 2026-07-16<br>
 Scope: `llm4hls_harness` V1 unified acceptance reporting
@@ -12,9 +12,11 @@ Scope: `llm4hls_harness` V1 unified acceptance reporting
 现有 Markdown 只提供场景、错误类别、PASS 状态和外部证据链接。审核者必须逐个打开
 实验报告、Manifest、预算账本、Trace 和 Vitis action，才能判断 PASS 的依据。
 
-本设计将统一验收改造成“单文件优先审核”：审核者只阅读输出目录中的 `README.md`
-即可完成主要英文审核；`README_CN.md` 提供字段和结论完全对应的中文审核；
-`dashboard.html` 提供相同证据的静态双语视图。大型原始文件只用于末尾追溯。
+本设计将统一验收改造成“单文件优先审核”：审核者只阅读 `runs/` 根目录中的
+`V1_ACCEPTANCE_REPORT.md` 即可完成主要英文审核；
+`V1_ACCEPTANCE_REPORT_CN.md` 提供字段和结论完全对应的中文审核；
+`V1_ACCEPTANCE_DASHBOARD.html` 提供相同证据的静态双语视图。大型原始文件只用于
+末尾追溯。
 
 ## 2. 已批准目标
 
@@ -25,9 +27,13 @@ Scope: `llm4hls_harness` V1 unified acceptance reporting
 5. 自动生成可直接人工审核的英文和中文 Markdown；
 6. 自动生成无外部依赖的静态 HTML Dashboard；
 7. 所有 PASS 都由确定性 Acceptance checks 计算，不在 renderer 中硬编码；
-8. 所有输出链接使用相对于 `runs/v1-acceptance/` 的路径；
-9. README 正文直接展示关键证据，原始大文件仅在末尾链接；
-10. 报告与 `acceptance_result.json` 使用同一个规范化证据模型并保持一致。
+8. 三个人工审核文件直接平铺在 `runs/`，不再嵌套到新的报告目录；
+9. 所有输出链接使用相对于 `runs/` 的路径；
+10. 报告正文直接展示关键证据，原始大文件仅在末尾链接；
+11. 现有 `acceptance_result.json`、JSON/JSONL、Manifest、Trace、ledger 和 action
+    result 全部只读且字节不变；
+12. 报告重新计算的结论必须与现有 `acceptance_result.json` 一致，否则人工审核总体
+    状态为 FAIL 并显示一致性失败。
 
 ## 3. 输入与输出
 
@@ -50,31 +56,32 @@ runs/v1-patch-invalid/
 - diagnostics、LLM/static proposal 和 Vitis action `result.json`；
 - Candidate source、Patch 和 synthesis/cosim 机器报告引用。
 
-### 3.2 统一输出
+### 3.2 平铺人工审核输出与只读机器结果
 
 ```text
-runs/v1-acceptance/
-├── acceptance_result.json
-├── README.md
-├── README_CN.md
-└── dashboard.html
+runs/
+├── V1_ACCEPTANCE_REPORT.md
+├── V1_ACCEPTANCE_REPORT_CN.md
+├── V1_ACCEPTANCE_DASHBOARD.html
+└── v1-acceptance/
+    └── acceptance_result.json    # existing, read-only
 ```
 
-CLI 返回：
+新增离线 `review-v1` 命令。它读取现有机器结果和四个运行目录，只写三个平铺人工审核
+文件。CLI 返回：
 
 ```json
 {
   "status": "PASS",
-  "result_ref": "acceptance_result.json",
-  "report_ref": "README.md",
-  "report_cn_ref": "README_CN.md",
-  "dashboard_ref": "dashboard.html"
+  "acceptance_result_ref": "v1-acceptance/acceptance_result.json",
+  "report_ref": "V1_ACCEPTANCE_REPORT.md",
+  "report_cn_ref": "V1_ACCEPTANCE_REPORT_CN.md",
+  "dashboard_ref": "V1_ACCEPTANCE_DASHBOARD.html"
 }
 ```
 
-为避免旧链接立即失效，一个兼容周期内继续生成
-`acceptance_report.md` 和 `acceptance_report_CN.md`，内容分别与两个 README
-字节一致。它们不是新的数据源。
+现有 `accept-v1` 机器验收行为保持兼容；本轮人工审核生成不得调用它覆盖
+`v1-acceptance/acceptance_result.json`，也不改写其中的旧报告文件。
 
 ## 4. 方案选择
 
@@ -88,16 +95,17 @@ four immutable run directories
 EvidenceCollector + AcceptanceCheckCollector
           |
           v
-ReviewEvidence (one canonical in-memory model)
+existing acceptance_result + ReviewEvidence (canonical in-memory model)
           |
-          +--> acceptance_result.json
-          +--> README.md
-          +--> README_CN.md
-          +--> dashboard.html
+          +--> V1_ACCEPTANCE_REPORT.md
+          +--> V1_ACCEPTANCE_REPORT_CN.md
+          +--> V1_ACCEPTANCE_DASHBOARD.html
 ```
 
 所有 renderer 只能消费 `ReviewEvidence`，不得重新读取 ledger、Trace、registry 或
-Vitis 文件。这样 PASS、统计数字、场景细节和链接只有一个来源。
+Vitis 文件。这样 PASS、统计数字、场景细节和链接只有一个来源。Collector 重新计算
+每个 check 后，必须与现有 `acceptance_result.json` 的 overall、case status、reason
+codes 和 Manifest digest 对比。
 
 ## 5. 组件边界
 
@@ -111,7 +119,7 @@ Vitis 文件。这样 PASS、统计数字、场景细节和链接只有一个来
 - 读取 baseline/final validation action；
 - 提取 synthesis metrics 和 cosim status；
 - 提取 Patch、Candidate lineage 和关键 Trace；
-- 生成相对于 acceptance output directory 的证据链接；
+- 生成相对于 `runs/` 根目录的证据链接；
 - 输出结构化 case evidence，不决定最终 PASS。
 
 它不得调用 Provider、`subprocess`、ToolServer 或 Vitis backend。
@@ -165,21 +173,22 @@ trace_summary
 raw_evidence_links
 ```
 
-`acceptance_result.json` 保留现有兼容字段，并增加上述审核字段。规范化 review data
-使用 canonical JSON 计算 `review_data_digest`；两个 README 和 HTML 都展示该 digest，
-用于确认它们来自同一份数据。
+现有 `acceptance_result.json` 不增加、不删除或改写任何字段。规范化 review data 仅存于
+内存，使用 canonical JSON 计算 `review_data_digest`；两个 Markdown 和 HTML 都展示
+该 digest，同时展示现有 `acceptance_result.json` 的 SHA-256。三份人工报告据此证明
+同源，机器结果则通过只读 hash 证明未修改。
 
 ### 5.4 Renderer
 
-- `MarkdownRenderer(language="en")` 生成 `README.md`；
-- `MarkdownRenderer(language="zh-CN")` 生成 `README_CN.md`；
-- `HtmlDashboardRenderer` 生成单文件双语 `dashboard.html`；
+- `MarkdownRenderer(language="en")` 生成 `V1_ACCEPTANCE_REPORT.md`；
+- `MarkdownRenderer(language="zh-CN")` 生成 `V1_ACCEPTANCE_REPORT_CN.md`；
+- `HtmlDashboardRenderer` 生成单文件双语 `V1_ACCEPTANCE_DASHBOARD.html`；
 - `RelativeLinkBuilder` 是三者唯一链接生成入口；
 - `AtomicOutputWriter` 用临时文件、`fsync` 和 `os.replace` 写输出。
 
 ## 6. 核心统计
 
-README 和 Dashboard 首屏必须包含：
+两个 Markdown 和 Dashboard 首屏必须包含：
 
 | 指标 | 当前真实证据预期值 | 机器计算规则 |
 |---|---:|---|
@@ -194,16 +203,58 @@ README 和 Dashboard 首屏必须包含：
 | CSim 调用总数 | 7 | ledger 中 csim 的终态 action 数 |
 | Synth 调用总数 | 4 | ledger 中 synth 的终态 action 数 |
 | CoSim 调用总数 | 3 | ledger 中 cosim 的终态 action 数 |
+| HLS 工具调用总数 | 14 | csim + synth + cosim；LLM 单独统计 |
 | Final CSim PASS | 3 / 3 | 三个 HLS final Candidate 的 csim check |
 | Final Synth PASS | 3 / 3 | 三个 HLS final Candidate 的 synth check |
 | Final CoSim PASS | 3 / 3 | 三个 HLS final Candidate 的 cosim check |
 | 时钟约束 PASS | 3 / 3 | 三个 HLS final Candidate 的 clock check |
 | Credits 总数 | 83 | 四个 ledger 终态 action 的 actual cost 总和 |
+| Credits 总预算 | 320 | 四个独立 run 的 credit limit 总和 |
+| Credits 剩余预算 | 237 | 四个独立 run 的 credits remaining 总和 |
+| Token 总预算 | 131072 | 四个独立 run 的 token limit 总和 |
+| Token 剩余预算 | 127696 | 四个独立 run 的 tokens remaining 总和 |
 
 `PATCH_INVALID` 的 `static-patch-file` action 即使记在 `kind=llm` 的预算槽，也不计入
 “实际 LLM 调用”。它的 provider、result reference 和 0 Token 必须共同证明是静态输入。
 
 任何数据不可对账时，该指标为 `INVALID`，相关 check 为 FAIL；不得用 0 或预期值填充。
+
+### 6.1 各场景预算与调用明细
+
+报告正文同时显示：
+
+| 场景 | 实际 LLM | Input | Output | Cached | Total | CSim | Synth | CoSim | HLS tools | Credits used | Credits remaining | Tokens remaining |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| compile | 1 | 1127 | 193 | 0 | 1320 | 2 | 1 | 1 | 4 | 26 | 54 | 31448 |
+| functional | 1 | 407 | 226 | 384 | 633 | 2 | 1 | 1 | 4 | 26 | 54 | 32135 |
+| synthesis | 1 | 1166 | 257 | 0 | 1423 | 2 | 2 | 1 | 5 | 30 | 50 | 31345 |
+| patch_invalid | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 1 | 1 | 79 | 32768 |
+| 合计 | 3 | 2700 | 676 | 384 | 3376 | 7 | 4 | 3 | 14 | 83 | 237 | 127696 |
+
+这些数值是当前真实证据的预期断言，不是 renderer 常量。每个单元格必须由相应 run 的
+provider result、ledger 和 budget snapshot 计算并交叉核对。
+
+### 6.2 首屏人工审核总表
+
+核心统计之后立即显示以下总体结论，不能要求审核者进入场景章节才看到：
+
+| 审核项 | 机器判定来源 | 当前预期 |
+|---|---|---|
+| 总体状态 | recorded acceptance 与 recomputed checks 一致 | PASS |
+| 三类 HLS 修复 | compile/functional/synthesis case checks | 3 / 3 PASS |
+| 安全验收 | patch_invalid safety invariants | 1 / 1 PASS |
+| Baseline 错误真实 | baseline action result、Vitis artifacts、phase/error 定位 | PASS |
+| 真实模型且无 fallback | provider/model、LLM result ref、Manifest 中无 fallback artifacts | 3 / 3 PASS |
+| Patch 最小且未改 testbench/接口 | changed paths、hunks、line counts、signature comparison、policy | 3 / 3 PASS |
+| Final gates | Candidate csim/synth/cosim/clock action | 3 / 3 PASS |
+| Token 与工具调用完整 | provider usage、ledger、budget snapshot、action records | 4 / 4 PASS |
+| Candidate 提升或安全回滚 | registry lineage/best/final 或 safety rollback | 4 / 4 PASS |
+| Manifest/Trace/Ledger/实际调用一致 | hashes、event ordering、action/result binding、accounting | 4 / 4 PASS |
+
+“Patch 最小”采用可审计的结构定义：只修改允许的单个 kernel source、hunk/changed-line
+数量在策略上限内、不做完整文件替换、顶层函数 signature/interface 不变。它不使用主观
+文本判断。`PATCH_INVALID` 故意修改 testbench，应显示“拒绝行为 PASS”，不能混入
+三个合法 Patch 的 3/3 统计。
 
 ## 7. 单场景审核内容
 
@@ -348,15 +399,16 @@ evidence ref，不复制完整 payload、action ID 列表或时间戳噪声。
 所有 Markdown `href`、HTML `href` 和报告中的 evidence path 都通过：
 
 ```python
-os.path.relpath(target.resolve(), output_root.resolve())
+os.path.relpath(target.resolve(), runs_root.resolve())
 ```
 
 再转换为 POSIX 路径。绝对路径、`file://`、反斜杠、path traversal 输出全部拒绝。
 例如：
 
 ```text
-../v1-compile-final/v1_result.json
-../v1-synthesis-final-2/actions/<action-id>/result.json
+v1-compile-final/v1_result.json
+v1-synthesis-final-2/actions/<action-id>/result.json
+v1-acceptance/acceptance_result.json
 ```
 
 ### 10.2 日志 path scrubber
@@ -367,21 +419,22 @@ os.path.relpath(target.resolve(), output_root.resolve())
 kernel.cpp:5:23: use of undeclared identifier 'rhs'
 ```
 
-生成后扫描 README、README_CN、HTML 和 JSON review fields；出现输入绝对根或
+生成后扫描两个 Markdown、HTML 和内存 review fields；出现输入绝对根或
 `/home/` 前缀即失败。
 
 ### 10.3 只读输入
 
-- output directory 必须位于四个 evidence root 之外；
+- 三个输出目标必须是 `runs/` 根目录中的普通文件，不得位于四个 evidence root 内；
 - collector 只用 read API；
-- 生成前记录四个 Manifest digest；
+- 生成前记录四个 Manifest digest、现有 `acceptance_result.json` hash 及全部机器文件
+  的 hash/size/mtime 快照；
 - 生成后重新验证 Manifest 和 digest；
-- digest 变化则整体 FAIL，并报告 `EVIDENCE_CHANGED_DURING_RENDER`；
-- 测试同时比较输入文件的 hash/size/mtime 快照。
+- 任一机器文件变化则整体 FAIL，并报告 `EVIDENCE_CHANGED_DURING_RENDER`；
+- 生成器不得写入 `.json`、`.jsonl`、Manifest、action、Candidate 或实验子目录。
 
 ## 11. Markdown 信息架构
 
-两个 README 内容顺序一致：
+两个 Markdown 内容顺序一致：
 
 1. 语言互链、Dashboard 链接；
 2. overall status 与 review digest；
@@ -398,7 +451,7 @@ kernel.cpp:5:23: use of undeclared identifier 'rhs'
 
 ## 12. 静态 HTML Dashboard
 
-`dashboard.html` 为单文件：
+`V1_ACCEPTANCE_DASHBOARD.html` 为单文件：
 
 - CSS、少量语言切换 JavaScript 和 review data 全部内嵌；
 - 不加载 CDN、网络字体、图片或外部脚本；
@@ -430,7 +483,7 @@ kernel.cpp:5:23: use of undeclared identifier 'rhs'
 - 生成期间输入证据变化；
 - 输出包含绝对路径。
 
-证据不足时仍尽可能生成 README 和 HTML，将未知字段显示为 `INVALID`，并列出失败
+证据不足时仍尽可能生成两个 Markdown 和 HTML，将未知字段显示为 `INVALID`，并列出失败
 check。只有 invocation/spec/output 本身无效时才不生成报告。
 
 ## 14. 测试设计
@@ -445,7 +498,7 @@ check。只有 invocation/spec/output 本身无效时才不生成报告。
 - ledger calls/credits 与 budget snapshot 对账；
 - Patch 30 行完整、31 行前 30 行加截断标记；
 - relative link 正常化与 traversal/absolute path 拒绝；
-- Markdown 中英文关键字段一一对应；
+- 两个 Markdown 中英文关键字段一一对应；
 - HTML escaping、语言区、锚点、表格和相对链接；
 - 两次生成输出字节一致。
 
@@ -457,7 +510,8 @@ check。只有 invocation/spec/output 本身无效时才不生成报告。
 - 创建 safety Candidate 目录/registry 条目/tool action 后 safety case FAIL；
 - evidence 中注入 HTML、绝对路径或 Markdown 控制字符时安全转义/清洗；
 - monkeypatch 网络与 subprocess 为立即失败，验收报告仍能生成，证明无 LLM/Vitis 调用；
-- 输入目录生成前后 hash/size/mtime 不变。
+- 所有 JSON、JSONL、Manifest、ledger、Trace、registry、action 和 Candidate 文件生成
+  前后 hash/size/mtime 不变。
 
 ### 14.3 当前真实运行离线验收
 
@@ -480,28 +534,28 @@ credits = 83
 final csim/synth/cosim/clock = 3/3
 ```
 
-同时检查四个输出文件存在、链接目标存在、无绝对路径，并再次验证四个 Manifest。
+同时检查三个平铺人工审核文件存在、链接目标存在、无绝对路径，并再次验证四个
+Manifest 和现有 `acceptance_result.json` hash。
 该步骤只读已有证据，不调用 LLM/Vitis。
 
 ## 15. 文档与兼容性
 
-- 同步更新英文 `README.md` 和中文 `README_CN.md`；
+- 同步生成英文 `V1_ACCEPTANCE_REPORT.md` 和中文 `V1_ACCEPTANCE_REPORT_CN.md`；
 - CLI 帮助说明报告是离线证据聚合；
 - readiness 记录本轮问题、方案、统计口径和无重跑保证；
-- `acceptance_result.json` 保持 schema 1 的现有字段，新增字段为向后兼容扩展；
-- `evaluator_version` 升级为 `v1.1`；
-- 旧报告文件在一个兼容周期内保持为新 README 的字节副本。
+- `acceptance_result.json` 及所有机器文件保持字节不变；
+- 新增 `review-v1` 人工审核命令，与现有 `accept-v1` 机器验收命令分离。
 
 ## 16. 完成条件
 
 只有同时满足以下条件才完成本轮：
 
-1. README.md 单文件包含全部批准的人工审核字段；
-2. README_CN.md 与英文版证据值和 PASS 结论一致；
-3. dashboard.html 静态、双语、无外部依赖；
-4. acceptance_result.json 包含同源 summary、checks 和 review digest；
+1. `runs/V1_ACCEPTANCE_REPORT.md` 单文件包含全部批准的英文人工审核字段；
+2. `runs/V1_ACCEPTANCE_REPORT_CN.md` 与英文版证据值和 PASS 结论一致；
+3. `runs/V1_ACCEPTANCE_DASHBOARD.html` 静态、双语、无外部依赖；
+4. 三份人工审核结果的 recorded/recomputed 状态与只读 `acceptance_result.json` 一致；
 5. 当前真实统计与第 14.3 节一致；
-6. 四个实验目录内容和 Manifest digest 未变化；
+6. 四个实验目录和 `v1-acceptance` 中全部机器文件未变化；
 7. 输出没有绝对路径，链接均为存在的相对目标；
 8. 全部快速测试、compileall 和 `git diff --check` 通过；
 9. 没有 LLM、Vitis 或网络调用。
