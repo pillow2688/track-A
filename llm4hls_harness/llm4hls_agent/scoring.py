@@ -334,15 +334,16 @@ def score_candidate(
 
 def _comparison_key(score: CandidateScore) -> tuple[object, ...]:
     official = (
-        -score.official_score
+        (0, -score.official_score)
         if score.official_score is not None
-        else math.inf
+        else (1, 0.0)
     )
+    ppa = (0, score.ppa_cost) if score.ppa_cost is not None else (1, 0.0)
     return (
         -score.verification_tier,
         0 if score.hard_constraints_passed else 1,
         official,
-        score.ppa_cost if score.ppa_cost is not None else math.inf,
+        ppa,
         score.tokens_used,
         score.credits_used,
         score.candidate_id,

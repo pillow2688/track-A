@@ -5,10 +5,25 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import Mapping, Protocol
 
-from .repair import PatchProposal
+from .budget import BudgetExceeded, BudgetLedger
+from .candidate import CandidateManager
+from .repair import (
+    PatchLimits,
+    PatchProposal,
+    PatchValidationError,
+    RepairProviderError,
+    apply_unified_diff,
+    normalize_unified_diff_headers,
+)
+from .scoring import CandidateScore, ScoringConfig, compare_scores, score_candidate
+from .task import PublicTask
+from .tools import ToolBackend
+from .validation import CandidateValidation, validate_candidate
+from .workflow import RunConfig, _RunLock, _append_trace, _atomic_json, run_v0
 
 
 ALLOWED_OPTIMIZATIONS = (
@@ -80,6 +95,36 @@ class OptimizationContext:
 
 class OptimizationProvider(Protocol):
     def propose_optimization(self, context: OptimizationContext) -> PatchProposal: ...
+
+
+@dataclass(frozen=True)
+class OptimizationConfig:
+    scoring: ScoringConfig
+    max_rounds: int = 4
+    max_no_improvement_rounds: int = 2
+    max_llm_calls: int = 6
+    final_reserve_credits: int = 25
+    patch_limits: PatchLimits = field(
+        default_factory=lambda: PatchLimits(max_changed_lines=30, max_hunks=4)
+    )
+
+    def __post_init__(self) -> None:
+        if self.max_rounds <= 0 or self.max_no_improvement_rounds <= 0:
+            raise ValueError("optimization round limits must be positive")
+        if self.max_llm_calls < self.max_rounds:
+            raise ValueError("LLM call limit cannot be lower than the round limit")
+        if self.final_reserve_credits < 0:
+            raise ValueError("final reserve credits must be non-negative")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "scoring": self.scoring.to_dict(),
+            "max_rounds": self.max_rounds,
+            "max_no_improvement_rounds": self.max_no_improvement_rounds,
+            "max_llm_calls": self.max_llm_calls,
+            "final_reserve_credits": self.final_reserve_credits,
+            "patch_limits": asdict(self.patch_limits),
+        }
 
 
 def _canonical_digest(value: object) -> str:
@@ -168,3 +213,581 @@ def select_optimization(
         evidence=evidence,
         metrics_digest=digest,
     )
+
+
+def _provider_fingerprint(provider: OptimizationProvider) -> str:
+    explicit = getattr(provider, "fingerprint", None)
+    if callable(explicit):
+        value = str(explicit())
+    else:
+        cls = type(provider)
+        value = f"{cls.__module__}.{cls.__qualname__}"
+    if not value:
+        raise ValueError("optimization provider fingerprint must not be empty")
+    return value
+
+
+def _proposal_from_dict(value: Mapping[str, object]) -> PatchProposal:
+    if value.get("ok") is not True:
+        raise RepairProviderError(str(value.get("error", "provider action failed")))
+    validations = value.get("required_validation", [])
+    if not isinstance(validations, list):
+        raise RepairProviderError("cached optimization validation list is invalid")
+    return PatchProposal(
+        patch=str(value["patch"]),
+        provider=str(value["provider"]),
+        model=str(value["model"]),
+        revision=str(value["revision"]) if value.get("revision") is not None else None,
+        input_tokens=int(value.get("input_tokens", 0)),
+        output_tokens=int(value.get("output_tokens", 0)),
+        cached_input_tokens=int(value.get("cached_input_tokens", 0)),
+        request_id=str(value["request_id"]) if value.get("request_id") else None,
+        duration_seconds=float(value.get("duration_seconds", 0.0)),
+        hypothesis=str(value["hypothesis"]) if value.get("hypothesis") else None,
+        change_class=str(value["change_class"]) if value.get("change_class") else None,
+        expected_effect=str(value["expected_effect"]) if value.get("expected_effect") else None,
+        risk=str(value["risk"]) if value.get("risk") else None,
+        required_validation=tuple(str(item) for item in validations),
+    )
+
+
+def _call_optimization_provider(
+    provider: OptimizationProvider,
+    context: OptimizationContext,
+    *,
+    run_root: Path,
+    budget: BudgetLedger,
+    parent_id: str,
+    code_hash: str,
+    tool_config_hash: str,
+) -> tuple[PatchProposal | None, str]:
+    stable_context = context.to_dict()
+    stable_context.pop("remaining_tokens", None)
+    stable_context.pop("remaining_credits", None)
+    payload = {
+        "kind": "llm",
+        "purpose": "ppa_optimization",
+        "candidate_id": parent_id,
+        "code_hash": code_hash,
+        "tool_config_hash": tool_config_hash,
+        "provider": _provider_fingerprint(provider),
+        "context": stable_context,
+    }
+    action_id = _canonical_digest(payload)
+    result_ref = f"llm_actions/{action_id}/result.json"
+    result_path = run_root / result_ref
+    completed = budget.completed_event(action_id)
+    if completed is not None:
+        encoded = result_path.read_bytes()
+        if hashlib.sha256(encoded).hexdigest() != completed.get("result_sha256"):
+            raise RepairProviderError("cached optimization result digest mismatch")
+        value = json.loads(encoded.decode("utf-8"))
+        if not isinstance(value, dict):
+            raise RepairProviderError("cached optimization result is not an object")
+        return _proposal_from_dict(value), result_ref
+    if budget.has_pending(action_id) or budget.is_ambiguous(action_id):
+        raise RepairProviderError(f"optimization action {action_id} is not recoverable")
+    budget.reserve(
+        action_id=action_id,
+        kind="llm",
+        candidate_id=parent_id,
+        code_hash=code_hash,
+        tool_config_hash=tool_config_hash,
+    )
+    proposal: PatchProposal | None = None
+    try:
+        proposal = provider.propose_optimization(context)
+        if proposal.change_class != context.allowed_optimization_class:
+            raise RepairProviderError("optimization proposal class does not match Selector")
+        value: dict[str, object] = {"ok": True, **proposal.to_dict()}
+        input_tokens = proposal.input_tokens
+        output_tokens = proposal.output_tokens
+        cached_tokens = proposal.cached_input_tokens
+        duration = proposal.duration_seconds
+    except Exception as exc:
+        input_tokens = int(getattr(exc, "input_tokens", 0))
+        output_tokens = int(getattr(exc, "output_tokens", 0))
+        cached_tokens = int(getattr(exc, "cached_input_tokens", 0))
+        duration = float(getattr(exc, "duration_seconds", 0.0))
+        value = {
+            "ok": False,
+            "error": f"{type(exc).__name__}: {exc}",
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "cached_input_tokens": cached_tokens,
+            "duration_seconds": duration,
+        }
+    _atomic_json(result_path, value)
+    encoded = result_path.read_bytes()
+    budget.complete(
+        action_id=action_id,
+        result_ref=result_ref,
+        result_sha256=hashlib.sha256(encoded).hexdigest(),
+        elapsed_s=duration,
+        tokens_used=input_tokens + output_tokens,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        cached_input_tokens=cached_tokens,
+    )
+    _append_trace(
+        run_root / "trace.jsonl",
+        "V2_LLM_COMPLETED",
+        action_id=action_id,
+        candidate_id=parent_id,
+        round_index=context.round_index,
+        optimization_class=context.allowed_optimization_class,
+        ok=proposal is not None,
+        result_ref=result_ref,
+        tokens_used=input_tokens + output_tokens,
+    )
+    if proposal is None:
+        return None, str(value["error"])
+    return proposal, result_ref
+
+
+def _read_report(run_root: Path, result_ref: str) -> dict[str, object]:
+    try:
+        value = json.loads((run_root / result_ref).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"cannot read Vitis result {result_ref}: {exc}") from exc
+    report = value.get("report") if isinstance(value, dict) else None
+    if not isinstance(report, dict):
+        raise ValueError(f"Vitis result {result_ref} has no synthesis report")
+    return report
+
+
+def _candidate_source(
+    run_root: Path, registry: Mapping[str, object], candidate_id: str
+) -> bytes:
+    candidates = registry.get("candidates")
+    candidate = candidates.get(candidate_id) if isinstance(candidates, Mapping) else None
+    if not isinstance(candidate, Mapping):
+        raise ValueError(f"Candidate is missing: {candidate_id}")
+    path = run_root / str(candidate.get("source_ref", ""))
+    return path.read_bytes()
+
+
+def _ensure_round_affordable(
+    budget: BudgetLedger, config: OptimizationConfig
+) -> None:
+    snapshot = budget.snapshot()
+    stage_cost = sum(budget.cost(stage) for stage in ("csim", "synth", "cosim"))
+    remaining = snapshot["credits_remaining"]
+    required = stage_cost + config.final_reserve_credits
+    if remaining is not None and int(remaining) < required:
+        raise BudgetExceeded(
+            f"optimization closure requires {required} credits but {remaining} remain"
+        )
+    for stage in ("csim", "synth", "cosim"):
+        limit = budget.config.tool_limits[stage]
+        used = int(snapshot["tool_used"][stage]) + int(snapshot["tool_pending"][stage])
+        if limit is not None and used + 2 > limit:
+            raise BudgetExceeded(
+                f"optimization and final validation require two {stage} calls"
+            )
+    llm_limit = budget.config.tool_limits["llm"]
+    llm_used = int(snapshot["tool_used"]["llm"]) + int(snapshot["tool_pending"]["llm"])
+    if llm_limit is not None and llm_used >= min(llm_limit, config.max_llm_calls):
+        raise BudgetExceeded("optimization LLM call limit is exhausted")
+    if int(snapshot["tokens_remaining"]) <= 0:
+        raise BudgetExceeded("optimization token budget is exhausted")
+
+
+def _score_from_validation(
+    *,
+    candidate_id: str,
+    baseline_metrics: Mapping[str, object],
+    candidate_metrics: Mapping[str, object],
+    validation: CandidateValidation,
+    config: ScoringConfig,
+    proposal: PatchProposal | None,
+    credits_used: int,
+) -> CandidateScore:
+    return score_candidate(
+        candidate_id=candidate_id,
+        baseline=baseline_metrics,
+        candidate=candidate_metrics,
+        validation=validation.validation,
+        clock=validation.clock_constraint,
+        config=config,
+        input_tokens=proposal.input_tokens if proposal is not None else 0,
+        output_tokens=proposal.output_tokens if proposal is not None else 0,
+        cached_input_tokens=proposal.cached_input_tokens if proposal is not None else 0,
+        credits_used=credits_used,
+    )
+
+
+def run_v2(
+    task: PublicTask,
+    run_dir: str | Path,
+    run_config: RunConfig,
+    optimization_config: OptimizationConfig,
+    provider: OptimizationProvider,
+    *,
+    backend: ToolBackend | None = None,
+) -> dict[str, object]:
+    if task.task_type != "optimize":
+        raise ValueError("V2 requires task_type=optimize")
+    if "llm" not in run_config.budget.costs:
+        raise ValueError("V2 budget must configure llm")
+    run_root = Path(run_dir).resolve()
+    run_root.mkdir(parents=True, exist_ok=True)
+    optimization_snapshot = optimization_config.to_dict() | {
+        "provider_fingerprint": _provider_fingerprint(provider)
+    }
+    completed_path = run_root / "v2_result.json"
+    if completed_path.is_file():
+        try:
+            completed = json.loads(completed_path.read_text(encoding="utf-8"))
+            stored_optimization = json.loads(
+                (run_root / "optimization_config.json").read_text(encoding="utf-8")
+            )
+            stored_run = json.loads(
+                (run_root / "run_config.json").read_text(encoding="utf-8")
+            )
+            registry = json.loads(
+                (run_root / "candidate_registry.json").read_text(encoding="utf-8")
+            )
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ValueError(f"completed V2 run is unreadable: {exc}") from exc
+        if (
+            not isinstance(completed, dict)
+            or completed.get("workflow") != "V2_CANDIDATE_PPA"
+            or completed.get("status") != "DONE"
+            or completed.get("task_id") != task.id
+            or stored_optimization != optimization_snapshot
+            or stored_run != run_config.to_dict()
+            or not isinstance(registry, dict)
+            or registry.get("best_candidate_id") != completed.get("best_candidate_id")
+            or registry.get("final_candidate_id") != completed.get("final_candidate_id")
+        ):
+            raise ValueError("completed V2 run does not match this invocation")
+        current_budget = BudgetLedger(
+            run_root / "budget_ledger.jsonl", run_config.budget
+        ).snapshot()
+        recorded_budget = completed.get("budget")
+        if not isinstance(recorded_budget, dict) or any(
+            current_budget.get(key) != recorded_budget.get(key)
+            for key in (
+                "credits_used",
+                "tokens_used",
+                "input_tokens_used",
+                "output_tokens_used",
+                "cached_input_tokens_used",
+                "tool_used",
+            )
+        ):
+            raise ValueError("completed V2 budget does not match the ledger")
+        return completed
+    baseline = run_v0(task, run_root, run_config, backend=backend)
+    if baseline.get("status") != "DONE":
+        result = {
+            "schema_version": 1,
+            "workflow": "V2_CANDIDATE_PPA",
+            "status": "FAILED",
+            "stop_reason": "BASELINE_NOT_VERIFIED",
+            "baseline": baseline,
+        }
+        _atomic_json(run_root / "v2_result.json", result)
+        return result
+    _atomic_json(run_root / "optimization_config.json", optimization_snapshot)
+    manager = CandidateManager(run_root, task)
+    registry = manager.load_registry()
+    baseline_ref = str(baseline["validation"]["synth"]["result_ref"])
+    baseline_metrics = _read_report(run_root, baseline_ref)
+    baseline_validation = CandidateValidation(
+        status="DONE",
+        stop_reason="BASELINE_VERIFIED",
+        validation=baseline["validation"],
+        clock_constraint=baseline["clock_constraint"],
+        metrics_ref=baseline_ref,
+        budget=baseline["budget"],
+    )
+    baseline_score = _score_from_validation(
+        candidate_id="candidate_000",
+        baseline_metrics=baseline_metrics,
+        candidate_metrics=baseline_metrics,
+        validation=baseline_validation,
+        config=optimization_config.scoring,
+        proposal=None,
+        credits_used=int(baseline["budget"]["credits_used"]),
+    )
+    scores: dict[str, CandidateScore] = {"candidate_000": baseline_score}
+    metrics_by_candidate: dict[str, dict[str, object]] = {
+        "candidate_000": baseline_metrics
+    }
+    _atomic_json(run_root / "scores/candidate_000.json", baseline_score.to_dict())
+    candidates = registry["candidates"]
+    baseline_record = candidates["candidate_000"]
+    baseline_record["score_ref"] = "scores/candidate_000.json"
+    baseline_record["metrics_ref"] = baseline_ref
+    manager.save_registry(registry)
+
+    budget = BudgetLedger(run_root / "budget_ledger.jsonl", run_config.budget)
+    rounds: list[dict[str, object]] = []
+    attempted: list[str] = []
+    failures: list[tuple[str, str]] = []
+    no_improvement = 0
+    best_id = str(registry.get("best_candidate_id") or "candidate_000")
+    exploration_stop_reason = "MAX_OPTIMIZATION_ROUNDS"
+
+    for round_index in range(1, optimization_config.max_rounds + 1):
+        try:
+            _ensure_round_affordable(budget, optimization_config)
+        except BudgetExceeded:
+            exploration_stop_reason = "FINAL_RESERVE_REACHED"
+            break
+        current_metrics = metrics_by_candidate[best_id]
+        current_source = _candidate_source(run_root, registry, best_id)
+        decision = select_optimization(
+            current_metrics,
+            source=current_source.decode("utf-8"),
+            attempted=tuple(attempted),
+            failures=tuple(failures),
+        )
+        if decision.optimization_class is None:
+            exploration_stop_reason = decision.stop_reason or "NO_DISTINCT_OPTIMIZATION"
+            break
+        attempted.append(decision.optimization_class)
+        snapshot = budget.snapshot()
+        context = OptimizationContext(
+            task_id=task.id,
+            parent_candidate_id=best_id,
+            round_index=round_index,
+            allowed_optimization_class=decision.optimization_class,
+            bottleneck=decision.bottleneck,
+            evidence=decision.evidence,
+            baseline_metrics=baseline_metrics,
+            current_metrics=current_metrics,
+            source_excerpt=current_source.decode("utf-8"),
+            failed_actions=tuple(
+                {"optimization_class": item, "metrics_digest": digest}
+                for item, digest in failures
+            ),
+            remaining_tokens=int(snapshot["tokens_remaining"]),
+            remaining_credits=(
+                int(snapshot["credits_remaining"])
+                if snapshot["credits_remaining"] is not None
+                else None
+            ),
+            final_reserve_credits=optimization_config.final_reserve_credits,
+            top=task.top,
+            kernel_name=task.kernel_name,
+            part=run_config.tool.part,
+            clock_ns=run_config.tool.clock_ns,
+        )
+        proposal, provider_ref = _call_optimization_provider(
+            provider,
+            context,
+            run_root=run_root,
+            budget=budget,
+            parent_id=best_id,
+            code_hash=str(candidates[best_id]["code_hash"]),
+            tool_config_hash=run_config.tool.hash_for(
+                "csim", backend_fingerprint="optimization-context"
+            ),
+        )
+        round_record: dict[str, object] = {
+            "round_index": round_index,
+            "parent_candidate_id": best_id,
+            "optimization_class": decision.optimization_class,
+            "selector": asdict(decision),
+            "provider_ref": provider_ref,
+            "candidate_id": None,
+            "decision": "PROVIDER_REJECTED",
+        }
+        if proposal is None:
+            failures.append((decision.optimization_class, decision.metrics_digest))
+            no_improvement += 1
+        else:
+            normalized = normalize_unified_diff_headers(proposal.patch)
+            try:
+                application = apply_unified_diff(
+                    current_source,
+                    normalized,
+                    kernel_name=task.kernel_name,
+                    limits=optimization_config.patch_limits,
+                )
+            except PatchValidationError as exc:
+                round_record["decision"] = "PATCH_REJECTED"
+                round_record["error"] = str(exc)
+                failures.append((decision.optimization_class, decision.metrics_digest))
+                no_improvement += 1
+            else:
+                before_credits = int(budget.snapshot()["credits_used"])
+                with _RunLock(run_root):
+                    registry = manager.load_registry()
+                    materialized = manager.materialize(
+                        registry,
+                        parent_id=best_id,
+                        patch_text=normalized,
+                        application=application,
+                        kind="optimization",
+                        metadata={
+                            "round": round_index,
+                            "optimization_class": decision.optimization_class,
+                            "llm_ref": provider_ref,
+                            "provider": proposal.provider,
+                            "model": proposal.model,
+                            "revision": proposal.revision,
+                            "input_tokens": proposal.input_tokens,
+                            "output_tokens": proposal.output_tokens,
+                            "cached_input_tokens": proposal.cached_input_tokens,
+                        },
+                    )
+                candidate_id = materialized.candidate_id
+                round_record["candidate_id"] = candidate_id
+                validation = validate_candidate(
+                    task,
+                    application.patched_bytes,
+                    candidate_id,
+                    run_root,
+                    run_config,
+                    backend=backend,
+                    validation_scope="exploration",
+                )
+                candidate_credits = int(validation.budget["credits_used"]) - before_credits
+                with _RunLock(run_root):
+                    registry = manager.load_registry()
+                    candidates = registry["candidates"]
+                    candidate = candidates[candidate_id]
+                    candidate["validation"] = validation.validation
+                    candidate["clock_constraint"] = validation.clock_constraint
+                    candidate["metrics_ref"] = validation.metrics_ref
+                    candidate["credits_used"] = candidate_credits
+                    if validation.status != "DONE" or validation.metrics_ref is None:
+                        candidate["status"] = "REJECTED_VALIDATION"
+                        candidate["rejection_reason"] = validation.stop_reason
+                        registry["active_candidate_id"] = best_id
+                        round_record["decision"] = "REJECTED_VALIDATION"
+                        round_record["stop_reason"] = validation.stop_reason
+                        failures.append((decision.optimization_class, decision.metrics_digest))
+                        no_improvement += 1
+                    else:
+                        candidate_metrics = _read_report(
+                            run_root, validation.metrics_ref
+                        )
+                        score = _score_from_validation(
+                            candidate_id=candidate_id,
+                            baseline_metrics=baseline_metrics,
+                            candidate_metrics=candidate_metrics,
+                            validation=validation,
+                            config=optimization_config.scoring,
+                            proposal=proposal,
+                            credits_used=candidate_credits,
+                        )
+                        score_ref = f"scores/{candidate_id}.json"
+                        _atomic_json(run_root / score_ref, score.to_dict())
+                        comparison = compare_scores(score, scores[best_id])
+                        comparison_ref = f"comparisons/{candidate_id}.json"
+                        _atomic_json(run_root / comparison_ref, comparison.to_dict())
+                        candidate["score_ref"] = score_ref
+                        candidate["comparison_ref"] = comparison_ref
+                        scores[candidate_id] = score
+                        metrics_by_candidate[candidate_id] = candidate_metrics
+                        round_record["score_ref"] = score_ref
+                        round_record["comparison_ref"] = comparison_ref
+                        round_record["comparison"] = comparison.to_dict()
+                        if comparison.strictly_better:
+                            previous_best = best_id
+                            candidate["status"] = "PROMOTED"
+                            candidate["selection_status"] = "PROMOTED"
+                            candidates[previous_best]["superseded_by"] = candidate_id
+                            registry["best_candidate_id"] = candidate_id
+                            registry["active_candidate_id"] = candidate_id
+                            best_id = candidate_id
+                            round_record["decision"] = "PROMOTED"
+                            no_improvement = 0
+                        else:
+                            candidate["status"] = "REJECTED_NOT_BETTER"
+                            candidate["selection_status"] = "REJECTED"
+                            candidate["rejection_reason"] = comparison.reason
+                            registry["active_candidate_id"] = best_id
+                            round_record["decision"] = "REJECTED_NOT_BETTER"
+                            no_improvement += 1
+                    manager.save_registry(registry)
+        round_ref = f"optimization_rounds/round_{round_index:03d}.json"
+        _atomic_json(run_root / round_ref, round_record)
+        round_record["result_ref"] = round_ref
+        rounds.append(round_record)
+        _append_trace(
+            run_root / "trace.jsonl",
+            "V2_ROUND_COMPLETED",
+            round_index=round_index,
+            parent_candidate_id=round_record["parent_candidate_id"],
+            candidate_id=round_record.get("candidate_id"),
+            optimization_class=decision.optimization_class,
+            decision=round_record["decision"],
+            best_candidate_id=best_id,
+            no_improvement_rounds=no_improvement,
+            result_ref=round_ref,
+        )
+        if no_improvement >= optimization_config.max_no_improvement_rounds:
+            exploration_stop_reason = "NO_IMPROVEMENT_LIMIT"
+            break
+
+    registry = manager.load_registry()
+    final_source = _candidate_source(run_root, registry, best_id)
+    final_validation = validate_candidate(
+        task,
+        final_source,
+        best_id,
+        run_root,
+        run_config,
+        backend=backend,
+        validation_scope="final",
+    )
+    with _RunLock(run_root):
+        registry = manager.load_registry()
+        candidates = registry["candidates"]
+        candidate = candidates[best_id]
+        candidate["final_validation"] = final_validation.validation
+        if final_validation.status == "DONE":
+            candidate["status"] = "FINAL"
+            registry["final_candidate_id"] = best_id
+            status = "DONE"
+        else:
+            status = "FAILED"
+            exploration_stop_reason = "FINAL_VALIDATION_FAILED"
+        manager.save_registry(registry)
+    result = {
+        "schema_version": 1,
+        "workflow": "V2_CANDIDATE_PPA",
+        "task_id": task.id,
+        "status": status,
+        "stop_reason": exploration_stop_reason,
+        "exploration_stop_reason": exploration_stop_reason,
+        "baseline_candidate_id": "candidate_000",
+        "best_candidate_id": registry.get("best_candidate_id"),
+        "final_candidate_id": registry.get("final_candidate_id"),
+        "rounds": rounds,
+        "no_improvement_rounds": no_improvement,
+        "final_validation": final_validation.validation,
+        "final_clock_constraint": final_validation.clock_constraint,
+        "budget": final_validation.budget,
+        "fallback": None,
+        "artifacts": {
+            "candidate_registry": "candidate_registry.json",
+            "budget_ledger": "budget_ledger.jsonl",
+            "trace": "trace.jsonl",
+            "result": "v2_result.json",
+        },
+    }
+    _atomic_json(run_root / "v2_result.json", result)
+    _append_trace(
+        run_root / "trace.jsonl",
+        "V2_RUN_COMPLETED",
+        status=status,
+        stop_reason=exploration_stop_reason,
+        best_candidate_id=registry.get("best_candidate_id"),
+        final_candidate_id=registry.get("final_candidate_id"),
+        credits_used=final_validation.budget["credits_used"],
+        tokens_used=final_validation.budget["tokens_used"],
+        result_ref="v2_result.json",
+    )
+    stored_result = json.loads(
+        (run_root / "v2_result.json").read_text(encoding="utf-8")
+    )
+    if not isinstance(stored_result, dict):
+        raise ValueError("stored V2 result is not an object")
+    return stored_result

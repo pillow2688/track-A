@@ -197,6 +197,17 @@ class ScoringTests(unittest.TestCase):
         self.assertEqual(comparison.winner, "candidate_001")
         self.assertEqual(comparison.reason, "TOKEN_COST")
 
+    def test_comparison_is_strict_json_without_non_finite_sentinels(self) -> None:
+        candidate = self.score("candidate_001")
+        incumbent = self.score("candidate_000")
+
+        encoded = json.dumps(
+            compare_scores(candidate, incumbent).to_dict(),
+            allow_nan=False,
+        )
+
+        self.assertNotIn("Infinity", encoded)
+
     def test_missing_metric_fails_closed(self) -> None:
         candidate = self.metrics()
         candidate["latency"] = {"worst": None}
