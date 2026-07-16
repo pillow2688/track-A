@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from llm4hls_agent.artifacts import build_artifact_manifest
 from llm4hls_agent.budget import BudgetConfig
 from llm4hls_agent.optimization import run_v2, run_v2_rejection
 from llm4hls_agent.optimization import OptimizationConfig
@@ -160,6 +161,28 @@ class V2AcceptanceTests(unittest.TestCase):
 
         self.assertEqual(result["overall_status"], "FAIL")
         self.assertIn("MANIFEST_INVALID", result["reason_codes"])
+
+    def test_rebuilt_manifest_cannot_hide_wrong_final_action_binding(self) -> None:
+        result_path = self.optimization_run / "v2_result.json"
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+        registry = json.loads(
+            (self.optimization_run / "candidate_registry.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        exploration_ref = registry["candidates"]["candidate_001"]["validation"][
+            "csim"
+        ]["result_ref"]
+        result["final_validation"]["csim"]["result_ref"] = exploration_ref
+        result_path.write_text(json.dumps(result, sort_keys=True), encoding="utf-8")
+        build_artifact_manifest(self.optimization_run)
+
+        accepted = compute_v2_acceptance(
+            self.spec, self.optimization_run, self.rejection_run
+        )
+
+        self.assertEqual(accepted["overall_status"], "FAIL")
+        self.assertIn("FINAL_VALIDATION_INVALID", accepted["reason_codes"])
 
     def test_writer_emits_deterministic_machine_and_bilingual_reports(self) -> None:
         output = self.root / "acceptance"

@@ -323,6 +323,14 @@ class V2SafetyRejectionTests(unittest.TestCase):
             registry = json.loads(
                 (run_root / "candidate_registry.json").read_text(encoding="utf-8")
             )
+            with self.assertRaisesRegex(ValueError, "does not match"):
+                run_v2_rejection(
+                    task,
+                    run_root,
+                    replace(config, tool=replace(config.tool, clock_ns=5.0)),
+                    patch_path,
+                    backend=VectorAddRegressionBackend(),
+                )
 
         self.assertEqual(result["status"], "DONE")
         self.assertEqual(result["stop_reason"], "SAFETY_REGRESSION_REJECTED")
@@ -429,6 +437,19 @@ class V2WorkflowTests(unittest.TestCase):
             ref = result["final_validation"][stage]["result_ref"]
             action = json.loads((self.run_root / ref).read_text(encoding="utf-8"))
             self.assertEqual(action["validation_scope"], "final")
+
+    def test_final_reserve_cannot_be_lower_than_configured_final_tool_cost(self) -> None:
+        unsafe = replace(self.optimization_config, final_reserve_credits=24)
+
+        with self.assertRaisesRegex(ValueError, "final reserve"):
+            run_v2(
+                self.task,
+                self.root / "unsafe-reserve",
+                self.run_config,
+                unsafe,
+                SequenceOptimizationProvider(),
+                backend=PPASequenceBackend(),
+            )
 
     def test_exploration_stops_before_spending_final_reserve(self) -> None:
         limited = replace(

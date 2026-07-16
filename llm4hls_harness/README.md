@@ -1,4 +1,4 @@
-# LLM4HLS Agent — Internal Milestones V0–V1
+# LLM4HLS Agent — Internal Milestones V0–V2
 
 English | [简体中文](README_CN.md)
 
@@ -10,8 +10,11 @@ V0 provides an immutable, budget-audited `csim -> synth -> cosim` baseline.
 V1 adds deterministic failure diagnosis, compact repair context, one constrained
 unified diff, an isolated candidate, real validation, promotion, and safe
 rollback. The repair proposal may come from an OpenAI-compatible API or a
-static patch fixture. V2 candidate/PPA optimization, V3 LangGraph orchestration,
-hidden grading, and reference-solution use are not included.
+static patch fixture. V2 adds a durable Candidate tree, deterministic
+verification/constraint/PPA/cost comparison, one optimization class per round,
+best-candidate preservation, final revalidation, and safety rejection. V3
+LangGraph orchestration, hidden grading, and reference-solution use are not
+included.
 
 `runs/v1-deepseek-final` is historical evidence that DeepSeek repaired
 `FUNCTIONAL_MISMATCH`, but it predates strict candidate/action binding and the
@@ -140,6 +143,61 @@ model/fallback state, Patch scope and interface, final gates, Candidate
 promotion/rollback, Tokens, tool calls, Credits, Ledger, Trace, action records,
 and Manifest hashes. All raw evidence links are relative to `runs/`.
 
+## V2 Candidate and PPA loop
+
+V2 uses the self-contained 256-element U55C `vector_add` fixture. Its baseline
+is functionally correct and intentionally conservative (`PIPELINE II=16`). At
+most four primary rounds are attempted, each round permits one optimization
+class, and exploration stops after two consecutive no-improvement rounds. A
+Candidate can become best only after CSim, synthesis, CoSim, clock, and resource
+constraints pass. The comparator order is verification tier, hard constraints,
+PPA cost (latency/II first), then Token/Credit cost and stable ID.
+
+With the API and Vitis environment configured above, run the real optimization:
+
+```bash
+python3 -m llm4hls_agent optimize examples/u55c_v2_optimize_task \
+  --run-dir runs/v2-optimize-final \
+  --vitis-root "$LLM4HLS_VITIS_HLS_ROOT" \
+  --clock-ns 10 --minimum-frequency-mhz 100 \
+  --credit-limit 160 --max-optimization-rounds 4 \
+  --max-no-improvement-rounds 2 --final-reserve-credits 25 \
+  --csim-timeout 180 --synth-timeout 900 --cosim-timeout 900
+```
+
+Run the separate deterministic semantic-regression safety case. It makes no
+LLM call, fully verifies the baseline, materializes the policy-valid regression
+only after Patch validation, runs CSim on it, and must reject it without
+polluting best/final:
+
+```bash
+python3 -m llm4hls_agent reject-v2 examples/u55c_v2_optimize_task \
+  --run-dir runs/v2-safety-rejection-final \
+  --patch-file examples/u55c_v2_regression.diff \
+  --vitis-root "$LLM4HLS_VITIS_HLS_ROOT" \
+  --clock-ns 10 --minimum-frequency-mhz 100 \
+  --credit-limit 160 --csim-timeout 180 \
+  --synth-timeout 900 --cosim-timeout 900
+```
+
+Machine acceptance recomputes the Candidate tree, every score/comparison,
+best/final choice, provider/model/Token evidence, public input and kernel-only
+Patch binding, safety invariants, and Ledger/Trace/action/budget consistency:
+
+```bash
+python3 -m llm4hls_agent accept-v2 \
+  --optimization-run runs/v2-optimize-final \
+  --rejection-run runs/v2-safety-rejection-final \
+  --output-dir runs/v2-acceptance
+
+python3 -m llm4hls_agent review-v2 --runs-root runs
+```
+
+Only real Vitis/DeepSeek evidence can produce `PASS`; fake evidence is labelled
+`TEST_PASS`. `review-v2` does not call the model or Vitis and writes only two
+flat Markdown files, `runs/V2_ACCEPTANCE_REPORT.md` and
+`runs/V2_ACCEPTANCE_REPORT_CN.md`. No HTML dashboard is generated.
+
 ## How the official reference maps to our milestones
 
 The official example does not fit one internal milestone; its feature breadth
@@ -238,6 +296,12 @@ diagnostics/<candidate_id>.json
 llm_actions/<action_id>/result.json
 candidates/<candidate_id>/     read-only source, patch, and candidate metadata
 v1_result.json                 V1 decision, validation, rollback, and budget result
+optimization_config.json       V2 scoring, limits, Patch policy, and provider fingerprint
+optimization_rounds/*.json     durable Selector/proposal/Candidate/decision records
+scores/*.json                  recomputable Candidate PPA and cost scores
+comparisons/*.json             lexicographic comparison evidence
+v2_result.json                 V2 best/final, rounds, final validation, and budget
+v2_rejection_result.json       deterministic safety rejection and invariants
 experimental_report.md         human-readable Vitis, Token, credit, and metric report
 artifact_manifest.json         sorted paths, sizes, SHA-256, producer/action bindings
 ```

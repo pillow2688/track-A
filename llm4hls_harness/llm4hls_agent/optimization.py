@@ -637,6 +637,9 @@ def run_v2_rejection(
     if completed_path.is_file():
         try:
             completed = json.loads(completed_path.read_text(encoding="utf-8"))
+            stored_run = json.loads(
+                (run_root / "run_config.json").read_text(encoding="utf-8")
+            )
         except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise ValueError(f"completed V2 rejection run is unreadable: {exc}") from exc
         current_budget = BudgetLedger(
@@ -649,6 +652,7 @@ def run_v2_rejection(
             or completed.get("status") != "DONE"
             or completed.get("task_id") != task.id
             or completed.get("patch_sha256") != patch_sha256
+            or stored_run != run_config.to_dict()
             or not isinstance(recorded_budget, dict)
             or any(
                 recorded_budget.get(key) != current_budget.get(key)
@@ -681,6 +685,25 @@ def run_v2_rejection(
     )
     manager = CandidateManager(run_root, task)
     registry = manager.load_registry()
+    existing_candidates = registry.get("candidates")
+    if not isinstance(existing_candidates, Mapping):
+        raise ValueError("V2 rejection Candidate Registry is invalid")
+    unexpected = [
+        candidate_id
+        for candidate_id, raw in existing_candidates.items()
+        if candidate_id != "candidate_000"
+        and (
+            not isinstance(raw, Mapping)
+            or raw.get("kind") != "safety_regression"
+            or raw.get("patch_sha256") != patch_sha256
+        )
+    ]
+    if (
+        unexpected
+        or registry.get("best_candidate_id") != "candidate_000"
+        or registry.get("final_candidate_id") != "candidate_000"
+    ):
+        raise ValueError("V2 rejection run directory contains non-safety Candidates")
     materialized = manager.materialize(
         registry,
         parent_id="candidate_000",
@@ -800,6 +823,14 @@ def run_v2(
         raise ValueError("V2 requires task_type=optimize")
     if "llm" not in run_config.budget.costs:
         raise ValueError("V2 budget must configure llm")
+    final_cost = sum(
+        int(run_config.budget.costs[stage])
+        for stage in ("csim", "synth", "cosim")
+    )
+    if optimization_config.final_reserve_credits < final_cost:
+        raise ValueError(
+            "final reserve credits cannot be lower than final validation cost"
+        )
     run_root = Path(run_dir).resolve()
     run_root.mkdir(parents=True, exist_ok=True)
     optimization_snapshot = optimization_config.to_dict() | {

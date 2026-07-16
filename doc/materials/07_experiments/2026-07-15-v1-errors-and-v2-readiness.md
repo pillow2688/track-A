@@ -132,6 +132,9 @@ V2 当前处于实现与单元验证阶段，尚未宣称完成真实 DeepSeek/V
 | 最优 Candidate 最终复验失败后没有安全替代 | 探索期 PASS 不等于最终作用域 PASS | 对已完整验证且满足硬约束的历史 Candidate 重新按同一比较器排序，只在预算允许时依次执行 final 验证 | `best_candidate_id` 保留探索最优，`final_candidate_id` 单独记录实际最终通过者，并记录 fallback 原因 |
 | 安全回归 fixture 的 unified diff 首次被拒绝 | hunk 声明从第 10 行开始，但 hunk body 实际对应第 11 行；严格 parser 因 context 偏移拒绝 | 将 hunk 修正为 `@@ -11,4 +11,4 @@`，不放宽 Patch 校验 | 静态安全 Patch 也必须走与 LLM Patch 相同的严格 path/count/context/dry-run 校验；测试数据错误不得通过降低策略解决 |
 | 安全拒绝 credits 一度预期为 27 | 把 V1 的 26 credits 误当成 baseline 成本；实际 baseline 完整验证是 `1+4+20=25`，拒绝 Candidate 只追加一次 CSim `1` | 测试按 Ledger 重算为 26，并同时断言调用次数 `csim=2,synth=1,cosim=1,llm=0` | 所有报告必须分别显示 calls、unit cost 和 credits；预期数字也必须由阶段成本公式与 Ledger 复核 |
+| 重建 Manifest 可能掩盖 final action 引用被替换 | 旧验收只检查 `v2_result.json` 内嵌的 PASS/scope，没有重新打开 action 核对 Candidate、code hash、action ID 和工具配置 | 新增“篡改 final CSim ref 后重建 Manifest”回归测试；Acceptance 对探索、最终和安全验证逐 action 重绑 Candidate/code/scope/backend/tool-config | Manifest 只能证明当前文件集合未再变化，不能替代语义重算；关键引用即使 hash 自洽也必须与 action/ledger 重新绑定 |
+| 可配置工具 cost 高于固定 final reserve | `final_reserve_credits=25` 只在默认 `1+4+20` 成本下足够，调整 cost 后可能欠保留 | `run_v2` 启动前要求 reserve 不低于实际 CSim+Synth+CoSim 配置成本 | 所有预算默认值都只是配置；安全不变量必须按本次 run config 重算，不能把 25 写成普适常量 |
+| 安全拒绝目录可能与优化目录混用 | 已完成安全运行的幂等检查未比较 tool config，且复用含优化 Candidate 的目录可能覆盖 best/final 语义 | 完成运行同时核对完整 `run_config.json`；拒绝流程只允许 baseline 或同一 safety Patch 的可恢复 Candidate | 优化、拒绝、验收必须使用三个独立目录；目录身份与配置不匹配立即报错，不做隐式复用 |
 
 V2 的专用公开 fixture 固定为 256 元素 U55C `vector_add`、10 ns、预算 160，基线功能
 正确但使用保守的 `PIPELINE II=16`。确定性安全负例只修改 `kernel.cpp` 的加法为减法，

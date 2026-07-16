@@ -1,10 +1,10 @@
-# LLM4HLS Agent — 内部里程碑 V0–V1
+# LLM4HLS Agent — 内部里程碑 V0–V2
 
 [English](README.md) | 简体中文
 
 V0 至 V4 是本项目的内部工程里程碑，不是比赛官方阶段。比赛提供的示例名为 **Reference Agent & Evaluation Harness**。两者的范围、接口和实现差异见[中文对比文档](../doc/materials/02_harness/2026-07-14-official-reference-vs-internal-v0.md)。
 
-V0 提供不可变、受预算审计的 `csim -> synth -> cosim` baseline。V1 增加确定性失败诊断、紧凑修复上下文、一次受限 unified diff、隔离候选、真实验证、晋级与安全回滚。修复建议可以来自 OpenAI-compatible API，也可以来自静态补丁测试夹具。V2 候选/PPA 优化、V3 LangGraph 编排、隐藏评分和参考答案调用尚不包含在内。
+V0 提供不可变、受预算审计的 `csim -> synth -> cosim` baseline。V1 增加确定性失败诊断、紧凑修复上下文、一次受限 unified diff、隔离候选、真实验证、晋级与安全回滚。修复建议可以来自 OpenAI-compatible API，也可以来自静态补丁测试夹具。V2 增加持久 Candidate 树、确定性验证/约束/PPA/成本比较、每轮一种优化类、best 保留、最终复验和安全拒绝。V3 LangGraph 编排、隐藏评分和参考答案调用尚不包含在内。
 
 `runs/v1-deepseek-final` 是 DeepSeek 曾成功修复 `FUNCTIONAL_MISMATCH` 的历史证据，但它早于严格 Candidate/action 绑定和 Artifact Manifest，必须重新生成，不能代表 V1 完成。只有 `FUNCTIONAL_MISMATCH`、`COMPILE_ERROR`、`SYNTHESIS_ERROR` 都具备真实 DeepSeek/Vitis 证据，并且独立的 `PATCH_INVALID` 安全负例通过确定性验收器，才可宣布 V1 完成。
 
@@ -42,7 +42,8 @@ python3 -m llm4hls_agent repair examples/u55c_repair_task \
 Patch proposal 必须先完成解析、策略检查和针对不可变源码的 dry-run，之后才允许
 分配 Candidate ID。非法 Patch 因而不会创建 Candidate 目录或 registry 记录；合法
 Patch 才会原子物化、把验证状态重置为 `NOT_RUN`、注册并以自己的 Candidate ID
-绑定 Vitis action。
+绑定 Vitis action。V2 已加入持久 Candidate 树、按验证/硬约束/PPA/成本的确定性比较、
+每轮一种优化类、best 保留、最终复验和独立安全拒绝；V3 LangGraph 编排仍未包含。
 
 ## V1 三类错误统一验收
 
@@ -103,6 +104,57 @@ python3 -m llm4hls_agent review-v1 --runs-root runs
 报告会重新计算并交叉核对机器验收、Baseline 错误、模型/fallback、Patch 范围与接口、
 Final gates、Candidate 提升/回滚、Tokens、工具调用、Credits、Ledger、Trace、action
 记录和 Manifest hash。所有原始证据链接都相对于 `runs/`。
+
+## V2 Candidate 与 PPA 循环
+
+V2 使用自包含的 256 元素 U55C `vector_add` fixture。Baseline 功能正确，但故意使用
+保守的 `PIPELINE II=16`。最多执行四个主轮次，每轮只允许一种优化类；连续两轮无改进
+即停止探索。Candidate 只有在 CSim、综合、CoSim、时钟和资源硬约束全部通过后才有资格
+成为 best。比较顺序固定为验证等级、硬约束、以 latency/II 为主的 PPA、Token/Credit
+成本和稳定 Candidate ID。
+
+配置好前述 API 与 Vitis 环境后运行真实优化：
+
+```bash
+python3 -m llm4hls_agent optimize examples/u55c_v2_optimize_task \
+  --run-dir runs/v2-optimize-final \
+  --vitis-root "$LLM4HLS_VITIS_HLS_ROOT" \
+  --clock-ns 10 --minimum-frequency-mhz 100 \
+  --credit-limit 160 --max-optimization-rounds 4 \
+  --max-no-improvement-rounds 2 --final-reserve-credits 25 \
+  --csim-timeout 180 --synth-timeout 900 --cosim-timeout 900
+```
+
+独立的确定性语义回归安全场景不调用 LLM。它先完整验证 baseline，Patch 校验通过后才
+物化回归 Candidate，只对该 Candidate 运行 CSim，并且必须拒绝它、保持 best/final
+不受污染：
+
+```bash
+python3 -m llm4hls_agent reject-v2 examples/u55c_v2_optimize_task \
+  --run-dir runs/v2-safety-rejection-final \
+  --patch-file examples/u55c_v2_regression.diff \
+  --vitis-root "$LLM4HLS_VITIS_HLS_ROOT" \
+  --clock-ns 10 --minimum-frequency-mhz 100 \
+  --credit-limit 160 --csim-timeout 180 \
+  --synth-timeout 900 --cosim-timeout 900
+```
+
+机器验收会重新计算 Candidate 树、全部 score/comparison、best/final、Provider/Model/
+Token、公开输入与仅 kernel Patch 绑定、安全不变量，以及 Ledger/Trace/action/
+budget_state 一致性：
+
+```bash
+python3 -m llm4hls_agent accept-v2 \
+  --optimization-run runs/v2-optimize-final \
+  --rejection-run runs/v2-safety-rejection-final \
+  --output-dir runs/v2-acceptance
+
+python3 -m llm4hls_agent review-v2 --runs-root runs
+```
+
+只有真实 Vitis/DeepSeek 证据能得到 `PASS`；fake 证据只能得到 `TEST_PASS`。
+`review-v2` 不调用模型或 Vitis，只在 `runs/` 根目录平铺生成
+`V2_ACCEPTANCE_REPORT_CN.md` 和 `V2_ACCEPTANCE_REPORT.md`，不生成 HTML。
 
 ## 官方参考实现对应内部哪个阶段
 
@@ -183,6 +235,12 @@ diagnostics/<candidate_id>.json
 llm_actions/<action_id>/result.json
 candidates/<candidate_id>/     只读源码、Patch 和候选元数据
 v1_result.json                 V1 决策、验证、回滚和预算结果
+optimization_config.json       V2 评分、循环限制、Patch 策略和 Provider 指纹
+optimization_rounds/*.json     可恢复的 Selector/提案/Candidate/决策记录
+scores/*.json                  可重算的 Candidate PPA 与成本分数
+comparisons/*.json             字典序比较证据
+v2_result.json                 V2 best/final、轮次、最终验证和预算
+v2_rejection_result.json       确定性安全拒绝及全部不变量
 experimental_report.md         面向人的 Vitis、Token、credit 与指标报告
 artifact_manifest.json         排序后的路径、大小、SHA-256、producer/action 绑定
 ```

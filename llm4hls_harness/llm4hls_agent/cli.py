@@ -715,6 +715,7 @@ def _main_optimize(args: argparse.Namespace, *, backend: ToolBackend | None) -> 
         TaskPackageError,
         BudgetError,
         RunArtifactError,
+        ArtifactManifestError,
         V1Error,
         ValueError,
     ) as exc:
@@ -784,6 +785,7 @@ def _main_reject_v2(args: argparse.Namespace, *, backend: ToolBackend | None) ->
         TaskPackageError,
         BudgetError,
         RunArtifactError,
+        ArtifactManifestError,
         V1Error,
         ValueError,
     ) as exc:

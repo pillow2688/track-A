@@ -137,6 +137,36 @@ def _candidate_tree(
                 return False, candidates
             if _sha256(patch) != candidate.get("patch_sha256"):
                 return False, candidates
+            try:
+                metadata = _covered_json(
+                    root, paths, f"candidates/{candidate_id}/candidate.json"
+                )
+            except V2AcceptanceError:
+                return False, candidates
+            immutable_fields = {
+                "candidate_id",
+                "parent_id",
+                "kind",
+                "immutable",
+                "source_ref",
+                "patch_ref",
+                "patch_sha256",
+                "code_hash",
+                "provider",
+                "model",
+                "revision",
+                "input_tokens",
+                "output_tokens",
+                "cached_input_tokens",
+                "llm_ref",
+                "round",
+                "optimization_class",
+            }
+            if any(
+                field in metadata and metadata.get(field) != candidate.get(field)
+                for field in immutable_fields
+            ):
+                return False, candidates
         visited: set[str] = set()
         current = candidate_id
         while current != "candidate_000":
@@ -221,6 +251,16 @@ def _score_evidence(
             cached_tokens = int(candidate.get("cached_input_tokens", 0))
             credits = int(candidate.get("credits_used", 0))
         if not isinstance(validation, Mapping) or not isinstance(clock, Mapping):
+            return False, False
+        if not _validation_actions_bound(
+            root,
+            paths,
+            validation,
+            candidate_id=candidate_id,
+            code_hash=candidate.get("code_hash"),
+            expected_scope="exploration",
+            stages=("csim", "synth", "cosim"),
+        ):
             return False, False
         metrics = _report_from_action(root, paths, candidate.get("metrics_ref"))
         recomputed = score_candidate(
@@ -403,20 +443,73 @@ def _real_llm_candidate_count(
             continue
         if (
             action.get("ok") is True
+            and action.get("provider") == candidate.get("provider")
+            and action.get("model") == candidate.get("model")
             and int(action.get("input_tokens", 0)) > 0
             and int(action.get("output_tokens", 0)) > 0
+            and int(action.get("input_tokens", -1))
+            == int(candidate.get("input_tokens", -2))
+            and int(action.get("output_tokens", -1))
+            == int(candidate.get("output_tokens", -2))
+            and int(action.get("cached_input_tokens", -1))
+            == int(candidate.get("cached_input_tokens", -2))
         ):
             count += 1
     return count
 
 
-def _final_validation(result: Mapping[str, object]) -> bool:
+def _validation_actions_bound(
+    root: Path,
+    paths: set[str],
+    validation: object,
+    *,
+    candidate_id: str,
+    code_hash: object,
+    expected_scope: str,
+    stages: tuple[str, ...],
+) -> bool:
+    values = validation if isinstance(validation, Mapping) else {}
+    for stage in stages:
+        record = values.get(stage)
+        if not isinstance(record, Mapping):
+            return False
+        try:
+            action = _covered_json(root, paths, record.get("result_ref"))
+        except V2AcceptanceError:
+            return False
+        expected_ok = record.get("status") == "PASS"
+        if (
+            action.get("kind") != stage
+            or action.get("candidate_id") != candidate_id
+            or action.get("code_hash") != code_hash
+            or action.get("ok") is not expected_ok
+            or action.get("result_ref") != record.get("result_ref")
+            or action.get("action_id") != record.get("action_id")
+            or action.get("tool_config_hash") != record.get("tool_config_hash")
+            or action.get("backend_fingerprint") != record.get("backend_fingerprint")
+            or action.get("validation_scope", "exploration") != expected_scope
+            or record.get("validation_scope", "exploration") != expected_scope
+        ):
+            return False
+    return True
+
+
+def _final_validation(
+    root: Path,
+    paths: set[str],
+    result: Mapping[str, object],
+    candidates: Mapping[str, Mapping[str, object]],
+) -> bool:
     validation = result.get("final_validation")
     if not isinstance(validation, Mapping):
         return False
+    final_id = result.get("final_candidate_id")
+    final_candidate = candidates.get(final_id) if isinstance(final_id, str) else None
+    if not isinstance(final_candidate, Mapping):
+        return False
     return (
         result.get("status") == "DONE"
-        and isinstance(result.get("final_candidate_id"), str)
+        and isinstance(final_id, str)
         and all(
             isinstance(validation.get(stage), Mapping)
             and validation[stage].get("status") == "PASS"
@@ -425,11 +518,23 @@ def _final_validation(result: Mapping[str, object]) -> bool:
         )
         and isinstance(result.get("final_clock_constraint"), Mapping)
         and result["final_clock_constraint"].get("passed") is True
+        and _validation_actions_bound(
+            root,
+            paths,
+            validation,
+            candidate_id=final_id,
+            code_hash=final_candidate.get("code_hash"),
+            expected_scope="final",
+            stages=("csim", "synth", "cosim"),
+        )
     )
 
 
 def _rejection_checks(
-    result: Mapping[str, object], registry: Mapping[str, object]
+    root: Path,
+    paths: set[str],
+    result: Mapping[str, object],
+    registry: Mapping[str, object],
 ) -> bool:
     candidates = registry.get("candidates")
     candidate_map = candidates if isinstance(candidates, Mapping) else {}
@@ -461,6 +566,16 @@ def _rejection_checks(
         and registry.get("final_candidate_id") == "candidate_000"
         and registry.get("active_candidate_id") == "candidate_000"
         and int(call_value.get("llm", -1)) == 0
+        and isinstance(rejected_id, str)
+        and _validation_actions_bound(
+            root,
+            paths,
+            stages,
+            candidate_id=rejected_id,
+            code_hash=value.get("code_hash"),
+            expected_scope="exploration",
+            stages=("csim",),
+        )
     )
 
 
@@ -576,14 +691,16 @@ def compute_v2_acceptance(
         "scores_recomputed": scores_ok,
         "two_real_llm_candidates": llm_count >= minimum_candidates,
         "best_matches_recomputed_comparator": best_ok,
-        "final_candidate_verified": _final_validation(opt_result),
+        "final_candidate_verified": _final_validation(
+            opt_root, opt_paths, opt_result, candidates
+        ),
         "fallback_not_used": (
             opt_result.get("fallback") is None
             if spec.get("require_no_fallback") is True
             else True
         ),
         "rejected_candidate_did_not_pollute_best": _rejection_checks(
-            reject_result, reject_registry
+            reject_root, reject_paths, reject_result, reject_registry
         ),
         "ledger_trace_actions_consistent": opt_accounting and rejection_accounting,
     }
