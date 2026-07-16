@@ -23,7 +23,7 @@ _SENSITIVE_NAMES = {
     "id_rsa",
     "id_ed25519",
 }
-_REQUIRED_CORE = {
+_V1_REQUIRED_CORE = {
     "task_spec.json",
     "run_config.json",
     "candidate_registry.json",
@@ -31,6 +31,17 @@ _REQUIRED_CORE = {
     "budget_state.json",
     "trace.jsonl",
     "v1_result.json",
+    "experimental_report.md",
+}
+
+_V2_COMMON_REQUIRED = {
+    "task_spec.json",
+    "run_config.json",
+    "candidate_registry.json",
+    "budget_ledger.jsonl",
+    "budget_state.json",
+    "trace.jsonl",
+    "workflow_result.json",
     "experimental_report.md",
 }
 
@@ -103,6 +114,8 @@ def _artifact_type(path: str) -> str:
         return "candidate_metadata"
     if path.startswith("llm_actions/") and path.endswith("/result.json"):
         return "llm_action_result"
+    if path.startswith("llm_actions/") and path.endswith("/request.json"):
+        return "llm_action_request"
     if path.startswith("actions/") and path.endswith("/result.json"):
         return "tool_action_result"
     if path.startswith("actions/"):
@@ -115,8 +128,21 @@ def _artifact_type(path: str) -> str:
         return "budget_state"
     if path == "trace.jsonl":
         return "trace"
-    if path in {"v1_result.json", "workflow_result.json"}:
+    if path in {
+        "v1_result.json",
+        "v2_result.json",
+        "v2_rejection_result.json",
+        "workflow_result.json",
+    }:
         return "workflow_result"
+    if path == "optimization_config.json":
+        return "optimization_config"
+    if path.startswith("optimization_rounds/") and path.endswith(".json"):
+        return "optimization_round"
+    if path.startswith("scores/") and path.endswith(".json"):
+        return "candidate_score"
+    if path.startswith("comparisons/") and path.endswith(".json"):
+        return "candidate_comparison"
     if path == "experimental_report.md":
         return "experimental_report"
     return "run_artifact"
@@ -156,9 +182,19 @@ def _path_identity(
 
 
 def _metadata(run_root: Path) -> dict[str, object]:
-    result_path = run_root / "v1_result.json"
-    if not result_path.is_file():
-        result_path = run_root / "workflow_result.json"
+    result_path = next(
+        (
+            run_root / name
+            for name in (
+                "v2_result.json",
+                "v2_rejection_result.json",
+                "v1_result.json",
+                "workflow_result.json",
+            )
+            if (run_root / name).is_file()
+        ),
+        run_root / "workflow_result.json",
+    )
     result = _read_json(result_path)
     registry = _read_json(run_root / "candidate_registry.json")
     run_config = _read_json(run_root / "run_config.json")
@@ -178,13 +214,18 @@ def _metadata(run_root: Path) -> dict[str, object]:
     tool = run_config.get("tool")
     tool_value = tool if isinstance(tool, Mapping) else {}
     return {
+        "workflow": result.get("workflow"),
         "run_id": str(baseline_result.get("run_id", run_root.name)),
         "task_id": str(baseline_result.get("task_id", registry.get("task_id", ""))),
         "baseline_candidate_id": baseline_id,
         "best_candidate_id": registry.get("best_candidate_id"),
         "final_candidate_id": final_id,
-        "provider": candidate_value.get("provider", patch_value.get("provider")),
-        "model": candidate_value.get("model", patch_value.get("model")),
+        "provider": candidate_value.get(
+            "provider", patch_value.get("provider", selected_value.get("provider"))
+        ),
+        "model": candidate_value.get(
+            "model", patch_value.get("model", selected_value.get("model"))
+        ),
         "toolchain_version": tool_value.get("toolchain_id"),
         "code_hash": selected_value.get("code_hash"),
         "tool_config_hash": _digest(
@@ -199,6 +240,25 @@ def _metadata(run_root: Path) -> dict[str, object]:
     }
 
 
+def _required_paths(run_root: Path, workflow: object) -> set[str]:
+    if workflow == "V2_CANDIDATE_PPA":
+        required = _V2_COMMON_REQUIRED | {
+            "v2_result.json",
+            "optimization_config.json",
+        }
+        required.update(
+            path.relative_to(run_root).as_posix()
+            for directory in ("optimization_rounds", "scores", "comparisons")
+            for path in sorted((run_root / directory).glob("*.json"))
+        )
+        return required
+    if workflow == "V2_SAFETY_REJECTION":
+        return _V2_COMMON_REQUIRED | {"v2_rejection_result.json"}
+    if (run_root / "v1_result.json").is_file():
+        return set(_V1_REQUIRED_CORE)
+    return set()
+
+
 def build_artifact_manifest(run_dir: str | Path) -> dict[str, object]:
     """Index every durable run artifact using stable relative paths and SHA-256."""
 
@@ -208,6 +268,8 @@ def build_artifact_manifest(run_dir: str | Path) -> dict[str, object]:
     staging = run_root / ".candidate_staging"
     if staging.exists() and any(staging.iterdir()):
         raise ArtifactManifestError("candidate staging contains an incomplete materialization")
+    metadata = _metadata(run_root)
+    required_paths = _required_paths(run_root, metadata.get("workflow"))
     entries: list[dict[str, object]] = []
     for path in sorted(run_root.rglob("*"), key=lambda item: item.as_posix()):
         if path.is_symlink():
@@ -238,12 +300,12 @@ def build_artifact_manifest(run_dir: str | Path) -> dict[str, object]:
                 "producer": producer,
                 "action_id": action_id,
                 "candidate_id": candidate_id,
-                "required": relative in _REQUIRED_CORE,
+                "required": relative in required_paths,
             }
         )
     manifest = {
         "schema_version": MANIFEST_SCHEMA_VERSION,
-        **_metadata(run_root),
+        **metadata,
         "artifacts": entries,
     }
     _atomic_json(run_root / MANIFEST_NAME, manifest)
@@ -290,6 +352,19 @@ def verify_artifact_manifest(run_dir: str | Path) -> dict[str, object]:
         paths.append(relative)
     if paths != sorted(paths) or len(paths) != len(set(paths)):
         raise ArtifactManifestError("manifest artifact paths are not unique and sorted")
+    required_paths = _required_paths(run_root, manifest.get("workflow"))
+    missing = sorted(required_paths.difference(paths))
+    if missing:
+        raise ArtifactManifestError(
+            "manifest required artifacts are missing: " + ", ".join(missing)
+        )
+    required_flags = {
+        str(raw["path"])
+        for raw in raw_entries
+        if isinstance(raw, Mapping) and raw.get("required") is True
+    }
+    if required_flags != required_paths:
+        raise ArtifactManifestError("manifest required flags do not match workflow")
     return manifest
 
 

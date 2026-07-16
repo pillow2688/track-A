@@ -36,9 +36,10 @@ V1 的正式完成条件现已固定为三类 HLS 任务错误：`FUNCTIONAL_MIS
 
 历史 V1 证据摘要：`runs/v1-deepseek-final` 使用 `deepseek-v4-pro`，输入/输出 Token 为 `407/229`，缓存命中输入为 `384`，总 Token 为 `636`，estimated period 为 1.482 ns，总 credits 为 26。由于底层 Candidate action 绑定错误和缺少新版 Manifest，该运行必须重做，不能直接计入最终三类统一验收。
 
-## 3. V2 按设计文档仍需实现
+## 3. V2 按设计文档的实现状态
 
-根据 `2026-07-14-budget-aware-langgraph-llm4hls-agent-design.md`，V2 不是再次修复单个 kernel，而是候选/PPA 循环，至少还需要：
+根据 `2026-07-14-budget-aware-langgraph-llm4hls-agent-design.md`，V2 不是再次修复单个
+kernel，而是候选/PPA 循环。下列能力已于 2026-07-16 在真实 DeepSeek/Vitis 闭环中完成：
 
 1. Candidate tree：支持多个候选和 parent-child 关系，而不是只生成一个 `candidate_001`。
 2. 候选比较器：以 correctness 为第一优先级，再比较时钟、latency/II、资源和预算。
@@ -49,18 +50,19 @@ V1 的正式完成条件现已固定为三类 HLS 任务错误：`FUNCTIONAL_MIS
 7. 停止策略：同时受最大候选数、LLM 次数、credits、token、运行时间和无改进轮数限制。
 8. 恢复测试：中断在每个 Vitis 阶段和 LLM 阶段后，恢复不得重复计费或覆盖候选。
 9. 报告打包：生成面向提交的 Markdown 报告，同时保留 JSON、ledger、日志、Tcl、XML 和 synthesis report 原件。
-10. 多任务泛化：fallback 不能只硬编码 vector-add；未知任务必须返回不可修复或交给 LLM，不能误改源码。
+10. 多任务泛化边界：正式 V2 不允许 fallback；未知任务由严格 Provider/规则边界处理，
+    不得用 vector-add 确定性修复冒充 LLM 优化。
 
 ## 4. V2 完成验收
 
-- [ ] 两个以上候选可以并存并记录 parent。
-- [ ] 每个候选有独立 source、patch、验证结果和 hash。
-- [ ] 至少一个错误候选被拒绝且 best 不被污染。
-- [ ] 至少两个正确候选可以按 PPA 排序。
-- [ ] 排序前所有候选满足 csim，最终候选满足 synth、cosim 和时钟约束。
-- [ ] 中断恢复测试证明 credits 不重复扣除。
-- [ ] `experimental_report.md` 同时列出 Vitis 三阶段结果、PPA、tokens、调用次数和 credits。
-- [ ] 全部测试通过，并有一次真实 Vitis 2025.2 运行证据。
+- [x] 两个以上候选可以并存并记录 parent。
+- [x] 每个候选有独立 source、patch、验证结果和 hash。
+- [x] 至少一个错误候选被拒绝且 best 不被污染。
+- [x] 至少两个正确候选可以按 PPA 排序。
+- [x] 排序前所有候选满足 csim，最终候选满足 synth、cosim 和时钟约束。
+- [x] 中断恢复测试证明 credits 不重复扣除。
+- [x] `experimental_report.md` 同时列出 Vitis 三阶段结果、PPA、tokens、调用次数和 credits。
+- [x] 全部测试通过，并有一次真实 Vitis 2025.2 运行证据。
 
 ## 5. 运行产物规则
 
@@ -119,3 +121,74 @@ V1 现已满足“至少三类 HLS 错误能由 LLM 修复或安全回滚”的�
 checkpoint/resume、预算 reserve 和 stop reason，V4 补 hidden-like、Docker、多任务及
 多模型证据。核心统计、逐场景审核卡、逐项 Acceptance 和原始证据索引保持稳定，便于
 不同版本使用同一套人工审核习惯。
+
+## 8. 2026-07-16 V2 开发中的问题与约束更新
+
+V2 已于 2026-07-16 完成真实 DeepSeek/Vitis 2025.2 验收。代码边界包括
+CandidateManager、探索/最终验证作用域、PPA 评分与字典序比较、单优化类选择、严格
+DeepSeek 优化提案、四轮 Candidate 循环、最终复验、候选回退和完成轮次恢复。
+
+| 问题 | 根因 | 解决方法 | 防复发规则 |
+|---|---|---|---|
+| V2 中断后可能重复第一轮 | 只看 Trace 或内存状态不能证明一轮已经完整落盘 | 每轮以 `optimization_rounds/round_NNN.json` 为 durable completion record；恢复时重建 attempted、score、metrics、best 和 no-improvement | 不从 Trace 推断轮次完成；round、Registry、Score、Metrics 任一不一致即 fail closed |
+| 最优 Candidate 最终复验失败后没有安全替代 | 探索期 PASS 不等于最终作用域 PASS | 对已完整验证且满足硬约束的历史 Candidate 重新按同一比较器排序，只在预算允许时依次执行 final 验证 | `best_candidate_id` 保留探索最优，`final_candidate_id` 单独记录实际最终通过者，并记录 fallback 原因 |
+| 安全回归 fixture 的 unified diff 首次被拒绝 | hunk 声明从第 10 行开始，但 hunk body 实际对应第 11 行；严格 parser 因 context 偏移拒绝 | 将 hunk 修正为 `@@ -11,4 +11,4 @@`，不放宽 Patch 校验 | 静态安全 Patch 也必须走与 LLM Patch 相同的严格 path/count/context/dry-run 校验；测试数据错误不得通过降低策略解决 |
+| 安全拒绝 credits 一度预期为 27 | 把 V1 的 26 credits 误当成 baseline 成本；实际 baseline 完整验证是 `1+4+20=25`，拒绝 Candidate 只追加一次 CSim `1` | 测试按 Ledger 重算为 26，并同时断言调用次数 `csim=2,synth=1,cosim=1,llm=0` | 所有报告必须分别显示 calls、unit cost 和 credits；预期数字也必须由阶段成本公式与 Ledger 复核 |
+| 重建 Manifest 可能掩盖 final action 引用被替换 | 旧验收只检查 `v2_result.json` 内嵌的 PASS/scope，没有重新打开 action 核对 Candidate、code hash、action ID 和工具配置 | 新增“篡改 final CSim ref 后重建 Manifest”回归测试；Acceptance 对探索、最终和安全验证逐 action 重绑 Candidate/code/scope/backend/tool-config | Manifest 只能证明当前文件集合未再变化，不能替代语义重算；关键引用即使 hash 自洽也必须与 action/ledger 重新绑定 |
+| 可配置工具 cost 高于固定 final reserve | `final_reserve_credits=25` 只在默认 `1+4+20` 成本下足够，调整 cost 后可能欠保留 | `run_v2` 启动前要求 reserve 不低于实际 CSim+Synth+CoSim 配置成本 | 所有预算默认值都只是配置；安全不变量必须按本次 run config 重算，不能把 25 写成普适常量 |
+| 安全拒绝目录可能与优化目录混用 | 已完成安全运行的幂等检查未比较 tool config，且复用含优化 Candidate 的目录可能覆盖 best/final 语义 | 完成运行同时核对完整 `run_config.json`；拒绝流程只允许 baseline 或同一 safety Patch 的可恢复 Candidate | 优化、拒绝、验收必须使用三个独立目录；目录身份与配置不匹配立即报错，不做隐式复用 |
+| Codex 沙箱内 XSIM 在 snapshot 后进入 `xsim%` | 沙箱的 PID/系统隔离使 XSIM Tcl 命令出现 `unexpected exception`；相同 kernel/Tcl 在沙箱外正常 | 终止安静挂起的沙箱运行并保留失败证据；经批准在沙箱外重跑同一 safety 命令，真实 Vitis 三级通过且回归 CSim 按预期失败 | Codex 内启动真实 Vitis/XSIM 必须使用获批的沙箱外执行；先读 Trace/XSIM 日志确认阶段，不能把基础设施异常写成 Candidate 错误 |
+| 正式 V2 DeepSeek 调用被第三方数据传输审查拦截 | 优化 Prompt 会发送 kernel 局部源码、PPA 指标、约束和失败记录；旧的通用批准未被当前执行层视为本次 V2 的充分知情批准 | 不绕过审查、不改用未审计通道；保持正式目录未创建，并请求用户对本次 V2 数据范围再次明确批准 | 每个需要向外部模型发送新类型上下文的阶段都应在执行前列明数据范围并取得明确批准；API Key 仍只通过环境认证且不得进入 Prompt/日志 |
+| Provider 返回的 `required_validation` 形态不稳定，失败响应缺少可诊断证据 | OpenAI-compatible 模型可能返回 bool/字符串等非预期形态；旧异常路径丢失 response excerpt 和 usage | 失败结果保留 request ID、响应摘录和 input/output/cached Token；只对可安全映射的 validation 形态归一化，其余 fail closed | Provider 失败也是正式 action，必须保留真实 usage 和响应证据，不得写成 0 Token 或静默 fallback |
+| 正确的小型 Patch 因 hunk 起始行偏移 1 行被拒绝 | 模型 Patch body 与源码唯一匹配，但 unified diff location metadata 有轻微偏移 | 仅当 old body 在源码中唯一匹配且偏移不超过 8 行时，确定性修正 hunk 位置；路径和 Patch body 不变，之后仍走严格 dry-run | 位置修复只处理元数据；多重匹配、超限偏移、非法路径或 body 不符一律拒绝 |
+| V2 最初机器验收误报 `PUBLIC_INPUT_BINDING_INVALID` | 严格 Patch validator 接受等价的 `kernel.cpp` 和 `a/kernel.cpp` 路径，但 Acceptance 额外硬编码必须带 `a/`、`b/` 前缀 | 增加真实形态回归测试，并让 Acceptance 与 Patch validator 共用同一目标路径语义；重新计算后为 `REAL/PASS` | 机器验收不得发明比生产验证器更窄且无安全收益的文本格式；安全判断应复用同一解析语义 |
+| Acceptance 可独立校验 Patch/source hash，但未证明 parent→Patch→child | Manifest 重建后，攻击者可同时替换 Patch 及其 hash，却保留无关 child source | 验收逐个对 parent source 严格应用 Patch，结果必须逐字节等于 child source；同时把 Provider 原始 Patch 经确定性 count/location/path 规范化后绑定 Candidate Patch 与 optimization class | Candidate tree 的 hash、路径和 parent 字段不是血缘证明；每条边都必须重新执行并绑定 Provider→Patch→child |
+| Token 只检查 `remaining > 0`，极端情况下 API 返回后 Ledger 才发现超限 | 调用前没有为输入 Prompt 和最大输出建立上界，完成事件可能因超 Token 被拒绝并遗留 STARTED action | Provider 必须公开含 `max_tokens` 的 HTTP body；按序列化 body UTF-8 字节数、512 协议余量和最大输出计算上界，并通过 `BudgetLedger.reserve(estimated_tokens=...)` 在同一锁内持久化 STARTED 预留；snapshot 从 remaining 中扣除 pending token，完成时释放预留并记实际 usage | 外部调用的 estimate→reserve→STARTED 必须发生在副作用前；并发调用不能只做无状态 preflight，overrun 也必须写成终态而非遗留不可恢复 STARTED |
+| durable round 恢复曾信任已落盘的 PROMOTED/score/metrics | round 顺序和字符串 decision 不能证明 Context、action、validation、score、comparison 仍一致 | 恢复时重算 Selector 与稳定 Context digest，重绑 request/provider action 和 Ledger，再校验 Provider/Patch、三级 action、score 与 comparison；任一不一致 fail closed 且不继续计费 | Trace 不是恢复权威；durable record 也必须语义重算，不能只检查 JSON 字段存在 |
+| Final fallback 仅由剩余预算间接限制 | 候选较多时可能尝试所有 eligible Candidate，没有独立的最大次数上限 | 新增 `max_final_attempts`/`--max-final-attempts`，默认总计 2 次（最佳候选加最多一个替代）；失败时清空 `final_candidate_id` | Final closure 必须同时受 affordability 和明确 attempt count 约束 |
+| `PATCH_REJECTED` durable round 恢复只看 Provider `ok=true` 和 decision 字符串 | 没有 Candidate 可用于血缘重算，篡改后的合法 Patch 仍可能沿用旧的拒绝结论 | 恢复时重新执行 normalize、唯一位置修复、策略和 dry-run；只有再次抛出 `PatchValidationError` 才接受 `PATCH_REJECTED`，若 Patch 已可应用则 fail closed | 所有 round decision 都要重算；“未物化 Candidate”不能成为跳过语义验证的理由 |
+
+V2 的专用公开 fixture 固定为 256 元素 U55C `vector_add`、10 ns、预算 160，基线功能
+正确但使用保守的 `PIPELINE II=16`。确定性安全负例只修改 `kernel.cpp` 的加法为减法，
+必须先验证 baseline 的 CSim/Synth/CoSim/Clock 全部通过，再物化
+`kind=safety_regression` 子 Candidate；对子 Candidate 只运行 CSim，并要求其失败、
+Synth/CoSim 保持 `NOT_RUN`、best/final/active 全部安全回到 `candidate_000`、LLM 调用为 0。
+该安全负例仅证明拒绝边界，不得进入正式 PPA 最优候选集合。
+
+## 9. 2026-07-16 V2 最终真实验收
+
+正式优化目录为 `runs/v2-optimize-final`，安全拒绝目录为
+`runs/v2-safety-rejection-final`，统一机器验收目录为 `runs/v2-acceptance`。根目录平铺的
+人工报告为 `runs/V2_ACCEPTANCE_REPORT.md` 和
+`runs/V2_ACCEPTANCE_REPORT_CN.md`。`acceptance_result.json` 的证据等级为 `REAL`，
+总体状态为 `PASS`，14 项确定性检查全部通过且没有 reason code。
+
+| Candidate | Parent | 优化类 | CSim/Synth/CoSim | 决策 | Latency worst | II max | Clock ns | LUT/FF | Tokens |
+|---|---|---|---|---|---:|---:|---:|---:|---:|
+| `candidate_000` | — | baseline | PASS/PASS/PASS | VERIFIED | 513 | 512 | 1.479 | 110/20 | 0 |
+| `candidate_001` | `candidate_000` | LOOP_PIPELINE | PASS/PASS/PASS | PROMOTED | 258 | 256 | 1.479 | 109/20 | 2179 |
+| `candidate_002` | `candidate_001` | MEMORY_LAYOUT | PASS/PASS/PASS | REJECTED_NOT_BETTER | 258 | 256 | 1.479 | 173/20 | 2183 |
+| `candidate_003` | `candidate_001` | LOOP_UNROLL | PASS/PASS/PASS | PROMOTED | 130 | 128 | 1.489 | 134/29 | 2129 |
+| `candidate_004` | `candidate_003` | LOOP_RESTRUCTURE | PASS/PASS/PASS | FINAL | 128 | 129 | 0.880 | 4829/129 | 2191 |
+
+最终 `candidate_004` 又以独立 `final` scope 重跑 CSim、Synth、CoSim，三阶段均 PASS，
+10 ns/100 MHz 时钟约束通过。安全负例从 baseline 派生 `candidate_001`，其回归 CSim
+真实失败，Synth/CoSim 未运行，best/final/active 均保持 `candidate_000`，无 LLM 调用。
+
+正式优化共调用 DeepSeek 4 次，无 fallback；input/output/cached/total Tokens 为
+7491/1191/1792/8682。优化闭环调用 CSim/Synth/CoSim 各 6 次并消耗 150 credits，
+剩余 10；安全拒绝调用 CSim/Synth/CoSim 为 2/1/1 并消耗 26 credits，剩余 134。
+两场景合计 26 次 action（CSim 8、Synth 7、CoSim 7、LLM 4），总消耗 176 credits，
+合计剩余预算 144。cached input Token 是 input Token 的子集，不重复计入 total。
+
+每次 Provider 请求只发送 `kernel.cpp` 的局部范围、结构化 PPA/验证状态、时钟/资源/接口/
+功能约束、相关失败和两条优化类规则。请求审计明确排除完整仓库、完整日志、testbench、
+hidden/reference、无关源码、本机绝对路径、API Key 和认证头。四轮请求证据均由 Manifest
+覆盖，Token 与 Provider action、Ledger、Trace 一致。
+
+重新生成平铺中英文报告前后，优化、安全拒绝和机器验收三个目录（排除锁文件）的合并
+SHA-256 均为
+`cc2a087ed419bfdd8cdf733dcf0bb68de301e2b647dfb65f943af6f542e78a83`，证明人工报告生成
+未改动机器权威证据。报告扫描未发现 `/home/`、`file://`、HTML 或外部 URL。独立审查
+修复后，全套 136 项单元测试、Python compileall、`git diff --check`、强化后的 `accept-v2`
+和 `review-v2` 均重新通过；真实 LLM/Vitis 原始运行无需重跑。

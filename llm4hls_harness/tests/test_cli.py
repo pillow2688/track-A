@@ -78,6 +78,159 @@ class RepairingBackend(PassingBackend):
 
 
 class CliTests(unittest.TestCase):
+    def test_review_v2_prints_flat_markdown_report_references(self) -> None:
+        expected = {
+            "status": "PASS",
+            "report_ref": "V2_ACCEPTANCE_REPORT.md",
+            "report_cn_ref": "V2_ACCEPTANCE_REPORT_CN.md",
+            "review_data_digest": "abc",
+            "summary": {"credits_used": 176},
+        }
+        stdout = io.StringIO()
+        with patch(
+            "llm4hls_agent.cli.generate_v2_review_reports", return_value=expected
+        ) as generate, redirect_stdout(stdout):
+            return_code = main(["review-v2", "--runs-root", "runs"])
+
+        self.assertEqual(return_code, 0)
+        self.assertEqual(json.loads(stdout.getvalue()), expected)
+        arguments = generate.call_args.args
+        self.assertEqual(arguments[1], Path("runs/v2-optimize-final"))
+        self.assertEqual(arguments[2], Path("runs/v2-safety-rejection-final"))
+        self.assertEqual(arguments[4], Path("runs"))
+
+    def test_accept_v2_command_prints_machine_and_bilingual_report_refs(self) -> None:
+        expected = {
+            "overall_status": "PASS",
+            "evidence_tier": "REAL",
+            "summary": {"credits_used": 152, "tokens_used": 490},
+        }
+        stdout = io.StringIO()
+        with patch(
+            "llm4hls_agent.cli.evaluate_v2_acceptance", return_value=expected
+        ) as evaluate, redirect_stdout(stdout):
+            return_code = main(
+                [
+                    "accept-v2",
+                    "--optimization-run",
+                    "runs/v2-opt",
+                    "--rejection-run",
+                    "runs/v2-reject",
+                    "--output-dir",
+                    "runs/v2-acceptance",
+                ]
+            )
+
+        summary = json.loads(stdout.getvalue())
+        self.assertEqual(return_code, 0)
+        self.assertEqual(summary["status"], "PASS")
+        self.assertEqual(summary["result_ref"], "acceptance_result.json")
+        self.assertEqual(summary["report_ref"], "acceptance_report.md")
+        self.assertEqual(summary["report_cn_ref"], "acceptance_report_CN.md")
+        self.assertEqual(evaluate.call_args.args[1], Path("runs/v2-opt"))
+
+    def test_reject_v2_command_prints_audited_safety_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task_dir = root / "task"
+            task_dir.mkdir()
+            make_task(task_dir)
+            patch_file = root / "regression.diff"
+            patch_file.write_text("fixture", encoding="utf-8")
+            expected = {
+                "task_id": "cli_fixture",
+                "status": "DONE",
+                "stop_reason": "SAFETY_REGRESSION_REJECTED",
+                "rejected_candidate_id": "candidate_001",
+                "best_candidate_id": "candidate_000",
+                "final_candidate_id": "candidate_000",
+                "budget": {"credits_used": 26, "tokens_used": 0},
+            }
+            stdout = io.StringIO()
+            with patch(
+                "llm4hls_agent.cli.run_v2_rejection", return_value=expected
+            ) as run, redirect_stdout(stdout):
+                return_code = main(
+                    [
+                        "reject-v2",
+                        str(task_dir),
+                        "--run-dir",
+                        str(root / "run"),
+                        "--patch-file",
+                        str(patch_file),
+                        "--credit-limit",
+                        "160",
+                    ]
+                )
+
+            summary = json.loads(stdout.getvalue())
+            self.assertEqual(return_code, 0)
+            self.assertEqual(summary["status"], "DONE")
+            self.assertEqual(summary["rejected_candidate_id"], "candidate_001")
+            self.assertEqual(summary["credits_used"], 26)
+            self.assertEqual(summary["tokens_used"], 0)
+            self.assertEqual(run.call_args.args[2].budget.tool_limits["llm"], 0)
+
+    def test_optimize_command_builds_v2_config_and_prints_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task_dir = root / "task"
+            task_dir.mkdir()
+            make_task(task_dir)
+            expected = {
+                "schema_version": 1,
+                "workflow": "V2_CANDIDATE_PPA",
+                "task_id": "cli_fixture",
+                "status": "DONE",
+                "stop_reason": "NO_IMPROVEMENT_LIMIT",
+                "best_candidate_id": "candidate_002",
+                "final_candidate_id": "candidate_002",
+                "rounds": [{}, {}, {}, {}],
+                "budget": {"credits_used": 126, "tokens_used": 700},
+            }
+            stdout = io.StringIO()
+            with patch.dict(
+                "os.environ",
+                {
+                    "OPENAI_BASE_URL": "https://api.deepseek.com",
+                    "OPENAI_API_KEY": "secret-test-key",
+                    "LLM4HLS_MODEL": "deepseek-v4-pro",
+                },
+                clear=False,
+            ), patch(
+                "llm4hls_agent.cli.run_v2", return_value=expected
+            ) as run, redirect_stdout(stdout):
+                return_code = main(
+                    [
+                        "optimize",
+                        str(task_dir),
+                        "--run-dir",
+                        str(root / "run"),
+                        "--credit-limit",
+                        "160",
+                        "--max-optimization-rounds",
+                        "4",
+                        "--max-no-improvement-rounds",
+                        "2",
+                    ]
+                )
+
+            summary = json.loads(stdout.getvalue())
+            self.assertEqual(return_code, 0)
+            self.assertEqual(summary["status"], "DONE")
+            self.assertEqual(summary["rounds_completed"], 4)
+            self.assertEqual(summary["credits_used"], 126)
+            self.assertEqual(summary["tokens_used"], 700)
+            run_config = run.call_args.args[2]
+            optimization_config = run.call_args.args[3]
+            provider = run.call_args.args[4]
+            self.assertEqual(run_config.budget.credit_limit, 160)
+            self.assertEqual(run_config.budget.tool_limits["llm"], 6)
+            self.assertEqual(optimization_config.max_rounds, 4)
+            self.assertEqual(optimization_config.max_no_improvement_rounds, 2)
+            self.assertEqual(optimization_config.max_final_attempts, 2)
+            self.assertEqual(provider.config.model, "deepseek-v4-pro")
+
     def test_review_v1_prints_flat_offline_report_references(self) -> None:
         expected = {
             "status": "PASS",

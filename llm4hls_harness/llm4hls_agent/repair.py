@@ -14,26 +14,22 @@ import json
 import math
 import os
 import re
-import shutil
-import stat
-import tempfile
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Mapping, Protocol
 
 from .budget import BudgetError, BudgetExceeded, BudgetLedger, BudgetLedgerError
+from .candidate import CandidateManager
 from .task import PublicTask
-from .tools import ToolBackend, ToolConfig, ToolResult, ToolServer
-from .vitis import VitisBackend
+from .tools import ToolBackend
+from .validation import validate_candidate
 from .workflow import (
     RunArtifactError,
     RunConfig,
     _RunLock,
     _append_trace,
     _atomic_json,
-    _invoke_stage,
     _sha256,
-    _validation_record,
     run_v0,
 )
 
@@ -244,6 +240,45 @@ def _patch_path(raw: str, *, prefix: str, expected: str) -> str:
     return value
 
 
+def unified_diff_targets_kernel(patch: str, *, kernel_name: str) -> bool:
+    """Return whether a unified diff's only file headers target the kernel.
+
+    Git-prefixed (``a/`` and ``b/``) and bare unified-diff paths are equivalent
+    under the strict Patch validator.  This helper gives evidence evaluators the
+    exact same path semantics without applying a candidate Patch again.
+    """
+
+    headers = [
+        line for line in patch.splitlines() if line.startswith(("--- ", "+++ "))
+    ]
+    if (
+        len(headers) != 2
+        or not headers[0].startswith("--- ")
+        or not headers[1].startswith("+++ ")
+    ):
+        return False
+    try:
+        _patch_path(headers[0], prefix="--- ", expected=kernel_name)
+        _patch_path(headers[1], prefix="+++ ", expected=kernel_name)
+    except PatchValidationError:
+        return False
+    return True
+
+
+def canonicalize_unified_diff_paths(patch: str, *, kernel_name: str) -> str:
+    """Canonicalize only validated Git/bare file headers for comparison."""
+
+    if not unified_diff_targets_kernel(patch, kernel_name=kernel_name):
+        raise PatchValidationError("unified diff does not target only the kernel")
+    lines = patch.splitlines()
+    old_index = next(index for index, line in enumerate(lines) if line.startswith("--- "))
+    new_index = next(index for index, line in enumerate(lines) if line.startswith("+++ "))
+    lines[old_index] = f"--- {kernel_name}"
+    lines[new_index] = f"+++ {kernel_name}"
+    canonical = "\n".join(lines)
+    return canonical + ("\n" if patch.endswith("\n") else "")
+
+
 def normalize_unified_diff_headers(patch: str) -> str:
     """Recompute hunk counts without changing paths or hunk body content.
 
@@ -290,6 +325,96 @@ def normalize_unified_diff_headers(patch: str) -> str:
         return patch
     normalized_patch = "\n".join(lines)
     return normalized_patch + ("\n" if patch.endswith("\n") else "")
+
+
+def relocate_unified_diff_hunks(
+    source: bytes | str,
+    patch: str,
+    *,
+    kernel_name: str,
+    max_offset_lines: int = 8,
+) -> str:
+    """Repair a nearby hunk start only when its old body matches uniquely.
+
+    This changes unified-diff location metadata only. Paths and every context,
+    addition, and deletion line remain byte-for-byte identical, and the result
+    must still pass :func:`apply_unified_diff`.
+    """
+
+    if max_offset_lines < 0:
+        raise ValueError("max_offset_lines must be non-negative")
+    source_bytes = source.encode("utf-8") if isinstance(source, str) else bytes(source)
+    try:
+        source_lines = source_bytes.decode("utf-8").splitlines()
+    except UnicodeDecodeError as exc:
+        raise PatchValidationError("kernel source is not UTF-8") from exc
+    lines = patch.splitlines()
+    header_index = next(
+        (index for index, line in enumerate(lines) if line.startswith("--- ")),
+        None,
+    )
+    if header_index is None or header_index + 1 >= len(lines):
+        return patch
+    _patch_path(lines[header_index], prefix="--- ", expected=kernel_name)
+    _patch_path(lines[header_index + 1], prefix="+++ ", expected=kernel_name)
+
+    changed = False
+    cumulative_delta = 0
+    index = header_index + 2
+    while index < len(lines):
+        match = _HUNK.match(lines[index])
+        if match is None:
+            return patch
+        end = index + 1
+        old_body: list[str] = []
+        additions = deletions = 0
+        while end < len(lines) and _HUNK.match(lines[end]) is None:
+            body = lines[end]
+            if not body or body[0] not in " +-":
+                return patch
+            if body[0] in " -":
+                old_body.append(body[1:])
+            if body[0] == "+":
+                additions += 1
+            elif body[0] == "-":
+                deletions += 1
+            end += 1
+        if not old_body:
+            return patch
+        declared_start = int(match.group(1)) - 1
+        declared_slice = source_lines[
+            declared_start : declared_start + len(old_body)
+        ] if declared_start >= 0 else []
+        if declared_slice != old_body:
+            matches = [
+                start
+                for start in range(0, len(source_lines) - len(old_body) + 1)
+                if source_lines[start : start + len(old_body)] == old_body
+            ]
+            if len(matches) != 1:
+                raise PatchValidationError(
+                    "patch hunk context is not a unique source match"
+                )
+            actual_start = matches[0]
+            if abs(actual_start - declared_start) > max_offset_lines:
+                raise PatchValidationError("patch hunk start offset exceeds safety limit")
+            closing = lines[index].find("@@", 2)
+            suffix = lines[index][closing + 2 :] if closing >= 0 else ""
+            old_count = int(match.group(2) or "1")
+            new_count = int(match.group(4) or "1")
+            new_start = actual_start + 1 + cumulative_delta
+            lines[index] = (
+                f"@@ -{actual_start + 1},{old_count} "
+                f"+{new_start},{new_count} @@{suffix}"
+            )
+            changed = True
+            declared_start = actual_start
+        cumulative_delta += additions - deletions
+        index = end
+    if not changed:
+        return patch
+    relocated = "\n".join(lines)
+    return relocated + ("\n" if patch.endswith("\n") else "")
 
 
 def apply_unified_diff(
@@ -665,16 +790,6 @@ def _load_registry(run_root: Path) -> dict[str, object]:
         raise RunArtifactError(f"cannot load candidate registry: {exc}") from exc
 
 
-def _next_candidate_id(registry: Mapping[str, object]) -> str:
-    candidates = registry.get("candidates", {})
-    numbers = [
-        int(match.group(1))
-        for key in candidates
-        if (match := re.fullmatch(r"candidate_(\d+)", str(key)))
-    ] if isinstance(candidates, Mapping) else []
-    return f"candidate_{(max(numbers) + 1) if numbers else 0:03d}"
-
-
 def _materialize_candidate(
     task: PublicTask,
     run_root: Path,
@@ -686,92 +801,23 @@ def _materialize_candidate(
     proposal: PatchProposal,
     proposal_ref: str,
 ) -> tuple[str, dict[str, object]]:
-    candidates = registry["candidates"]
-    if not isinstance(candidates, dict):
-        raise RunArtifactError("candidate registry candidates is not an object")
-    patch_hash = _sha256(patch_text.encode("utf-8"))
-    for candidate_id, value in candidates.items():
-        if isinstance(value, Mapping) and value.get("patch_sha256") == patch_hash:
-            source = run_root / str(value.get("source_ref", ""))
-            if source.is_file() and source.read_bytes() == application.patched_bytes:
-                return str(candidate_id), dict(value)
-    candidate_id = _next_candidate_id(registry)
-    source_ref = f"candidates/{candidate_id}/source/{task.kernel_name}"
-    patch_ref = f"candidates/{candidate_id}/patch.diff"
-    metadata_ref = f"candidates/{candidate_id}/candidate.json"
-    record: dict[str, object] = {
-        "candidate_id": candidate_id,
-        "parent_id": "candidate_000",
-        "kind": "repair",
-        "immutable": True,
-        "source_ref": source_ref,
-        "patch_ref": patch_ref,
-        "patch_sha256": patch_hash,
-        "code_hash": application.patched_sha256,
-        "status": "MATERIALIZED",
-        "validation": {"csim": {"status": "NOT_RUN"}, "synth": {"status": "NOT_RUN"}, "cosim": {"status": "NOT_RUN"}},
-        "metrics_ref": None,
+    materialized = CandidateManager(run_root, task).materialize(
+        registry,
+        parent_id="candidate_000",
+        patch_text=patch_text,
+        application=application,
+        kind="repair",
+        metadata={
         "diagnostic_ref": f"diagnostics/{diagnostic.candidate_id}.json",
         "llm_ref": proposal_ref,
         "provider": proposal.provider,
         "model": proposal.model,
         "revision": proposal.revision,
-        "credits_used": 0,
         "input_tokens": proposal.input_tokens,
         "output_tokens": proposal.output_tokens,
-    }
-    candidate_root = run_root / "candidates" / candidate_id
-    source_path = candidate_root / "source" / task.kernel_name
-    patch_path = candidate_root / "patch.diff"
-    metadata_path = candidate_root / "candidate.json"
-    if candidate_root.exists():
-        try:
-            recovered = json.loads(metadata_path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise RunArtifactError(
-                f"orphaned candidate {candidate_id} cannot be recovered: {exc}"
-            ) from exc
-        if (
-            not isinstance(recovered, dict)
-            or recovered.get("candidate_id") != candidate_id
-            or recovered.get("patch_sha256") != patch_hash
-            or recovered.get("code_hash") != application.patched_sha256
-            or not source_path.is_file()
-            or source_path.read_bytes() != application.patched_bytes
-            or not patch_path.is_file()
-            or patch_path.read_text(encoding="utf-8") != patch_text
-        ):
-            raise RunArtifactError(f"orphaned candidate {candidate_id} is inconsistent")
-    else:
-        staging_parent = run_root / ".candidate_staging"
-        staging_parent.mkdir(parents=True, exist_ok=True)
-        staging_root = Path(
-            tempfile.mkdtemp(prefix=f"{candidate_id}.", dir=staging_parent)
-        )
-        try:
-            staged_source = staging_root / "source" / task.kernel_name
-            staged_patch = staging_root / "patch.diff"
-            staged_metadata = staging_root / "candidate.json"
-            staged_source.parent.mkdir(parents=True, exist_ok=False)
-            staged_source.write_bytes(application.patched_bytes)
-            staged_patch.write_text(patch_text, encoding="utf-8")
-            _atomic_json(staged_metadata, record)
-            for path in (staged_source, staged_patch, staged_metadata):
-                path.chmod(stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
-            candidate_root.parent.mkdir(parents=True, exist_ok=True)
-            os.replace(staging_root, candidate_root)
-        except Exception:
-            shutil.rmtree(staging_root, ignore_errors=True)
-            raise
-        finally:
-            try:
-                staging_parent.rmdir()
-            except OSError:
-                pass
-    candidates[candidate_id] = record
-    registry["active_candidate_id"] = candidate_id
-    _atomic_json(run_root / "candidate_registry.json", registry)
-    return candidate_id, record
+        },
+    )
+    return materialized.candidate_id, materialized.record
 
 
 def _validate_candidate(
@@ -783,84 +829,20 @@ def _validate_candidate(
     *,
     backend: ToolBackend | None,
 ) -> dict[str, object]:
-    budget = BudgetLedger(run_root / "budget_ledger.jsonl", config.budget)
-    server = ToolServer(
-        task=task,
-        budget=budget,
-        run_root=run_root,
-        config=config.tool,
-        backend=backend or VitisBackend(),
-    )
-    validation: dict[str, dict[str, object]] = {
-        "csim": {"status": "NOT_RUN"},
-        "synth": {"status": "NOT_RUN"},
-        "cosim": {"status": "NOT_RUN"},
-    }
-    stop_reason: str | None = None
-    clock = {
-        "minimum_frequency_mhz": config.minimum_frequency_mhz,
-        "maximum_period_ns": 1000.0 / config.minimum_frequency_mhz,
-        "estimated_period_ns": None,
-        "passed": False,
-    }
-    csim, error, reason = _invoke_stage(
-        server, "csim", kernel_bytes, candidate_id=candidate_id
-    )
-    if csim is None:
-        validation["csim"] = error or {"status": "TOOL_ERROR"}
-        stop_reason = reason or "CSIM_ERROR"
-    else:
-        validation["csim"] = _validation_record(csim)
-        if not csim.ok:
-            stop_reason = f"CSIM_{csim.phase.upper()}"
-    synth = None
-    if csim is not None and csim.ok:
-        synth, error, reason = _invoke_stage(
-            server, "synth", kernel_bytes, candidate_id=candidate_id
-        )
-        if synth is None:
-            validation["synth"] = error or {"status": "TOOL_ERROR"}
-            stop_reason = reason or "SYNTH_ERROR"
-        else:
-            validation["synth"] = _validation_record(synth)
-            if not synth.ok:
-                stop_reason = f"SYNTH_{synth.phase.upper()}"
-    cosim = None
-    if synth is not None and synth.ok:
-        estimated = synth.report.get("estimated_clock_period_ns") if synth.report else None
-        clock["estimated_period_ns"] = estimated
-        if isinstance(estimated, bool) or not isinstance(estimated, (int, float)) or not math.isfinite(float(estimated)) or float(estimated) <= 0:
-            stop_reason = "SYNTH_INVALID_CLOCK_METRIC"
-        elif float(estimated) > float(clock["maximum_period_ns"]):
-            stop_reason = "CLOCK_CONSTRAINT_FAILED"
-        else:
-            clock["passed"] = True
-            cosim, error, reason = _invoke_stage(
-                server, "cosim", kernel_bytes, candidate_id=candidate_id
-            )
-            if cosim is None:
-                validation["cosim"] = error or {"status": "TOOL_ERROR"}
-                stop_reason = reason or "COSIM_ERROR"
-            else:
-                validation["cosim"] = _validation_record(cosim)
-                if not cosim.ok:
-                    stop_reason = f"COSIM_{cosim.phase.upper()}"
-    if cosim is not None and cosim.ok and stop_reason is None:
-        status = "DONE"
-        stop_reason = "CANDIDATE_VERIFIED"
-    else:
-        status = "FAILED"
-    metrics_ref = None
-    if synth is not None and synth.report is not None:
-        metrics_ref = synth.result_ref
-    return {
-        "status": status,
-        "stop_reason": stop_reason,
-        "validation": validation,
-        "clock_constraint": clock,
-        "metrics_ref": metrics_ref,
-        "budget": budget.snapshot(),
-    }
+    shared = validate_candidate(
+        task,
+        kernel_bytes,
+        candidate_id,
+        run_root,
+        config,
+        backend=backend,
+    ).to_dict()
+    records = shared.get("validation")
+    if isinstance(records, dict):
+        for record in records.values():
+            if isinstance(record, dict):
+                record.pop("validation_scope", None)
+    return shared
 
 
 def run_v1(
@@ -994,6 +976,11 @@ def run_v1(
 
     normalized_patch = normalize_unified_diff_headers(proposal.patch)
     try:
+        normalized_patch = relocate_unified_diff_hunks(
+            task.kernel_bytes,
+            normalized_patch,
+            kernel_name=task.kernel_name,
+        )
         application = apply_unified_diff(
             task.kernel_bytes,
             normalized_patch,

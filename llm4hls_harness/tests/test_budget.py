@@ -76,6 +76,45 @@ class BudgetLedgerTests(unittest.TestCase):
             self.assertEqual(snapshot["output_tokens_used"], 1)
             self.assertEqual(snapshot["cached_input_tokens_used"], 1)
 
+    def test_started_action_durably_reserves_tokens_and_reconciles_actual(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = BudgetLedger(Path(tmp) / "ledger.jsonl", config(tokens=10))
+            ledger.reserve(
+                action_id="reserved",
+                kind="csim",
+                candidate_id="candidate_000",
+                code_hash="code",
+                tool_config_hash="tool",
+                estimated_tokens=8,
+            )
+
+            pending = ledger.snapshot()
+            self.assertEqual(pending["pending_tokens_reserved"], 8)
+            self.assertEqual(pending["tokens_remaining"], 2)
+            with self.assertRaises(BudgetExceeded):
+                ledger.reserve(
+                    action_id="too-large",
+                    kind="synth",
+                    candidate_id="candidate_000",
+                    code_hash="code",
+                    tool_config_hash="tool",
+                    estimated_tokens=3,
+                )
+
+            ledger.complete(
+                action_id="reserved",
+                result_ref="result.json",
+                result_sha256="0" * 64,
+                elapsed_s=0.1,
+                tokens_used=3,
+                input_tokens=2,
+                output_tokens=1,
+            )
+            completed = ledger.snapshot()
+            self.assertEqual(completed["pending_tokens_reserved"], 0)
+            self.assertEqual(completed["tokens_used"], 3)
+            self.assertEqual(completed["tokens_remaining"], 7)
+
 
 if __name__ == "__main__":
     unittest.main()

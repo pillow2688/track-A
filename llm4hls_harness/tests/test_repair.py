@@ -5,6 +5,7 @@ import stat
 import tempfile
 import unittest
 from dataclasses import replace
+from hashlib import sha256
 from pathlib import Path
 
 from llm4hls_agent.budget import BudgetConfig
@@ -19,6 +20,7 @@ from llm4hls_agent.repair import (
     deterministic_fallback_proposal,
     FailureDiagnostic,
     normalize_unified_diff_headers,
+    relocate_unified_diff_hunks,
     run_v1,
 )
 from llm4hls_agent.task import load_public_task
@@ -173,6 +175,27 @@ class RepairTests(unittest.TestCase):
             [line for line in normalized.splitlines() if not line.startswith("@@")],
         )
 
+    def test_patch_relocator_repairs_unique_off_by_one_hunk_start_only(self) -> None:
+        misplaced = self.patch().replace("@@ -1,4 +1,4 @@", "@@ -2,4 +2,4 @@")
+
+        relocated = relocate_unified_diff_hunks(
+            self.task.kernel_bytes,
+            misplaced,
+            kernel_name="kernel.cpp",
+        )
+        application = apply_unified_diff(
+            self.task.kernel_bytes,
+            relocated,
+            kernel_name="kernel.cpp",
+        )
+
+        self.assertIn("@@ -1,4 +1,4 @@", relocated)
+        self.assertIn(b"value + 1", application.patched_bytes)
+        self.assertEqual(
+            [line for line in misplaced.splitlines() if not line.startswith("@@")],
+            [line for line in relocated.splitlines() if not line.startswith("@@")],
+        )
+
     def test_diagnosis_localizes_public_failure(self) -> None:
         run_root = self.root / "diagnostic-run"
         action = run_root / "actions" / "a"
@@ -247,7 +270,14 @@ class RepairTests(unittest.TestCase):
         self.assertEqual(registry["best_candidate_id"], "candidate_001")
         self.assertEqual(registry["final_candidate_id"], "candidate_001")
         candidate = registry["candidates"]["candidate_001"]
+        self.assertEqual(candidate["parent_id"], "candidate_000")
         self.assertEqual(candidate["status"], "VERIFIED")
+        self.assertTrue(candidate["immutable"])
+        self.assertEqual(candidate["code_hash"], result["patch"]["patched_sha256"])
+        self.assertEqual(
+            candidate["patch_sha256"],
+            sha256(result["patch"]["applied_patch"].encode("utf-8")).hexdigest(),
+        )
         self.assertEqual(candidate["validation"]["cosim"]["status"], "PASS")
         source = run_dir / candidate["source_ref"]
         self.assertIn("value + 1", source.read_text())

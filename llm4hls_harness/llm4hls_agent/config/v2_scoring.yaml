@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "ppa_weights": {
+    "latency": 0.45,
+    "ii": 0.35,
+    "lut": 0.06,
+    "ff": 0.04,
+    "dsp": 0.04,
+    "bram": 0.04,
+    "uram": 0.02
+  },
+  "max_resource_percent": {
+    "lut": 100.0,
+    "ff": 100.0,
+    "dsp": 100.0,
+    "bram": 100.0,
+    "uram": 100.0
+  },
+  "required_verification_tier": 4,
+  "official_score": {
+    "enabled": false
+  }
+}

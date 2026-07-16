@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import math
 import tempfile
 import unittest
@@ -184,6 +185,52 @@ class MeteredToolServerTests(unittest.TestCase):
             for line in (self.run_dir / "trace.jsonl").read_text(encoding="utf-8").splitlines()
         ]
         self.assertEqual(trace_events[-1], "TOOL_CACHE_HIT")
+
+    def test_final_scope_has_distinct_action_and_charge(self) -> None:
+        budget, server = self.make_server()
+
+        exploration = server.csim(
+            self.task.kernel_code,
+            candidate_id="candidate_001",
+        )
+        final = server.csim(
+            self.task.kernel_code,
+            candidate_id="candidate_001",
+            validation_scope="final",
+        )
+
+        self.assertNotEqual(exploration.action_id, final.action_id)
+        self.assertEqual(exploration.validation_scope, "exploration")
+        self.assertEqual(final.validation_scope, "final")
+        self.assertEqual(self.backend.calls, ["csim", "csim"])
+        self.assertEqual(budget.snapshot()["tool_used"]["csim"], 2)
+
+    def test_default_scope_preserves_legacy_action_payload(self) -> None:
+        _, server = self.make_server()
+
+        result = server.csim(
+            self.task.kernel_code,
+            candidate_id="candidate_000",
+        )
+
+        payload = {
+            "kind": "csim",
+            "candidate_id": "candidate_000",
+            "code_hash": self.task.kernel_sha256,
+            "tool_config_hash": server.config.hash_for(
+                "csim", backend_fingerprint=server.backend_fingerprint
+            ),
+            "backend_fingerprint": server.backend_fingerprint,
+            "task_fingerprint": server.task_fingerprint,
+        }
+        encoded = json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        ).encode()
+        self.assertEqual(result.action_id, hashlib.sha256(encoded).hexdigest())
 
     def test_budget_denial_happens_before_backend_execution(self) -> None:
         budget, server = self.make_server(total=1)

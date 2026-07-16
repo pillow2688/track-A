@@ -18,6 +18,7 @@ from .task import PublicTask
 
 
 _SAFE_TCL_ATOM = re.compile(r"\A[A-Za-z0-9_.+-]+\Z")
+_VALIDATION_SCOPES = {"exploration", "final"}
 
 
 class ToolArtifactError(RuntimeError):
@@ -187,11 +188,15 @@ class ToolResult:
     evidence: list[str]
     artifacts: dict[str, str]
     artifact_hashes: dict[str, str]
+    validation_scope: str = "exploration"
     report: dict[str, object] | None = None
     cosim: dict[str, object] | None = None
 
     def to_dict(self) -> dict[str, object]:
-        return asdict(self)
+        value = asdict(self)
+        if self.validation_scope == "exploration":
+            value.pop("validation_scope", None)
+        return value
 
     @classmethod
     def from_dict(cls, value: dict[str, object]) -> "ToolResult":
@@ -221,6 +226,7 @@ class ToolResult:
                 str(key): str(item)
                 for key, item in dict(value.get("artifact_hashes", {})).items()
             },
+            validation_scope=str(value.get("validation_scope", "exploration")),
             report=value.get("report") if isinstance(value.get("report"), dict) else None,
             cosim=value.get("cosim") if isinstance(value.get("cosim"), dict) else None,
         )
@@ -296,19 +302,31 @@ class ToolServer:
         self.budget.write_snapshot(self.budget_state_path)
 
     def csim(
-        self, kernel_code: str | bytes, *, candidate_id: str = "candidate_000"
+        self,
+        kernel_code: str | bytes,
+        *,
+        candidate_id: str = "candidate_000",
+        validation_scope: str = "exploration",
     ) -> ToolResult:
-        return self._invoke("csim", kernel_code, candidate_id)
+        return self._invoke("csim", kernel_code, candidate_id, validation_scope)
 
     def synth(
-        self, kernel_code: str | bytes, *, candidate_id: str = "candidate_000"
+        self,
+        kernel_code: str | bytes,
+        *,
+        candidate_id: str = "candidate_000",
+        validation_scope: str = "exploration",
     ) -> ToolResult:
-        return self._invoke("synth", kernel_code, candidate_id)
+        return self._invoke("synth", kernel_code, candidate_id, validation_scope)
 
     def cosim(
-        self, kernel_code: str | bytes, *, candidate_id: str = "candidate_000"
+        self,
+        kernel_code: str | bytes,
+        *,
+        candidate_id: str = "candidate_000",
+        validation_scope: str = "exploration",
     ) -> ToolResult:
-        return self._invoke("cosim", kernel_code, candidate_id)
+        return self._invoke("cosim", kernel_code, candidate_id, validation_scope)
 
     def _trace(self, event: str, **fields: object) -> None:
         _append_jsonl(
@@ -326,6 +344,7 @@ class ToolServer:
         candidate_id: str,
         code_hash: str,
         tool_config_hash: str,
+        validation_scope: str,
         result_ref: str,
     ) -> ToolResult:
         try:
@@ -353,6 +372,7 @@ class ToolServer:
             or result.candidate_id != candidate_id
             or result.code_hash != code_hash
             or result.tool_config_hash != tool_config_hash
+            or result.validation_scope != validation_scope
             or result.backend_fingerprint != self.backend_fingerprint
             or result.task_fingerprint != self.task_fingerprint
             or result.result_ref != result_ref
@@ -371,8 +391,14 @@ class ToolServer:
         return result
 
     def _invoke(
-        self, kind: str, kernel_code: str | bytes, candidate_id: str
+        self,
+        kind: str,
+        kernel_code: str | bytes,
+        candidate_id: str,
+        validation_scope: str,
     ) -> ToolResult:
+        if validation_scope not in _VALIDATION_SCOPES:
+            raise ValueError(f"unsupported validation scope: {validation_scope}")
         kernel_bytes = (
             kernel_code.encode("utf-8")
             if isinstance(kernel_code, str)
@@ -390,6 +416,8 @@ class ToolServer:
             "backend_fingerprint": self.backend_fingerprint,
             "task_fingerprint": self.task_fingerprint,
         }
+        if validation_scope != "exploration":
+            action_payload["validation_scope"] = validation_scope
         action_id = _sha256(_canonical_json(action_payload).encode())
         result_ref = f"actions/{action_id}/result.json"
         result_path = self.run_root / result_ref
@@ -415,6 +443,7 @@ class ToolServer:
                     candidate_id=candidate_id,
                     code_hash=code_hash,
                     tool_config_hash=tool_config_hash,
+                    validation_scope=validation_scope,
                     result_ref=result_ref,
                 ),
                 cached=True,
@@ -447,6 +476,7 @@ class ToolServer:
                     candidate_id=candidate_id,
                     code_hash=code_hash,
                     tool_config_hash=tool_config_hash,
+                    validation_scope=validation_scope,
                     result_ref=result_ref,
                 )
                 result_digest = _sha256(result_path.read_bytes())
@@ -484,8 +514,9 @@ class ToolServer:
         self._trace(
             "TOOL_STARTED",
             action_id=action_id,
-            candidate_id=candidate_id,
-            kind=kind,
+                candidate_id=candidate_id,
+                kind=kind,
+                validation_scope=validation_scope,
             code_hash=code_hash,
             tool_config_hash=tool_config_hash,
             backend_fingerprint=self.backend_fingerprint,
@@ -554,6 +585,7 @@ class ToolServer:
             evidence=list(backend_result.evidence),
             artifacts=dict(backend_result.artifacts),
             artifact_hashes=artifact_hashes,
+            validation_scope=validation_scope,
             report=backend_result.report,
             cosim=backend_result.cosim,
         )
@@ -584,6 +616,7 @@ class ToolServer:
             action_id=action_id,
             candidate_id=candidate_id,
             kind=kind,
+            validation_scope=validation_scope,
             phase=result.phase,
             ok=result.ok,
             result_ref=result_ref,
