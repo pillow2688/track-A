@@ -1,6 +1,6 @@
 # V1 单文件优先验收报告与静态 Dashboard 设计
 
-Status: revised design awaiting user re-review<br>
+Status: approved<br>
 Owner: team<br>
 Date: 2026-07-16<br>
 Scope: `llm4hls_harness` V1 unified acceptance reporting
