@@ -49,6 +49,20 @@ def write_public_task(root: Path, *, kernel_file: str = "kernel.cpp") -> None:
 
 
 class PublicTaskLoaderTests(unittest.TestCase):
+    def test_v1_compile_and_synthesis_fixtures_load_as_public_tasks(self) -> None:
+        examples = Path(__file__).parents[1] / "examples"
+        expected = {
+            "u55c_compile_repair_task": "u55c_compile_repair",
+            "u55c_synthesis_repair_task": "u55c_synthesis_repair",
+        }
+        for directory, task_id in expected.items():
+            with self.subTest(directory=directory):
+                task = load_public_task(examples / directory)
+                self.assertEqual(task.id, task_id)
+                self.assertEqual(task.part, "xcu55c-fsvh2892-2L-e")
+                self.assertEqual(task.clock_ns, 10.0)
+                self.assertTrue(task.requires_cosim)
+
     def test_loads_only_public_files_and_returns_immutable_task(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

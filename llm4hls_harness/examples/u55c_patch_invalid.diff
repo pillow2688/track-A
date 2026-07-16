@@ -1,0 +1,5 @@
+--- a/kernel_tb.cpp
++++ b/kernel_tb.cpp
+@@ -3 +3 @@
+-#include <iostream>
++#include <cstdio>

@@ -326,10 +326,14 @@ def _tool_exception(stage: str, exc: Exception) -> tuple[dict[str, object], str]
 
 
 def _invoke_stage(
-    server: ToolServer, stage: str, kernel_bytes: bytes
+    server: ToolServer,
+    stage: str,
+    kernel_bytes: bytes,
+    *,
+    candidate_id: str = "candidate_000",
 ) -> tuple[ToolResult | None, dict[str, object] | None, str | None]:
     try:
-        result = getattr(server, stage)(kernel_bytes, candidate_id="candidate_000")
+        result = getattr(server, stage)(kernel_bytes, candidate_id=candidate_id)
     except (
         BudgetError,
         AmbiguousActionError,
@@ -368,6 +372,8 @@ def _run_v0_locked(
     baseline_path, baseline_ref = _snapshot_baseline(task, run_root)
     registry = _create_or_load_registry(task, run_root, baseline_ref)
     candidate = registry["candidates"]["candidate_000"]  # type: ignore[index]
+    prior_best_candidate_id = registry.get("best_candidate_id")
+    prior_final_candidate_id = registry.get("final_candidate_id")
 
     # Open and validate accounting before replacing any previously verified
     # registry state.  A corrupt ledger therefore cannot erase good evidence.
@@ -383,8 +389,12 @@ def _run_v0_locked(
     candidate["validation"] = _initial_validation()
     candidate["status"] = "EVALUATING"
     candidate["metrics_ref"] = None
-    registry["best_candidate_id"] = None
-    registry["final_candidate_id"] = None
+    # V0 may be reused as the baseline-validation prefix of V1. Rechecking a
+    # failed baseline must not erase a previously verified repair candidate.
+    if prior_best_candidate_id in {None, "candidate_000"}:
+        registry["best_candidate_id"] = None
+    if prior_final_candidate_id in {None, "candidate_000"}:
+        registry["final_candidate_id"] = None
     # Keep the last durable registry intact until this attempt reaches a
     # terminal state.  Per-stage durability lives in ledger/action/trace files.
     _append_trace(
@@ -491,8 +501,10 @@ def _run_v0_locked(
 
     if status == "DONE":
         candidate["status"] = "VERIFIED"
-        registry["best_candidate_id"] = "candidate_000"
-        registry["final_candidate_id"] = "candidate_000"
+        if prior_best_candidate_id in {None, "candidate_000"}:
+            registry["best_candidate_id"] = "candidate_000"
+        if prior_final_candidate_id in {None, "candidate_000"}:
+            registry["final_candidate_id"] = "candidate_000"
     else:
         candidate["status"] = "FAILED"
     snapshot = budget.snapshot()

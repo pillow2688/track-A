@@ -1,4 +1,4 @@
-# LLM4HLS Agent — Internal Milestone V0: Deterministic Harness
+# LLM4HLS Agent — Internal Milestones V0–V1
 
 English | [简体中文](README_CN.md)
 
@@ -6,16 +6,121 @@ V0–V4 are this project's internal engineering milestones, not official contest
 stages. The contest-provided example is named **Reference Agent & Evaluation
 Harness**. See the [Chinese comparison](../doc/materials/02_harness/2026-07-14-official-reference-vs-internal-v0.md).
 
-This directory contains only the V0 vertical slice: an immutable baseline is
-loaded from a reference-compatible public task package, then run through the
-budget-charged `csim -> synth -> cosim` sequence. There is no LLM, LangGraph,
-patch generation, optimization loop, hidden grading, or reference-solution use.
+V0 provides an immutable, budget-audited `csim -> synth -> cosim` baseline.
+V1 adds deterministic failure diagnosis, compact repair context, one constrained
+unified diff, an isolated candidate, real validation, promotion, and safe
+rollback. The repair proposal may come from an OpenAI-compatible API or a
+static patch fixture. V2 candidate/PPA optimization, V3 LangGraph orchestration,
+hidden grading, and reference-solution use are not included.
+
+`runs/v1-deepseek-final` is historical evidence that DeepSeek repaired
+`FUNCTIONAL_MISMATCH`, but it predates strict candidate/action binding and the
+Artifact Manifest. It must be regenerated and is not the completion of V1.
+V1 is complete only after `FUNCTIONAL_MISMATCH`, `COMPILE_ERROR`, and
+`SYNTHESIS_ERROR` all have real DeepSeek/Vitis evidence and the independent
+`PATCH_INVALID` safety case passes the deterministic acceptance evaluator.
 
 The runtime is self-contained and uses only Python 3.11+ standard-library
 modules. It never imports the reference harness. The task loader reads only
 `task.toml`, `description.md` when present, the configured kernel, configured
 headers, and the configured public testbench. Paths entering `hidden/` or
 `reference/` are rejected.
+
+## V1 OpenAI-compatible repair
+
+The API provider defaults to `deepseek-v4-pro`. DeepSeek V4 requests explicitly
+disable its default thinking mode so the bounded completion budget is spent on
+the final JSON patch. Provider-reported input/output token usage is persisted
+for successful and failed requests. Configure the
+endpoint and secret in the environment; the API key is never written to run
+configuration, traces, prompts, action results, or provider fingerprints.
+
+```bash
+cd /home/ying/CompetitionTrackA/track-A/llm4hls_harness
+export LLM4HLS_VITIS_HLS_ROOT=/home/ying/CompetitionTrackA/vitis/AMD/2025.2/Vitis
+export OPENAI_BASE_URL=https://api.deepseek.com
+export OPENAI_API_KEY=your-secret-value
+export LLM4HLS_MODEL=deepseek-v4-pro
+
+python3 -m llm4hls_agent repair examples/u55c_repair_task \
+  --run-dir runs/v1-deepseek-v4-pro \
+  --clock-ns 10 --minimum-frequency-mhz 100
+```
+
+`--allow-deterministic-fallback` is a debug-only path for the designated
+vector-add fixture and is disabled by default. A fallback candidate passing
+Vitis proves the validation loop, not LLM-based V1 acceptance. Real V1 evidence
+requires an `openai-compatible` candidate with API-reported token usage that
+passes Vitis csim, synth, and cosim.
+
+For deterministic offline regression only:
+
+```bash
+python3 -m llm4hls_agent repair examples/u55c_repair_task \
+  --run-dir runs/v1-static \
+  --provider static --patch-file examples/u55c_repair.diff \
+  --clock-ns 10 --minimum-frequency-mhz 100
+```
+
+The model receives only structured failure evidence, localized kernel lines,
+public constraints, and a budget summary. It must return one strict JSON object
+containing one unified diff. Only the configured kernel `.cpp` may change.
+`CANDIDATE_VERIFIED` means the isolated candidate passed csim, synth, cosim,
+and the minimum clock constraint. Provider, patch, validation, or budget failure
+produces an explicit stop reason and leaves the baseline/best candidate intact.
+
+Patch proposals are parsed, policy-checked, and dry-run against the immutable
+source before a candidate ID is allocated. An invalid patch therefore creates
+no candidate directory or registry record. A valid patch is atomically
+materialized, reset to `NOT_RUN`, registered, and then bound to its own Vitis
+actions.
+
+## V1 three-error acceptance
+
+| Case | Baseline boundary | Required result |
+|---|---|---|
+| `FUNCTIONAL_MISMATCH` | public csim mismatch | real DeepSeek candidate passes csim/synth/cosim/clock |
+| `COMPILE_ERROR` | csim compile failure | real DeepSeek candidate passes csim/synth/cosim/clock |
+| `SYNTHESIS_ERROR` | csim PASS, synth failure | real DeepSeek candidate passes csim/synth/cosim/clock |
+| `PATCH_INVALID` | forbidden testbench patch | workflow fails safely before candidate allocation |
+
+Preflight the new error boundaries without an LLM:
+
+```bash
+python3 -m llm4hls_agent run examples/u55c_compile_repair_task \
+  --run-dir runs/v1-compile-preflight --clock-ns 10
+
+python3 -m llm4hls_agent run examples/u55c_synthesis_repair_task \
+  --run-dir runs/v1-synthesis-preflight --clock-ns 10
+```
+
+Run `repair` for all three HLS tasks with the API environment shown above. The
+independent safety case makes no API call:
+
+```bash
+python3 -m llm4hls_agent repair examples/u55c_repair_task \
+  --run-dir runs/v1-patch-invalid \
+  --provider static --patch-file examples/u55c_patch_invalid.diff \
+  --clock-ns 10 || test $? -eq 2
+```
+
+Finally evaluate the complete matrix. Evidence runs are read-only and the
+result is written to a separate output directory:
+
+```bash
+python3 -m llm4hls_agent accept-v1 \
+  --functional-run runs/v1-functional-final-2 \
+  --compile-run runs/v1-compile-final \
+  --synthesis-run runs/v1-synthesis-final-2 \
+  --patch-invalid-run runs/v1-patch-invalid \
+  --output-dir runs/v1-acceptance
+```
+
+Only canonical real evidence can produce `overall_status=PASS`. Unit/fake
+evidence is labelled `TEST_PASS` and cannot complete V1. The command writes
+both machine-readable `acceptance_result.json` and `acceptance_report.md`, whose
+matrix links all four reports and Manifests and includes the exact evaluation
+reproduction command.
 
 ## How the official reference maps to our milestones
 
@@ -85,8 +190,13 @@ override them. The main environment variables are:
 - `LLM4HLS_COST_CSIM`, `LLM4HLS_COST_SYNTH`, `LLM4HLS_COST_COSIM`
 - `LLM4HLS_CSIM_TIMEOUT_S`, `LLM4HLS_SYNTH_TIMEOUT_S`,
   `LLM4HLS_COSIM_TIMEOUT_S`
-- `LLM4HLS_TOKEN_BUDGET` (recorded as zero used in no-LLM V0)
+- `LLM4HLS_TOKEN_BUDGET` (zero in V0; V1 records provider-reported input,
+  output, cached-input, and total tokens for successful and failed calls)
 - `LLM4HLS_RUNTIME_LIMIT_S`, `LLM4HLS_MIN_FREQUENCY_MHZ`
+- `OPENAI_BASE_URL`, `OPENAI_API_KEY`
+- `LLM4HLS_MODEL` (default `deepseek-v4-pro`)
+- `LLM4HLS_LLM_TIMEOUT_S`, `LLM4HLS_LLM_MAX_OUTPUT_TOKENS`,
+  `LLM4HLS_LLM_TEMPERATURE`, `LLM4HLS_COST_LLM`
 
 Use `python3 -m llm4hls_agent run --help` for every override and per-tool call
 limit.
@@ -106,6 +216,12 @@ trace.jsonl                    workflow, tool, recovery, and cache events
 baseline/source/<kernel>.cpp   read-only byte-for-byte baseline snapshot
 actions/<action_id>/result.json
 actions/<action_id>/work/      Tcl, stdout, stderr, XML, reports, Vitis work tree
+diagnostics/<candidate_id>.json
+llm_actions/<action_id>/result.json
+candidates/<candidate_id>/     read-only source, patch, and candidate metadata
+v1_result.json                 V1 decision, validation, rollback, and budget result
+experimental_report.md         human-readable Vitis, Token, credit, and metric report
+artifact_manifest.json         sorted paths, sizes, SHA-256, producer/action bindings
 ```
 
 Every action uses a full SHA-256 ID and is bound to the candidate, code, full

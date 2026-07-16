@@ -1,0 +1,35 @@
+{
+  "acceptance_id": "v1-three-hls-errors",
+  "cases": [
+    {
+      "case_id": "functional_mismatch",
+      "error_class": "FUNCTIONAL_MISMATCH",
+      "kind": "hls",
+      "task_id": "u55c_vector_add_repair"
+    },
+    {
+      "case_id": "compile_error",
+      "error_class": "COMPILE_ERROR",
+      "kind": "hls",
+      "task_id": "u55c_compile_repair"
+    },
+    {
+      "case_id": "synthesis_error",
+      "error_class": "SYNTHESIS_ERROR",
+      "kind": "hls",
+      "task_id": "u55c_synthesis_repair"
+    },
+    {
+      "case_id": "patch_invalid",
+      "error_class": "PATCH_INVALID",
+      "kind": "safety",
+      "task_id": "u55c_vector_add_repair"
+    }
+  ],
+  "evidence_tier": "REAL",
+  "required_backend_fingerprint": "llm4hls_agent.vitis.VitisBackend:v0.4",
+  "required_model": "deepseek-v4-pro",
+  "required_provider": "openai-compatible",
+  "required_toolchain": "Vitis 2025.2",
+  "schema_version": 1
+}

@@ -15,6 +15,8 @@
 9. `07_experiments/`：记录模型和 Agent 实验
 10. `08_paper_and_demo/`：沉淀论文和 demo 材料
 
+开发过程中每次问题修复后，还必须更新 `07_experiments/` 中对应的 readiness/复盘文档；复盘是里程碑验收证据的一部分。
+
 ## 最新提交要求
 
 - [Track-A Submission Guidelines 中文翻译与执行清单](../01_official/2026-07-10-track-a-submission-guidelines-zh.md)
@@ -30,6 +32,10 @@
 4. [Budget-Aware LangGraph LLM4HLS Agent 设计总规范](../04_agent_basics/2026-07-14-budget-aware-langgraph-llm4hls-agent-design.md)：进入团队当前的完整设计与实现契约
 5. [LangGraph 状态编排契约](../04_agent_basics/2026-07-14-langgraph-state-orchestration-contract.md)：单独查阅 State、条件边和失败闭环
 6. [预算感知工具策略与最优停止](../04_agent_basics/2026-07-10-budget-aware-tool-policy-and-optimal-stopping.md)：深入预算与停止策略
+
+## 当前问题复盘
+
+- [V1 问题复盘与 V2 开发清单](../07_experiments/2026-07-15-v1-errors-and-v2-readiness.md)
 
 ## 待归类资料
 

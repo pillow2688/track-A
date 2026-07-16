@@ -70,6 +70,13 @@ class PassingBackend:
         return BackendResult(True, "pass", 0, 0.1)
 
 
+class RepairingBackend(PassingBackend):
+    def run(self, kind: str, *, kernel_bytes: bytes, **kwargs: object):
+        if b"value - 1" in kernel_bytes:
+            return BackendResult(False, "runtime_fail", 1, 0.1, ["kernel.cpp:2 mismatch"])
+        return super().run(kind, kernel_bytes=kernel_bytes, **kwargs)
+
+
 class CliTests(unittest.TestCase):
     def test_run_command_writes_result_and_prints_machine_readable_summary(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -101,6 +108,7 @@ class CliTests(unittest.TestCase):
             self.assertEqual(summary["status"], "DONE")
             self.assertEqual(summary["credits_used"], 25)
             self.assertTrue((run_dir / "workflow_result.json").is_file())
+            self.assertTrue((run_dir / "artifact_manifest.json").is_file())
 
     def test_invalid_numeric_environment_is_a_machine_readable_config_error(self) -> None:
         stderr = io.StringIO()
@@ -113,6 +121,51 @@ class CliTests(unittest.TestCase):
         self.assertEqual(return_code, 3)
         self.assertEqual(error["status"], "ERROR")
         self.assertEqual(error["error_type"], "ValueError")
+
+    def test_static_v1_repair_command_is_an_explicit_offline_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task_dir = root / "task"
+            task_dir.mkdir()
+            make_task(task_dir)
+            (task_dir / "kernel.cpp").write_text(
+                '#include "kernel.h"\nvoid kernel() { int value = 1; value = value - 1; }\n',
+                encoding="utf-8",
+            )
+            patch_file = root / "repair.diff"
+            patch_file.write_text(
+                "--- a/kernel.cpp\n"
+                "+++ b/kernel.cpp\n"
+                "@@ -1,2 +1,2 @@\n"
+                ' #include "kernel.h"\n'
+                "-void kernel() { int value = 1; value = value - 1; }\n"
+                "+void kernel() { int value = 1; value = value + 1; }\n",
+                encoding="utf-8",
+            )
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                return_code = main(
+                    [
+                        "repair",
+                        str(task_dir),
+                        "--run-dir",
+                        str(root / "run"),
+                        "--provider",
+                        "static",
+                        "--patch-file",
+                        str(patch_file),
+                        "--credit-limit",
+                        "80",
+                    ],
+                    backend=RepairingBackend(),
+                )
+            summary = json.loads(stdout.getvalue())
+            self.assertEqual(return_code, 0)
+            self.assertEqual(summary["status"], "DONE")
+            self.assertEqual(summary["candidate_id"], "candidate_001")
+            self.assertEqual(summary["manifest_ref"], "artifact_manifest.json")
+            self.assertTrue((root / "run" / "experimental_report.md").is_file())
+            self.assertTrue((root / "run" / "artifact_manifest.json").is_file())
 
 
 if __name__ == "__main__":

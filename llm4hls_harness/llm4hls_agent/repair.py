@@ -1,0 +1,1128 @@
+"""V1 minimal repair loop with constrained patches and isolated candidates.
+
+The module deliberately keeps the model boundary small: a provider may return
+one unified diff, but it cannot write files, run tools, or select the final
+candidate.  All materialization and validation remains deterministic and is
+audited through the V0 ToolServer and BudgetLedger.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import difflib
+import json
+import math
+import os
+import re
+import shutil
+import stat
+import tempfile
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+from typing import Mapping, Protocol
+
+from .budget import BudgetError, BudgetExceeded, BudgetLedger, BudgetLedgerError
+from .task import PublicTask
+from .tools import ToolBackend, ToolConfig, ToolResult, ToolServer
+from .vitis import VitisBackend
+from .workflow import (
+    RunArtifactError,
+    RunConfig,
+    _RunLock,
+    _append_trace,
+    _atomic_json,
+    _invoke_stage,
+    _sha256,
+    _validation_record,
+    run_v0,
+)
+
+
+class V1Error(RuntimeError):
+    """Base class for V1 repair errors."""
+
+
+class PatchValidationError(V1Error, ValueError):
+    """Raised when a model patch violates the constrained patch contract."""
+
+
+class RepairProviderError(V1Error):
+    """Raised when a repair provider returns unusable output."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        cached_input_tokens: int = 0,
+        duration_seconds: float = 0.0,
+        request_id: str | None = None,
+        response_excerpt: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.input_tokens = input_tokens
+        self.output_tokens = output_tokens
+        self.cached_input_tokens = cached_input_tokens
+        self.duration_seconds = duration_seconds
+        self.request_id = request_id
+        self.response_excerpt = response_excerpt
+
+
+_HUNK = re.compile(
+    r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(?: .*)?$"
+)
+_LINE_REFERENCE = re.compile(r"(?:^|[/\\])([^/\\:]+\.cpp):(\d+)")
+
+
+@dataclass(frozen=True)
+class PatchLimits:
+    """Safety limits applied before a patch can create a candidate."""
+
+    max_changed_lines: int = 80
+    max_hunks: int = 8
+    allow_full_file_replacement: bool = False
+
+    def __post_init__(self) -> None:
+        if self.max_changed_lines <= 0 or self.max_hunks <= 0:
+            raise ValueError("patch limits must be positive")
+
+
+@dataclass(frozen=True)
+class PatchProposal:
+    """A provider response; the provider cannot perform side effects."""
+
+    patch: str
+    provider: str = "scripted"
+    model: str = "offline"
+    revision: str | None = None
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cached_input_tokens: int = 0
+    request_id: str | None = None
+    duration_seconds: float = 0.0
+    hypothesis: str | None = None
+    change_class: str | None = None
+    expected_effect: str | None = None
+    risk: str | None = None
+    required_validation: tuple[str, ...] = ("csim", "synth", "cosim")
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.patch, str) or not self.patch.strip():
+            raise ValueError("patch must be a non-empty string")
+        if not self.provider or not self.model:
+            raise ValueError("provider and model must not be empty")
+        if self.input_tokens < 0 or self.output_tokens < 0 or self.cached_input_tokens < 0:
+            raise ValueError("token counts must be non-negative")
+        if not math.isfinite(self.duration_seconds) or self.duration_seconds < 0:
+            raise ValueError("provider duration must be finite and non-negative")
+        if any(stage not in {"csim", "synth", "cosim"} for stage in self.required_validation):
+            raise ValueError("required validation contains an unsupported stage")
+
+    @property
+    def tokens_used(self) -> int:
+        return int(self.input_tokens) + int(self.output_tokens)
+
+    def to_dict(self) -> dict[str, object]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class RepairContext:
+    """Small, localized context supplied to a repair provider."""
+
+    task_id: str
+    candidate_id: str
+    stage: str
+    phase: str
+    diagnostic_code: str
+    summary: str
+    evidence: tuple[str, ...]
+    source_excerpt: str
+    remaining_tokens: int
+    remaining_credits: int | None
+    top: str
+    kernel_name: str
+    part: str
+    clock_ns: float
+    initial_condition: str
+
+    def to_dict(self) -> dict[str, object]:
+        return asdict(self) | {"evidence": list(self.evidence)}
+
+
+class RepairProvider(Protocol):
+    """Provider boundary for one constrained repair proposal."""
+
+    def propose_patch(self, context: RepairContext) -> PatchProposal: ...
+
+
+class StaticPatchProvider:
+    """Offline provider used for deterministic tests and reproducible demos."""
+
+    def __init__(self, proposal: PatchProposal) -> None:
+        self.proposal = proposal
+
+    def fingerprint(self) -> str:
+        return "static:" + _sha256(self.proposal.patch.encode("utf-8"))
+
+    def propose_patch(self, _context: RepairContext) -> PatchProposal:
+        return self.proposal
+
+
+def deterministic_fallback_proposal(task: PublicTask, diagnostic: FailureDiagnostic) -> PatchProposal | None:
+    """V0-compatible minimal repair for the public vector-add fixture."""
+    if diagnostic.code != "FUNCTIONAL_MISMATCH" or task.top != "vector_add":
+        return None
+    old = task.kernel_bytes.decode("utf-8")
+    new = old.replace("c[i] = a[i] - b[i];", "c[i] = a[i] + b[i];", 1)
+    if new == old:
+        return None
+    patch = "".join(difflib.unified_diff(
+        old.splitlines(True), new.splitlines(True),
+        fromfile="a/kernel.cpp", tofile="b/kernel.cpp",
+    ))
+    return PatchProposal(
+        patch=patch, provider="v0-deterministic-fallback", model="v0",
+        hypothesis="The public vector-add kernel uses subtraction instead of addition.",
+        change_class="functional-correction", expected_effect="Match the public addition testbench.",
+        risk="Localized one-line arithmetic change.", required_validation=("csim", "synth", "cosim"),
+    )
+
+
+@dataclass(frozen=True)
+class PatchApplication:
+    """Result of applying one validated patch to one source snapshot."""
+
+    kernel_name: str
+    original_sha256: str
+    patched_sha256: str
+    patched_bytes: bytes
+    additions: int
+    deletions: int
+    hunks: int
+
+
+@dataclass(frozen=True)
+class FailureDiagnostic:
+    """Deterministic diagnosis passed to the provider and persisted on disk."""
+
+    candidate_id: str
+    stage: str
+    phase: str
+    code: str
+    summary: str
+    evidence: tuple[str, ...]
+    source_excerpt: str
+    source_lines: tuple[int, ...]
+    repairable: bool
+
+    def to_dict(self) -> dict[str, object]:
+        return asdict(self) | {
+            "evidence": list(self.evidence),
+            "source_lines": list(self.source_lines),
+        }
+
+
+def _canonical_json(value: object) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def _patch_path(raw: str, *, prefix: str, expected: str) -> str:
+    value = raw[len(prefix) :].split("\t", 1)[0].split(" ", 1)[0]
+    if value.startswith("a/") or value.startswith("b/"):
+        value = value[2:]
+    path = Path(value)
+    if path.is_absolute() or ".." in path.parts or "\\" in value:
+        raise PatchValidationError("patch path traversal is not allowed")
+    if value != expected:
+        raise PatchValidationError(
+            f"patch may modify only {expected!r}, received {value!r}"
+        )
+    if Path(value).suffix != ".cpp":
+        raise PatchValidationError("patch target must be a .cpp kernel")
+    return value
+
+
+def normalize_unified_diff_headers(patch: str) -> str:
+    """Recompute hunk counts without changing paths or hunk body content.
+
+    OpenAI-compatible models occasionally emit the intended minimal diff with
+    stale line counts after deleting a line. Count normalization belongs to
+    the deterministic parse/normalize step; the normalized diff must still
+    pass the complete path, policy, context, and dry-run validator.
+    """
+
+    lines = patch.splitlines()
+    changed = False
+    index = 0
+    while index < len(lines):
+        match = _HUNK.match(lines[index])
+        if match is None:
+            index += 1
+            continue
+        end = index + 1
+        valid_body = True
+        old_count = 0
+        new_count = 0
+        while end < len(lines) and _HUNK.match(lines[end]) is None:
+            body = lines[end]
+            if not body or body[0] not in " +-":
+                valid_body = False
+                break
+            if body[0] in " -":
+                old_count += 1
+            if body[0] in " +":
+                new_count += 1
+            end += 1
+        if valid_body:
+            closing = lines[index].find("@@", 2)
+            suffix = lines[index][closing + 2 :] if closing >= 0 else ""
+            normalized = (
+                f"@@ -{int(match.group(1))},{old_count} "
+                f"+{int(match.group(3))},{new_count} @@{suffix}"
+            )
+            if normalized != lines[index]:
+                lines[index] = normalized
+                changed = True
+        index = max(index + 1, end)
+    if not changed:
+        return patch
+    normalized_patch = "\n".join(lines)
+    return normalized_patch + ("\n" if patch.endswith("\n") else "")
+
+
+def apply_unified_diff(
+    source: bytes | str,
+    patch: str,
+    *,
+    kernel_name: str,
+    limits: PatchLimits | None = None,
+) -> PatchApplication:
+    """Strictly parse and apply a one-file unified diff.
+
+    Only the task kernel may be changed.  Headers, testbenches, metadata,
+    hidden/reference paths, fenced markdown, and whole-file replacements are
+    rejected before any candidate directory is created.
+    """
+
+    limits = limits or PatchLimits()
+    source_bytes = source.encode("utf-8") if isinstance(source, str) else bytes(source)
+    try:
+        source_text = source_bytes.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise PatchValidationError("kernel source is not UTF-8") from exc
+    if "```" in patch:
+        raise PatchValidationError("markdown fences are not valid patch syntax")
+    lines = patch.splitlines()
+    if not lines:
+        raise PatchValidationError("patch is empty")
+    header_index = next((i for i, line in enumerate(lines) if line.startswith("--- ")), None)
+    if header_index is None or header_index + 1 >= len(lines):
+        raise PatchValidationError("unified diff must contain --- and +++ headers")
+    if header_index > 0 and any(line.strip() for line in lines[:header_index]):
+        raise PatchValidationError("unexpected text before unified diff headers")
+    _patch_path(lines[header_index], prefix="--- ", expected=kernel_name)
+    _patch_path(lines[header_index + 1], prefix="+++ ", expected=kernel_name)
+    cursor = header_index + 2
+    hunks: list[tuple[int, int, int, int, list[tuple[str, str]]]] = []
+    while cursor < len(lines):
+        match = _HUNK.match(lines[cursor])
+        if match is None:
+            raise PatchValidationError(f"unexpected patch line: {lines[cursor]!r}")
+        old_start = int(match.group(1))
+        old_count = int(match.group(2) or "1")
+        new_start = int(match.group(3))
+        new_count = int(match.group(4) or "1")
+        if old_start <= 0 or new_start <= 0:
+            raise PatchValidationError("new-file and zero-line hunks are not allowed")
+        cursor += 1
+        hunk_lines: list[tuple[str, str]] = []
+        old_seen = new_seen = 0
+        while cursor < len(lines) and not lines[cursor].startswith("@@ "):
+            line = lines[cursor]
+            if line.startswith("\\"):
+                raise PatchValidationError("no-newline markers are not supported")
+            if not line or line[0] not in " +-":
+                raise PatchValidationError(f"invalid hunk line: {line!r}")
+            kind, text = line[0], line[1:]
+            hunk_lines.append((kind, text))
+            if kind in " -":
+                old_seen += 1
+            if kind in " +":
+                new_seen += 1
+            cursor += 1
+        if old_seen != old_count or new_seen != new_count:
+            raise PatchValidationError("hunk line counts do not match its header")
+        hunks.append((old_start, old_count, new_start, new_count, hunk_lines))
+    if not hunks:
+        raise PatchValidationError("patch contains no hunks")
+    if len(hunks) > limits.max_hunks:
+        raise PatchValidationError("patch hunk limit exceeded")
+
+    additions = sum(1 for hunk in hunks for kind, _ in hunk[4] if kind == "+")
+    deletions = sum(1 for hunk in hunks for kind, _ in hunk[4] if kind == "-")
+    if additions + deletions > limits.max_changed_lines:
+        raise PatchValidationError("patch changed-line limit exceeded")
+    source_lines = source_text.splitlines(keepends=True)
+    if (
+        not limits.allow_full_file_replacement
+        and deletions >= len(source_lines)
+        and additions > 0
+    ):
+        raise PatchValidationError("whole-file replacement is not allowed")
+    newline = "\r\n" if "\r\n" in source_text else "\n"
+    output: list[str] = []
+    source_cursor = 0
+    for old_start, _old_count, _new_start, _new_count, hunk_lines in hunks:
+        start = old_start - 1
+        if start < source_cursor or start > len(source_lines):
+            raise PatchValidationError("hunk source range is out of bounds")
+        output.extend(source_lines[source_cursor:start])
+        source_cursor = start
+        for kind, text in hunk_lines:
+            if kind == " ":
+                if source_cursor >= len(source_lines) or source_lines[source_cursor].rstrip("\r\n") != text:
+                    raise PatchValidationError("patch context does not match source")
+                output.append(source_lines[source_cursor])
+                source_cursor += 1
+            elif kind == "-":
+                if source_cursor >= len(source_lines) or source_lines[source_cursor].rstrip("\r\n") != text:
+                    raise PatchValidationError("patch deletion does not match source")
+                source_cursor += 1
+            else:
+                output.append(text + newline)
+    output.extend(source_lines[source_cursor:])
+    patched_bytes = "".join(output).encode("utf-8")
+    if patched_bytes == source_bytes:
+        raise PatchValidationError("patch does not change the kernel")
+    if not patched_bytes.strip():
+        raise PatchValidationError("patch would produce an empty kernel")
+    return PatchApplication(
+        kernel_name=kernel_name,
+        original_sha256=_sha256(source_bytes),
+        patched_sha256=_sha256(patched_bytes),
+        patched_bytes=patched_bytes,
+        additions=additions,
+        deletions=deletions,
+        hunks=len(hunks),
+    )
+
+
+def _result_evidence(run_root: Path, record: Mapping[str, object]) -> list[str]:
+    reference = record.get("result_ref")
+    if not isinstance(reference, str):
+        return []
+    path = (run_root / reference).resolve()
+    try:
+        path.relative_to(run_root.resolve())
+    except ValueError:
+        return []
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return []
+    evidence = value.get("evidence", []) if isinstance(value, dict) else []
+    return [str(item) for item in evidence] if isinstance(evidence, list) else []
+
+
+def _classify(stage: str, phase: str, evidence: list[str]) -> tuple[str, str, bool]:
+    text = " ".join(evidence).casefold()
+    if phase == "compile_error":
+        return "COMPILE_ERROR", "kernel compilation failed", True
+    if phase == "runtime_fail":
+        if "mismatch" in text or "assert" in text or "expected" in text:
+            return "FUNCTIONAL_MISMATCH", "public testbench reported a mismatch", True
+        return "RUNTIME_FAILURE", "public testbench execution failed", True
+    if phase == "synth_error":
+        return "SYNTHESIS_ERROR", "HLS synthesis failed", True
+    if phase == "cosim_fail":
+        return "COSIM_FAILURE", "C/RTL co-simulation failed", True
+    if phase == "timeout":
+        return "TOOL_TIMEOUT", f"{stage} exceeded its bounded timeout", False
+    return "INFRASTRUCTURE_ERROR", "tool infrastructure did not produce a repairable code failure", False
+
+
+def diagnose_failure(
+    task: PublicTask,
+    baseline_result: Mapping[str, object],
+    run_root: str | Path,
+    *,
+    candidate_id: str = "candidate_000",
+    max_excerpt_lines: int = 80,
+) -> FailureDiagnostic:
+    """Create a deterministic, localized diagnostic from a V0 result."""
+
+    root = Path(run_root).resolve()
+    validation = baseline_result.get("validation", {})
+    if not isinstance(validation, Mapping):
+        raise V1Error("baseline result has no structured validation")
+    stage = phase = "unknown"
+    record: Mapping[str, object] = {}
+    for name in ("csim", "synth", "cosim"):
+        value = validation.get(name)
+        if isinstance(value, Mapping) and value.get("status") not in {"PASS", "NOT_RUN"}:
+            stage = name
+            phase = str(value.get("phase", "unknown"))
+            record = value
+            break
+    if stage == "unknown":
+        raise V1Error("baseline result does not contain a repairable failure")
+    evidence = _result_evidence(root, record)
+    code, summary, repairable = _classify(stage, phase, evidence)
+    source = task.kernel_code.splitlines()
+    locations: set[int] = set()
+    for item in evidence:
+        for match in _LINE_REFERENCE.finditer(item):
+            if Path(match.group(1)).name == Path(task.kernel_name).name:
+                locations.add(int(match.group(2)))
+    if locations:
+        selected: set[int] = set()
+        for line in locations:
+            selected.update(range(max(1, line - 4), min(len(source), line + 4) + 1))
+        line_numbers = sorted(selected)[:max_excerpt_lines]
+    else:
+        line_numbers = list(range(1, min(len(source), max_excerpt_lines) + 1))
+    excerpt = "\n".join(f"{line}: {source[line - 1]}" for line in line_numbers)
+    return FailureDiagnostic(
+        candidate_id=candidate_id,
+        stage=stage,
+        phase=phase,
+        code=code,
+        summary=summary,
+        evidence=tuple(evidence[-20:]),
+        source_excerpt=excerpt,
+        source_lines=tuple(line_numbers),
+        repairable=repairable,
+    )
+
+
+def _provider_fingerprint(provider: RepairProvider) -> str:
+    explicit = getattr(provider, "fingerprint", None)
+    value = str(explicit()) if callable(explicit) else f"{type(provider).__module__}.{type(provider).__qualname__}"
+    if not value:
+        raise RepairProviderError("repair provider fingerprint is empty")
+    return value
+
+
+def _proposal_from_dict(value: Mapping[str, object]) -> PatchProposal:
+    if value.get("ok") is False:
+        raise RepairProviderError(str(value.get("error", "cached repair failed")))
+    return PatchProposal(
+        patch=str(value["patch"]),
+        provider=str(value.get("provider", "unknown")),
+        model=str(value.get("model", "unknown")),
+        revision=str(value["revision"]) if value.get("revision") is not None else None,
+        input_tokens=int(value.get("input_tokens", 0)),
+        output_tokens=int(value.get("output_tokens", 0)),
+        cached_input_tokens=int(value.get("cached_input_tokens", 0)),
+        request_id=str(value["request_id"]) if value.get("request_id") is not None else None,
+        duration_seconds=float(value.get("duration_seconds", 0.0)),
+        hypothesis=str(value["hypothesis"]) if value.get("hypothesis") is not None else None,
+        change_class=str(value["change_class"]) if value.get("change_class") is not None else None,
+        expected_effect=str(value["expected_effect"]) if value.get("expected_effect") is not None else None,
+        risk=str(value["risk"]) if value.get("risk") is not None else None,
+        required_validation=tuple(str(item) for item in value.get("required_validation", ("csim", "synth", "cosim"))),
+    )
+
+
+def _call_provider(
+    provider: RepairProvider,
+    context: RepairContext,
+    *,
+    run_root: Path,
+    budget: BudgetLedger,
+    candidate_id: str,
+    code_hash: str,
+    tool_config_hash: str,
+) -> tuple[PatchProposal | None, str | None]:
+    """Call one provider under the same durable budget ledger as Vitis."""
+
+    provider_id = _provider_fingerprint(provider)
+    stable_context = context.to_dict()
+    # Remaining budget is prompt metadata, not the identity of the repair
+    # request.  Excluding it makes a rerun reuse the completed LLM action
+    # instead of consuming the bounded repair-call allowance again.
+    stable_context.pop("remaining_tokens", None)
+    stable_context.pop("remaining_credits", None)
+    payload = {
+        "kind": "llm",
+        "candidate_id": candidate_id,
+        "code_hash": code_hash,
+        "tool_config_hash": tool_config_hash,
+        "provider": provider_id,
+        "context": stable_context,
+    }
+    action_id = _sha256(_canonical_json(payload).encode("utf-8"))
+    result_ref = f"llm_actions/{action_id}/result.json"
+    result_path = run_root / result_ref
+    completed = budget.completed_event(action_id)
+    if completed is not None:
+        try:
+            encoded = result_path.read_bytes()
+            if _sha256(encoded) != completed.get("result_sha256"):
+                raise RepairProviderError("cached provider result digest does not match ledger")
+            value = json.loads(encoded.decode("utf-8"))
+            return _proposal_from_dict(value), result_ref
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+            raise RepairProviderError(f"cached provider result is invalid: {exc}") from exc
+    if budget.is_ambiguous(action_id):
+        raise RepairProviderError(f"provider action {action_id} is ambiguous")
+    if budget.has_pending(action_id):
+        budget.mark_ambiguous(action_id)
+        raise RepairProviderError(f"provider action {action_id} had no durable result")
+    budget.reserve(
+        action_id=action_id,
+        kind="llm",
+        candidate_id=candidate_id,
+        code_hash=code_hash,
+        tool_config_hash=tool_config_hash,
+    )
+    try:
+        proposal = provider.propose_patch(context)
+        if not isinstance(proposal, PatchProposal):
+            raise TypeError("provider must return PatchProposal")
+        value: dict[str, object] = {"ok": True, **proposal.to_dict()}
+        input_tokens = proposal.input_tokens
+        output_tokens = proposal.output_tokens
+        cached_input_tokens = proposal.cached_input_tokens
+        tokens = proposal.tokens_used
+    except Exception as exc:
+        input_tokens = int(getattr(exc, "input_tokens", 0))
+        output_tokens = int(getattr(exc, "output_tokens", 0))
+        cached_input_tokens = int(getattr(exc, "cached_input_tokens", 0))
+        duration_seconds = float(getattr(exc, "duration_seconds", 0.0))
+        value = {
+            "ok": False,
+            "error": f"{type(exc).__name__}: {exc}",
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "cached_input_tokens": cached_input_tokens,
+            "request_id": getattr(exc, "request_id", None),
+            "duration_seconds": duration_seconds,
+            "response_excerpt": getattr(exc, "response_excerpt", None),
+        }
+        tokens = input_tokens + output_tokens
+        proposal = None
+    encoded = json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    result_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = result_path.with_suffix(".tmp")
+    temporary.write_bytes(encoded)
+    temporary.replace(result_path)
+    budget.complete(
+        action_id=action_id,
+        result_ref=result_ref,
+        result_sha256=_sha256(encoded),
+        elapsed_s=proposal.duration_seconds if proposal is not None else duration_seconds,
+        tokens_used=tokens,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        cached_input_tokens=cached_input_tokens,
+    )
+    _append_trace(
+        run_root / "trace.jsonl",
+        "LLM_COMPLETED",
+        action_id=action_id,
+        candidate_id=candidate_id,
+        provider=provider_id,
+        result_ref=result_ref,
+        tokens_used=tokens,
+    )
+    if proposal is None:
+        return None, str(value["error"])
+    return proposal, result_ref
+
+
+def _ensure_repair_closure_budget(budget: BudgetLedger) -> None:
+    """Require one LLM call and a complete final validation closure."""
+
+    snapshot = budget.snapshot()
+    required_kinds = ("llm", "csim", "synth", "cosim")
+    required_credits = sum(budget.cost(kind) for kind in required_kinds)
+    remaining = snapshot["credits_remaining"]
+    if remaining is not None and int(remaining) < required_credits:
+        raise BudgetExceeded(
+            f"repair closure costs {required_credits} credits but only {remaining} remain"
+        )
+    # The LLM action may already be a durable cache hit. Its own reserve call
+    # enforces the configured limit when a new request is actually needed.
+    for kind in ("csim", "synth", "cosim"):
+        limit = budget.config.tool_limits[kind]
+        used = int(snapshot["tool_used"][kind]) + int(snapshot["tool_pending"][kind])  # type: ignore[index]
+        if limit is not None and used >= limit:
+            raise BudgetExceeded(f"repair closure requires another {kind} call")
+    if int(snapshot["tokens_remaining"]) <= 0:
+        raise BudgetExceeded("repair closure has no remaining token budget")
+
+
+def _load_registry(run_root: Path) -> dict[str, object]:
+    try:
+        value = json.loads((run_root / "candidate_registry.json").read_text(encoding="utf-8"))
+        if not isinstance(value, dict) or not isinstance(value.get("candidates"), dict):
+            raise TypeError("candidate registry is not an object")
+        return value
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, TypeError) as exc:
+        raise RunArtifactError(f"cannot load candidate registry: {exc}") from exc
+
+
+def _next_candidate_id(registry: Mapping[str, object]) -> str:
+    candidates = registry.get("candidates", {})
+    numbers = [
+        int(match.group(1))
+        for key in candidates
+        if (match := re.fullmatch(r"candidate_(\d+)", str(key)))
+    ] if isinstance(candidates, Mapping) else []
+    return f"candidate_{(max(numbers) + 1) if numbers else 0:03d}"
+
+
+def _materialize_candidate(
+    task: PublicTask,
+    run_root: Path,
+    registry: dict[str, object],
+    *,
+    patch_text: str,
+    application: PatchApplication,
+    diagnostic: FailureDiagnostic,
+    proposal: PatchProposal,
+    proposal_ref: str,
+) -> tuple[str, dict[str, object]]:
+    candidates = registry["candidates"]
+    if not isinstance(candidates, dict):
+        raise RunArtifactError("candidate registry candidates is not an object")
+    patch_hash = _sha256(patch_text.encode("utf-8"))
+    for candidate_id, value in candidates.items():
+        if isinstance(value, Mapping) and value.get("patch_sha256") == patch_hash:
+            source = run_root / str(value.get("source_ref", ""))
+            if source.is_file() and source.read_bytes() == application.patched_bytes:
+                return str(candidate_id), dict(value)
+    candidate_id = _next_candidate_id(registry)
+    source_ref = f"candidates/{candidate_id}/source/{task.kernel_name}"
+    patch_ref = f"candidates/{candidate_id}/patch.diff"
+    metadata_ref = f"candidates/{candidate_id}/candidate.json"
+    record: dict[str, object] = {
+        "candidate_id": candidate_id,
+        "parent_id": "candidate_000",
+        "kind": "repair",
+        "immutable": True,
+        "source_ref": source_ref,
+        "patch_ref": patch_ref,
+        "patch_sha256": patch_hash,
+        "code_hash": application.patched_sha256,
+        "status": "MATERIALIZED",
+        "validation": {"csim": {"status": "NOT_RUN"}, "synth": {"status": "NOT_RUN"}, "cosim": {"status": "NOT_RUN"}},
+        "metrics_ref": None,
+        "diagnostic_ref": f"diagnostics/{diagnostic.candidate_id}.json",
+        "llm_ref": proposal_ref,
+        "provider": proposal.provider,
+        "model": proposal.model,
+        "revision": proposal.revision,
+        "credits_used": 0,
+        "input_tokens": proposal.input_tokens,
+        "output_tokens": proposal.output_tokens,
+    }
+    candidate_root = run_root / "candidates" / candidate_id
+    source_path = candidate_root / "source" / task.kernel_name
+    patch_path = candidate_root / "patch.diff"
+    metadata_path = candidate_root / "candidate.json"
+    if candidate_root.exists():
+        try:
+            recovered = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise RunArtifactError(
+                f"orphaned candidate {candidate_id} cannot be recovered: {exc}"
+            ) from exc
+        if (
+            not isinstance(recovered, dict)
+            or recovered.get("candidate_id") != candidate_id
+            or recovered.get("patch_sha256") != patch_hash
+            or recovered.get("code_hash") != application.patched_sha256
+            or not source_path.is_file()
+            or source_path.read_bytes() != application.patched_bytes
+            or not patch_path.is_file()
+            or patch_path.read_text(encoding="utf-8") != patch_text
+        ):
+            raise RunArtifactError(f"orphaned candidate {candidate_id} is inconsistent")
+    else:
+        staging_parent = run_root / ".candidate_staging"
+        staging_parent.mkdir(parents=True, exist_ok=True)
+        staging_root = Path(
+            tempfile.mkdtemp(prefix=f"{candidate_id}.", dir=staging_parent)
+        )
+        try:
+            staged_source = staging_root / "source" / task.kernel_name
+            staged_patch = staging_root / "patch.diff"
+            staged_metadata = staging_root / "candidate.json"
+            staged_source.parent.mkdir(parents=True, exist_ok=False)
+            staged_source.write_bytes(application.patched_bytes)
+            staged_patch.write_text(patch_text, encoding="utf-8")
+            _atomic_json(staged_metadata, record)
+            for path in (staged_source, staged_patch, staged_metadata):
+                path.chmod(stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
+            candidate_root.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(staging_root, candidate_root)
+        except Exception:
+            shutil.rmtree(staging_root, ignore_errors=True)
+            raise
+        finally:
+            try:
+                staging_parent.rmdir()
+            except OSError:
+                pass
+    candidates[candidate_id] = record
+    registry["active_candidate_id"] = candidate_id
+    _atomic_json(run_root / "candidate_registry.json", registry)
+    return candidate_id, record
+
+
+def _validate_candidate(
+    task: PublicTask,
+    kernel_bytes: bytes,
+    candidate_id: str,
+    run_root: Path,
+    config: RunConfig,
+    *,
+    backend: ToolBackend | None,
+) -> dict[str, object]:
+    budget = BudgetLedger(run_root / "budget_ledger.jsonl", config.budget)
+    server = ToolServer(
+        task=task,
+        budget=budget,
+        run_root=run_root,
+        config=config.tool,
+        backend=backend or VitisBackend(),
+    )
+    validation: dict[str, dict[str, object]] = {
+        "csim": {"status": "NOT_RUN"},
+        "synth": {"status": "NOT_RUN"},
+        "cosim": {"status": "NOT_RUN"},
+    }
+    stop_reason: str | None = None
+    clock = {
+        "minimum_frequency_mhz": config.minimum_frequency_mhz,
+        "maximum_period_ns": 1000.0 / config.minimum_frequency_mhz,
+        "estimated_period_ns": None,
+        "passed": False,
+    }
+    csim, error, reason = _invoke_stage(
+        server, "csim", kernel_bytes, candidate_id=candidate_id
+    )
+    if csim is None:
+        validation["csim"] = error or {"status": "TOOL_ERROR"}
+        stop_reason = reason or "CSIM_ERROR"
+    else:
+        validation["csim"] = _validation_record(csim)
+        if not csim.ok:
+            stop_reason = f"CSIM_{csim.phase.upper()}"
+    synth = None
+    if csim is not None and csim.ok:
+        synth, error, reason = _invoke_stage(
+            server, "synth", kernel_bytes, candidate_id=candidate_id
+        )
+        if synth is None:
+            validation["synth"] = error or {"status": "TOOL_ERROR"}
+            stop_reason = reason or "SYNTH_ERROR"
+        else:
+            validation["synth"] = _validation_record(synth)
+            if not synth.ok:
+                stop_reason = f"SYNTH_{synth.phase.upper()}"
+    cosim = None
+    if synth is not None and synth.ok:
+        estimated = synth.report.get("estimated_clock_period_ns") if synth.report else None
+        clock["estimated_period_ns"] = estimated
+        if isinstance(estimated, bool) or not isinstance(estimated, (int, float)) or not math.isfinite(float(estimated)) or float(estimated) <= 0:
+            stop_reason = "SYNTH_INVALID_CLOCK_METRIC"
+        elif float(estimated) > float(clock["maximum_period_ns"]):
+            stop_reason = "CLOCK_CONSTRAINT_FAILED"
+        else:
+            clock["passed"] = True
+            cosim, error, reason = _invoke_stage(
+                server, "cosim", kernel_bytes, candidate_id=candidate_id
+            )
+            if cosim is None:
+                validation["cosim"] = error or {"status": "TOOL_ERROR"}
+                stop_reason = reason or "COSIM_ERROR"
+            else:
+                validation["cosim"] = _validation_record(cosim)
+                if not cosim.ok:
+                    stop_reason = f"COSIM_{cosim.phase.upper()}"
+    if cosim is not None and cosim.ok and stop_reason is None:
+        status = "DONE"
+        stop_reason = "CANDIDATE_VERIFIED"
+    else:
+        status = "FAILED"
+    metrics_ref = None
+    if synth is not None and synth.report is not None:
+        metrics_ref = synth.result_ref
+    return {
+        "status": status,
+        "stop_reason": stop_reason,
+        "validation": validation,
+        "clock_constraint": clock,
+        "metrics_ref": metrics_ref,
+        "budget": budget.snapshot(),
+    }
+
+
+def run_v1(
+    task: PublicTask,
+    run_dir: str | Path,
+    config: RunConfig,
+    provider: RepairProvider,
+    *,
+    backend: ToolBackend | None = None,
+    patch_limits: PatchLimits | None = None,
+    allow_deterministic_fallback: bool = False,
+) -> dict[str, object]:
+    """Run baseline -> one constrained repair -> isolated candidate validation."""
+
+    if "llm" not in config.budget.costs or "llm" not in config.budget.tool_limits:
+        raise V1Error("V1 budget must include an llm cost and tool limit")
+    run_root = Path(run_dir).resolve()
+    run_root.mkdir(parents=True, exist_ok=True)
+    baseline = run_v0(task, run_root, config, backend=backend)
+    if baseline.get("status") == "DONE":
+        result = {
+            "schema_version": 1,
+            "workflow": "V1_MINIMAL_REPAIR",
+            "status": "DONE",
+            "stop_reason": "BASELINE_ALREADY_VERIFIED",
+            "baseline": baseline,
+            "candidate_id": "candidate_000",
+            "rollback": None,
+            "budget": baseline["budget"],
+        }
+        _atomic_json(run_root / "v1_result.json", result)
+        return result
+
+    diagnostic = diagnose_failure(task, baseline, run_root)
+    diagnostic_ref = f"diagnostics/{diagnostic.candidate_id}.json"
+    _atomic_json(run_root / diagnostic_ref, diagnostic.to_dict())
+    _append_trace(
+        run_root / "trace.jsonl",
+        "V1_DIAGNOSTIC_READY",
+        candidate_id=diagnostic.candidate_id,
+        diagnostic_code=diagnostic.code,
+        repairable=diagnostic.repairable,
+        result_ref=diagnostic_ref,
+    )
+    if not diagnostic.repairable:
+        result = {
+            "schema_version": 1,
+            "workflow": "V1_MINIMAL_REPAIR",
+            "status": "FAILED",
+            "stop_reason": "NO_REPAIRABLE_CODE_FAILURE",
+            "baseline": baseline,
+            "diagnostic": diagnostic.to_dict(),
+            "diagnostic_ref": diagnostic_ref,
+            "candidate_id": None,
+            "rollback": {"from": "candidate_000", "to": "candidate_000", "reason": "non-repairable failure"},
+            "budget": BudgetLedger(run_root / "budget_ledger.jsonl", config.budget).snapshot(),
+        }
+        _atomic_json(run_root / "v1_result.json", result)
+        return result
+
+    budget = BudgetLedger(run_root / "budget_ledger.jsonl", config.budget)
+    snapshot = budget.snapshot()
+    context = RepairContext(
+        task_id=task.id,
+        candidate_id="candidate_000",
+        stage=diagnostic.stage,
+        phase=diagnostic.phase,
+        diagnostic_code=diagnostic.code,
+        summary=diagnostic.summary,
+        evidence=diagnostic.evidence,
+        source_excerpt=diagnostic.source_excerpt,
+        remaining_tokens=int(snapshot["tokens_remaining"]),
+        remaining_credits=(
+            int(snapshot["credits_remaining"])
+            if snapshot["credits_remaining"] is not None
+            else None
+        ),
+        top=task.top,
+        kernel_name=task.kernel_name,
+        part=config.tool.part,
+        clock_ns=config.tool.clock_ns,
+        initial_condition=task.initial_condition,
+    )
+    provider_stop_reason = "LLM_REPAIR_FAILED"
+    try:
+        _ensure_repair_closure_budget(budget)
+        proposal, provider_ref_or_error = _call_provider(
+            provider,
+            context,
+            run_root=run_root,
+            budget=budget,
+            candidate_id="candidate_000",
+            code_hash=task.kernel_sha256,
+            tool_config_hash=config.tool.hash_for("csim", backend_fingerprint="repair-context"),
+        )
+    except BudgetExceeded as exc:
+        provider_stop_reason = "REPAIR_CLOSURE_BUDGET_DENIED"
+        proposal, provider_ref_or_error = None, f"{type(exc).__name__}: {exc}"
+    except (BudgetError, BudgetLedgerError, RepairProviderError) as exc:
+        proposal, provider_ref_or_error = None, f"{type(exc).__name__}: {exc}"
+    if proposal is None and allow_deterministic_fallback:
+        fallback = deterministic_fallback_proposal(task, diagnostic)
+        if fallback is not None:
+            proposal = fallback
+            provider_ref_or_error = "v0_fallback/deterministic_vector_add.json"
+            _atomic_json(
+                run_root / provider_ref_or_error,
+                {"ok": True, "provider": fallback.provider, "proposal": fallback.to_dict()},
+            )
+            _append_trace(
+                run_root / "trace.jsonl", "V1_PROVIDER_FALLBACK",
+                candidate_id="candidate_000", provider=fallback.provider,
+                reason=provider_ref_or_error,
+            )
+    if proposal is None:
+        result = {
+            "schema_version": 1,
+            "workflow": "V1_MINIMAL_REPAIR",
+            "status": "FAILED",
+            "stop_reason": provider_stop_reason,
+            "baseline": baseline,
+            "diagnostic": diagnostic.to_dict(),
+            "diagnostic_ref": diagnostic_ref,
+            "provider_error": provider_ref_or_error,
+            "candidate_id": None,
+            "rollback": {"from": "candidate_000", "to": "candidate_000", "reason": "provider failure"},
+            "budget": budget.snapshot(),
+        }
+        _atomic_json(run_root / "v1_result.json", result)
+        return result
+
+    normalized_patch = normalize_unified_diff_headers(proposal.patch)
+    try:
+        application = apply_unified_diff(
+            task.kernel_bytes,
+            normalized_patch,
+            kernel_name=task.kernel_name,
+            limits=patch_limits,
+        )
+    except PatchValidationError as exc:
+        result = {
+            "schema_version": 1,
+            "workflow": "V1_MINIMAL_REPAIR",
+            "status": "FAILED",
+            "stop_reason": "PATCH_INVALID",
+            "baseline": baseline,
+            "diagnostic": diagnostic.to_dict(),
+            "diagnostic_ref": diagnostic_ref,
+            "patch_error": str(exc),
+            "patch": proposal.to_dict()
+            | {
+                "normalization_applied": normalized_patch != proposal.patch,
+                "applied_patch": normalized_patch,
+            },
+            "candidate_id": None,
+            "rollback": {"from": "candidate_000", "to": "candidate_000", "reason": "patch rejected before materialization"},
+            "budget": budget.snapshot(),
+        }
+        _atomic_json(run_root / "v1_result.json", result)
+        _append_trace(run_root / "trace.jsonl", "PATCH_REJECTED", reason=str(exc))
+        return result
+
+    proposal_ref = provider_ref_or_error or ""
+    if not (proposal_ref.startswith("llm_actions/") or proposal_ref.startswith("v0_fallback/")):
+        raise RepairProviderError("provider result reference is missing")
+    with _RunLock(run_root):
+        registry = _load_registry(run_root)
+        candidate_id, candidate_record = _materialize_candidate(
+            task,
+            run_root,
+            registry,
+            patch_text=normalized_patch,
+            application=application,
+            diagnostic=diagnostic,
+            proposal=proposal,
+            proposal_ref=proposal_ref,
+        )
+    _append_trace(
+        run_root / "trace.jsonl",
+        "CANDIDATE_MATERIALIZED",
+        candidate_id=candidate_id,
+        parent_id="candidate_000",
+        patch_sha256=_sha256(normalized_patch.encode("utf-8")),
+    )
+    validation = _validate_candidate(
+        task,
+        application.patched_bytes,
+        candidate_id,
+        run_root,
+        config,
+        backend=backend,
+    )
+    with _RunLock(run_root):
+        registry = _load_registry(run_root)
+        candidates = registry["candidates"]
+        if not isinstance(candidates, dict) or candidate_id not in candidates:
+            raise RunArtifactError("materialized candidate disappeared")
+        candidate = candidates[candidate_id]
+        if not isinstance(candidate, dict):
+            raise RunArtifactError("candidate record is not an object")
+        candidate["validation"] = validation["validation"]
+        candidate["metrics_ref"] = validation["metrics_ref"]
+        candidate["credits_used"] = validation["budget"]["credits_used"]  # type: ignore[index]
+        if validation["status"] == "DONE":
+            candidate["status"] = "VERIFIED"
+            registry["best_candidate_id"] = candidate_id
+            registry["final_candidate_id"] = candidate_id
+            registry["active_candidate_id"] = candidate_id
+            rollback = None
+        else:
+            candidate["status"] = "REJECTED"
+            registry["active_candidate_id"] = "candidate_000"
+            rollback = {"from": candidate_id, "to": "candidate_000", "reason": validation["stop_reason"]}
+        _atomic_json(run_root / "candidate_registry.json", registry)
+        candidate_record = dict(candidate)
+    result = {
+        "schema_version": 1,
+        "workflow": "V1_MINIMAL_REPAIR",
+        "status": validation["status"],
+        "stop_reason": validation["stop_reason"],
+        "baseline": baseline,
+        "diagnostic": diagnostic.to_dict(),
+        "diagnostic_ref": diagnostic_ref,
+        "patch": proposal.to_dict() | {
+            "normalization_applied": normalized_patch != proposal.patch,
+            "applied_patch": normalized_patch,
+            "additions": application.additions,
+            "deletions": application.deletions,
+            "hunks": application.hunks,
+            "original_sha256": application.original_sha256,
+            "patched_sha256": application.patched_sha256,
+        },
+        "candidate_id": candidate_id,
+        "candidate": candidate_record,
+        "validation": validation["validation"],
+        "clock_constraint": validation["clock_constraint"],
+        "rollback": rollback,
+        "budget": validation["budget"],
+        "v1_acceptance": {
+            "llm_based": proposal.provider == "openai-compatible",
+            "provider": proposal.provider,
+            "token_usage_complete": bool(validation["budget"].get("token_usage_complete", False)),  # type: ignore[union-attr]
+            "accepted": bool(
+                validation["status"] == "DONE"
+                and proposal.provider == "openai-compatible"
+                and validation["budget"].get("token_usage_complete", False)  # type: ignore[union-attr]
+                and proposal.tokens_used > 0
+            ),
+        },
+        "artifacts": {
+            "candidate_registry": "candidate_registry.json",
+            "diagnostic": diagnostic_ref,
+            "workflow_result": "v1_result.json",
+        },
+    }
+    _atomic_json(run_root / "v1_result.json", result)
+    _append_trace(
+        run_root / "trace.jsonl",
+        "V1_COMPLETED",
+        candidate_id=candidate_id,
+        status=validation["status"],
+        stop_reason=validation["stop_reason"],
+        rollback=rollback,
+    )
+    return result

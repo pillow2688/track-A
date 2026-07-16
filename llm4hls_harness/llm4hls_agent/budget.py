@@ -261,6 +261,10 @@ class BudgetLedger:
         tool_used = {kind: 0 for kind in self.config.costs}
         tool_pending = {kind: 0 for kind in self.config.costs}
         tokens_used = 0
+        input_tokens_used = 0
+        output_tokens_used = 0
+        cached_input_tokens_used = 0
+        token_usage_complete = True
         for action_events in actions.values():
             started = next(
                 (event for event in action_events if event.get("state") == "STARTED"),
@@ -286,6 +290,13 @@ class BudgetLedger:
                 credits_used += int(terminal["actual_cost"])
                 tool_used[kind] += 1
                 tokens_used += int(terminal.get("tokens_used", 0))
+                input_tokens_used += int(terminal.get("input_tokens", 0))
+                output_tokens_used += int(terminal.get("output_tokens", 0))
+                cached_input_tokens_used += int(terminal.get("cached_input_tokens", 0))
+                if kind == "llm" and (
+                    "input_tokens" not in terminal or "output_tokens" not in terminal
+                ):
+                    token_usage_complete = False
         start_epoch = float(initialized.get("epoch_seconds", time.time()))
         runtime_used = max(0.0, time.time() - start_epoch)
         return {
@@ -303,6 +314,10 @@ class BudgetLedger:
             "tool_pending": tool_pending,
             "token_limit": self.config.token_limit,
             "tokens_used": tokens_used,
+            "input_tokens_used": input_tokens_used,
+            "output_tokens_used": output_tokens_used,
+            "cached_input_tokens_used": cached_input_tokens_used,
+            "token_usage_complete": token_usage_complete,
             "tokens_remaining": self.config.token_limit - tokens_used,
             "runtime_limit_seconds": self.config.runtime_limit_seconds,
             "runtime_used_seconds": runtime_used,
@@ -371,11 +386,19 @@ class BudgetLedger:
         result_sha256: str,
         elapsed_s: float,
         tokens_used: int = 0,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        cached_input_tokens: int = 0,
     ) -> None:
         token_count = int(tokens_used)
+        input_count = int(input_tokens)
+        output_count = int(output_tokens)
+        cached_input_count = int(cached_input_tokens)
         elapsed = float(elapsed_s)
-        if token_count < 0:
-            raise BudgetExceeded("tokens_used cannot be negative")
+        if token_count < 0 or input_count < 0 or output_count < 0 or cached_input_count < 0:
+            raise BudgetExceeded("token counts cannot be negative")
+        if input_count + output_count not in {0, token_count}:
+            raise BudgetLedgerError("input_tokens + output_tokens must equal tokens_used")
         if not math.isfinite(elapsed) or elapsed < 0:
             raise BudgetLedgerError("elapsed_s must be finite and non-negative")
         if (
@@ -401,6 +424,9 @@ class BudgetLedger:
                     "kind": started["kind"],
                     "actual_cost": int(started["estimated_cost"]),
                     "tokens_used": token_count,
+                    "input_tokens": input_count,
+                    "output_tokens": output_count,
+                    "cached_input_tokens": cached_input_count,
                     "elapsed_s": elapsed,
                     "result_ref": result_ref,
                     "result_sha256": result_sha256,
@@ -423,6 +449,9 @@ class BudgetLedger:
                     "kind": started["kind"],
                     "actual_cost": int(started["estimated_cost"]),
                     "tokens_used": 0,
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "cached_input_tokens": 0,
                     "reason": "STARTED action had no durable result",
                 }
             )

@@ -2,7 +2,7 @@
 
 Status: team design + implementation contract
 Owner: team
-Checked: 2026-07-14
+Checked: 2026-07-16
 Scope: FPT 2026 Track A Agent Harness
 
 ## 0. 文档定位
@@ -1001,13 +1001,19 @@ class PatchPolicy:
 ```text
 parse patch
   -> validate policy
-  -> clone parent into new candidate
-  -> dry-run
-  -> apply patch to new candidate only
+  -> dry-run against immutable parent without allocating a candidate
+  -> validated Patch
+  -> allocate candidate_id
+  -> atomically materialize patched source in an isolated candidate
   -> calculate code_hash
   -> reset all validation to NOT_RUN
   -> register candidate
 ```
+
+Provider 返回的是 Patch proposal，不是 Candidate。解析、路径/策略校验或 dry-run
+任一失败时，`MUST NOT` 分配新的 Candidate ID、创建 Candidate 目录或写入 Candidate
+Registry。proposal 使用独立的 `action_id` 审计。该顺序在 2026-07-16 根据 V1
+安全验收设计修订，取代旧版“先 clone Candidate 再 dry-run”的表述。
 
 ## 16. Candidate 管理与回滚
 

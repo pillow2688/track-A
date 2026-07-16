@@ -4,6 +4,8 @@
 日期：2026-07-15  
 范围：`llm4hls_harness` 内部里程碑 V1
 
+实现状态（2026-07-15）：LLM-based V1 已完成真实验收。`runs/v1-deepseek-final` 中 `deepseek-v4-pro` 通过 OpenAI-compatible API 生成候选 Patch，候选通过真实 Vitis 2025.2 的 csim、synth、cosim 和时钟约束；总 Token 636（输入 407、输出 229、缓存输入 384），总 credits 26。
+
 ## 1. 设计依据
 
 本设计服从以下优先级：
@@ -39,14 +41,17 @@ V1 完成时必须满足：
 
 - `OPENAI_BASE_URL`：兼容服务根地址；Provider 规范化后调用 `/chat/completions`；
 - `OPENAI_API_KEY`：仅从环境读取，不持久化；
-- `LLM4HLS_MODEL`：初始默认值为 `deepseek-ai/DeepSeek-V4-Pro`；
+- `LLM4HLS_MODEL`：初始默认值为 DeepSeek 官方 API ID `deepseek-v4-pro`；
 - `LLM4HLS_LLM_TIMEOUT_S`：单次请求超时；
 - `LLM4HLS_LLM_MAX_OUTPUT_TOKENS`：修复输出上限；
 - `LLM4HLS_LLM_TEMPERATURE`：默认采用确定性低温配置。
 
+DeepSeek V4 默认启用 thinking mode。V1 的短、严格 JSON Patch 请求显式发送 `thinking.type=disabled`，避免 reasoning 消耗输出上限却不产生 final `content`。无论 Patch 解析成功或失败，Provider 都先读取并持久化 API `usage`；失败调用不得记为零 Token。
+
 CLI 可以显式覆盖非秘密配置。API key 不允许出现在 CLI 参数、运行配置、trace、异常消息或 Provider 指纹中。Provider 指纹绑定实现版本、base URL 的非秘密来源标识、模型和生成参数，使缓存不会跨不同模型配置误用。
 
 静态 Provider 保留，只用于单元测试、离线演示和确定性回归，不作为真实模型完成证据。
+窄范围 deterministic fallback 同样默认关闭，仅能作为指定 fixture 的调试选项；其 Vitis PASS 不作为 LLM-based V1 验收证据。
 
 ## 4. Prompt 与响应契约
 

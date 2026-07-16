@@ -58,6 +58,24 @@ class BudgetLedgerTests(unittest.TestCase):
             self.assertEqual(recovered.events()[0]["state"], "INITIALIZED")
             self.assertEqual(path.read_bytes(), original)
 
+    def test_snapshot_separates_input_and_output_tokens(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = BudgetLedger(Path(tmp) / "ledger.jsonl", config(tokens=10))
+            ledger.reserve(
+                action_id="token-action", kind="csim",
+                candidate_id="candidate_000", code_hash="code", tool_config_hash="tool",
+            )
+            ledger.complete(
+                action_id="token-action", result_ref="result.json",
+                result_sha256="0" * 64, elapsed_s=0.1,
+                tokens_used=3, input_tokens=2, output_tokens=1, cached_input_tokens=1,
+            )
+            snapshot = ledger.snapshot()
+            self.assertEqual(snapshot["tokens_used"], 3)
+            self.assertEqual(snapshot["input_tokens_used"], 2)
+            self.assertEqual(snapshot["output_tokens_used"], 1)
+            self.assertEqual(snapshot["cached_input_tokens_used"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

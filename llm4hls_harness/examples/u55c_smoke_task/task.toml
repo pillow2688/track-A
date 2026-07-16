@@ -1,0 +1,14 @@
+task_id = "u55c_vector_add_smoke"
+task_type = "generate"
+difficulty = 1
+top = "vector_add"
+budget = 40
+kernel_file = "kernel.cpp"
+header_files = ["kernel.h"]
+public_tb = "kernel_tb.cpp"
+requires_cosim = true
+initial_condition = "Baseline vector addition must pass the public testbench."
+
+[target]
+part = "xcu55c-fsvh2892-2L-e"
+clock_ns = 10.0

@@ -1,12 +1,92 @@
-# LLM4HLS Agent — 内部里程碑 V0：无 LLM 的确定性验证闭环
+# LLM4HLS Agent — 内部里程碑 V0–V1
 
 [English](README.md) | 简体中文
 
 V0 至 V4 是本项目的内部工程里程碑，不是比赛官方阶段。比赛提供的示例名为 **Reference Agent & Evaluation Harness**。两者的范围、接口和实现差异见[中文对比文档](../doc/materials/02_harness/2026-07-14-official-reference-vs-internal-v0.md)。
 
-本目录仅包含 V0 纵向闭环：从兼容 reference harness 的公开任务包中加载不可变 baseline，随后按预算计费依次执行 `csim -> synth -> cosim`。V0 不包含 LLM、LangGraph、补丁生成、优化循环、隐藏测试评分或参考答案调用。
+V0 提供不可变、受预算审计的 `csim -> synth -> cosim` baseline。V1 增加确定性失败诊断、紧凑修复上下文、一次受限 unified diff、隔离候选、真实验证、晋级与安全回滚。修复建议可以来自 OpenAI-compatible API，也可以来自静态补丁测试夹具。V2 候选/PPA 优化、V3 LangGraph 编排、隐藏评分和参考答案调用尚不包含在内。
+
+`runs/v1-deepseek-final` 是 DeepSeek 曾成功修复 `FUNCTIONAL_MISMATCH` 的历史证据，但它早于严格 Candidate/action 绑定和 Artifact Manifest，必须重新生成，不能代表 V1 完成。只有 `FUNCTIONAL_MISMATCH`、`COMPILE_ERROR`、`SYNTHESIS_ERROR` 都具备真实 DeepSeek/Vitis 证据，并且独立的 `PATCH_INVALID` 安全负例通过确定性验收器，才可宣布 V1 完成。
 
 运行时是自包含的，仅依赖 Python 3.11 及以上版本的标准库，不会导入 reference harness。任务加载器只读取 `task.toml`、存在时的 `description.md`、配置指定的 kernel、header 和公开 testbench。任何进入 `hidden/` 或 `reference/` 的路径都会被拒绝。
+
+## V1 OpenAI-compatible 修复
+
+API Provider 默认模型为 `deepseek-v4-pro`。DeepSeek 官方 OpenAI-compatible 地址为 `https://api.deepseek.com`。对 DeepSeek V4 修复请求显式关闭默认 thinking mode，使有限输出预算用于最终 JSON Patch；成功和失败请求都必须记录 Provider 报告的输入/输出 Token。端点和密钥通过环境变量配置；API key 不会写入运行配置、trace、Prompt、动作结果或 Provider 指纹。
+
+```bash
+cd /home/ying/CompetitionTrackA/track-A/llm4hls_harness
+export LLM4HLS_VITIS_HLS_ROOT=/home/ying/CompetitionTrackA/vitis/AMD/2025.2/Vitis
+export OPENAI_BASE_URL=https://api.deepseek.com
+export OPENAI_API_KEY=your-secret-value
+export LLM4HLS_MODEL=deepseek-v4-pro
+
+python3 -m llm4hls_agent repair examples/u55c_repair_task \
+  --run-dir runs/v1-deepseek-v4-pro \
+  --clock-ns 10 --minimum-frequency-mhz 100
+```
+
+仅用于确定性离线回归时：
+
+```bash
+python3 -m llm4hls_agent repair examples/u55c_repair_task \
+  --run-dir runs/v1-static \
+  --provider static --patch-file examples/u55c_repair.diff \
+  --clock-ns 10 --minimum-frequency-mhz 100
+```
+
+`--allow-deterministic-fallback` 仅用于调试指定的 vector-add fixture，默认关闭。fallback 通过 Vitis 只能证明候选验证闭环有效，不能作为 LLM-based V1 的模型验收证据。真实 V1 验收要求候选 provider 为 `openai-compatible`、Token 用量来自 API usage，且该候选通过 Vitis `csim/synth/cosim`。
+
+模型只接收结构化失败证据、局部 kernel 行、公开约束和预算摘要，并且必须返回只含一个 unified diff 的严格 JSON 对象。只有配置指定的 kernel `.cpp` 可以修改。`CANDIDATE_VERIFIED` 表示隔离候选已通过 csim、synth、cosim 和最低时钟约束。Provider、Patch、验证或预算失败都会产生明确停止原因，并保持 baseline/best 不受污染。
+
+Patch proposal 必须先完成解析、策略检查和针对不可变源码的 dry-run，之后才允许
+分配 Candidate ID。非法 Patch 因而不会创建 Candidate 目录或 registry 记录；合法
+Patch 才会原子物化、把验证状态重置为 `NOT_RUN`、注册并以自己的 Candidate ID
+绑定 Vitis action。
+
+## V1 三类错误统一验收
+
+| 场景 | Baseline 阶段边界 | 必须达到的结果 |
+|---|---|---|
+| `FUNCTIONAL_MISMATCH` | public csim mismatch | 真实 DeepSeek Candidate 通过 csim/synth/cosim/clock |
+| `COMPILE_ERROR` | csim 编译失败 | 真实 DeepSeek Candidate 通过 csim/synth/cosim/clock |
+| `SYNTHESIS_ERROR` | csim PASS、synth 失败 | 真实 DeepSeek Candidate 通过 csim/synth/cosim/clock |
+| `PATCH_INVALID` | 越权修改 testbench | workflow 在 Candidate 分配前安全失败 |
+
+不调用 LLM 即可预检查两个新增 baseline：
+
+```bash
+python3 -m llm4hls_agent run examples/u55c_compile_repair_task \
+  --run-dir runs/v1-compile-preflight --clock-ns 10
+
+python3 -m llm4hls_agent run examples/u55c_synthesis_repair_task \
+  --run-dir runs/v1-synthesis-preflight --clock-ns 10
+```
+
+三个 HLS 任务分别使用前述 API 环境运行 `repair`。独立安全负例不调用 API：
+
+```bash
+python3 -m llm4hls_agent repair examples/u55c_repair_task \
+  --run-dir runs/v1-patch-invalid \
+  --provider static --patch-file examples/u55c_patch_invalid.diff \
+  --clock-ns 10 || test $? -eq 2
+```
+
+最后对四个运行目录执行统一验收。验收器只读证据目录，并把结果写入独立目录：
+
+```bash
+python3 -m llm4hls_agent accept-v1 \
+  --functional-run runs/v1-functional-final-2 \
+  --compile-run runs/v1-compile-final \
+  --synthesis-run runs/v1-synthesis-final-2 \
+  --patch-invalid-run runs/v1-patch-invalid \
+  --output-dir runs/v1-acceptance
+```
+
+只有规范要求的真实证据才能得到 `overall_status=PASS`。单元测试和 fake backend
+证据只能得到 `TEST_PASS`，不能据此宣布 V1 完成。命令会同时生成机器可读的
+`acceptance_result.json`，以及包含四场景矩阵、报告/Manifest 链接和完整复现命令的
+`acceptance_report.md`。
 
 ## 官方参考实现对应内部哪个阶段
 
@@ -59,8 +139,12 @@ python3 -m llm4hls_agent run "$TASKS/residual_stream_deadlock" \
 - `LLM4HLS_CREDIT_BUDGET`；
 - `LLM4HLS_COST_CSIM`、`LLM4HLS_COST_SYNTH`、`LLM4HLS_COST_COSIM`；
 - `LLM4HLS_CSIM_TIMEOUT_S`、`LLM4HLS_SYNTH_TIMEOUT_S`、`LLM4HLS_COSIM_TIMEOUT_S`；
-- `LLM4HLS_TOKEN_BUDGET`：无 LLM 的 V0 中，已用 Token 始终记录为 0；
-- `LLM4HLS_RUNTIME_LIMIT_S`、`LLM4HLS_MIN_FREQUENCY_MHZ`。
+- `LLM4HLS_TOKEN_BUDGET`：V0 为 0；V1 按 API usage 分别记录输入、输出、缓存输入和总 Token，失败调用也计入；
+- `LLM4HLS_RUNTIME_LIMIT_S`、`LLM4HLS_MIN_FREQUENCY_MHZ`；
+- `OPENAI_BASE_URL`、`OPENAI_API_KEY`；
+- `LLM4HLS_MODEL`（默认 `deepseek-v4-pro`）；
+- `LLM4HLS_LLM_TIMEOUT_S`、`LLM4HLS_LLM_MAX_OUTPUT_TOKENS`、
+  `LLM4HLS_LLM_TEMPERATURE`、`LLM4HLS_COST_LLM`。
 
 运行 `python3 -m llm4hls_agent run --help` 可查看全部覆盖参数和各工具调用次数限制。
 
@@ -79,6 +163,12 @@ trace.jsonl                    工作流、工具、恢复和缓存事件
 baseline/source/<kernel>.cpp   与原始文件逐字节一致的只读 baseline
 actions/<action_id>/result.json
 actions/<action_id>/work/      Tcl、stdout、stderr、XML、报告和 Vitis 工作目录
+diagnostics/<candidate_id>.json
+llm_actions/<action_id>/result.json
+candidates/<candidate_id>/     只读源码、Patch 和候选元数据
+v1_result.json                 V1 决策、验证、回滚和预算结果
+experimental_report.md         面向人的 Vitis、Token、credit 与指标报告
+artifact_manifest.json         排序后的路径、大小、SHA-256、producer/action 绑定
 ```
 
 每个 action 使用完整的 SHA-256 ID，并绑定 candidate、代码、完整公开任务 fixture、工具配置、工具链标识和 backend 指纹。每条 `COMPLETED` ledger 事件都会保存对应 `result.json` 的精确摘要；所有引用的 Tcl、日志、XML 和报告也分别保存摘要，并在缓存命中时重新校验。
