@@ -6,7 +6,9 @@ import hashlib
 import json
 import math
 from dataclasses import dataclass
-from typing import Mapping
+from typing import Mapping, Protocol
+
+from .repair import PatchProposal
 
 
 ALLOWED_OPTIMIZATIONS = (
@@ -24,6 +26,60 @@ class OptimizationDecision:
     evidence: tuple[str, ...]
     metrics_digest: str
     stop_reason: str | None = None
+
+
+@dataclass(frozen=True)
+class OptimizationContext:
+    task_id: str
+    parent_candidate_id: str
+    round_index: int
+    allowed_optimization_class: str
+    bottleneck: str
+    evidence: tuple[str, ...]
+    baseline_metrics: Mapping[str, object]
+    current_metrics: Mapping[str, object]
+    source_excerpt: str
+    failed_actions: tuple[Mapping[str, object], ...]
+    remaining_tokens: int
+    remaining_credits: int | None
+    final_reserve_credits: int
+    top: str
+    kernel_name: str
+    part: str
+    clock_ns: float
+
+    def __post_init__(self) -> None:
+        if self.allowed_optimization_class not in ALLOWED_OPTIMIZATIONS:
+            raise ValueError("optimization context has an unsupported class")
+        if self.round_index <= 0:
+            raise ValueError("optimization round index must be positive")
+        if self.remaining_tokens < 0 or self.final_reserve_credits < 0:
+            raise ValueError("optimization budget values must be non-negative")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "task_id": self.task_id,
+            "parent_candidate_id": self.parent_candidate_id,
+            "round_index": self.round_index,
+            "allowed_optimization_class": self.allowed_optimization_class,
+            "bottleneck": self.bottleneck,
+            "evidence": list(self.evidence),
+            "baseline_metrics": dict(self.baseline_metrics),
+            "current_metrics": dict(self.current_metrics),
+            "source_excerpt": self.source_excerpt,
+            "failed_actions": [dict(item) for item in self.failed_actions],
+            "remaining_tokens": self.remaining_tokens,
+            "remaining_credits": self.remaining_credits,
+            "final_reserve_credits": self.final_reserve_credits,
+            "top": self.top,
+            "kernel_name": self.kernel_name,
+            "part": self.part,
+            "clock_ns": self.clock_ns,
+        }
+
+
+class OptimizationProvider(Protocol):
+    def propose_optimization(self, context: OptimizationContext) -> PatchProposal: ...
 
 
 def _canonical_digest(value: object) -> str:
