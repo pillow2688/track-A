@@ -21,17 +21,15 @@ from typing import Mapping, Protocol
 from .budget import BudgetError, BudgetExceeded, BudgetLedger, BudgetLedgerError
 from .candidate import CandidateManager
 from .task import PublicTask
-from .tools import ToolBackend, ToolConfig, ToolResult, ToolServer
-from .vitis import VitisBackend
+from .tools import ToolBackend
+from .validation import validate_candidate
 from .workflow import (
     RunArtifactError,
     RunConfig,
     _RunLock,
     _append_trace,
     _atomic_json,
-    _invoke_stage,
     _sha256,
-    _validation_record,
     run_v0,
 )
 
@@ -702,84 +700,20 @@ def _validate_candidate(
     *,
     backend: ToolBackend | None,
 ) -> dict[str, object]:
-    budget = BudgetLedger(run_root / "budget_ledger.jsonl", config.budget)
-    server = ToolServer(
-        task=task,
-        budget=budget,
-        run_root=run_root,
-        config=config.tool,
-        backend=backend or VitisBackend(),
-    )
-    validation: dict[str, dict[str, object]] = {
-        "csim": {"status": "NOT_RUN"},
-        "synth": {"status": "NOT_RUN"},
-        "cosim": {"status": "NOT_RUN"},
-    }
-    stop_reason: str | None = None
-    clock = {
-        "minimum_frequency_mhz": config.minimum_frequency_mhz,
-        "maximum_period_ns": 1000.0 / config.minimum_frequency_mhz,
-        "estimated_period_ns": None,
-        "passed": False,
-    }
-    csim, error, reason = _invoke_stage(
-        server, "csim", kernel_bytes, candidate_id=candidate_id
-    )
-    if csim is None:
-        validation["csim"] = error or {"status": "TOOL_ERROR"}
-        stop_reason = reason or "CSIM_ERROR"
-    else:
-        validation["csim"] = _validation_record(csim)
-        if not csim.ok:
-            stop_reason = f"CSIM_{csim.phase.upper()}"
-    synth = None
-    if csim is not None and csim.ok:
-        synth, error, reason = _invoke_stage(
-            server, "synth", kernel_bytes, candidate_id=candidate_id
-        )
-        if synth is None:
-            validation["synth"] = error or {"status": "TOOL_ERROR"}
-            stop_reason = reason or "SYNTH_ERROR"
-        else:
-            validation["synth"] = _validation_record(synth)
-            if not synth.ok:
-                stop_reason = f"SYNTH_{synth.phase.upper()}"
-    cosim = None
-    if synth is not None and synth.ok:
-        estimated = synth.report.get("estimated_clock_period_ns") if synth.report else None
-        clock["estimated_period_ns"] = estimated
-        if isinstance(estimated, bool) or not isinstance(estimated, (int, float)) or not math.isfinite(float(estimated)) or float(estimated) <= 0:
-            stop_reason = "SYNTH_INVALID_CLOCK_METRIC"
-        elif float(estimated) > float(clock["maximum_period_ns"]):
-            stop_reason = "CLOCK_CONSTRAINT_FAILED"
-        else:
-            clock["passed"] = True
-            cosim, error, reason = _invoke_stage(
-                server, "cosim", kernel_bytes, candidate_id=candidate_id
-            )
-            if cosim is None:
-                validation["cosim"] = error or {"status": "TOOL_ERROR"}
-                stop_reason = reason or "COSIM_ERROR"
-            else:
-                validation["cosim"] = _validation_record(cosim)
-                if not cosim.ok:
-                    stop_reason = f"COSIM_{cosim.phase.upper()}"
-    if cosim is not None and cosim.ok and stop_reason is None:
-        status = "DONE"
-        stop_reason = "CANDIDATE_VERIFIED"
-    else:
-        status = "FAILED"
-    metrics_ref = None
-    if synth is not None and synth.report is not None:
-        metrics_ref = synth.result_ref
-    return {
-        "status": status,
-        "stop_reason": stop_reason,
-        "validation": validation,
-        "clock_constraint": clock,
-        "metrics_ref": metrics_ref,
-        "budget": budget.snapshot(),
-    }
+    shared = validate_candidate(
+        task,
+        kernel_bytes,
+        candidate_id,
+        run_root,
+        config,
+        backend=backend,
+    ).to_dict()
+    records = shared.get("validation")
+    if isinstance(records, dict):
+        for record in records.values():
+            if isinstance(record, dict):
+                record.pop("validation_scope", None)
+    return shared
 
 
 def run_v1(

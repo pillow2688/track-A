@@ -331,9 +331,14 @@ def _invoke_stage(
     kernel_bytes: bytes,
     *,
     candidate_id: str = "candidate_000",
+    validation_scope: str = "exploration",
 ) -> tuple[ToolResult | None, dict[str, object] | None, str | None]:
     try:
-        result = getattr(server, stage)(kernel_bytes, candidate_id=candidate_id)
+        result = getattr(server, stage)(
+            kernel_bytes,
+            candidate_id=candidate_id,
+            validation_scope=validation_scope,
+        )
     except (
         BudgetError,
         AmbiguousActionError,
