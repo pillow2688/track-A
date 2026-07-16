@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import tempfile
 import unittest
@@ -148,6 +149,46 @@ class V2AcceptanceTests(unittest.TestCase):
         self.assertTrue(result["checks"]["best_matches_recomputed_comparator"])
         self.assertTrue(result["checks"]["rejected_candidate_did_not_pollute_best"])
         self.assertTrue(result["checks"]["ledger_trace_actions_consistent"])
+
+    def test_equivalent_bare_kernel_patch_headers_remain_bound(self) -> None:
+        registry_path = self.optimization_run / "candidate_registry.json"
+        registry = json.loads(registry_path.read_text(encoding="utf-8"))
+        for candidate_id, candidate in registry["candidates"].items():
+            if candidate_id == "candidate_000":
+                continue
+            patch_path = self.optimization_run / candidate["patch_ref"]
+            patch_path.chmod(0o644)
+            patch = patch_path.read_text(encoding="utf-8")
+            patch = patch.replace("--- a/kernel.cpp", "--- kernel.cpp", 1)
+            patch = patch.replace("+++ b/kernel.cpp", "+++ kernel.cpp", 1)
+            patch_path.write_text(patch, encoding="utf-8")
+            patch_sha256 = hashlib.sha256(patch.encode("utf-8")).hexdigest()
+            candidate["patch_sha256"] = patch_sha256
+            metadata_path = (
+                self.optimization_run
+                / "candidates"
+                / candidate_id
+                / "candidate.json"
+            )
+            metadata_path.chmod(0o644)
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            metadata["patch_sha256"] = patch_sha256
+            metadata_path.write_text(
+                json.dumps(metadata, sort_keys=True), encoding="utf-8"
+            )
+        registry_path.write_text(
+            json.dumps(registry, sort_keys=True), encoding="utf-8"
+        )
+        build_artifact_manifest(self.optimization_run)
+
+        result = compute_v2_acceptance(
+            self.spec, self.optimization_run, self.rejection_run
+        )
+
+        self.assertEqual(result["overall_status"], "TEST_PASS")
+        self.assertTrue(
+            result["checks"]["public_inputs_and_kernel_only_patches_bound"]
+        )
 
     def test_tampered_score_fails_closed_at_manifest(self) -> None:
         score_path = self.optimization_run / "scores" / "candidate_002.json"

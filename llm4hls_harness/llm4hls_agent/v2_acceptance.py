@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Mapping
 
 from .artifacts import ArtifactManifestError, manifest_digest, verify_artifact_manifest
+from .repair import unified_diff_targets_kernel
 from .scoring import CandidateScore, ScoringConfig, compare_scores, score_candidate
 
 
@@ -203,8 +204,6 @@ def _public_inputs_bound(
     baseline_hash = _sha256(baseline_source)
     if hashes.get(kernel_name) != baseline_hash or baseline.get("code_hash") != baseline_hash:
         return False
-    expected_old = f"--- a/{kernel_name}"
-    expected_new = f"+++ b/{kernel_name}"
     for candidate_id, candidate in candidates.items():
         if candidate_id == "candidate_000":
             continue
@@ -214,10 +213,7 @@ def _public_inputs_bound(
             ).read_text(encoding="utf-8")
         except (V2AcceptanceError, OSError, UnicodeDecodeError):
             return False
-        headers = [
-            line for line in patch.splitlines() if line.startswith(("--- ", "+++ "))
-        ]
-        if headers != [expected_old, expected_new]:
+        if not unified_diff_targets_kernel(patch, kernel_name=kernel_name):
             return False
     return True
 

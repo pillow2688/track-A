@@ -240,6 +240,31 @@ def _patch_path(raw: str, *, prefix: str, expected: str) -> str:
     return value
 
 
+def unified_diff_targets_kernel(patch: str, *, kernel_name: str) -> bool:
+    """Return whether a unified diff's only file headers target the kernel.
+
+    Git-prefixed (``a/`` and ``b/``) and bare unified-diff paths are equivalent
+    under the strict Patch validator.  This helper gives evidence evaluators the
+    exact same path semantics without applying a candidate Patch again.
+    """
+
+    headers = [
+        line for line in patch.splitlines() if line.startswith(("--- ", "+++ "))
+    ]
+    if (
+        len(headers) != 2
+        or not headers[0].startswith("--- ")
+        or not headers[1].startswith("+++ ")
+    ):
+        return False
+    try:
+        _patch_path(headers[0], prefix="--- ", expected=kernel_name)
+        _patch_path(headers[1], prefix="+++ ", expected=kernel_name)
+    except PatchValidationError:
+        return False
+    return True
+
+
 def normalize_unified_diff_headers(patch: str) -> str:
     """Recompute hunk counts without changing paths or hunk body content.
 
