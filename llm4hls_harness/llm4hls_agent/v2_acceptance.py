@@ -12,6 +12,7 @@ from typing import Mapping
 from .artifacts import ArtifactManifestError, manifest_digest, verify_artifact_manifest
 from .repair import (
     PatchValidationError,
+    PatchLimits,
     apply_unified_diff,
     canonicalize_unified_diff_paths,
     normalize_unified_diff_headers,
@@ -114,6 +115,7 @@ def _candidate_tree(
     root: Path,
     paths: set[str],
     registry: Mapping[str, object],
+    patch_limits: PatchLimits,
 ) -> tuple[bool, dict[str, Mapping[str, object]]]:
     task_spec = _covered_json(root, paths, "task_spec.json")
     kernel_name = task_spec.get("kernel_file")
@@ -160,6 +162,7 @@ def _candidate_tree(
                     parent_source,
                     patch.decode("utf-8"),
                     kernel_name=kernel_name,
+                    limits=patch_limits,
                 )
             except (
                 V2AcceptanceError,
@@ -750,9 +753,30 @@ def compute_v2_acceptance(
         if not isinstance(scoring_snapshot, Mapping):
             raise V2AcceptanceError("V2 scoring snapshot is missing")
         scoring = _scoring_config(scoring_snapshot)
-        tree_ok, candidates = _candidate_tree(opt_root, opt_paths, opt_registry)
+        patch_limits_snapshot = optimization_snapshot.get("patch_limits")
+        if not isinstance(patch_limits_snapshot, Mapping):
+            raise V2AcceptanceError("V2 Patch limits snapshot is missing")
+        try:
+            optimization_patch_limits = PatchLimits(
+                max_changed_lines=int(patch_limits_snapshot["max_changed_lines"]),
+                max_hunks=int(patch_limits_snapshot["max_hunks"]),
+                allow_full_file_replacement=(
+                    patch_limits_snapshot.get("allow_full_file_replacement") is True
+                ),
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise V2AcceptanceError("V2 Patch limits snapshot is invalid") from exc
+        tree_ok, candidates = _candidate_tree(
+            opt_root,
+            opt_paths,
+            opt_registry,
+            optimization_patch_limits,
+        )
         rejection_tree_ok, rejection_candidates = _candidate_tree(
-            reject_root, reject_paths, reject_registry
+            reject_root,
+            reject_paths,
+            reject_registry,
+            PatchLimits(max_changed_lines=30, max_hunks=4),
         )
         public_inputs_ok = _public_inputs_bound(
             opt_root, opt_paths, candidates

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import re
 import tempfile
 import unittest
@@ -205,6 +206,18 @@ class ExcerptFailureProvider:
             duration_seconds=0.5,
             request_id="request-failed-schema",
             response_excerpt='{"required_validation":{"csim":true}}',
+        )
+
+
+class InvalidPatchOptimizationProvider(SequenceOptimizationProvider):
+    def fingerprint(self) -> str:
+        return "invalid-patch-optimization-provider-v1"
+
+    def propose_optimization(self, context: OptimizationContext) -> PatchProposal:
+        proposal = super().propose_optimization(context)
+        return replace(
+            proposal,
+            patch=proposal.patch.replace("kernel.cpp", "kernel_tb.cpp"),
         )
 
 
@@ -811,6 +824,69 @@ class V2WorkflowTests(unittest.TestCase):
                 self.run_config,
                 self.optimization_config,
                 SequenceOptimizationProvider(),
+                backend=PPASequenceBackend(),
+            )
+
+    def test_recovery_reproves_patch_rejected_semantics(self) -> None:
+        from llm4hls_agent import optimization
+
+        run_root = self.root / "patch-rejected-recovery"
+        provider = InvalidPatchOptimizationProvider()
+        original_gate = optimization._ensure_round_affordable
+        calls = 0
+
+        def interrupt_before_second_round(budget, config):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise KeyboardInterrupt("injected after durable round one")
+            return original_gate(budget, config)
+
+        with patch(
+            "llm4hls_agent.optimization._ensure_round_affordable",
+            side_effect=interrupt_before_second_round,
+        ), self.assertRaises(KeyboardInterrupt):
+            run_v2(
+                self.task,
+                run_root,
+                self.run_config,
+                self.optimization_config,
+                provider,
+                backend=PPASequenceBackend(),
+            )
+        round_record = json.loads(
+            (run_root / "optimization_rounds/round_001.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(round_record["decision"], "PATCH_REJECTED")
+        result_path = run_root / round_record["provider_ref"]
+        provider_result = json.loads(result_path.read_text(encoding="utf-8"))
+        provider_result["patch"] = provider_result["patch"].replace(
+            "kernel_tb.cpp", "kernel.cpp"
+        )
+        result_path.write_text(json.dumps(provider_result), encoding="utf-8")
+        result_sha256 = hashlib.sha256(result_path.read_bytes()).hexdigest()
+        ledger_path = run_root / "budget_ledger.jsonl"
+        events = [json.loads(line) for line in ledger_path.read_text().splitlines()]
+        for event in events:
+            if (
+                event.get("state") == "COMPLETED"
+                and event.get("result_ref") == round_record["provider_ref"]
+            ):
+                event["result_sha256"] = result_sha256
+        ledger_path.write_text(
+            "\n".join(json.dumps(event, sort_keys=True) for event in events) + "\n",
+            encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(ValueError, "Patch rejection binding"):
+            run_v2(
+                self.task,
+                run_root,
+                self.run_config,
+                self.optimization_config,
+                provider,
                 backend=PPASequenceBackend(),
             )
 

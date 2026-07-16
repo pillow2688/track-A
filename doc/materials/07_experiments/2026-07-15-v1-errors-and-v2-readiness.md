@@ -143,9 +143,10 @@ DeepSeek 优化提案、四轮 Candidate 循环、最终复验、候选回退和
 | 正确的小型 Patch 因 hunk 起始行偏移 1 行被拒绝 | 模型 Patch body 与源码唯一匹配，但 unified diff location metadata 有轻微偏移 | 仅当 old body 在源码中唯一匹配且偏移不超过 8 行时，确定性修正 hunk 位置；路径和 Patch body 不变，之后仍走严格 dry-run | 位置修复只处理元数据；多重匹配、超限偏移、非法路径或 body 不符一律拒绝 |
 | V2 最初机器验收误报 `PUBLIC_INPUT_BINDING_INVALID` | 严格 Patch validator 接受等价的 `kernel.cpp` 和 `a/kernel.cpp` 路径，但 Acceptance 额外硬编码必须带 `a/`、`b/` 前缀 | 增加真实形态回归测试，并让 Acceptance 与 Patch validator 共用同一目标路径语义；重新计算后为 `REAL/PASS` | 机器验收不得发明比生产验证器更窄且无安全收益的文本格式；安全判断应复用同一解析语义 |
 | Acceptance 可独立校验 Patch/source hash，但未证明 parent→Patch→child | Manifest 重建后，攻击者可同时替换 Patch 及其 hash，却保留无关 child source | 验收逐个对 parent source 严格应用 Patch，结果必须逐字节等于 child source；同时把 Provider 原始 Patch 经确定性 count/location/path 规范化后绑定 Candidate Patch 与 optimization class | Candidate tree 的 hash、路径和 parent 字段不是血缘证明；每条边都必须重新执行并绑定 Provider→Patch→child |
-| Token 只检查 `remaining > 0`，极端情况下 API 返回后 Ledger 才发现超限 | 调用前没有为输入 Prompt 和最大输出建立上界，完成事件可能因超 Token 被拒绝并遗留 STARTED action | Provider 必须公开含 `max_tokens` 的 HTTP body；调用前按序列化 body UTF-8 字节数、512 协议余量和最大输出做保守预留，不足时以 `TOKEN_RESERVE_REACHED` 在 API 前停止 | 外部调用的预算闸门必须发生在副作用前；不可把超限处理推迟到 usage 返回后 |
+| Token 只检查 `remaining > 0`，极端情况下 API 返回后 Ledger 才发现超限 | 调用前没有为输入 Prompt 和最大输出建立上界，完成事件可能因超 Token 被拒绝并遗留 STARTED action | Provider 必须公开含 `max_tokens` 的 HTTP body；按序列化 body UTF-8 字节数、512 协议余量和最大输出计算上界，并通过 `BudgetLedger.reserve(estimated_tokens=...)` 在同一锁内持久化 STARTED 预留；snapshot 从 remaining 中扣除 pending token，完成时释放预留并记实际 usage | 外部调用的 estimate→reserve→STARTED 必须发生在副作用前；并发调用不能只做无状态 preflight，overrun 也必须写成终态而非遗留不可恢复 STARTED |
 | durable round 恢复曾信任已落盘的 PROMOTED/score/metrics | round 顺序和字符串 decision 不能证明 Context、action、validation、score、comparison 仍一致 | 恢复时重算 Selector 与稳定 Context digest，重绑 request/provider action 和 Ledger，再校验 Provider/Patch、三级 action、score 与 comparison；任一不一致 fail closed 且不继续计费 | Trace 不是恢复权威；durable record 也必须语义重算，不能只检查 JSON 字段存在 |
 | Final fallback 仅由剩余预算间接限制 | 候选较多时可能尝试所有 eligible Candidate，没有独立的最大次数上限 | 新增 `max_final_attempts`/`--max-final-attempts`，默认总计 2 次（最佳候选加最多一个替代）；失败时清空 `final_candidate_id` | Final closure 必须同时受 affordability 和明确 attempt count 约束 |
+| `PATCH_REJECTED` durable round 恢复只看 Provider `ok=true` 和 decision 字符串 | 没有 Candidate 可用于血缘重算，篡改后的合法 Patch 仍可能沿用旧的拒绝结论 | 恢复时重新执行 normalize、唯一位置修复、策略和 dry-run；只有再次抛出 `PatchValidationError` 才接受 `PATCH_REJECTED`，若 Patch 已可应用则 fail closed | 所有 round decision 都要重算；“未物化 Candidate”不能成为跳过语义验证的理由 |
 
 V2 的专用公开 fixture 固定为 256 元素 U55C `vector_add`、10 ns、预算 160，基线功能
 正确但使用保守的 `PIPELINE II=16`。确定性安全负例只修改 `kernel.cpp` 的加法为减法，
@@ -189,5 +190,5 @@ hidden/reference、无关源码、本机绝对路径、API Key 和认证头。�
 SHA-256 均为
 `cc2a087ed419bfdd8cdf733dcf0bb68de301e2b647dfb65f943af6f542e78a83`，证明人工报告生成
 未改动机器权威证据。报告扫描未发现 `/home/`、`file://`、HTML 或外部 URL。独立审查
-修复后，全套 134 项单元测试、Python compileall、`git diff --check`、强化后的 `accept-v2`
+修复后，全套 136 项单元测试、Python compileall、`git diff --check`、强化后的 `accept-v2`
 和 `review-v2` 均重新通过；真实 LLM/Vitis 原始运行无需重跑。

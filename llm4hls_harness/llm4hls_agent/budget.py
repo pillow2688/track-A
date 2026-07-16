@@ -258,6 +258,7 @@ class BudgetLedger:
         actions = self._actions_from(events)
         credits_used = 0
         pending_credits = 0
+        pending_tokens = 0
         tool_used = {kind: 0 for kind in self.config.costs}
         tool_pending = {kind: 0 for kind in self.config.costs}
         tokens_used = 0
@@ -285,6 +286,7 @@ class BudgetLedger:
                 raise BudgetLedgerError(f"ledger contains unknown tool: {kind}")
             if terminal is None:
                 pending_credits += int(started["estimated_cost"])
+                pending_tokens += int(started.get("estimated_tokens", 0))
                 tool_pending[kind] += 1
             else:
                 credits_used += int(terminal["actual_cost"])
@@ -313,12 +315,13 @@ class BudgetLedger:
             "tool_used": tool_used,
             "tool_pending": tool_pending,
             "token_limit": self.config.token_limit,
+            "pending_tokens_reserved": pending_tokens,
             "tokens_used": tokens_used,
             "input_tokens_used": input_tokens_used,
             "output_tokens_used": output_tokens_used,
             "cached_input_tokens_used": cached_input_tokens_used,
             "token_usage_complete": token_usage_complete,
-            "tokens_remaining": self.config.token_limit - tokens_used,
+            "tokens_remaining": self.config.token_limit - tokens_used - pending_tokens,
             "runtime_limit_seconds": self.config.runtime_limit_seconds,
             "runtime_used_seconds": runtime_used,
             "runtime_remaining_seconds": max(
@@ -343,7 +346,11 @@ class BudgetLedger:
         candidate_id: str,
         code_hash: str,
         tool_config_hash: str,
+        estimated_tokens: int = 0,
     ) -> None:
+        token_reservation = int(estimated_tokens)
+        if isinstance(estimated_tokens, bool) or token_reservation < 0:
+            raise BudgetExceeded("estimated token reservation must be non-negative")
         with self._exclusive():
             self._repair_torn_tail_unlocked()
             events = self._read_events_unlocked()
@@ -356,6 +363,11 @@ class BudgetLedger:
             if remaining is not None and int(remaining) < cost:
                 raise BudgetExceeded(
                     f"{kind} costs {cost} but only {remaining} credits remain"
+                )
+            if int(snapshot["tokens_remaining"]) < token_reservation:
+                raise BudgetExceeded(
+                    f"action reserves {token_reservation} tokens but only "
+                    f"{snapshot['tokens_remaining']} remain"
                 )
             limit = self.config.tool_limits[kind]
             used = int(snapshot["tool_used"][kind]) + int(  # type: ignore[index]
@@ -375,6 +387,7 @@ class BudgetLedger:
                     "code_hash": code_hash,
                     "tool_config_hash": tool_config_hash,
                     "estimated_cost": cost,
+                    "estimated_tokens": token_reservation,
                 }
             )
 
@@ -413,11 +426,17 @@ class BudgetLedger:
             if not action_events or action_events[-1].get("state") != "STARTED":
                 raise BudgetLedgerError(f"action is not pending: {action_id}")
             snapshot = self._snapshot_from(events)
-            if int(snapshot["tokens_used"]) + token_count > self.config.token_limit:
-                raise BudgetExceeded("token budget would be exceeded")
             started = action_events[-1]
-            self._append_unlocked(
-                {
+            estimated_tokens = int(started.get("estimated_tokens", 0))
+            other_pending = int(snapshot["pending_tokens_reserved"]) - estimated_tokens
+            total_after = int(snapshot["tokens_used"]) + other_pending + token_count
+            reservation_overrun = (
+                estimated_tokens > 0 and token_count > estimated_tokens
+            )
+            total_overrun = total_after > self.config.token_limit
+            if estimated_tokens == 0 and total_overrun:
+                raise BudgetExceeded("token budget would be exceeded")
+            completed_event = {
                     "state": "COMPLETED",
                     "timestamp": _utc_now(),
                     "action_id": action_id,
@@ -431,7 +450,13 @@ class BudgetLedger:
                     "result_ref": result_ref,
                     "result_sha256": result_sha256,
                 }
-            )
+            if reservation_overrun or total_overrun:
+                completed_event["token_reservation_overrun"] = True
+            self._append_unlocked(completed_event)
+            if reservation_overrun or total_overrun:
+                raise BudgetExceeded(
+                    "actual provider token usage exceeded the durable reservation"
+                )
 
     def mark_ambiguous(self, action_id: str) -> None:
         with self._exclusive():

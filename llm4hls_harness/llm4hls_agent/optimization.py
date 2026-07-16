@@ -500,7 +500,7 @@ def _persist_request_audit(path: Path, value: Mapping[str, object]) -> None:
 def _ensure_provider_tokens_affordable(
     budget: BudgetLedger,
     request_audit: Mapping[str, object],
-) -> None:
+) -> int:
     """Fail before an API call unless its bounded request can fit the token budget."""
 
     provider_request = request_audit.get("provider_request")
@@ -530,6 +530,7 @@ def _ensure_provider_tokens_affordable(
             "optimization provider request requires a conservative reserve of "
             f"{required} tokens but {remaining} remain"
         )
+    return required
 
 
 def _proposal_from_dict(value: Mapping[str, object]) -> PatchProposal:
@@ -584,6 +585,10 @@ def _call_optimization_provider(
     request_audit = _request_audit(provider, context, action_id=action_id)
     completed = budget.completed_event(action_id)
     if completed is not None:
+        if completed.get("token_reservation_overrun") is True:
+            raise BudgetExceeded(
+                "cached optimization provider action exceeded its token reservation"
+            )
         if not request_path.is_file():
             raise RepairProviderError("cached optimization request audit is missing")
         encoded = result_path.read_bytes()
@@ -599,7 +604,7 @@ def _call_optimization_provider(
         return _proposal_from_dict(value), result_ref, request_ref, None
     if budget.has_pending(action_id) or budget.is_ambiguous(action_id):
         raise RepairProviderError(f"optimization action {action_id} is not recoverable")
-    _ensure_provider_tokens_affordable(budget, request_audit)
+    estimated_tokens = _ensure_provider_tokens_affordable(budget, request_audit)
     _persist_request_audit(request_path, request_audit)
     budget.reserve(
         action_id=action_id,
@@ -607,6 +612,7 @@ def _call_optimization_provider(
         candidate_id=parent_id,
         code_hash=code_hash,
         tool_config_hash=tool_config_hash,
+        estimated_tokens=estimated_tokens,
     )
     proposal: PatchProposal | None = None
     try:
@@ -1462,6 +1468,30 @@ def run_v2(
                 raise ValueError(
                     f"durable rejected round binding is invalid: {round_path.name}"
                 )
+            if expected_rejection == "PATCH_REJECTED":
+                rejected_proposal = _proposal_from_dict(provider_value)
+                try:
+                    rejected_patch = normalize_unified_diff_headers(
+                        rejected_proposal.patch
+                    )
+                    rejected_patch = relocate_unified_diff_hunks(
+                        current_source,
+                        rejected_patch,
+                        kernel_name=task.kernel_name,
+                    )
+                    apply_unified_diff(
+                        current_source,
+                        rejected_patch,
+                        kernel_name=task.kernel_name,
+                        limits=optimization_config.patch_limits,
+                    )
+                except PatchValidationError:
+                    pass
+                else:
+                    raise ValueError(
+                        "durable Patch rejection binding is invalid: "
+                        f"{round_path.name}"
+                    )
         if round_record["decision"] == "PROMOTED":
             if not isinstance(candidate_id, str) or candidate_id not in scores:
                 raise ValueError("promoted durable round has no scored Candidate")
