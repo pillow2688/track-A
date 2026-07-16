@@ -119,3 +119,23 @@ V1 现已满足“至少三类 HLS 错误能由 LLM 修复或安全回滚”的�
 checkpoint/resume、预算 reserve 和 stop reason，V4 补 hidden-like、Docker、多任务及
 多模型证据。核心统计、逐场景审核卡、逐项 Acceptance 和原始证据索引保持稳定，便于
 不同版本使用同一套人工审核习惯。
+
+## 8. 2026-07-16 V2 开发中的问题与约束更新
+
+V2 当前处于实现与单元验证阶段，尚未宣称完成真实 DeepSeek/Vitis 验收。已完成的代码
+边界包括 CandidateManager、探索/最终验证作用域、PPA 评分与字典序比较、单优化类选择、
+严格 DeepSeek 优化提案、四轮 Candidate 循环、最终复验、候选回退和完成轮次恢复。
+
+| 问题 | 根因 | 解决方法 | 防复发规则 |
+|---|---|---|---|
+| V2 中断后可能重复第一轮 | 只看 Trace 或内存状态不能证明一轮已经完整落盘 | 每轮以 `optimization_rounds/round_NNN.json` 为 durable completion record；恢复时重建 attempted、score、metrics、best 和 no-improvement | 不从 Trace 推断轮次完成；round、Registry、Score、Metrics 任一不一致即 fail closed |
+| 最优 Candidate 最终复验失败后没有安全替代 | 探索期 PASS 不等于最终作用域 PASS | 对已完整验证且满足硬约束的历史 Candidate 重新按同一比较器排序，只在预算允许时依次执行 final 验证 | `best_candidate_id` 保留探索最优，`final_candidate_id` 单独记录实际最终通过者，并记录 fallback 原因 |
+| 安全回归 fixture 的 unified diff 首次被拒绝 | hunk 声明从第 10 行开始，但 hunk body 实际对应第 11 行；严格 parser 因 context 偏移拒绝 | 将 hunk 修正为 `@@ -11,4 +11,4 @@`，不放宽 Patch 校验 | 静态安全 Patch 也必须走与 LLM Patch 相同的严格 path/count/context/dry-run 校验；测试数据错误不得通过降低策略解决 |
+| 安全拒绝 credits 一度预期为 27 | 把 V1 的 26 credits 误当成 baseline 成本；实际 baseline 完整验证是 `1+4+20=25`，拒绝 Candidate 只追加一次 CSim `1` | 测试按 Ledger 重算为 26，并同时断言调用次数 `csim=2,synth=1,cosim=1,llm=0` | 所有报告必须分别显示 calls、unit cost 和 credits；预期数字也必须由阶段成本公式与 Ledger 复核 |
+
+V2 的专用公开 fixture 固定为 256 元素 U55C `vector_add`、10 ns、预算 160，基线功能
+正确但使用保守的 `PIPELINE II=16`。确定性安全负例只修改 `kernel.cpp` 的加法为减法，
+必须先验证 baseline 的 CSim/Synth/CoSim/Clock 全部通过，再物化
+`kind=safety_regression` 子 Candidate；对子 Candidate 只运行 CSim，并要求其失败、
+Synth/CoSim 保持 `NOT_RUN`、best/final/active 全部安全回到 `candidate_000`、LLM 调用为 0。
+该安全负例仅证明拒绝边界，不得进入正式 PPA 最优候选集合。

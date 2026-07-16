@@ -39,6 +39,63 @@ def _record(result: ToolResult) -> dict[str, object]:
     }
 
 
+def validate_csim_only(
+    task: PublicTask,
+    kernel_bytes: bytes,
+    candidate_id: str,
+    run_root: str | Path,
+    config: RunConfig,
+    *,
+    backend: ToolBackend | None,
+) -> CandidateValidation:
+    """Run only CSim for a safety Candidate and preserve NOT_RUN downstream."""
+
+    root = Path(run_root).resolve()
+    budget = BudgetLedger(root / "budget_ledger.jsonl", config.budget)
+    server = ToolServer(
+        task=task,
+        budget=budget,
+        run_root=root,
+        config=config.tool,
+        backend=backend or VitisBackend(),
+    )
+    validation: dict[str, dict[str, object]] = {
+        "csim": {"status": "NOT_RUN"},
+        "synth": {"status": "NOT_RUN"},
+        "cosim": {"status": "NOT_RUN"},
+    }
+    csim, error, reason = _invoke_stage(
+        server,
+        "csim",
+        kernel_bytes,
+        candidate_id=candidate_id,
+    )
+    if csim is None:
+        validation["csim"] = error or {"status": "TOOL_ERROR"}
+        stop_reason = reason or "CSIM_ERROR"
+    else:
+        validation["csim"] = _record(csim)
+        stop_reason = (
+            "CSIM_PASSED"
+            if csim.ok
+            else f"CSIM_{csim.phase.upper()}"
+        )
+    return CandidateValidation(
+        status="DONE" if csim is not None and not csim.ok else "FAILED",
+        stop_reason=stop_reason,
+        validation=validation,
+        clock_constraint={
+            "minimum_frequency_mhz": config.minimum_frequency_mhz,
+            "maximum_period_ns": 1000.0 / config.minimum_frequency_mhz,
+            "estimated_period_ns": None,
+            "passed": False,
+            "status": "NOT_RUN",
+        },
+        metrics_ref=None,
+        budget=budget.snapshot(),
+    )
+
+
 def validate_candidate(
     task: PublicTask,
     kernel_bytes: bytes,

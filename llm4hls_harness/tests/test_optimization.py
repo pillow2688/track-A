@@ -14,6 +14,7 @@ from llm4hls_agent.optimization import (
     OptimizationConfig,
     OptimizationContext,
     run_v2,
+    run_v2_rejection,
     select_optimization,
 )
 from llm4hls_agent.repair import PatchProposal
@@ -244,6 +245,102 @@ class FinalBestFailureBackend(PPASequenceBackend):
                     ["final-only injected CoSim failure"],
                 )
         return super().run(kind, kernel_bytes=kernel_bytes, **kwargs)
+
+
+class VectorAddRegressionBackend:
+    def run(self, kind: str, *, kernel_bytes: bytes, **_kwargs: object) -> BackendResult:
+        if kind == "csim" and b"a[i] - b[i]" in kernel_bytes:
+            return BackendResult(
+                False,
+                "runtime_fail",
+                1,
+                0.1,
+                ["case 0 mismatch at index 1"],
+            )
+        if kind == "synth":
+            return BackendResult(
+                True,
+                "pass",
+                0,
+                0.1,
+                report={
+                    "estimated_clock_period_ns": 5.0,
+                    "latency": {"best": 4098, "average": 4098, "worst": 4098},
+                    "interval": {"min": 16, "max": 16},
+                    "resources": {
+                        "LUT": 100,
+                        "FF": 200,
+                        "DSP": 0,
+                        "BRAM_18K": 0,
+                        "URAM": 0,
+                    },
+                    "available_resources": {
+                        "LUT": 100000,
+                        "FF": 200000,
+                        "DSP": 1000,
+                        "BRAM_18K": 1000,
+                        "URAM": 100,
+                    },
+                },
+            )
+        if kind == "cosim":
+            return BackendResult(True, "pass", 0, 0.1, cosim={"status": "Pass"})
+        return BackendResult(True, "pass", 0, 0.1)
+
+
+class V2SafetyRejectionTests(unittest.TestCase):
+    def test_policy_valid_semantic_regression_is_rejected_without_polluting_best(self) -> None:
+        examples = Path(__file__).parents[1] / "examples"
+        task = load_public_task(examples / "u55c_v2_optimize_task")
+        patch_path = examples / "u55c_v2_regression.diff"
+        with tempfile.TemporaryDirectory() as tmp:
+            run_root = Path(tmp) / "rejection"
+            config = RunConfig(
+                tool=ToolConfig(
+                    vitis_root="/opt/xilinx/2025.2/Vitis",
+                    part=task.part,
+                    clock_ns=task.clock_ns,
+                    timeouts={"csim": 10.0, "synth": 20.0, "cosim": 30.0},
+                ),
+                budget=BudgetConfig(
+                    credit_limit=160,
+                    costs={"csim": 1, "synth": 4, "cosim": 20, "llm": 0},
+                    tool_limits={"csim": 3, "synth": 2, "cosim": 2, "llm": 0},
+                    token_limit=0,
+                    runtime_limit_seconds=3600.0,
+                ),
+                minimum_frequency_mhz=100.0,
+            )
+
+            result = run_v2_rejection(
+                task,
+                run_root,
+                config,
+                patch_path,
+                backend=VectorAddRegressionBackend(),
+            )
+            registry = json.loads(
+                (run_root / "candidate_registry.json").read_text(encoding="utf-8")
+            )
+
+        self.assertEqual(result["status"], "DONE")
+        self.assertEqual(result["stop_reason"], "SAFETY_REGRESSION_REJECTED")
+        self.assertEqual(registry["best_candidate_id"], "candidate_000")
+        self.assertEqual(registry["final_candidate_id"], "candidate_000")
+        rejected = registry["candidates"]["candidate_001"]
+        self.assertEqual(rejected["kind"], "safety_regression")
+        self.assertEqual(rejected["parent_id"], "candidate_000")
+        self.assertEqual(rejected["status"], "REJECTED_VALIDATION")
+        self.assertEqual(rejected["validation"]["csim"]["status"], "FAIL")
+        self.assertEqual(rejected["validation"]["synth"]["status"], "NOT_RUN")
+        self.assertEqual(rejected["validation"]["cosim"]["status"], "NOT_RUN")
+        self.assertEqual(result["budget"]["tool_used"], {
+            "cosim": 1,
+            "csim": 2,
+            "llm": 0,
+            "synth": 1,
+        })
+        self.assertEqual(result["budget"]["credits_used"], 26)
 
 
 class V2WorkflowTests(unittest.TestCase):

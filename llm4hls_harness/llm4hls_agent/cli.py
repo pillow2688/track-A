@@ -22,7 +22,7 @@ from .openai_provider import (
     OpenAICompatibleOptimizationProvider,
     OpenAICompatibleRepairProvider,
 )
-from .optimization import OptimizationConfig, run_v2
+from .optimization import OptimizationConfig, run_v2, run_v2_rejection
 from .repair import PatchLimits, PatchProposal, StaticPatchProvider, V1Error, run_v1
 from .review import ReviewError, generate_review_reports
 from .scoring import load_scoring_config
@@ -189,6 +189,44 @@ def build_parser() -> argparse.ArgumentParser:
     optimize.add_argument("--max-no-improvement-rounds", type=int, default=2)
     optimize.add_argument("--final-reserve-credits", type=int, default=25)
     optimize.add_argument("--max-changed-lines", type=int, default=30)
+    reject_v2 = subparsers.add_parser(
+        "reject-v2", help="run the deterministic V2 semantic-regression safety case"
+    )
+    reject_v2.add_argument("task_dir", type=Path)
+    reject_v2.add_argument("--run-dir", type=Path, required=True)
+    reject_v2.add_argument("--patch-file", type=Path, required=True)
+    reject_v2.add_argument(
+        "--vitis-root",
+        default=os.environ.get("LLM4HLS_VITIS_HLS_ROOT", "/opt/xilinx/2025.2/Vitis"),
+    )
+    reject_v2.add_argument("--part", default=None)
+    reject_v2.add_argument("--clock-ns", type=float, default=None)
+    reject_v2.add_argument(
+        "--toolchain-id",
+        default=os.environ.get("LLM4HLS_TOOLCHAIN_ID", "Vitis 2025.2"),
+    )
+    reject_v2.add_argument("--credit-limit", type=int, default=None)
+    reject_v2.add_argument("--cost-csim", type=int, default=_env_int("LLM4HLS_COST_CSIM", 1))
+    reject_v2.add_argument("--cost-synth", type=int, default=_env_int("LLM4HLS_COST_SYNTH", 4))
+    reject_v2.add_argument("--cost-cosim", type=int, default=_env_int("LLM4HLS_COST_COSIM", 20))
+    reject_v2.add_argument(
+        "--csim-timeout", type=float, default=_env_float("LLM4HLS_CSIM_TIMEOUT_S", 180.0)
+    )
+    reject_v2.add_argument(
+        "--synth-timeout", type=float, default=_env_float("LLM4HLS_SYNTH_TIMEOUT_S", 900.0)
+    )
+    reject_v2.add_argument(
+        "--cosim-timeout", type=float, default=_env_float("LLM4HLS_COSIM_TIMEOUT_S", 900.0)
+    )
+    reject_v2.add_argument(
+        "--runtime-limit", type=float, default=_env_float("LLM4HLS_RUNTIME_LIMIT_S", 7200.0)
+    )
+    reject_v2.add_argument(
+        "--minimum-frequency-mhz",
+        type=float,
+        default=_env_float("LLM4HLS_MIN_FREQUENCY_MHZ", 100.0),
+    )
+    reject_v2.add_argument("--max-changed-lines", type=int, default=30)
     manifest = subparsers.add_parser(
         "manifest", help="build or rebuild a deterministic artifact manifest"
     )
@@ -300,6 +338,8 @@ def main(
         return _main_repair(args, backend=backend)
     if args.command == "optimize":
         return _main_optimize(args, backend=backend)
+    if args.command == "reject-v2":
+        return _main_reject_v2(args, backend=backend)
     if args.command == "manifest":
         try:
             manifest = build_artifact_manifest(args.run_dir)
@@ -625,6 +665,75 @@ def _main_optimize(args: argparse.Namespace, *, backend: ToolBackend | None) -> 
         "credits_used": result.get("budget", {}).get("credits_used", 0),
         "tokens_used": result.get("budget", {}).get("tokens_used", 0),
         "result_ref": "v2_result.json",
+    }
+    print(json.dumps(summary, sort_keys=True))
+    return 0 if result["status"] == "DONE" else 2
+
+
+def _main_reject_v2(args: argparse.Namespace, *, backend: ToolBackend | None) -> int:
+    try:
+        task = load_public_task(args.task_dir)
+        credit_limit = args.credit_limit
+        if credit_limit is None:
+            credit_limit = int(os.environ.get("LLM4HLS_CREDIT_BUDGET", task.budget))
+        run_config = RunConfig(
+            tool=ToolConfig(
+                vitis_root=str(args.vitis_root),
+                part=str(args.part or task.part),
+                clock_ns=float(
+                    args.clock_ns if args.clock_ns is not None else task.clock_ns
+                ),
+                timeouts={
+                    "csim": args.csim_timeout,
+                    "synth": args.synth_timeout,
+                    "cosim": args.cosim_timeout,
+                },
+                toolchain_id=str(args.toolchain_id),
+            ),
+            budget=BudgetConfig(
+                credit_limit=credit_limit,
+                costs={
+                    "csim": args.cost_csim,
+                    "synth": args.cost_synth,
+                    "cosim": args.cost_cosim,
+                    "llm": 0,
+                },
+                tool_limits={"csim": 2, "synth": 1, "cosim": 1, "llm": 0},
+                token_limit=0,
+                runtime_limit_seconds=args.runtime_limit,
+            ),
+            minimum_frequency_mhz=args.minimum_frequency_mhz,
+        )
+        result = run_v2_rejection(
+            task,
+            args.run_dir,
+            run_config,
+            args.patch_file,
+            backend=backend,
+            patch_limits=PatchLimits(max_changed_lines=args.max_changed_lines),
+        )
+    except (
+        OSError,
+        UnicodeError,
+        TaskPackageError,
+        BudgetError,
+        RunArtifactError,
+        V1Error,
+        ValueError,
+    ) as exc:
+        _print_error(exc)
+        return 3
+    summary = {
+        "task_id": result.get("task_id", task.id),
+        "run_dir": str(Path(args.run_dir).resolve()),
+        "status": result["status"],
+        "stop_reason": result["stop_reason"],
+        "rejected_candidate_id": result.get("rejected_candidate_id"),
+        "best_candidate_id": result.get("best_candidate_id"),
+        "final_candidate_id": result.get("final_candidate_id"),
+        "credits_used": result.get("budget", {}).get("credits_used", 0),
+        "tokens_used": result.get("budget", {}).get("tokens_used", 0),
+        "result_ref": "v2_rejection_result.json",
     }
     print(json.dumps(summary, sort_keys=True))
     return 0 if result["status"] == "DONE" else 2

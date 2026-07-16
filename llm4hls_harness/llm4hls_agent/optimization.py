@@ -23,7 +23,7 @@ from .repair import (
 from .scoring import CandidateScore, ScoringConfig, compare_scores, score_candidate
 from .task import PublicTask
 from .tools import ToolBackend
-from .validation import CandidateValidation, validate_candidate
+from .validation import CandidateValidation, validate_candidate, validate_csim_only
 from .workflow import RunConfig, _RunLock, _append_trace, _atomic_json, run_v0
 
 
@@ -449,6 +449,177 @@ def _score_from_validation(
         cached_input_tokens=proposal.cached_input_tokens if proposal is not None else 0,
         credits_used=credits_used,
     )
+
+
+def run_v2_rejection(
+    task: PublicTask,
+    run_dir: str | Path,
+    run_config: RunConfig,
+    patch_file: str | Path,
+    *,
+    backend: ToolBackend | None = None,
+    patch_limits: PatchLimits = PatchLimits(max_changed_lines=30, max_hunks=4),
+) -> dict[str, object]:
+    """Prove that a policy-valid semantic regression is safely rejected."""
+
+    if task.task_type != "optimize":
+        raise ValueError("V2 rejection requires task_type=optimize")
+    run_root = Path(run_dir).resolve()
+    run_root.mkdir(parents=True, exist_ok=True)
+    try:
+        patch_text = Path(patch_file).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise ValueError(f"cannot read V2 rejection Patch: {exc}") from exc
+    normalized = normalize_unified_diff_headers(patch_text)
+    patch_sha256 = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+    completed_path = run_root / "v2_rejection_result.json"
+    if completed_path.is_file():
+        try:
+            completed = json.loads(completed_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ValueError(f"completed V2 rejection run is unreadable: {exc}") from exc
+        current_budget = BudgetLedger(
+            run_root / "budget_ledger.jsonl", run_config.budget
+        ).snapshot()
+        recorded_budget = completed.get("budget") if isinstance(completed, dict) else None
+        if (
+            not isinstance(completed, dict)
+            or completed.get("workflow") != "V2_SAFETY_REJECTION"
+            or completed.get("status") != "DONE"
+            or completed.get("task_id") != task.id
+            or completed.get("patch_sha256") != patch_sha256
+            or not isinstance(recorded_budget, dict)
+            or any(
+                recorded_budget.get(key) != current_budget.get(key)
+                for key in ("credits_used", "tokens_used", "tool_used")
+            )
+        ):
+            raise ValueError("completed V2 rejection run does not match this invocation")
+        return completed
+
+    baseline = run_v0(task, run_root, run_config, backend=backend)
+    if baseline.get("status") != "DONE":
+        result = {
+            "schema_version": 1,
+            "workflow": "V2_SAFETY_REJECTION",
+            "task_id": task.id,
+            "status": "FAILED",
+            "stop_reason": "BASELINE_NOT_VERIFIED",
+            "baseline": baseline,
+            "patch_sha256": patch_sha256,
+        }
+        _atomic_json(completed_path, result)
+        return result
+
+    application = apply_unified_diff(
+        task.kernel_bytes,
+        normalized,
+        kernel_name=task.kernel_name,
+        limits=patch_limits,
+    )
+    manager = CandidateManager(run_root, task)
+    registry = manager.load_registry()
+    materialized = manager.materialize(
+        registry,
+        parent_id="candidate_000",
+        patch_text=normalized,
+        application=application,
+        kind="safety_regression",
+        metadata={
+            "provider": "deterministic-fixture",
+            "model": None,
+            "fallback": "NOT_APPLICABLE",
+            "optimization_class": "SAFETY_REGRESSION",
+        },
+    )
+    candidate_id = materialized.candidate_id
+    before_credits = int(BudgetLedger(
+        run_root / "budget_ledger.jsonl", run_config.budget
+    ).snapshot()["credits_used"])
+    validation = validate_csim_only(
+        task,
+        application.patched_bytes,
+        candidate_id,
+        run_root,
+        run_config,
+        backend=backend,
+    )
+    registry = manager.load_registry()
+    candidate = registry["candidates"][candidate_id]
+    candidate["validation"] = validation.validation
+    candidate["credits_used"] = int(validation.budget["credits_used"]) - before_credits
+    candidate["status"] = (
+        "REJECTED_VALIDATION" if validation.status == "DONE" else "UNSAFE_ACCEPTED"
+    )
+    registry["active_candidate_id"] = "candidate_000"
+    registry["best_candidate_id"] = "candidate_000"
+    registry["final_candidate_id"] = "candidate_000"
+    manager.save_registry(registry)
+
+    invariants = {
+        "baseline_verified": baseline.get("status") == "DONE",
+        "baseline_unchanged": baseline.get("baseline_unchanged") is True,
+        "patch_policy_valid": True,
+        "candidate_materialized_after_patch_validation": candidate_id == "candidate_001",
+        "candidate_csim_failed": validation.validation["csim"].get("status") == "FAIL",
+        "candidate_synth_not_run": validation.validation["synth"].get("status") == "NOT_RUN",
+        "candidate_cosim_not_run": validation.validation["cosim"].get("status") == "NOT_RUN",
+        "candidate_rejected": candidate["status"] == "REJECTED_VALIDATION",
+        "best_preserved": registry.get("best_candidate_id") == "candidate_000",
+        "final_preserved": registry.get("final_candidate_id") == "candidate_000",
+        "active_rolled_back": registry.get("active_candidate_id") == "candidate_000",
+        "llm_not_called": validation.budget["tool_used"].get("llm") == 0,
+    }
+    passed = all(invariants.values())
+    result = {
+        "schema_version": 1,
+        "workflow": "V2_SAFETY_REJECTION",
+        "task_id": task.id,
+        "status": "DONE" if passed else "FAILED",
+        "stop_reason": (
+            "SAFETY_REGRESSION_REJECTED" if passed else "SAFETY_INVARIANT_FAILED"
+        ),
+        "baseline_candidate_id": "candidate_000",
+        "rejected_candidate_id": candidate_id,
+        "best_candidate_id": registry.get("best_candidate_id"),
+        "final_candidate_id": registry.get("final_candidate_id"),
+        "patch_sha256": patch_sha256,
+        "patch": {
+            "kernel_name": application.kernel_name,
+            "original_sha256": application.original_sha256,
+            "patched_sha256": application.patched_sha256,
+            "additions": application.additions,
+            "deletions": application.deletions,
+            "hunks": application.hunks,
+            "applied_patch": normalized,
+        },
+        "validation": validation.validation,
+        "safety_invariants": invariants,
+        "rollback": {
+            "from": candidate_id,
+            "to": "candidate_000",
+            "reason": validation.stop_reason,
+        },
+        "budget": validation.budget,
+        "artifacts": {
+            "workflow_result": "workflow_result.json",
+            "rejection_result": "v2_rejection_result.json",
+            "candidate_registry": "candidate_registry.json",
+            "budget_ledger": "budget_ledger.jsonl",
+            "trace": "trace.jsonl",
+        },
+    }
+    _atomic_json(completed_path, result)
+    _append_trace(
+        run_root / "trace.jsonl",
+        "V2_SAFETY_REJECTION_COMPLETED",
+        status=result["status"],
+        stop_reason=result["stop_reason"],
+        rejected_candidate_id=candidate_id,
+        rollback_to="candidate_000",
+        result_ref="v2_rejection_result.json",
+    )
+    return result
 
 
 def run_v2(

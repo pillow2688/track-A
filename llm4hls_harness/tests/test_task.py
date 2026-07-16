@@ -197,5 +197,28 @@ class PublicTaskLoaderTests(unittest.TestCase):
                     load_public_task(root)
 
 
+class V2FixtureTests(unittest.TestCase):
+    def test_v2_fixture_is_self_contained_optimize_task(self) -> None:
+        examples = Path(__file__).parents[1] / "examples"
+
+        task = load_public_task(examples / "u55c_v2_optimize_task")
+
+        self.assertEqual(task.task_type, "optimize")
+        self.assertEqual(task.top, "vector_add")
+        self.assertEqual(task.budget, 160)
+        self.assertTrue(task.requires_cosim)
+        self.assertEqual(task.part, "xcu55c-fsvh2892-2L-e")
+        self.assertEqual(task.clock_ns, 10.0)
+        self.assertIn("VECTOR_SIZE = 256", task.headers["kernel.h"].decode())
+        self.assertIn("PIPELINE II=16", task.kernel_code)
+        self.assertFalse(
+            {"reference", "hidden"}.intersection(
+                part.casefold()
+                for name in task.public_file_hashes
+                for part in Path(name).parts
+            )
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

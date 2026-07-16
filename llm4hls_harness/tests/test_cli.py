@@ -78,6 +78,48 @@ class RepairingBackend(PassingBackend):
 
 
 class CliTests(unittest.TestCase):
+    def test_reject_v2_command_prints_audited_safety_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task_dir = root / "task"
+            task_dir.mkdir()
+            make_task(task_dir)
+            patch_file = root / "regression.diff"
+            patch_file.write_text("fixture", encoding="utf-8")
+            expected = {
+                "task_id": "cli_fixture",
+                "status": "DONE",
+                "stop_reason": "SAFETY_REGRESSION_REJECTED",
+                "rejected_candidate_id": "candidate_001",
+                "best_candidate_id": "candidate_000",
+                "final_candidate_id": "candidate_000",
+                "budget": {"credits_used": 26, "tokens_used": 0},
+            }
+            stdout = io.StringIO()
+            with patch(
+                "llm4hls_agent.cli.run_v2_rejection", return_value=expected
+            ) as run, redirect_stdout(stdout):
+                return_code = main(
+                    [
+                        "reject-v2",
+                        str(task_dir),
+                        "--run-dir",
+                        str(root / "run"),
+                        "--patch-file",
+                        str(patch_file),
+                        "--credit-limit",
+                        "160",
+                    ]
+                )
+
+            summary = json.loads(stdout.getvalue())
+            self.assertEqual(return_code, 0)
+            self.assertEqual(summary["status"], "DONE")
+            self.assertEqual(summary["rejected_candidate_id"], "candidate_001")
+            self.assertEqual(summary["credits_used"], 26)
+            self.assertEqual(summary["tokens_used"], 0)
+            self.assertEqual(run.call_args.args[2].budget.tool_limits["llm"], 0)
+
     def test_optimize_command_builds_v2_config_and_prints_summary(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
