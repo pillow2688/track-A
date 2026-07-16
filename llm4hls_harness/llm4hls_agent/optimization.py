@@ -565,6 +565,8 @@ def _call_optimization_provider(
         output_tokens = int(getattr(exc, "output_tokens", 0))
         cached_tokens = int(getattr(exc, "cached_input_tokens", 0))
         duration = float(getattr(exc, "duration_seconds", 0.0))
+        request_id = getattr(exc, "request_id", None)
+        response_excerpt = getattr(exc, "response_excerpt", None)
         value = {
             "ok": False,
             "error": f"{type(exc).__name__}: {exc}",
@@ -572,6 +574,10 @@ def _call_optimization_provider(
             "output_tokens": output_tokens,
             "cached_input_tokens": cached_tokens,
             "duration_seconds": duration,
+            "request_id": str(request_id) if request_id else None,
+            "response_excerpt": (
+                str(response_excerpt) if response_excerpt is not None else None
+            ),
         }
     _atomic_json(result_path, value)
     encoded = result_path.read_bytes()

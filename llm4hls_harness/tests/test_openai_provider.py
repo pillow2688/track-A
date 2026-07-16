@@ -243,6 +243,26 @@ class OpenAICompatibleProviderTests(unittest.TestCase):
         with self.assertRaisesRegex(RepairProviderError, "validation"):
             provider.propose_optimization(optimization_context())
 
+    def test_optimization_provider_normalizes_boolean_validation_mapping(self) -> None:
+        response = json.loads(self.optimization_response_content())
+        response["required_validation"] = {
+            "csim": True,
+            "synth": True,
+            "cosim": True,
+        }
+        provider = OpenAICompatibleOptimizationProvider(
+            self.config(),
+            transport=lambda _request, _timeout: (
+                200,
+                {},
+                envelope(json.dumps(response)),
+            ),
+        )
+
+        proposal = provider.propose_optimization(optimization_context())
+
+        self.assertEqual(proposal.required_validation, ("csim", "synth", "cosim"))
+
     def test_invalid_content_and_missing_usage_are_rejected(self) -> None:
         cases = [
             envelope("not json"),

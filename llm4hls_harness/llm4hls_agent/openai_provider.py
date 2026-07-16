@@ -188,6 +188,16 @@ def _strict_response(
             for item in str(value["required_validation"]).split(",")
             if item.strip()
         ]
+    elif isinstance(value.get("required_validation"), Mapping):
+        raw_validation = value["required_validation"]
+        if all(
+            isinstance(name, str) and isinstance(enabled, bool)
+            for name, enabled in raw_validation.items()
+        ):
+            value = dict(value)
+            value["required_validation"] = [
+                str(name) for name, enabled in raw_validation.items() if enabled
+            ]
     aliases = {
         "simulation": "csim", "c-sim": "csim", "c_sim": "csim",
         "synthesis": "synth", "hls-synthesis": "synth",

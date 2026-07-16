@@ -18,7 +18,7 @@ from llm4hls_agent.optimization import (
     run_v2_rejection,
     select_optimization,
 )
-from llm4hls_agent.repair import PatchProposal
+from llm4hls_agent.repair import PatchProposal, RepairProviderError
 from llm4hls_agent.scoring import ScoringConfig
 from llm4hls_agent.task import load_public_task
 from llm4hls_agent.tools import BackendResult, ToolConfig
@@ -180,6 +180,31 @@ class SequenceOptimizationProvider:
             expected_effect="improve the configured fake PPA",
             risk="low",
             required_validation=("csim", "synth", "cosim"),
+        )
+
+
+class ExcerptFailureProvider:
+    def fingerprint(self) -> str:
+        return "excerpt-failure-provider-v1"
+
+    def describe_optimization_request(
+        self, context: OptimizationContext
+    ) -> dict[str, object]:
+        return {
+            "provider": "openai-compatible",
+            "model": "deepseek-v4-pro",
+            "http_body": {"prompt": context.to_dict()},
+        }
+
+    def propose_optimization(self, _context: OptimizationContext) -> PatchProposal:
+        raise RepairProviderError(
+            "provider response field required_validation has the wrong type",
+            input_tokens=101,
+            output_tokens=23,
+            cached_input_tokens=7,
+            duration_seconds=0.5,
+            request_id="request-failed-schema",
+            response_excerpt='{"required_validation":{"csim":true}}',
         )
 
 
@@ -513,6 +538,34 @@ class V2WorkflowTests(unittest.TestCase):
         )
         self.assertEqual(result["rounds"], [])
         self.assertEqual(result["budget"]["credits_used"], 50)
+
+    def test_provider_failure_persists_response_and_auditable_refs(self) -> None:
+        run_root = self.root / "provider-failure"
+
+        result = run_v2(
+            self.task,
+            run_root,
+            self.run_config,
+            self.optimization_config,
+            ExcerptFailureProvider(),
+            backend=PPASequenceBackend(),
+        )
+
+        self.assertEqual(result["status"], "DONE")
+        self.assertEqual(len(result["rounds"]), 2)
+        for round_record in result["rounds"]:
+            provider_result = json.loads(
+                (run_root / round_record["provider_ref"]).read_text(encoding="utf-8")
+            )
+            self.assertFalse(provider_result["ok"])
+            self.assertEqual(
+                provider_result["response_excerpt"],
+                '{"required_validation":{"csim":true}}',
+            )
+            self.assertEqual(provider_result["request_id"], "request-failed-schema")
+            self.assertEqual(provider_result["input_tokens"], 101)
+            self.assertEqual(provider_result["output_tokens"], 23)
+            self.assertTrue((run_root / round_record["request_ref"]).is_file())
 
     def test_completed_run_is_reused_without_duplicate_charges(self) -> None:
         first = run_v2(
