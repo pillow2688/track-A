@@ -78,6 +78,27 @@ class RepairingBackend(PassingBackend):
 
 
 class CliTests(unittest.TestCase):
+    def test_review_v2_prints_flat_markdown_report_references(self) -> None:
+        expected = {
+            "status": "PASS",
+            "report_ref": "V2_ACCEPTANCE_REPORT.md",
+            "report_cn_ref": "V2_ACCEPTANCE_REPORT_CN.md",
+            "review_data_digest": "abc",
+            "summary": {"credits_used": 176},
+        }
+        stdout = io.StringIO()
+        with patch(
+            "llm4hls_agent.cli.generate_v2_review_reports", return_value=expected
+        ) as generate, redirect_stdout(stdout):
+            return_code = main(["review-v2", "--runs-root", "runs"])
+
+        self.assertEqual(return_code, 0)
+        self.assertEqual(json.loads(stdout.getvalue()), expected)
+        arguments = generate.call_args.args
+        self.assertEqual(arguments[1], Path("runs/v2-optimize-final"))
+        self.assertEqual(arguments[2], Path("runs/v2-safety-rejection-final"))
+        self.assertEqual(arguments[4], Path("runs"))
+
     def test_accept_v2_command_prints_machine_and_bilingual_report_refs(self) -> None:
         expected = {
             "overall_status": "PASS",

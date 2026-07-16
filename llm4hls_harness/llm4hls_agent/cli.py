@@ -29,6 +29,7 @@ from .scoring import load_scoring_config
 from .task import TaskPackageError, load_public_task
 from .tools import ToolBackend, ToolConfig
 from .v2_acceptance import V2AcceptanceError, evaluate_v2_acceptance
+from .v2_review import V2ReviewError, generate_v2_review_reports
 from .workflow import RunArtifactError, RunConfig, run_v0
 
 
@@ -271,6 +272,19 @@ def build_parser() -> argparse.ArgumentParser:
     review.add_argument("--synthesis-run", type=Path)
     review.add_argument("--patch-invalid-run", type=Path)
     review.add_argument("--acceptance-result", type=Path)
+    review_v2 = subparsers.add_parser(
+        "review-v2",
+        help="offline: aggregate existing V2 evidence into flat Markdown reports",
+    )
+    review_v2.add_argument("--runs-root", type=Path, default=Path("runs"))
+    review_v2.add_argument(
+        "--spec",
+        type=Path,
+        default=Path(__file__).resolve().parent / "config" / "v2_acceptance.json",
+    )
+    review_v2.add_argument("--optimization-run", type=Path)
+    review_v2.add_argument("--rejection-run", type=Path)
+    review_v2.add_argument("--acceptance-result", type=Path)
     return parser
 
 
@@ -438,6 +452,22 @@ def main(
                 runs_root,
             )
         except ReviewError as exc:
+            _print_error(exc)
+            return 3
+        print(json.dumps(summary, sort_keys=True))
+        return 0 if summary["status"] == "PASS" else 2
+    if args.command == "review-v2":
+        runs_root = Path(args.runs_root)
+        try:
+            summary = generate_v2_review_reports(
+                args.spec,
+                args.optimization_run or runs_root / "v2-optimize-final",
+                args.rejection_run or runs_root / "v2-safety-rejection-final",
+                args.acceptance_result
+                or runs_root / "v2-acceptance" / "acceptance_result.json",
+                runs_root,
+            )
+        except V2ReviewError as exc:
             _print_error(exc)
             return 3
         print(json.dumps(summary, sort_keys=True))
