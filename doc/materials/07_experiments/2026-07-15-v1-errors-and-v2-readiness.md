@@ -135,6 +135,8 @@ V2 当前处于实现与单元验证阶段，尚未宣称完成真实 DeepSeek/V
 | 重建 Manifest 可能掩盖 final action 引用被替换 | 旧验收只检查 `v2_result.json` 内嵌的 PASS/scope，没有重新打开 action 核对 Candidate、code hash、action ID 和工具配置 | 新增“篡改 final CSim ref 后重建 Manifest”回归测试；Acceptance 对探索、最终和安全验证逐 action 重绑 Candidate/code/scope/backend/tool-config | Manifest 只能证明当前文件集合未再变化，不能替代语义重算；关键引用即使 hash 自洽也必须与 action/ledger 重新绑定 |
 | 可配置工具 cost 高于固定 final reserve | `final_reserve_credits=25` 只在默认 `1+4+20` 成本下足够，调整 cost 后可能欠保留 | `run_v2` 启动前要求 reserve 不低于实际 CSim+Synth+CoSim 配置成本 | 所有预算默认值都只是配置；安全不变量必须按本次 run config 重算，不能把 25 写成普适常量 |
 | 安全拒绝目录可能与优化目录混用 | 已完成安全运行的幂等检查未比较 tool config，且复用含优化 Candidate 的目录可能覆盖 best/final 语义 | 完成运行同时核对完整 `run_config.json`；拒绝流程只允许 baseline 或同一 safety Patch 的可恢复 Candidate | 优化、拒绝、验收必须使用三个独立目录；目录身份与配置不匹配立即报错，不做隐式复用 |
+| Codex 沙箱内 XSIM 在 snapshot 后进入 `xsim%` | 沙箱的 PID/系统隔离使 XSIM Tcl 命令出现 `unexpected exception`；相同 kernel/Tcl 在沙箱外正常 | 终止安静挂起的沙箱运行并保留失败证据；经批准在沙箱外重跑同一 safety 命令，真实 Vitis 三级通过且回归 CSim 按预期失败 | Codex 内启动真实 Vitis/XSIM 必须使用获批的沙箱外执行；先读 Trace/XSIM 日志确认阶段，不能把基础设施异常写成 Candidate 错误 |
+| 正式 V2 DeepSeek 调用被第三方数据传输审查拦截 | 优化 Prompt 会发送 kernel 局部源码、PPA 指标、约束和失败记录；旧的通用批准未被当前执行层视为本次 V2 的充分知情批准 | 不绕过审查、不改用未审计通道；保持正式目录未创建，并请求用户对本次 V2 数据范围再次明确批准 | 每个需要向外部模型发送新类型上下文的阶段都应在执行前列明数据范围并取得明确批准；API Key 仍只通过环境认证且不得进入 Prompt/日志 |
 
 V2 的专用公开 fixture 固定为 256 元素 U55C `vector_add`、10 ns、预算 160，基线功能
 正确但使用保守的 `PIPELINE II=16`。确定性安全负例只修改 `kernel.cpp` 的加法为减法，
