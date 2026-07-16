@@ -8,6 +8,7 @@ from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
+from llm4hls_agent.artifacts import verify_artifact_manifest
 from llm4hls_agent.budget import BudgetConfig
 from llm4hls_agent.optimization import (
     ALLOWED_OPTIMIZATIONS,
@@ -421,6 +422,9 @@ class V2WorkflowTests(unittest.TestCase):
             "candidate_002",
         )
         self.assertEqual(len(result["rounds"]), 4)
+        self.assertTrue((self.run_root / "experimental_report.md").is_file())
+        manifest = verify_artifact_manifest(self.run_root)
+        self.assertEqual(manifest["workflow"], "V2_CANDIDATE_PPA")
         for stage in ("csim", "synth", "cosim"):
             ref = result["final_validation"][stage]["result_ref"]
             action = json.loads((self.run_root / ref).read_text(encoding="utf-8"))

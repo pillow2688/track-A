@@ -1,0 +1,12 @@
+{
+  "acceptance_id": "v2-u55c-candidate-ppa",
+  "evidence_tier": "REAL",
+  "minimum_real_llm_candidates": 2,
+  "require_no_fallback": true,
+  "required_backend_fingerprint": "llm4hls_agent.vitis.VitisBackend:v0.4",
+  "required_model": "deepseek-v4-pro",
+  "required_provider": "openai-compatible",
+  "required_toolchain": "Vitis 2025.2",
+  "schema_version": 1,
+  "task_id": "u55c_vector_add_optimize"
+}

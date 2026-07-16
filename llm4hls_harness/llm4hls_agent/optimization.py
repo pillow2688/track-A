@@ -5,11 +5,13 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 from dataclasses import asdict, dataclass, field
 from functools import cmp_to_key
 from pathlib import Path
 from typing import Mapping, Protocol
 
+from .artifacts import build_artifact_manifest, verify_artifact_manifest
 from .budget import BudgetExceeded, BudgetLedger
 from .candidate import CandidateManager
 from .repair import (
@@ -137,6 +139,165 @@ def _canonical_digest(value: object) -> str:
         allow_nan=False,
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _atomic_text(path: Path, value: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    with temporary.open("w", encoding="utf-8", newline="\n") as stream:
+        stream.write(value)
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(temporary, path)
+
+
+def _write_v2_experimental_report(
+    run_root: Path,
+    result: Mapping[str, object],
+    registry: Mapping[str, object],
+) -> None:
+    budget = result.get("budget")
+    budget_value = budget if isinstance(budget, Mapping) else {}
+    calls = budget_value.get("tool_used")
+    call_value = calls if isinstance(calls, Mapping) else {}
+    workflow = str(result.get("workflow", ""))
+    lines = [
+        "# V2 Experimental Report",
+        "",
+        f"- Workflow: `{workflow}`",
+        f"- Status: `{result.get('status')}`",
+        f"- Stop reason: `{result.get('stop_reason')}`",
+        f"- Baseline Candidate: `{result.get('baseline_candidate_id', 'candidate_000')}`",
+        f"- Best Candidate: `{result.get('best_candidate_id')}`",
+        f"- Final Candidate: `{result.get('final_candidate_id')}`",
+        "",
+        "## Budget and calls",
+        "",
+        f"- Credits used / remaining: `{budget_value.get('credits_used')} / {budget_value.get('credits_remaining')}`",
+        f"- Input / output / cached-input Tokens: `{budget_value.get('input_tokens_used')} / {budget_value.get('output_tokens_used')} / {budget_value.get('cached_input_tokens_used')}`",
+        f"- Total Tokens: `{budget_value.get('tokens_used')}`",
+        "",
+        "| Tool | Calls |",
+        "|---|---:|",
+    ]
+    for tool in ("csim", "synth", "cosim", "llm"):
+        lines.append(f"| {tool} | {call_value.get(tool, 0)} |")
+
+    if workflow == "V2_CANDIDATE_PPA":
+        lines.extend(
+            [
+                "",
+                "## Candidate rounds",
+                "",
+                "| Round | Parent | Class | Candidate | Decision |",
+                "|---:|---|---|---|---|",
+            ]
+        )
+        rounds = result.get("rounds")
+        for item in rounds if isinstance(rounds, list) else []:
+            value = item if isinstance(item, Mapping) else {}
+            lines.append(
+                "| "
+                + " | ".join(
+                    str(value.get(key, ""))
+                    for key in (
+                        "round_index",
+                        "parent_candidate_id",
+                        "optimization_class",
+                        "candidate_id",
+                        "decision",
+                    )
+                )
+                + " |"
+            )
+        final_validation = result.get("final_validation")
+        final_value = final_validation if isinstance(final_validation, Mapping) else {}
+        lines.extend(
+            [
+                "",
+                "## Final Vitis validation",
+                "",
+                "| Stage | Status | Scope | Result |",
+                "|---|---|---|---|",
+            ]
+        )
+        for stage in ("csim", "synth", "cosim"):
+            item = final_value.get(stage)
+            value = item if isinstance(item, Mapping) else {}
+            ref = str(value.get("result_ref", ""))
+            link = f"[{ref}]({ref})" if ref else ""
+            lines.append(
+                f"| {stage} | `{value.get('status', 'NOT_RUN')}` | "
+                f"`{value.get('validation_scope', '')}` | {link} |"
+            )
+        final_id = result.get("final_candidate_id")
+        candidates = registry.get("candidates")
+        candidate_map = candidates if isinstance(candidates, Mapping) else {}
+        final_candidate = candidate_map.get(final_id)
+        final_record = final_candidate if isinstance(final_candidate, Mapping) else {}
+        metrics_ref = final_record.get("metrics_ref")
+        metrics: Mapping[str, object] = {}
+        if isinstance(metrics_ref, str):
+            try:
+                metrics = _read_report(run_root, metrics_ref)
+            except ValueError:
+                metrics = {}
+        lines.extend(
+            [
+                "",
+                "## Final PPA metrics",
+                "",
+                f"- Estimated clock period: `{metrics.get('estimated_clock_period_ns')}` ns",
+                f"- Latency: `{metrics.get('latency')}`",
+                f"- II: `{metrics.get('interval')}`",
+                f"- Resources: `{metrics.get('resources')}`",
+                f"- Fallback: `{result.get('fallback')}`",
+            ]
+        )
+    else:
+        invariants = result.get("safety_invariants")
+        invariant_value = invariants if isinstance(invariants, Mapping) else {}
+        lines.extend(
+            [
+                "",
+                "## Safety invariants",
+                "",
+                "| Invariant | Passed |",
+                "|---|---|",
+            ]
+        )
+        for name in sorted(invariant_value):
+            lines.append(f"| `{name}` | `{invariant_value[name]}` |")
+        validation = result.get("validation")
+        validation_value = validation if isinstance(validation, Mapping) else {}
+        lines.extend(["", "## Rejected Candidate validation", ""])
+        for stage in ("csim", "synth", "cosim"):
+            item = validation_value.get(stage)
+            value = item if isinstance(item, Mapping) else {}
+            lines.append(f"- {stage}: `{value.get('status', 'NOT_RUN')}`")
+
+    lines.extend(
+        [
+            "",
+            "## Raw evidence",
+            "",
+            "- `candidate_registry.json`",
+            "- `budget_ledger.jsonl`",
+            "- `trace.jsonl`",
+            "- `artifact_manifest.json`",
+            "",
+        ]
+    )
+    _atomic_text(run_root / "experimental_report.md", "\n".join(lines))
+
+
+def _finalize_v2_artifacts(
+    run_root: Path,
+    result: Mapping[str, object],
+    registry: Mapping[str, object],
+) -> None:
+    _write_v2_experimental_report(run_root, result, registry)
+    build_artifact_manifest(run_root)
 
 
 def _positive_metric(metrics: Mapping[str, object], group: str, name: str) -> float:
@@ -495,6 +656,7 @@ def run_v2_rejection(
             )
         ):
             raise ValueError("completed V2 rejection run does not match this invocation")
+        verify_artifact_manifest(run_root)
         return completed
 
     baseline = run_v0(task, run_root, run_config, backend=backend)
@@ -607,6 +769,8 @@ def run_v2_rejection(
             "candidate_registry": "candidate_registry.json",
             "budget_ledger": "budget_ledger.jsonl",
             "trace": "trace.jsonl",
+            "experimental_report": "experimental_report.md",
+            "artifact_manifest": "artifact_manifest.json",
         },
     }
     _atomic_json(completed_path, result)
@@ -619,6 +783,7 @@ def run_v2_rejection(
         rollback_to="candidate_000",
         result_ref="v2_rejection_result.json",
     )
+    _finalize_v2_artifacts(run_root, result, registry)
     return result
 
 
@@ -683,6 +848,7 @@ def run_v2(
             )
         ):
             raise ValueError("completed V2 budget does not match the ledger")
+        verify_artifact_manifest(run_root)
         return completed
     baseline = run_v0(task, run_root, run_config, backend=backend)
     if baseline.get("status") != "DONE":
@@ -1086,6 +1252,8 @@ def run_v2(
             "budget_ledger": "budget_ledger.jsonl",
             "trace": "trace.jsonl",
             "result": "v2_result.json",
+            "experimental_report": "experimental_report.md",
+            "artifact_manifest": "artifact_manifest.json",
         },
     }
     _atomic_json(run_root / "v2_result.json", result)
@@ -1105,4 +1273,5 @@ def run_v2(
     )
     if not isinstance(stored_result, dict):
         raise ValueError("stored V2 result is not an object")
+    _finalize_v2_artifacts(run_root, stored_result, registry)
     return stored_result

@@ -78,6 +78,36 @@ class RepairingBackend(PassingBackend):
 
 
 class CliTests(unittest.TestCase):
+    def test_accept_v2_command_prints_machine_and_bilingual_report_refs(self) -> None:
+        expected = {
+            "overall_status": "PASS",
+            "evidence_tier": "REAL",
+            "summary": {"credits_used": 152, "tokens_used": 490},
+        }
+        stdout = io.StringIO()
+        with patch(
+            "llm4hls_agent.cli.evaluate_v2_acceptance", return_value=expected
+        ) as evaluate, redirect_stdout(stdout):
+            return_code = main(
+                [
+                    "accept-v2",
+                    "--optimization-run",
+                    "runs/v2-opt",
+                    "--rejection-run",
+                    "runs/v2-reject",
+                    "--output-dir",
+                    "runs/v2-acceptance",
+                ]
+            )
+
+        summary = json.loads(stdout.getvalue())
+        self.assertEqual(return_code, 0)
+        self.assertEqual(summary["status"], "PASS")
+        self.assertEqual(summary["result_ref"], "acceptance_result.json")
+        self.assertEqual(summary["report_ref"], "acceptance_report.md")
+        self.assertEqual(summary["report_cn_ref"], "acceptance_report_CN.md")
+        self.assertEqual(evaluate.call_args.args[1], Path("runs/v2-opt"))
+
     def test_reject_v2_command_prints_audited_safety_summary(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

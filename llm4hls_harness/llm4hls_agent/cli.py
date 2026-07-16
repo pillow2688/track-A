@@ -28,6 +28,7 @@ from .review import ReviewError, generate_review_reports
 from .scoring import load_scoring_config
 from .task import TaskPackageError, load_public_task
 from .tools import ToolBackend, ToolConfig
+from .v2_acceptance import V2AcceptanceError, evaluate_v2_acceptance
 from .workflow import RunArtifactError, RunConfig, run_v0
 
 
@@ -244,6 +245,17 @@ def build_parser() -> argparse.ArgumentParser:
     accept.add_argument("--synthesis-run", type=Path, required=True)
     accept.add_argument("--patch-invalid-run", type=Path, required=True)
     accept.add_argument("--output-dir", type=Path, required=True)
+    accept_v2 = subparsers.add_parser(
+        "accept-v2", help="evaluate V2 optimization and safety-rejection evidence"
+    )
+    accept_v2.add_argument(
+        "--spec",
+        type=Path,
+        default=Path(__file__).resolve().parent / "config" / "v2_acceptance.json",
+    )
+    accept_v2.add_argument("--optimization-run", type=Path, required=True)
+    accept_v2.add_argument("--rejection-run", type=Path, required=True)
+    accept_v2.add_argument("--output-dir", type=Path, required=True)
     review = subparsers.add_parser(
         "review-v1",
         help="offline: aggregate existing V1 evidence into flat human-review reports",
@@ -368,6 +380,30 @@ def main(
                 args.output_dir,
             )
         except AcceptanceError as exc:
+            _print_error(exc)
+            return 3
+        print(
+            json.dumps(
+                {
+                    "status": result["overall_status"],
+                    "result_ref": "acceptance_result.json",
+                    "report_ref": "acceptance_report.md",
+                    "report_cn_ref": "acceptance_report_CN.md",
+                    "output_dir": str(Path(args.output_dir).resolve()),
+                },
+                sort_keys=True,
+            )
+        )
+        return 0 if result["overall_status"] == "PASS" else 2
+    if args.command == "accept-v2":
+        try:
+            result = evaluate_v2_acceptance(
+                args.spec,
+                args.optimization_run,
+                args.rejection_run,
+                args.output_dir,
+            )
+        except V2AcceptanceError as exc:
             _print_error(exc)
             return 3
         print(

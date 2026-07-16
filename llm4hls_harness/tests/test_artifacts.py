@@ -50,6 +50,8 @@ class ArtifactManifestTests(unittest.TestCase):
                 json.dumps(value, sort_keys=True), encoding="utf-8"
             )
         (self.run_dir / "trace.jsonl").write_text("{}\n", encoding="utf-8")
+        (self.run_dir / "budget_ledger.jsonl").write_text("{}\n", encoding="utf-8")
+        (self.run_dir / "budget_state.json").write_text("{}\n", encoding="utf-8")
         (self.run_dir / "experimental_report.md").write_text(
             "# report\n", encoding="utf-8"
         )
