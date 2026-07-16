@@ -1,8 +1,8 @@
-# V1 Human Review Dashboard Implementation Plan
+# V1 Flat Markdown Human Review Implementation Plan
 
 ## Goal
 
-Generate three flat, deterministic human-review files under `llm4hls_harness/runs/`
+Generate two flat, deterministic Markdown human-review files under `llm4hls_harness/runs/`
 from the four existing real V1 runs without invoking an LLM/Vitis or modifying any
 machine-readable evidence.
 
@@ -16,11 +16,9 @@ machine-readable evidence.
    compares them with the recorded `acceptance_result.json`, and aggregates diagnostics,
    model usage, budgets, candidate state, validation, Patch, Trace, and raw links.
 4. Implement complete English and Chinese Markdown renderers from the same in-memory model.
-5. Implement an escaped, self-contained bilingual static HTML renderer with no external
-   assets.
-6. Add a `review-v1` CLI command that writes only the three flat human-review files.
-7. Update English/Chinese project documentation and the V1 readiness retrospective.
-8. Run the full fast test suite, compileall, `git diff --check`, and one offline generation
+5. Add a `review-v1` CLI command that writes only the two flat Markdown review files.
+6. Update English/Chinese project documentation and the V1 readiness retrospective.
+7. Run the full fast test suite, compileall, `git diff --check`, and one offline generation
    over the four real runs; verify exact totals, relative links, report consistency, and
    unchanged machine evidence.
 

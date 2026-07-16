@@ -95,11 +95,10 @@ Manifest、action 或 Candidate 产物的前提下，离线聚合现有证据：
 python3 -m llm4hls_agent review-v1 --runs-root runs
 ```
 
-命令直接在 `runs/` 根目录平铺生成三个文件：
+命令直接在 `runs/` 根目录平铺生成两个文件：
 
 - `V1_ACCEPTANCE_REPORT_CN.md`：完整中文单文件审核入口；
-- `V1_ACCEPTANCE_REPORT.md`：完整英文单文件审核入口；
-- `V1_ACCEPTANCE_DASHBOARD.html`：自包含的中英双语静态 Dashboard。
+- `V1_ACCEPTANCE_REPORT.md`：完整英文单文件审核入口。
 
 报告会重新计算并交叉核对机器验收、Baseline 错误、模型/fallback、Patch 范围与接口、
 Final gates、Candidate 提升/回滚、Tokens、工具调用、Credits、Ledger、Trace、action

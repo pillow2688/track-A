@@ -130,11 +130,10 @@ Manifest, action, or Candidate artifact:
 python3 -m llm4hls_agent review-v1 --runs-root runs
 ```
 
-The command writes three flat files directly under `runs/`:
+The command writes two flat files directly under `runs/`:
 
 - `V1_ACCEPTANCE_REPORT.md` — complete English single-file review;
-- `V1_ACCEPTANCE_REPORT_CN.md` — complete Chinese single-file review;
-- `V1_ACCEPTANCE_DASHBOARD.html` — self-contained bilingual static dashboard.
+- `V1_ACCEPTANCE_REPORT_CN.md` — complete Chinese single-file review.
 
 They recompute and cross-check the recorded acceptance, Baseline failures,
 model/fallback state, Patch scope and interface, final gates, Candidate

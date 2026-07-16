@@ -32,7 +32,7 @@ V1 的正式完成条件现已固定为三类 HLS 任务错误：`FUNCTIONAL_MIS
 | DeepSeek Patch 的 unified-diff hunk 新行计数过期 | 模型删除一行后仍输出旧的 `@@ -1,12 +1,12 @@`，语义正确但标准 patch parser 判为截断 | 在 policy/dry-run 之前只按 hunk body 重新计算 old/new count；文件路径、起始行和 Patch body 原样保留，之后继续严格校验 | 该步骤只做语法规范化，不能修改源码语义或绕过“仅可修改 kernel.cpp”的安全策略；增加陈旧计数回归测试 |
 | 第一次综合错误正式修复停在 XSIM Tcl 提示符 | Vitis 已生成 RTL/snapshot，但 `xsim_script.tcl` 启动时报告 `unexpected exception`，不是 Candidate 代码的综合错误 | 保留完整 XSIM 日志并等待 harness 记录 `COSIM_TIMEOUT`/回滚；在全新 run-dir 重试相同修复和全套 Vitis 验证 | 基础设施超时不得写成第三类 HLS 错误，也不得伪造 COSIM PASS；失败运行保留作复盘证据，只有新运行三级 PASS 才进入验收 |
 | CLI 进程无法读取用户终端中的 API 环境变量 | Codex 工具进程与用户交互终端不是同一 shell 环境，`/dev/shm` 也不一定跨执行环境共享 | 使用仓库外、权限 `0600` 的 `/home/ying/CompetitionTrackA/.llm4hls-deepseek.env` 显式加载 | 环境文件不得进入比赛仓库、Manifest、日志或命令输出；只检查变量是否已设置，不显示 Key |
-| 统一验收必须逐个打开子目录才能人工判断 | 旧报告只展示场景 PASS 和外部链接，关键错误、Patch、Token、工具、Candidate 和一致性证据分散 | 新增只读 `review-v1`，从四组现有证据构建同一 ReviewEvidence，并在 `runs/` 根目录平铺中英文单文件报告和静态 Dashboard | 人工报告只能读取机器证据；recorded/recomputed 不一致即 FAIL；所有链接相对；生成前后机器文件 hash/size/mtime 不变 |
+| 统一验收必须逐个打开子目录才能人工判断 | 旧报告只展示场景 PASS 和外部链接，关键错误、Patch、Token、工具、Candidate 和一致性证据分散 | 新增只读 `review-v1`，从四组现有证据构建同一 ReviewEvidence，并在 `runs/` 根目录平铺中英文单文件报告 | 人工报告只能读取机器证据；recorded/recomputed 不一致即 FAIL；所有链接相对；生成前后机器文件 hash/size/mtime 不变；不再维护重复的 HTML 展示层 |
 
 历史 V1 证据摘要：`runs/v1-deepseek-final` 使用 `deepseek-v4-pro`，输入/输出 Token 为 `407/229`，缓存命中输入为 `384`，总 Token 为 `636`，estimated period 为 1.482 ns，总 credits 为 26。由于底层 Candidate action 绑定错误和缺少新版 Manifest，该运行必须重做，不能直接计入最终三类统一验收。
 
@@ -89,8 +89,33 @@ V1 的正式完成条件现已固定为三类 HLS 任务错误：`FUNCTIONAL_MIS
 - 新增 `accept-v1` 确定性验收命令；
 - 统一验收会把 fake/unit 证据限制为 `TEST_PASS`，本次正式证据为真实 Vitis 2025.2 的 `REAL/PASS`；
 - 统一验收目录同时生成机器可读 `acceptance_result.json`、英文 `acceptance_report.md` 和中文 `acceptance_report_CN.md`；
-- `review-v1` 不调用 LLM/Vitis，不改机器文件，直接生成 `runs/V1_ACCEPTANCE_REPORT.md`、`runs/V1_ACCEPTANCE_REPORT_CN.md` 和 `runs/V1_ACCEPTANCE_DASHBOARD.html`；
+- `review-v1` 不调用 LLM/Vitis，不改机器文件，直接生成 `runs/V1_ACCEPTANCE_REPORT.md` 和 `runs/V1_ACCEPTANCE_REPORT_CN.md`；
 - 平铺人工报告重新计算出真实 LLM 3 次、input/output/cached/total Tokens 为 2700/676/384/3376、csim/synth/cosim 为 7/4/3、HLS tools 为 14、Credits used/remaining 为 83/237，并与机器验收一致；
 - 相关快速测试、Python compileall 和 `git diff --check` 必须全部通过后才能提交。
 
 V1 现已满足“至少三类 HLS 错误能由 LLM 修复或安全回滚”的阶段目标。`PATCH_INVALID` 仍只作为独立安全负例；`COSIM_FAILURE` 仍留到 V2。V2 开发不得覆盖或删除上述四个正式证据目录及统一验收目录。
+
+## 7. 人工验收经验与后续版本约束
+
+本次 V1 暴露的核心问题不是缺少实验数据，而是证据分散：审核者需要在多个运行目录、
+报告、Manifest、Ledger、Trace、Candidate Registry 和 Vitis action 之间反复跳转。
+后续 V2/V3/V4 必须继承本次形成的“平铺、双语、单文件优先”格式：
+
+- 在 `runs/` 根目录直接生成 `V<N>_ACCEPTANCE_REPORT.md` 和
+  `V<N>_ACCEPTANCE_REPORT_CN.md`，不嵌套报告目录；
+- 不再生成 HTML；Markdown 同时适合人工阅读、版本控制和比赛提交，避免维护重复展示层；
+- 报告顶部先给总体 PASS/FAIL、核心统计、总 Token/工具/credits/剩余预算和总审核清单；
+- 每个场景直接给 Baseline 错误、模型与 fallback、Token、Patch、三级 Vitis/clock、
+  Candidate 提升或回滚、Acceptance 条件和关键 Trace；
+- 小 Patch 直接完整展示，大型日志和 JSON/JSONL 只提供相对于 `runs/` 的追溯链接；
+- 中英文必须读取同一个证据模型，不能分别手工填写，也不能把调用次数误写成 credits；
+- `acceptance_result.json`、Manifest、Ledger、Trace、Candidate、action 和 Vitis 报告仍是
+  机器权威证据，人工报告不得修改它们；
+- 生成过程不得调用 LLM/Vitis，生成前后核对机器文件 hash/size/mtime；
+- recorded/recomputed、Ledger/Trace/action、Token 或 Candidate 状态任一不一致时，报告
+  必须明确 FAIL，不能为了方便人工验收而降级检查。
+
+版本特有内容只做追加：V2 补 Candidate tree/PPA 比较和优化收益成本，V3 补图路由、
+checkpoint/resume、预算 reserve 和 stop reason，V4 补 hidden-like、Docker、多任务及
+多模型证据。核心统计、逐场景审核卡、逐项 Acceptance 和原始证据索引保持稳定，便于
+不同版本使用同一套人工审核习惯。

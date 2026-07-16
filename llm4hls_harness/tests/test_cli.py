@@ -84,7 +84,6 @@ class CliTests(unittest.TestCase):
             "acceptance_result_ref": "v1-acceptance/acceptance_result.json",
             "report_ref": "V1_ACCEPTANCE_REPORT.md",
             "report_cn_ref": "V1_ACCEPTANCE_REPORT_CN.md",
-            "dashboard_ref": "V1_ACCEPTANCE_DASHBOARD.html",
             "review_data_digest": "abc",
             "summary": {"acceptance_cases": 4},
         }

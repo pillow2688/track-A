@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import html
 import json
 import os
 import re
@@ -17,7 +16,7 @@ from .artifacts import manifest_digest, verify_artifact_manifest
 
 REPORT_EN = "V1_ACCEPTANCE_REPORT.md"
 REPORT_CN = "V1_ACCEPTANCE_REPORT_CN.md"
-DASHBOARD = "V1_ACCEPTANCE_DASHBOARD.html"
+_OBSOLETE_DASHBOARD = "V1_ACCEPTANCE_DASHBOARD.html"
 _CASE_ORDER = ("compile_error", "functional_mismatch", "synthesis_error", "patch_invalid")
 _TERMINAL_LEDGER_STATES = {"COMPLETED", "AMBIGUOUS"}
 
@@ -898,7 +897,6 @@ _TEXT = {
     "en": {
         "title": "V1 Human Review Acceptance Report",
         "other": "中文报告",
-        "dashboard": "Static dashboard",
         "status": "Overall status",
         "recorded": "Recorded machine status",
         "recomputed": "Recomputed evidence status",
@@ -930,7 +928,6 @@ _TEXT = {
     "zh": {
         "title": "V1 人工审核统一验收报告",
         "other": "English report",
-        "dashboard": "静态 Dashboard",
         "status": "总体状态",
         "recorded": "机器记录状态",
         "recomputed": "证据重新计算状态",
@@ -1162,7 +1159,7 @@ def render_markdown(review: Mapping[str, object], language: str) -> str:
     lines = [
         f"# {t['title']}",
         "",
-        f"[{t['other']}]({other}) · [{t['dashboard']}]({DASHBOARD})",
+        f"[{t['other']}]({other})",
         "",
         f"- **{t['status']}: {_status(review.get('overall_status'))}**",
         f"- {t['recorded']}: `{_md(review.get('recorded_overall_status'))}`",
@@ -1227,121 +1224,6 @@ def render_markdown(review: Mapping[str, object], language: str) -> str:
     return "\n".join(lines)
 
 
-def _h(value: object) -> str:
-    return html.escape(_plain(value), quote=True)
-
-
-def _html_status(value: object) -> str:
-    passed = value is True or value == "PASS"
-    css = "pass" if passed else "fail"
-    text = "✓ PASS" if passed else "✕ FAIL"
-    return f'<span class="status {css}">{text}</span>'
-
-
-def _render_html_language(review: Mapping[str, object], language: str) -> str:
-    t = _TEXT[language]
-    summary = _as_mapping(review.get("summary"))
-    card_parts: list[str] = []
-    for key in _SUMMARY_NAMES:
-        value: object = summary.get(key)
-        if key in {"final_csim_pass", "final_synth_pass", "final_cosim_pass", "clock_pass"}:
-            value = f"{value} / {summary.get('hls_case_count')}"
-        card_parts.append(
-            f'<div class="stat"><span>{_h(_label(_SUMMARY_NAMES, key, language))}</span><strong>{_h(value)}</strong></div>'
-        )
-    cards = "".join(card_parts)
-    audit_rows = "".join(
-        f"<tr><td>{_h(_label(_AUDIT_NAMES, str(key), language))}</td><td>{_html_status(value)}</td><td><code>{_h(key)}</code></td></tr>"
-        for key, value in _as_mapping(review.get("audit_items")).items()
-    )
-    nav = "".join(
-        f'<a href="#{language}-{_h(_as_mapping(case).get("case_id"))}">{_h(_as_mapping(case).get("case_id"))}</a>'
-        for case in review.get("cases", [])
-    )
-    sections: list[str] = []
-    for raw_case in review.get("cases", []):
-        case = _as_mapping(raw_case)
-        error = _as_mapping(case.get("error"))
-        provider = _as_mapping(case.get("provider"))
-        patch = _as_mapping(case.get("patch"))
-        validation = _as_mapping(case.get("validation"))
-        candidate = _as_mapping(case.get("candidate"))
-        budget = _as_mapping(case.get("budget"))
-        checks = "".join(
-            f"<tr><td>{_h(_label(_CHECK_NAMES, str(check.get('check_id')), language))}</td><td>{_html_status(check.get('status'))}</td><td><code>{_h(check.get('observed'))}</code></td><td><code>{_h(check.get('expected'))}</code></td></tr>"
-            for check in case.get("checks", [])
-            if isinstance(check, Mapping)
-        )
-        validation_rows = ""
-        for stage in ("csim", "synth", "cosim"):
-            item = _as_mapping(validation.get(stage))
-            validation_rows += (
-                f"<tr><td>{stage.upper()}</td><td>{_h(item.get('baseline_status'))} / {_h(item.get('baseline_phase'))}</td>"
-                f"<td>{_h(item.get('final_status'))} / {_h(item.get('final_phase'))}</td><td>{_html_status(item.get('accepted')) if item.get('accepted') is not None else 'N/A'}</td></tr>"
-            )
-        clock = _as_mapping(validation.get("clock"))
-        clock_final = (
-            f"{_h(clock.get('estimated_period_ns'))} ns ≤ {_h(clock.get('target_period_ns'))} ns"
-            if clock.get("accepted") is not None
-            else "N/A"
-        )
-        validation_rows += (
-            f"<tr><td>Clock</td><td>{_h(clock.get('baseline_status'))}</td>"
-            f"<td>{clock_final}</td>"
-            f"<td>{_html_status(clock.get('accepted')) if clock.get('accepted') is not None else 'N/A'}</td></tr>"
-        )
-        trace = "".join(f"<li><code>{_h(item)}</code></li>" for item in case.get("trace_summary", []))
-        links = "".join(
-            f'<li><a href="{_h(link)}">{_h(link)}</a></li>'
-            for link in case.get("raw_evidence_links", [])
-        )
-        sections.append(
-            f'''<section class="case" id="{language}-{_h(case.get('case_id'))}">
-<h2>{_h(case.get('case_id'))} {_html_status(case.get('status'))}</h2>
-<div class="grid two"><article><h3>{_h(t['baseline'])}</h3>
-<dl><dt>Stage / phase</dt><dd>{_h(_as_mapping(case.get('baseline')).get('stage'))} / {_h(_as_mapping(case.get('baseline')).get('phase'))}</dd>
-<dt>Error</dt><dd>{_h(error.get('category'))} / {_h(error.get('subtype'))}</dd>
-<dt>Location</dt><dd>{_h(error.get('file'))}:{_h(error.get('line'))}:{_h(error.get('column'))}</dd>
-<dt>Symbol / top</dt><dd>{_h(error.get('symbol'))} / {_h(error.get('top'))}</dd>
-<dt>Key log</dt><dd><code>{_h(error.get('key_log'))}</code></dd></dl></article>
-<article><h3>{_h(t['provider'])}</h3>
-<dl><dt>Provider / Model</dt><dd>{_h(provider.get('provider'))} / {_h(provider.get('model'))}</dd>
-<dt>Fallback</dt><dd>{_h(provider.get('fallback_status'))}</dd><dt>Real LLM calls</dt><dd>{_h(provider.get('real_llm_calls'))}</dd>
-<dt>Input / Output / Cached / Total</dt><dd>{_h(provider.get('input_tokens'))} / {_h(provider.get('output_tokens'))} / {_h(provider.get('cached_input_tokens'))} / {_h(provider.get('total_tokens'))}</dd>
-<dt>CSim / Synth / CoSim / Tools</dt><dd>{_h(budget.get('csim_calls'))} / {_h(budget.get('synth_calls'))} / {_h(budget.get('cosim_calls'))} / {_h(budget.get('tool_calls'))}</dd>
-<dt>Credits used / remaining</dt><dd>{_h(budget.get('credits_used'))} / {_h(budget.get('credits_remaining'))}</dd></dl></article></div>
-<h3>{_h(t['patch'])}</h3><p>Files: <code>{_h(patch.get('files'))}</code> · +{_h(patch.get('additions'))} / -{_h(patch.get('deletions'))} · hunks {_h(patch.get('hunks'))} · lines {_h(patch.get('line_count'))}</p>
-<pre class="diff"><code>{_h(patch.get('display'))}</code></pre>
-<h3>{_h(t['validation'])}</h3><table><thead><tr><th>Gate</th><th>Baseline</th><th>Final</th><th>Acceptance</th></tr></thead><tbody>{validation_rows}</tbody></table>
-<h3>{_h(t['candidate'])}</h3><p><code>{_h(candidate.get('baseline_id'))} → {_h(candidate.get('candidate_id'))}</code> · parent {_h(candidate.get('parent_id'))} · status {_h(candidate.get('status'))} · best {_h(candidate.get('best_id'))} · final {_h(candidate.get('final_id'))} · rollback {_h(candidate.get('rollback'))}</p>
-<h3>{_h(t['checks'])}</h3><table><thead><tr><th>Condition</th><th>Status</th><th>Observed</th><th>Expected</th></tr></thead><tbody>{checks}</tbody></table>
-<h3>{_h(t['trace'])}</h3><ol class="trace">{trace}</ol>
-<details><summary>{_h(t['raw'])}</summary><ul>{links}</ul></details></section>'''
-        )
-    return f'''<main data-lang="{language}"{' hidden' if language == 'zh' else ''}>
-<header><p class="eyebrow">V1 · {_h(review.get('evidence_tier'))}</p><h1>{_h(t['title'])}</h1>
-<div class="hero-status">{_html_status(review.get('overall_status'))}</div>
-<p>{_h(t['recorded'])}: <code>{_h(review.get('recorded_overall_status'))}</code> · {_h(t['recomputed'])}: <code>{_h(review.get('recomputed_overall_status'))}</code></p>
-<p class="digest">{_h(t['digest'])}: <code>{_h(review.get('review_data_digest'))}</code></p></header>
-<nav class="case-nav">{nav}</nav><section><h2>{_h(t['summary'])}</h2><div class="stats">{cards}</div></section>
-<section><h2>{_h(t['audit'])}</h2><table><thead><tr><th>{_h(t['metric'])}</th><th>Status</th><th>{_h(t['source'])}</th></tr></thead><tbody>{audit_rows}</tbody></table></section>
-{''.join(sections)}<footer><h2>{_h(t['statement'])}</h2><p>{_h(t['statement_text'])}</p><p><a href="{_h(review.get('acceptance_result_ref'))}">acceptance_result.json</a></p></footer></main>'''
-
-
-def render_html(review: Mapping[str, object]) -> str:
-    """Render a self-contained bilingual static review dashboard."""
-
-    body = _render_html_language(review, "en") + _render_html_language(review, "zh")
-    return f'''<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>V1 Acceptance Dashboard</title><style>
-:root{{--ink:#172033;--muted:#5b6475;--line:#d9dee8;--panel:#fff;--bg:#f4f6fa;--pass:#137a50;--pass-bg:#e8f7ef;--fail:#b42318;--fail-bg:#ffebe9;--accent:#3157d5}}
-*{{box-sizing:border-box}}body{{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 system-ui,-apple-system,sans-serif}}.toolbar{{position:sticky;top:0;z-index:3;display:flex;justify-content:flex-end;gap:.5rem;padding:.75rem 4vw;background:#172033}}button{{border:1px solid #77839b;border-radius:999px;background:transparent;color:#fff;padding:.45rem .9rem;cursor:pointer}}button.active{{background:#fff;color:#172033}}main{{max-width:1180px;margin:auto;padding:2rem 4vw 5rem}}header,.case,section,footer{{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:1.4rem;margin:1rem 0;box-shadow:0 5px 18px rgba(23,32,51,.05)}}header{{background:linear-gradient(135deg,#182340,#304f9f);color:#fff}}h1{{font-size:clamp(2rem,5vw,3.8rem);margin:.2rem 0}}h2{{margin-top:0}}h3{{margin-top:1.4rem}}.eyebrow{{text-transform:uppercase;letter-spacing:.16em}}.digest{{overflow-wrap:anywhere}}.status{{display:inline-block;border-radius:999px;padding:.18rem .55rem;font-weight:750}}.status.pass{{color:var(--pass);background:var(--pass-bg)}}.status.fail{{color:var(--fail);background:var(--fail-bg)}}.hero-status .status{{font-size:1.25rem}}.stats{{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:.7rem}}.stat{{border:1px solid var(--line);border-radius:12px;padding:.85rem;background:#fafbfe}}.stat span{{display:block;color:var(--muted);font-size:.82rem}}.stat strong{{font-size:1.45rem}}.grid.two{{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:1rem}}article{{border:1px solid var(--line);border-radius:12px;padding:1rem}}dt{{font-size:.8rem;color:var(--muted);font-weight:700}}dd{{margin:0 0 .65rem;overflow-wrap:anywhere}}table{{width:100%;border-collapse:collapse;display:block;overflow-x:auto}}th,td{{border-bottom:1px solid var(--line);padding:.65rem;text-align:left;vertical-align:top}}th{{background:#f6f8fc}}code,pre{{font-family:ui-monospace,SFMono-Regular,monospace}}pre.diff{{background:#121827;color:#e9efff;border-radius:12px;padding:1rem;overflow:auto;max-height:500px}}.case-nav{{display:flex;gap:.5rem;flex-wrap:wrap;margin:1rem 0}}.case-nav a{{background:#fff;border:1px solid var(--line);border-radius:999px;padding:.45rem .8rem;text-decoration:none;color:var(--accent)}}.trace{{display:flex;gap:.5rem;flex-wrap:wrap;padding:0;list-style:none}}.trace li{{background:#eef2ff;border-radius:8px;padding:.4rem .6rem}}a{{color:var(--accent)}}
-@media print{{.toolbar{{display:none}}body{{background:#fff}}main{{max-width:none;padding:0}}header,.case,section,footer{{box-shadow:none;break-inside:avoid}}details{{display:block}}}}
-</style></head><body><div class="toolbar"><button id="en" class="active" type="button">English</button><button id="zh" type="button">中文</button></div>{body}
-<script>for(const lang of ['en','zh']){{document.getElementById(lang).addEventListener('click',()=>{{for(const node of document.querySelectorAll('main[data-lang]'))node.hidden=node.dataset.lang!==lang;for(const button of document.querySelectorAll('button'))button.classList.toggle('active',button.id===lang);document.documentElement.lang=lang==='zh'?'zh-CN':'en';}});}}</script></body></html>'''
-
-
 def _assert_no_absolute_paths(content: str, roots: Iterable[Path]) -> None:
     forbidden = [str(path.resolve()) for path in roots]
     forbidden.extend(["/home/", "file://"])
@@ -1356,7 +1238,7 @@ def generate_review_reports(
     acceptance_result: str | Path,
     runs_root: str | Path,
 ) -> dict[str, object]:
-    """Write only the three flat human-review files and preserve machine evidence."""
+    """Write only two flat Markdown reviews and preserve machine evidence."""
 
     root = Path(runs_root).resolve()
     resolved_runs = {key: Path(value).resolve() for key, value in run_dirs.items()}
@@ -1365,12 +1247,14 @@ def generate_review_reports(
     review = build_review_evidence(spec_path, resolved_runs, acceptance_path, root)
     english = render_markdown(review, "en")
     chinese = render_markdown(review, "zh")
-    dashboard = render_html(review)
-    for content in (english, chinese, dashboard):
+    for content in (english, chinese):
         _assert_no_absolute_paths(content, [root, *resolved_runs.values()])
     _atomic_write(root / REPORT_EN, english)
     _atomic_write(root / REPORT_CN, chinese)
-    _atomic_write(root / DASHBOARD, dashboard)
+    try:
+        (root / _OBSOLETE_DASHBOARD).unlink(missing_ok=True)
+    except OSError as exc:
+        raise ReviewError(f"cannot remove obsolete HTML review: {exc}") from exc
     after = _machine_snapshot(resolved_runs, acceptance_path)
     if before != after:
         raise ReviewError("EVIDENCE_CHANGED_DURING_RENDER")
@@ -1379,7 +1263,6 @@ def generate_review_reports(
         "acceptance_result_ref": review["acceptance_result_ref"],
         "report_ref": REPORT_EN,
         "report_cn_ref": REPORT_CN,
-        "dashboard_ref": DASHBOARD,
         "review_data_digest": review["review_data_digest"],
         "summary": review["summary"],
     }

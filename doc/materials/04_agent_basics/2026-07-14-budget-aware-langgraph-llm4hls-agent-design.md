@@ -1396,6 +1396,50 @@ candidate_002/
 - 最终 stop reason；
 - 最终代码是否来自 best verified candidate。
 
+### 23.1 各版本统一人工验收报告约束
+
+从 V1 开始，每个完成版本必须在 `llm4hls_harness/runs/` 根目录直接生成两份平铺的
+人工验收报告：
+
+```text
+V<N>_ACCEPTANCE_REPORT.md
+V<N>_ACCEPTANCE_REPORT_CN.md
+```
+
+其中 `<N>` 为版本号。英文与中文报告必须由同一个只读证据模型生成，字段、数值、
+状态和证据链接一一对应。Markdown 是正式人工审核入口，不再要求 HTML Dashboard，
+避免同一结论存在两套渲染逻辑和重复维护成本。
+
+统一报告采用“单文件优先审核”：审核者仅阅读对应 Markdown 就能判断主要验收结论，
+不需要先进入各运行子目录。正文至少直接展示：
+
+- overall PASS/FAIL、机器记录状态和证据重新计算状态；
+- 场景总数、成功/安全拒绝数和版本阶段目标；
+- Baseline 真实失败阶段、错误类别/subtype、关键日志与源码定位；
+- Provider、Model、fallback、LLM 调用次数及 input/output/cached/total Token；
+- Patch 文件、增删行、接口/testbench 安全检查及小型完整 unified diff；
+- Baseline/Final 的 csim、synth、cosim、clock、latency、II 和资源对比；
+- Candidate parent/final/best/promoted 或安全回滚状态；
+- Acceptance 条件逐项 PASS/FAIL；
+- Trace 状态转移摘要；
+- 各场景及总计的工具调用、credits、Token 预算与剩余预算；
+- Ledger、Trace、Candidate Registry、Manifest 和实际 action 的一致性结论。
+
+大体积 stdout/stderr、XML、`trace.jsonl`、`budget_ledger.jsonl` 和
+`candidate_registry.json` 不原样嵌入报告，只在文末提供相对于 `runs/` 的仓库内链接。
+Patch 不超过 30 行时直接展示完整 diff，超过 30 行时展示统计和前 30 行。
+
+报告生成必须是离线、确定性、只读操作：不得调用 LLM 或 Vitis，不得改写任何
+JSON/JSONL、Manifest、ledger、Trace、Candidate、action 或原始实验文件。所有链接
+使用相对路径，不得包含机器绝对路径。生成前后必须比较机器证据的 hash、size 和
+mtime；报告重新计算状态与版本机器验收结果不一致，或 Ledger/Trace/实际调用无法
+对账时，人工报告必须 fail closed，禁止沿用模板中的 PASS。
+
+后续版本保持上述核心版式，只追加阶段特有证据：V2 增加 Candidate tree、PPA
+排序和优化成本；V3 增加 LangGraph 路由、checkpoint/resume、reserve 与停止原因；
+V4 增加 hidden-like、Docker 复现、多任务和多模型对比。不得因新增字段改变核心统计、
+逐场景审核卡和原始证据索引的基本结构。
+
 ## 24. 一次完整运行示例
 
 ```text

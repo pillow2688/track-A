@@ -1,4 +1,4 @@
-# V1 单文件优先验收报告与静态 Dashboard 设计
+# V1 单文件优先中英文验收报告设计
 
 Status: approved<br>
 Owner: team<br>
@@ -14,9 +14,8 @@ Scope: `llm4hls_harness` V1 unified acceptance reporting
 
 本设计将统一验收改造成“单文件优先审核”：审核者只阅读 `runs/` 根目录中的
 `V1_ACCEPTANCE_REPORT.md` 即可完成主要英文审核；
-`V1_ACCEPTANCE_REPORT_CN.md` 提供字段和结论完全对应的中文审核；
-`V1_ACCEPTANCE_DASHBOARD.html` 提供相同证据的静态双语视图。大型原始文件只用于
-末尾追溯。
+`V1_ACCEPTANCE_REPORT_CN.md` 提供字段和结论完全对应的中文审核。大型原始文件只
+用于末尾追溯，不再生成或维护 HTML Dashboard。
 
 ## 2. 已批准目标
 
@@ -25,14 +24,13 @@ Scope: `llm4hls_harness` V1 unified acceptance reporting
 3. 不修改四个既有实验运行目录中的任何文件；
 4. 只从机器可读产物聚合证据；
 5. 自动生成可直接人工审核的英文和中文 Markdown；
-6. 自动生成无外部依赖的静态 HTML Dashboard；
-7. 所有 PASS 都由确定性 Acceptance checks 计算，不在 renderer 中硬编码；
-8. 三个人工审核文件直接平铺在 `runs/`，不再嵌套到新的报告目录；
-9. 所有输出链接使用相对于 `runs/` 的路径；
-10. 报告正文直接展示关键证据，原始大文件仅在末尾链接；
-11. 现有 `acceptance_result.json`、JSON/JSONL、Manifest、Trace、ledger 和 action
+6. 所有 PASS 都由确定性 Acceptance checks 计算，不在 renderer 中硬编码；
+7. 两个人工审核文件直接平铺在 `runs/`，不再嵌套到新的报告目录；
+8. 所有输出链接使用相对于 `runs/` 的路径；
+9. 报告正文直接展示关键证据，原始大文件仅在末尾链接；
+10. 现有 `acceptance_result.json`、JSON/JSONL、Manifest、Trace、ledger 和 action
     result 全部只读且字节不变；
-12. 报告重新计算的结论必须与现有 `acceptance_result.json` 一致，否则人工审核总体
+11. 报告重新计算的结论必须与现有 `acceptance_result.json` 一致，否则人工审核总体
     状态为 FAIL 并显示一致性失败。
 
 ## 3. 输入与输出
@@ -62,12 +60,11 @@ runs/v1-patch-invalid/
 runs/
 ├── V1_ACCEPTANCE_REPORT.md
 ├── V1_ACCEPTANCE_REPORT_CN.md
-├── V1_ACCEPTANCE_DASHBOARD.html
 └── v1-acceptance/
     └── acceptance_result.json    # existing, read-only
 ```
 
-新增离线 `review-v1` 命令。它读取现有机器结果和四个运行目录，只写三个平铺人工审核
+新增离线 `review-v1` 命令。它读取现有机器结果和四个运行目录，只写两个平铺人工审核
 文件。CLI 返回：
 
 ```json
@@ -75,8 +72,7 @@ runs/
   "status": "PASS",
   "acceptance_result_ref": "v1-acceptance/acceptance_result.json",
   "report_ref": "V1_ACCEPTANCE_REPORT.md",
-  "report_cn_ref": "V1_ACCEPTANCE_REPORT_CN.md",
-  "dashboard_ref": "V1_ACCEPTANCE_DASHBOARD.html"
+  "report_cn_ref": "V1_ACCEPTANCE_REPORT_CN.md"
 }
 ```
 
@@ -85,8 +81,7 @@ runs/
 
 ## 4. 方案选择
 
-采用统一证据模型方案，不采用“验收器和 Reporter 各自解析一次”，也不采用
-“先写 Markdown 再转换 HTML”。
+采用统一证据模型方案，不采用“验收器和 Reporter 各自解析一次”。
 
 ```text
 four immutable run directories
@@ -99,7 +94,6 @@ existing acceptance_result + ReviewEvidence (canonical in-memory model)
           |
           +--> V1_ACCEPTANCE_REPORT.md
           +--> V1_ACCEPTANCE_REPORT_CN.md
-          +--> V1_ACCEPTANCE_DASHBOARD.html
 ```
 
 所有 renderer 只能消费 `ReviewEvidence`，不得重新读取 ledger、Trace、registry 或
@@ -174,21 +168,20 @@ raw_evidence_links
 ```
 
 现有 `acceptance_result.json` 不增加、不删除或改写任何字段。规范化 review data 仅存于
-内存，使用 canonical JSON 计算 `review_data_digest`；两个 Markdown 和 HTML 都展示
-该 digest，同时展示现有 `acceptance_result.json` 的 SHA-256。三份人工报告据此证明
-同源，机器结果则通过只读 hash 证明未修改。
+内存，使用 canonical JSON 计算 `review_data_digest`；两个 Markdown 都展示该 digest，
+同时展示现有 `acceptance_result.json` 的 SHA-256。两份人工报告据此证明同源，机器
+结果则通过只读 hash 证明未修改。
 
 ### 5.4 Renderer
 
 - `MarkdownRenderer(language="en")` 生成 `V1_ACCEPTANCE_REPORT.md`；
 - `MarkdownRenderer(language="zh-CN")` 生成 `V1_ACCEPTANCE_REPORT_CN.md`；
-- `HtmlDashboardRenderer` 生成单文件双语 `V1_ACCEPTANCE_DASHBOARD.html`；
-- `RelativeLinkBuilder` 是三者唯一链接生成入口；
+- `RelativeLinkBuilder` 是两者唯一链接生成入口；
 - `AtomicOutputWriter` 用临时文件、`fsync` 和 `os.replace` 写输出。
 
 ## 6. 核心统计
 
-两个 Markdown 和 Dashboard 首屏必须包含：
+两个 Markdown 首屏必须包含：
 
 | 指标 | 当前真实证据预期值 | 机器计算规则 |
 |---|---:|---|
@@ -307,7 +300,7 @@ Subtype 和定位规则按一般模式解析，不按 run name 硬编码：
 
 - 不超过 30 行：完整 unified diff；
 - 超过 30 行：显示总行数、统计、前 30 行和明确的截断标记；
-- renderer 使用 `diff` fenced block/HTML escaped `<pre>`；
+- renderer 使用 `diff` fenced block；
 - 报告展示的 Patch 必须与 machine result 中已验证的 applied Patch 一致；若存在
   `applied_patch`，优先展示它并同时披露 normalization。
 
@@ -396,7 +389,7 @@ evidence ref，不复制完整 payload、action ID 列表或时间戳噪声。
 
 ### 10.1 链接
 
-所有 Markdown `href`、HTML `href` 和报告中的 evidence path 都通过：
+所有 Markdown `href` 和报告中的 evidence path 都通过：
 
 ```python
 os.path.relpath(target.resolve(), runs_root.resolve())
@@ -419,12 +412,12 @@ v1-acceptance/acceptance_result.json
 kernel.cpp:5:23: use of undeclared identifier 'rhs'
 ```
 
-生成后扫描两个 Markdown、HTML 和内存 review fields；出现输入绝对根或
+生成后扫描两个 Markdown 和内存 review fields；出现输入绝对根或
 `/home/` 前缀即失败。
 
 ### 10.3 只读输入
 
-- 三个输出目标必须是 `runs/` 根目录中的普通文件，不得位于四个 evidence root 内；
+- 两个人工报告输出目标必须是 `runs/` 根目录中的普通文件，不得位于四个 evidence root 内；
 - collector 只用 read API；
 - 生成前记录四个 Manifest digest、现有 `acceptance_result.json` hash 及全部机器文件
   的 hash/size/mtime 快照；
@@ -436,7 +429,7 @@ kernel.cpp:5:23: use of undeclared identifier 'rhs'
 
 两个 Markdown 内容顺序一致：
 
-1. 语言互链、Dashboard 链接；
+1. 中英文报告互链；
 2. overall status 与 review digest；
 3. 核心统计；
 4. 三类 HLS + safety 总矩阵；
@@ -449,22 +442,12 @@ kernel.cpp:5:23: use of undeclared identifier 'rhs'
 
 审核所需的主要字段不能放入折叠区。只有大型原始证据索引可以折叠或放在文末。
 
-## 12. 静态 HTML Dashboard
+## 12. 输出形式收敛
 
-`V1_ACCEPTANCE_DASHBOARD.html` 为单文件：
-
-- CSS、少量语言切换 JavaScript 和 review data 全部内嵌；
-- 不加载 CDN、网络字体、图片或外部脚本；
-- 中英文切换只切换 label/说明，不改变证据值；
-- 顶部展示 overall、case counts、Manifest integrity 和 digest；
-- 核心统计使用响应式 cards；
-- 场景锚点导航连接四个审核卡；
-- baseline/final 和 checklist 使用表格；
-- Patch 使用 escaped `<pre><code>`；
-- raw evidence 使用相对 `<a href>`；
-- PASS/FAIL 同时使用文本、符号和颜色；
-- 提供 print CSS，打印时保留全部主要审核信息；
-- 使用 `html.escape` 和安全 JSON 序列化防止 evidence 注入 HTML。
+用户复核后决定不需要 HTML Dashboard。后续 V2/V3/V4 沿用相同的中英文 Markdown
+单文件格式，只扩展阶段特有字段。原因是 Markdown 可直接审核、可纳入提交包、相对
+链接清楚，而且避免维护与 Markdown 重复的展示层。旧
+`V1_ACCEPTANCE_DASHBOARD.html` 在重新生成报告时删除。
 
 ## 13. Fail-closed 行为
 
@@ -483,7 +466,7 @@ kernel.cpp:5:23: use of undeclared identifier 'rhs'
 - 生成期间输入证据变化；
 - 输出包含绝对路径。
 
-证据不足时仍尽可能生成两个 Markdown 和 HTML，将未知字段显示为 `INVALID`，并列出失败
+证据不足时仍尽可能生成两个 Markdown，将未知字段显示为 `INVALID`，并列出失败
 check。只有 invocation/spec/output 本身无效时才不生成报告。
 
 ## 14. 测试设计
@@ -499,7 +482,6 @@ check。只有 invocation/spec/output 本身无效时才不生成报告。
 - Patch 30 行完整、31 行前 30 行加截断标记；
 - relative link 正常化与 traversal/absolute path 拒绝；
 - 两个 Markdown 中英文关键字段一一对应；
-- HTML escaping、语言区、锚点、表格和相对链接；
 - 两次生成输出字节一致。
 
 ### 14.2 安全与失败测试
@@ -508,7 +490,7 @@ check。只有 invocation/spec/output 本身无效时才不生成报告。
 - 篡改 ledger 后 accounting check FAIL；
 - 篡改 Candidate binding 或 validation 后 HLS case FAIL；
 - 创建 safety Candidate 目录/registry 条目/tool action 后 safety case FAIL；
-- evidence 中注入 HTML、绝对路径或 Markdown 控制字符时安全转义/清洗；
+- evidence 中注入绝对路径或 Markdown 控制字符时安全转义/清洗；
 - monkeypatch 网络与 subprocess 为立即失败，验收报告仍能生成，证明无 LLM/Vitis 调用；
 - 所有 JSON、JSONL、Manifest、ledger、Trace、registry、action 和 Candidate 文件生成
   前后 hash/size/mtime 不变。
@@ -534,7 +516,7 @@ credits = 83
 final csim/synth/cosim/clock = 3/3
 ```
 
-同时检查三个平铺人工审核文件存在、链接目标存在、无绝对路径，并再次验证四个
+同时检查两个平铺人工审核文件存在、链接目标存在、无绝对路径，并再次验证四个
 Manifest 和现有 `acceptance_result.json` hash。
 该步骤只读已有证据，不调用 LLM/Vitis。
 
@@ -552,10 +534,9 @@ Manifest 和现有 `acceptance_result.json` hash。
 
 1. `runs/V1_ACCEPTANCE_REPORT.md` 单文件包含全部批准的英文人工审核字段；
 2. `runs/V1_ACCEPTANCE_REPORT_CN.md` 与英文版证据值和 PASS 结论一致；
-3. `runs/V1_ACCEPTANCE_DASHBOARD.html` 静态、双语、无外部依赖；
-4. 三份人工审核结果的 recorded/recomputed 状态与只读 `acceptance_result.json` 一致；
-5. 当前真实统计与第 14.3 节一致；
-6. 四个实验目录和 `v1-acceptance` 中全部机器文件未变化；
-7. 输出没有绝对路径，链接均为存在的相对目标；
-8. 全部快速测试、compileall 和 `git diff --check` 通过；
-9. 没有 LLM、Vitis 或网络调用。
+3. 两份人工审核结果的 recorded/recomputed 状态与只读 `acceptance_result.json` 一致；
+4. 当前真实统计与第 14.3 节一致；
+5. 四个实验目录和 `v1-acceptance` 中全部机器文件未变化；
+6. 输出没有绝对路径，链接均为存在的相对目标；
+7. 全部快速测试、compileall 和 `git diff --check` 通过；
+8. 没有 LLM、Vitis 或网络调用。

@@ -2,34 +2,15 @@ from __future__ import annotations
 
 import re
 import unittest
-from html.parser import HTMLParser
 from pathlib import Path
 
 from llm4hls_agent.review import (
-    DASHBOARD,
     REPORT_CN,
     REPORT_EN,
     _patch_display,
     build_review_evidence,
-    render_html,
     render_markdown,
 )
-
-
-class LinkParser(HTMLParser):
-    def __init__(self) -> None:
-        super().__init__()
-        self.languages: set[str] = set()
-        self.links: list[str] = []
-
-    def handle_starttag(
-        self, tag: str, attrs: list[tuple[str, str | None]]
-    ) -> None:
-        values = dict(attrs)
-        if tag == "main" and values.get("data-lang"):
-            self.languages.add(str(values["data-lang"]))
-        if tag == "a" and values.get("href"):
-            self.links.append(str(values["href"]))
 
 
 class ReviewRenderingTests(unittest.TestCase):
@@ -124,13 +105,13 @@ class RealReviewEvidenceTests(unittest.TestCase):
         self.assertEqual(cases["patch_invalid"]["patch"]["deletions"], 1)
         self.assertEqual(cases["patch_invalid"]["patch"]["hunks"], 1)
 
-    def test_bilingual_markdown_and_html_share_the_same_evidence(self) -> None:
+    def test_bilingual_markdown_reports_share_the_same_evidence(self) -> None:
         english = render_markdown(self.review, "en")
         chinese = render_markdown(self.review, "zh")
-        dashboard = render_html(self.review)
-        for output in (english, chinese, dashboard):
+        for output in (english, chinese):
             self.assertNotIn("/home/", output)
             self.assertNotIn("file://", output)
+            self.assertNotIn("Dashboard", output)
             self.assertIn("3376", output)
             self.assertIn("83", output)
             self.assertIn("compile_error", output)
@@ -138,20 +119,8 @@ class RealReviewEvidenceTests(unittest.TestCase):
             self.assertIn(self.review["review_data_digest"], output)
         self.assertIn("V1 Human Review Acceptance Report", english)
         self.assertIn("V1 人工审核统一验收报告", chinese)
-        self.assertIn("data-lang=\"en\"", dashboard)
-        self.assertIn("data-lang=\"zh\"", dashboard)
-        self.assertNotRegex(dashboard, r"https?://")
         self.assertEqual(render_markdown(self.review, "en"), english)
         self.assertEqual(render_markdown(self.review, "zh"), chinese)
-        self.assertEqual(render_html(self.review), dashboard)
-        parser = LinkParser()
-        parser.feed(dashboard)
-        self.assertEqual(parser.languages, {"en", "zh"})
-        for value in parser.links:
-            if value.startswith("#"):
-                continue
-            self.assertFalse(Path(value).is_absolute())
-            self.assertTrue((self.runs_root / value).is_file(), value)
 
     def test_all_raw_links_are_relative_and_exist(self) -> None:
         for case in self.review["cases"]:
@@ -165,7 +134,7 @@ class RealReviewEvidenceTests(unittest.TestCase):
             if value.startswith("#"):
                 continue
             self.assertFalse(Path(value).is_absolute())
-            if value not in {REPORT_EN, REPORT_CN, DASHBOARD}:
+            if value not in {REPORT_EN, REPORT_CN}:
                 self.assertTrue((self.runs_root / value).is_file(), value)
 
 
