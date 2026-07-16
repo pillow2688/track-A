@@ -277,6 +277,7 @@ def main(
                     "status": result["overall_status"],
                     "result_ref": "acceptance_result.json",
                     "report_ref": "acceptance_report.md",
+                    "report_cn_ref": "acceptance_report_CN.md",
                     "output_dir": str(Path(args.output_dir).resolve()),
                 },
                 sort_keys=True,

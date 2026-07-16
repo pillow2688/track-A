@@ -2,7 +2,7 @@
 
 ## 1. V1 当前状态
 
-V1 **已于 2026-07-16 完成统一真实验收**。正式验收目录为 `llm4hls_harness/runs/v1-acceptance`，`acceptance_result.json` 的 `evidence_tier=REAL`、`overall_status=PASS`，四个 case 均为 `PASS` 且没有 reason code；`acceptance_report.md` 提供矩阵、四组报告/Manifest 链接和确定性验收复现命令。
+V1 **已于 2026-07-16 完成统一真实验收**。正式验收目录为 `llm4hls_harness/runs/v1-acceptance`，`acceptance_result.json` 的 `evidence_tier=REAL`、`overall_status=PASS`，四个 case 均为 `PASS` 且没有 reason code；英文 `acceptance_report.md` 与中文 `acceptance_report_CN.md` 均提供矩阵、四组报告/Manifest 链接和确定性验收复现命令。
 
 V1 的正式完成条件现已固定为三类 HLS 任务错误：`FUNCTIONAL_MISMATCH`、`COMPILE_ERROR`、`SYNTHESIS_ERROR`。`PATCH_INVALID` 是独立安全负例，不计作第三类 HLS 错误；`COSIM_FAILURE` 留到 V2。
 
@@ -87,7 +87,7 @@ V1 的正式完成条件现已固定为三类 HLS 任务错误：`FUNCTIONAL_MIS
 - 自动生成 `artifact_manifest.json`；
 - 新增 `accept-v1` 确定性验收命令；
 - 统一验收会把 fake/unit 证据限制为 `TEST_PASS`，本次正式证据为真实 Vitis 2025.2 的 `REAL/PASS`；
-- 统一验收目录同时生成机器可读 `acceptance_result.json` 和人类可读 `acceptance_report.md`；
+- 统一验收目录同时生成机器可读 `acceptance_result.json`、英文 `acceptance_report.md` 和中文 `acceptance_report_CN.md`；
 - 73 项快速测试、Python compileall 和 `git diff --check` 全部通过。
 
 V1 现已满足“至少三类 HLS 错误能由 LLM 修复或安全回滚”的阶段目标。`PATCH_INVALID` 仍只作为独立安全负例；`COSIM_FAILURE` 仍留到 V2。V2 开发不得覆盖或删除上述四个正式证据目录及统一验收目录。

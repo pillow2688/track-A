@@ -165,6 +165,7 @@ class AcceptanceEvaluatorTests(unittest.TestCase):
         )
         first_bytes = (output / "acceptance_result.json").read_bytes()
         first_report = (output / "acceptance_report.md").read_bytes()
+        first_cn_report = (output / "acceptance_report_CN.md").read_bytes()
         second = evaluate_acceptance(
             spec,
             {"functional_mismatch": self.run_dir},
@@ -177,12 +178,22 @@ class AcceptanceEvaluatorTests(unittest.TestCase):
             (output / "acceptance_result.json").read_bytes(), first_bytes
         )
         self.assertEqual((output / "acceptance_report.md").read_bytes(), first_report)
+        self.assertEqual(
+            (output / "acceptance_report_CN.md").read_bytes(), first_cn_report
+        )
         report = first_report.decode("utf-8")
+        cn_report = first_cn_report.decode("utf-8")
         self.assertIn("Acceptance matrix", report)
         self.assertIn("experimental_report.md", report)
         self.assertIn("artifact_manifest.json", report)
         self.assertIn("python3 \\", report)
         self.assertNotIn("\n+  ", report)
+        self.assertIn("V1 统一验收报告", cn_report)
+        self.assertIn("验收矩阵", cn_report)
+        self.assertIn("实验报告", cn_report)
+        self.assertIn("产物清单", cn_report)
+        self.assertIn("python3 \\", cn_report)
+        self.assertNotIn("\n+  ", cn_report)
 
     def test_real_acceptance_rejects_non_vitis_backend(self) -> None:
         spec = self.write_spec(

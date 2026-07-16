@@ -86,7 +86,7 @@ python3 -m llm4hls_agent accept-v1 \
 只有规范要求的真实证据才能得到 `overall_status=PASS`。单元测试和 fake backend
 证据只能得到 `TEST_PASS`，不能据此宣布 V1 完成。命令会同时生成机器可读的
 `acceptance_result.json`，以及包含四场景矩阵、报告/Manifest 链接和完整复现命令的
-`acceptance_report.md`。
+英文 `acceptance_report.md` 与中文 `acceptance_report_CN.md`。
 
 ## 官方参考实现对应内部哪个阶段
 

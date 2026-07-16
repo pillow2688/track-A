@@ -109,13 +109,14 @@ def _write_acceptance_report(
     resolved_runs: Mapping[str, Path],
     spec_path: Path,
 ) -> None:
+    result_path = (output_root / "acceptance_result.json").as_posix()
     lines = [
         "# V1 Unified Acceptance Report",
         "",
         f"- Evidence tier: `{result['evidence_tier']}`",
         f"- Overall status: `{result['overall_status']}`",
         f"- Evaluator: `{result['evaluator_version']}`",
-        f"- Acceptance result: [acceptance_result.json]({(output_root / 'acceptance_result.json').as_posix()})",
+        f"- Acceptance result: [acceptance_result.json]({result_path})",
         "",
         "## Acceptance matrix",
         "",
@@ -178,6 +179,58 @@ def _write_acceptance_report(
         ]
     )
     _write_text(output_root / "acceptance_report.md", "\n".join(lines) + "\n")
+
+    cn_lines = [
+        "# V1 统一验收报告",
+        "",
+        f"- 证据等级：`{result['evidence_tier']}`",
+        f"- 总体状态：`{result['overall_status']}`",
+        f"- 验收器版本：`{result['evaluator_version']}`",
+        f"- 机器可读结果：[acceptance_result.json]({result_path})",
+        "",
+        "## 验收矩阵",
+        "",
+        "| 场景 | 类别 | 错误类别 | 状态 | 实验报告 | 产物清单 |",
+        "|---|---|---|---|---|---|",
+    ]
+    for case in result["cases"]:
+        case_id = str(case["case_id"])
+        run_root = resolved_runs.get(case_id)
+        if run_root is None:
+            report_link = "缺失"
+            manifest_link = "缺失"
+        else:
+            report = (run_root / "experimental_report.md").as_posix()
+            manifest = (run_root / "artifact_manifest.json").as_posix()
+            report_link = f"[报告]({report})"
+            manifest_link = f"[清单]({manifest})"
+        cn_lines.append(
+            "| "
+            + " | ".join(
+                [
+                    f"`{case_id}`",
+                    f"`{case['kind']}`",
+                    f"`{case['error_class']}`",
+                    f"`{case['status']}`",
+                    report_link,
+                    manifest_link,
+                ]
+            )
+            + " |"
+        )
+    cn_lines.extend(
+        [
+            "",
+            "## 复现确定性验收",
+            "",
+            "```bash",
+            " \\\n  ".join(shlex.quote(part) for part in command),
+            "```",
+            "",
+            "验收器只读上述四个证据运行目录，不会修改其中的文件。",
+        ]
+    )
+    _write_text(output_root / "acceptance_report_CN.md", "\n".join(cn_lines) + "\n")
 
 
 def _ledger(run_root: Path) -> tuple[dict[str, object], list[dict[str, object]]]:

@@ -118,9 +118,9 @@ python3 -m llm4hls_agent accept-v1 \
 
 Only canonical real evidence can produce `overall_status=PASS`. Unit/fake
 evidence is labelled `TEST_PASS` and cannot complete V1. The command writes
-both machine-readable `acceptance_result.json` and `acceptance_report.md`, whose
-matrix links all four reports and Manifests and includes the exact evaluation
-reproduction command.
+machine-readable `acceptance_result.json`, English `acceptance_report.md`, and
+Chinese `acceptance_report_CN.md`. Both report matrices link all four evidence
+reports and Manifests and include the exact evaluation reproduction command.
 
 ## How the official reference maps to our milestones
 
