@@ -14,14 +14,12 @@ import json
 import math
 import os
 import re
-import shutil
-import stat
-import tempfile
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Mapping, Protocol
 
 from .budget import BudgetError, BudgetExceeded, BudgetLedger, BudgetLedgerError
+from .candidate import CandidateManager
 from .task import PublicTask
 from .tools import ToolBackend, ToolConfig, ToolResult, ToolServer
 from .vitis import VitisBackend
@@ -665,16 +663,6 @@ def _load_registry(run_root: Path) -> dict[str, object]:
         raise RunArtifactError(f"cannot load candidate registry: {exc}") from exc
 
 
-def _next_candidate_id(registry: Mapping[str, object]) -> str:
-    candidates = registry.get("candidates", {})
-    numbers = [
-        int(match.group(1))
-        for key in candidates
-        if (match := re.fullmatch(r"candidate_(\d+)", str(key)))
-    ] if isinstance(candidates, Mapping) else []
-    return f"candidate_{(max(numbers) + 1) if numbers else 0:03d}"
-
-
 def _materialize_candidate(
     task: PublicTask,
     run_root: Path,
@@ -686,92 +674,23 @@ def _materialize_candidate(
     proposal: PatchProposal,
     proposal_ref: str,
 ) -> tuple[str, dict[str, object]]:
-    candidates = registry["candidates"]
-    if not isinstance(candidates, dict):
-        raise RunArtifactError("candidate registry candidates is not an object")
-    patch_hash = _sha256(patch_text.encode("utf-8"))
-    for candidate_id, value in candidates.items():
-        if isinstance(value, Mapping) and value.get("patch_sha256") == patch_hash:
-            source = run_root / str(value.get("source_ref", ""))
-            if source.is_file() and source.read_bytes() == application.patched_bytes:
-                return str(candidate_id), dict(value)
-    candidate_id = _next_candidate_id(registry)
-    source_ref = f"candidates/{candidate_id}/source/{task.kernel_name}"
-    patch_ref = f"candidates/{candidate_id}/patch.diff"
-    metadata_ref = f"candidates/{candidate_id}/candidate.json"
-    record: dict[str, object] = {
-        "candidate_id": candidate_id,
-        "parent_id": "candidate_000",
-        "kind": "repair",
-        "immutable": True,
-        "source_ref": source_ref,
-        "patch_ref": patch_ref,
-        "patch_sha256": patch_hash,
-        "code_hash": application.patched_sha256,
-        "status": "MATERIALIZED",
-        "validation": {"csim": {"status": "NOT_RUN"}, "synth": {"status": "NOT_RUN"}, "cosim": {"status": "NOT_RUN"}},
-        "metrics_ref": None,
+    materialized = CandidateManager(run_root, task).materialize(
+        registry,
+        parent_id="candidate_000",
+        patch_text=patch_text,
+        application=application,
+        kind="repair",
+        metadata={
         "diagnostic_ref": f"diagnostics/{diagnostic.candidate_id}.json",
         "llm_ref": proposal_ref,
         "provider": proposal.provider,
         "model": proposal.model,
         "revision": proposal.revision,
-        "credits_used": 0,
         "input_tokens": proposal.input_tokens,
         "output_tokens": proposal.output_tokens,
-    }
-    candidate_root = run_root / "candidates" / candidate_id
-    source_path = candidate_root / "source" / task.kernel_name
-    patch_path = candidate_root / "patch.diff"
-    metadata_path = candidate_root / "candidate.json"
-    if candidate_root.exists():
-        try:
-            recovered = json.loads(metadata_path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise RunArtifactError(
-                f"orphaned candidate {candidate_id} cannot be recovered: {exc}"
-            ) from exc
-        if (
-            not isinstance(recovered, dict)
-            or recovered.get("candidate_id") != candidate_id
-            or recovered.get("patch_sha256") != patch_hash
-            or recovered.get("code_hash") != application.patched_sha256
-            or not source_path.is_file()
-            or source_path.read_bytes() != application.patched_bytes
-            or not patch_path.is_file()
-            or patch_path.read_text(encoding="utf-8") != patch_text
-        ):
-            raise RunArtifactError(f"orphaned candidate {candidate_id} is inconsistent")
-    else:
-        staging_parent = run_root / ".candidate_staging"
-        staging_parent.mkdir(parents=True, exist_ok=True)
-        staging_root = Path(
-            tempfile.mkdtemp(prefix=f"{candidate_id}.", dir=staging_parent)
-        )
-        try:
-            staged_source = staging_root / "source" / task.kernel_name
-            staged_patch = staging_root / "patch.diff"
-            staged_metadata = staging_root / "candidate.json"
-            staged_source.parent.mkdir(parents=True, exist_ok=False)
-            staged_source.write_bytes(application.patched_bytes)
-            staged_patch.write_text(patch_text, encoding="utf-8")
-            _atomic_json(staged_metadata, record)
-            for path in (staged_source, staged_patch, staged_metadata):
-                path.chmod(stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
-            candidate_root.parent.mkdir(parents=True, exist_ok=True)
-            os.replace(staging_root, candidate_root)
-        except Exception:
-            shutil.rmtree(staging_root, ignore_errors=True)
-            raise
-        finally:
-            try:
-                staging_parent.rmdir()
-            except OSError:
-                pass
-    candidates[candidate_id] = record
-    registry["active_candidate_id"] = candidate_id
-    _atomic_json(run_root / "candidate_registry.json", registry)
-    return candidate_id, record
+        },
+    )
+    return materialized.candidate_id, materialized.record
 
 
 def _validate_candidate(

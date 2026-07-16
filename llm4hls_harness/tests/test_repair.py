@@ -5,6 +5,7 @@ import stat
 import tempfile
 import unittest
 from dataclasses import replace
+from hashlib import sha256
 from pathlib import Path
 
 from llm4hls_agent.budget import BudgetConfig
@@ -247,7 +248,14 @@ class RepairTests(unittest.TestCase):
         self.assertEqual(registry["best_candidate_id"], "candidate_001")
         self.assertEqual(registry["final_candidate_id"], "candidate_001")
         candidate = registry["candidates"]["candidate_001"]
+        self.assertEqual(candidate["parent_id"], "candidate_000")
         self.assertEqual(candidate["status"], "VERIFIED")
+        self.assertTrue(candidate["immutable"])
+        self.assertEqual(candidate["code_hash"], result["patch"]["patched_sha256"])
+        self.assertEqual(
+            candidate["patch_sha256"],
+            sha256(result["patch"]["applied_patch"].encode("utf-8")).hexdigest(),
+        )
         self.assertEqual(candidate["validation"]["cosim"]["status"], "PASS")
         source = run_dir / candidate["source_ref"]
         self.assertIn("value + 1", source.read_text())
