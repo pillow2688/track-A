@@ -21,6 +21,7 @@ from .repair import (
     RepairProviderError,
     apply_unified_diff,
     normalize_unified_diff_headers,
+    relocate_unified_diff_hunks,
 )
 from .scoring import CandidateScore, ScoringConfig, compare_scores, score_candidate
 from .task import PublicTask
@@ -732,6 +733,11 @@ def run_v2_rejection(
     except (OSError, UnicodeDecodeError) as exc:
         raise ValueError(f"cannot read V2 rejection Patch: {exc}") from exc
     normalized = normalize_unified_diff_headers(patch_text)
+    normalized = relocate_unified_diff_hunks(
+        task.kernel_bytes,
+        normalized,
+        kernel_name=task.kernel_name,
+    )
     patch_sha256 = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
     completed_path = run_root / "v2_rejection_result.json"
     if completed_path.is_file():
@@ -1177,6 +1183,11 @@ def run_v2(
         else:
             normalized = normalize_unified_diff_headers(proposal.patch)
             try:
+                normalized = relocate_unified_diff_hunks(
+                    current_source,
+                    normalized,
+                    kernel_name=task.kernel_name,
+                )
                 application = apply_unified_diff(
                     current_source,
                     normalized,

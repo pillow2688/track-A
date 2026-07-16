@@ -288,6 +288,96 @@ def normalize_unified_diff_headers(patch: str) -> str:
     return normalized_patch + ("\n" if patch.endswith("\n") else "")
 
 
+def relocate_unified_diff_hunks(
+    source: bytes | str,
+    patch: str,
+    *,
+    kernel_name: str,
+    max_offset_lines: int = 8,
+) -> str:
+    """Repair a nearby hunk start only when its old body matches uniquely.
+
+    This changes unified-diff location metadata only. Paths and every context,
+    addition, and deletion line remain byte-for-byte identical, and the result
+    must still pass :func:`apply_unified_diff`.
+    """
+
+    if max_offset_lines < 0:
+        raise ValueError("max_offset_lines must be non-negative")
+    source_bytes = source.encode("utf-8") if isinstance(source, str) else bytes(source)
+    try:
+        source_lines = source_bytes.decode("utf-8").splitlines()
+    except UnicodeDecodeError as exc:
+        raise PatchValidationError("kernel source is not UTF-8") from exc
+    lines = patch.splitlines()
+    header_index = next(
+        (index for index, line in enumerate(lines) if line.startswith("--- ")),
+        None,
+    )
+    if header_index is None or header_index + 1 >= len(lines):
+        return patch
+    _patch_path(lines[header_index], prefix="--- ", expected=kernel_name)
+    _patch_path(lines[header_index + 1], prefix="+++ ", expected=kernel_name)
+
+    changed = False
+    cumulative_delta = 0
+    index = header_index + 2
+    while index < len(lines):
+        match = _HUNK.match(lines[index])
+        if match is None:
+            return patch
+        end = index + 1
+        old_body: list[str] = []
+        additions = deletions = 0
+        while end < len(lines) and _HUNK.match(lines[end]) is None:
+            body = lines[end]
+            if not body or body[0] not in " +-":
+                return patch
+            if body[0] in " -":
+                old_body.append(body[1:])
+            if body[0] == "+":
+                additions += 1
+            elif body[0] == "-":
+                deletions += 1
+            end += 1
+        if not old_body:
+            return patch
+        declared_start = int(match.group(1)) - 1
+        declared_slice = source_lines[
+            declared_start : declared_start + len(old_body)
+        ] if declared_start >= 0 else []
+        if declared_slice != old_body:
+            matches = [
+                start
+                for start in range(0, len(source_lines) - len(old_body) + 1)
+                if source_lines[start : start + len(old_body)] == old_body
+            ]
+            if len(matches) != 1:
+                raise PatchValidationError(
+                    "patch hunk context is not a unique source match"
+                )
+            actual_start = matches[0]
+            if abs(actual_start - declared_start) > max_offset_lines:
+                raise PatchValidationError("patch hunk start offset exceeds safety limit")
+            closing = lines[index].find("@@", 2)
+            suffix = lines[index][closing + 2 :] if closing >= 0 else ""
+            old_count = int(match.group(2) or "1")
+            new_count = int(match.group(4) or "1")
+            new_start = actual_start + 1 + cumulative_delta
+            lines[index] = (
+                f"@@ -{actual_start + 1},{old_count} "
+                f"+{new_start},{new_count} @@{suffix}"
+            )
+            changed = True
+            declared_start = actual_start
+        cumulative_delta += additions - deletions
+        index = end
+    if not changed:
+        return patch
+    relocated = "\n".join(lines)
+    return relocated + ("\n" if patch.endswith("\n") else "")
+
+
 def apply_unified_diff(
     source: bytes | str,
     patch: str,
@@ -847,6 +937,11 @@ def run_v1(
 
     normalized_patch = normalize_unified_diff_headers(proposal.patch)
     try:
+        normalized_patch = relocate_unified_diff_hunks(
+            task.kernel_bytes,
+            normalized_patch,
+            kernel_name=task.kernel_name,
+        )
         application = apply_unified_diff(
             task.kernel_bytes,
             normalized_patch,

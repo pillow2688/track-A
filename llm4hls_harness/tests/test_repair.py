@@ -20,6 +20,7 @@ from llm4hls_agent.repair import (
     deterministic_fallback_proposal,
     FailureDiagnostic,
     normalize_unified_diff_headers,
+    relocate_unified_diff_hunks,
     run_v1,
 )
 from llm4hls_agent.task import load_public_task
@@ -172,6 +173,27 @@ class RepairTests(unittest.TestCase):
         self.assertEqual(
             [line for line in malformed.splitlines() if not line.startswith("@@")],
             [line for line in normalized.splitlines() if not line.startswith("@@")],
+        )
+
+    def test_patch_relocator_repairs_unique_off_by_one_hunk_start_only(self) -> None:
+        misplaced = self.patch().replace("@@ -1,4 +1,4 @@", "@@ -2,4 +2,4 @@")
+
+        relocated = relocate_unified_diff_hunks(
+            self.task.kernel_bytes,
+            misplaced,
+            kernel_name="kernel.cpp",
+        )
+        application = apply_unified_diff(
+            self.task.kernel_bytes,
+            relocated,
+            kernel_name="kernel.cpp",
+        )
+
+        self.assertIn("@@ -1,4 +1,4 @@", relocated)
+        self.assertIn(b"value + 1", application.patched_bytes)
+        self.assertEqual(
+            [line for line in misplaced.splitlines() if not line.startswith("@@")],
+            [line for line in relocated.splitlines() if not line.startswith("@@")],
         )
 
     def test_diagnosis_localizes_public_failure(self) -> None:
