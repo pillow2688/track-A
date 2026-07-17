@@ -38,7 +38,7 @@ V1 的正式完成条件现已固定为三类 HLS 任务错误：`FUNCTIONAL_MIS
 
 ## 3. V2 按设计文档的实现状态
 
-根据 `2026-07-14-budget-aware-langgraph-llm4hls-agent-design.md`，V2 不是再次修复单个
+根据 `2026-07-17-budget-aware-langgraph-llm4hls-agent-design.md`，V2 不是再次修复单个
 kernel，而是候选/PPA 循环。下列能力已于 2026-07-16 在真实 DeepSeek/Vitis 闭环中完成：
 
 1. Candidate tree：支持多个候选和 parent-child 关系，而不是只生成一个 `candidate_001`。

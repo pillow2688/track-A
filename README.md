@@ -11,7 +11,7 @@
 1. [团队知识库入口](doc/README.md)
 2. [Track A 比赛总览](doc/docs/track-a-competition-overview.md)
 3. [Track A 0 基础入门手册](doc/docs/track-a-zero-foundation-guide.md)
-4. [Budget-Aware LangGraph LLM4HLS Agent 设计总规范](doc/materials/04_agent_basics/2026-07-14-budget-aware-langgraph-llm4hls-agent-design.md)
+4. [Budget-Aware LangGraph LLM4HLS Agent 设计总规范](doc/materials/04_agent_basics/2026-07-17-budget-aware-langgraph-llm4hls-agent-design.md)
 5. [资料总索引](doc/materials/00_index/README.md)
 6. [Agent 开发规则](llm4hls_harness/AGENTS.md)
 7. [内部 V0 中文说明](llm4hls_harness/README_CN.md)

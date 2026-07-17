@@ -29,7 +29,7 @@
 1. [Datawhale Hello-Agents 到 Track A 的映射](../04_agent_basics/2026-07-09-datawhale-hello-agents-to-llm4hls-mapping.md)：先建立 Agent 通用概念
 2. [LangChain v1 到 Track A 的映射](../04_agent_basics/2026-07-10-langchain-v1-track-a-mapping.md)：理解 `create_agent`、middleware 和 LangGraph 的关系
 3. [LangGraph 与 Track A 混合 Agent 架构](../04_agent_basics/2026-07-10-langgraph-track-a-architecture.md)：理解团队推荐架构
-4. [Budget-Aware LangGraph LLM4HLS Agent 设计总规范](../04_agent_basics/2026-07-14-budget-aware-langgraph-llm4hls-agent-design.md)：进入团队当前的完整设计与实现契约
+4. [Budget-Aware LangGraph LLM4HLS Agent 设计总规范](../04_agent_basics/2026-07-17-budget-aware-langgraph-llm4hls-agent-design.md)：进入团队当前的完整设计与实现契约
 5. [LangGraph 状态编排契约](../04_agent_basics/2026-07-14-langgraph-state-orchestration-contract.md)：单独查阅 State、条件边和失败闭环
 6. [预算感知工具策略与最优停止](../04_agent_basics/2026-07-10-budget-aware-tool-policy-and-optimal-stopping.md)：深入预算与停止策略
 

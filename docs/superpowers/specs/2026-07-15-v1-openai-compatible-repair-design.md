@@ -11,7 +11,7 @@
 本设计服从以下优先级：
 
 1. 最新 Track A 官方规则与团队收到的提交要求；
-2. `doc/materials/04_agent_basics/2026-07-14-budget-aware-langgraph-llm4hls-agent-design.md`；
+2. `doc/materials/04_agent_basics/2026-07-17-budget-aware-langgraph-llm4hls-agent-design.md`；
 3. reference harness 的公开接口与行为；
 4. 本地实现便利。
 

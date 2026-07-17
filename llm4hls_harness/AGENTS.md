@@ -20,7 +20,7 @@ Correctness has priority over PPA. Reproducibility has priority over a convincin
 Read these sources in order before making architectural changes:
 
 1. `../doc/materials/01_official/2026-07-10-track-a-submission-guidelines-zh.md`
-2. `../doc/materials/04_agent_basics/2026-07-14-budget-aware-langgraph-llm4hls-agent-design.md`
+2. `../doc/materials/04_agent_basics/2026-07-17-budget-aware-langgraph-llm4hls-agent-design.md`
 3. `../doc/materials/02_harness/2026-07-10-reference-harness-analysis.md`
 4. `../_external/fpt26-harness/README.md`
 5. Relevant code under `../_external/fpt26-harness/llm4hls/`

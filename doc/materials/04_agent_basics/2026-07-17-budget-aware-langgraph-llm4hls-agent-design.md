@@ -2,7 +2,7 @@
 
 Status: team design + implementation contract
 Owner: team
-Checked: 2026-07-16
+Checked: 2026-07-17
 Scope: FPT 2026 Track A Agent Harness
 
 ## 0. 文档定位

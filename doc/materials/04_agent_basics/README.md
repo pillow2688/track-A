@@ -27,7 +27,7 @@ YYYY-MM-DD-budget-policy-design.md
 
 ## Current Notes
 
-- [Budget-Aware LangGraph LLM4HLS Agent 设计总规范](2026-07-14-budget-aware-langgraph-llm4hls-agent-design.md)（推荐主文档）
+- [Budget-Aware LangGraph LLM4HLS Agent 设计总规范](2026-07-17-budget-aware-langgraph-llm4hls-agent-design.md)（推荐主文档）
 - [Datawhale Hello-Agents 到 LLM4HLS Track A 的映射笔记](2026-07-09-datawhale-hello-agents-to-llm4hls-mapping.md)
 - [LangChain v1 到 LLM4HLS Track A 的映射](2026-07-10-langchain-v1-track-a-mapping.md)
 - [LangGraph 与 Track A 混合 Agent 架构](2026-07-10-langgraph-track-a-architecture.md)
