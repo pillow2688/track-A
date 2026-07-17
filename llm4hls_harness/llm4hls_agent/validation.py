@@ -105,9 +105,12 @@ def validate_candidate(
     *,
     backend: ToolBackend | None,
     validation_scope: str = "exploration",
+    run_cosim: bool = True,
 ) -> CandidateValidation:
     if validation_scope not in {"exploration", "final"}:
         raise ValueError(f"unsupported validation scope: {validation_scope}")
+    if validation_scope == "final" and not run_cosim:
+        raise ValueError("final validation cannot skip cosim")
     root = Path(run_root).resolve()
     budget = BudgetLedger(root / "budget_ledger.jsonl", config.budget)
     server = ToolServer(
@@ -181,22 +184,26 @@ def validate_candidate(
             stop_reason = "CLOCK_CONSTRAINT_FAILED"
         else:
             clock["passed"] = True
-            cosim, error, reason = _invoke_stage(
-                server,
-                "cosim",
-                kernel_bytes,
-                candidate_id=candidate_id,
-                validation_scope=validation_scope,
-            )
-            if cosim is None:
-                validation["cosim"] = error or {"status": "TOOL_ERROR"}
-                stop_reason = reason or "COSIM_ERROR"
-            else:
-                validation["cosim"] = _record(cosim)
-                if not cosim.ok:
-                    stop_reason = f"COSIM_{cosim.phase.upper()}"
+            if run_cosim:
+                cosim, error, reason = _invoke_stage(
+                    server,
+                    "cosim",
+                    kernel_bytes,
+                    candidate_id=candidate_id,
+                    validation_scope=validation_scope,
+                )
+                if cosim is None:
+                    validation["cosim"] = error or {"status": "TOOL_ERROR"}
+                    stop_reason = reason or "COSIM_ERROR"
+                else:
+                    validation["cosim"] = _record(cosim)
+                    if not cosim.ok:
+                        stop_reason = f"COSIM_{cosim.phase.upper()}"
 
-    if cosim is not None and cosim.ok and stop_reason is None:
+    if not run_cosim and synth is not None and synth.ok and stop_reason is None:
+        status = "DONE"
+        stop_reason = "CANDIDATE_SYNTH_VERIFIED"
+    elif cosim is not None and cosim.ok and stop_reason is None:
         status = "DONE"
         stop_reason = "CANDIDATE_VERIFIED"
     else:
@@ -212,5 +219,73 @@ def validate_candidate(
         validation=validation,
         clock_constraint=clock,
         metrics_ref=metrics_ref,
+        budget=budget.snapshot(),
+    )
+
+
+def complete_candidate_cosim(
+    task: PublicTask,
+    kernel_bytes: bytes,
+    candidate_id: str,
+    run_root: str | Path,
+    config: RunConfig,
+    preliminary: CandidateValidation,
+    *,
+    backend: ToolBackend | None,
+    validation_scope: str = "exploration",
+) -> CandidateValidation:
+    """Complete a synth-verified Candidate with exactly one gated CoSim action."""
+
+    if validation_scope not in {"exploration", "final"}:
+        raise ValueError(f"unsupported validation scope: {validation_scope}")
+    if (
+        preliminary.status != "DONE"
+        or preliminary.stop_reason != "CANDIDATE_SYNTH_VERIFIED"
+        or preliminary.validation.get("csim", {}).get("status") != "PASS"
+        or preliminary.validation.get("synth", {}).get("status") != "PASS"
+        or preliminary.validation.get("cosim", {}).get("status") != "NOT_RUN"
+        or preliminary.clock_constraint.get("passed") is not True
+        or preliminary.metrics_ref is None
+    ):
+        raise ValueError("gated cosim requires a synth-verified Candidate")
+
+    root = Path(run_root).resolve()
+    budget = BudgetLedger(root / "budget_ledger.jsonl", config.budget)
+    server = ToolServer(
+        task=task,
+        budget=budget,
+        run_root=root,
+        config=config.tool,
+        backend=backend or VitisBackend(),
+    )
+    validation = {
+        stage: dict(record)
+        for stage, record in preliminary.validation.items()
+    }
+    cosim, error, reason = _invoke_stage(
+        server,
+        "cosim",
+        kernel_bytes,
+        candidate_id=candidate_id,
+        validation_scope=validation_scope,
+    )
+    if cosim is None:
+        validation["cosim"] = error or {"status": "TOOL_ERROR"}
+        status = "FAILED"
+        stop_reason = reason or "COSIM_ERROR"
+    else:
+        validation["cosim"] = _record(cosim)
+        status = "DONE" if cosim.ok else "FAILED"
+        stop_reason = (
+            "CANDIDATE_VERIFIED"
+            if cosim.ok
+            else f"COSIM_{cosim.phase.upper()}"
+        )
+    return CandidateValidation(
+        status=status,
+        stop_reason=stop_reason,
+        validation=validation,
+        clock_constraint=dict(preliminary.clock_constraint),
+        metrics_ref=preliminary.metrics_ref,
         budget=budget.snapshot(),
     )

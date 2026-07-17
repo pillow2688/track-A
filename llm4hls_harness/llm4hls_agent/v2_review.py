@@ -128,6 +128,11 @@ def _collect_review_data(
             if isinstance(candidate.get("score_ref"), str)
             else {}
         )
+        pre_cosim_score = (
+            _read_json(optimization_root / str(candidate["pre_cosim_score_ref"]))
+            if isinstance(candidate.get("pre_cosim_score_ref"), str)
+            else {}
+        )
         candidate_rows.append(
             {
                 "candidate_id": candidate_id,
@@ -141,8 +146,16 @@ def _collect_review_data(
                 "output_tokens": candidate.get("output_tokens", 0),
                 "cached_input_tokens": candidate.get("cached_input_tokens", 0),
                 "credits_used": candidate.get("credits_used", 0),
-                "ppa_cost": score.get("ppa_cost"),
-                "hard_constraints_passed": score.get("hard_constraints_passed"),
+                "ppa_cost": (
+                    score.get("ppa_cost")
+                    if score.get("ppa_cost") is not None
+                    else pre_cosim_score.get("ppa_cost")
+                ),
+                "hard_constraints_passed": (
+                    score.get("hard_constraints_passed")
+                    if score.get("ppa_cost") is not None
+                    else pre_cosim_score.get("hard_constraints_passed")
+                ),
             }
         )
 
@@ -189,6 +202,11 @@ def _collect_review_data(
             if isinstance(record.get("score_ref"), str)
             else {}
         )
+        pre_cosim_score = (
+            _read_json(optimization_root / str(record["pre_cosim_score_ref"]))
+            if isinstance(record.get("pre_cosim_score_ref"), str)
+            else {}
+        )
         comparison = (
             _read_json(optimization_root / str(record["comparison_ref"]))
             if isinstance(record.get("comparison_ref"), str)
@@ -226,7 +244,9 @@ def _collect_review_data(
                 "clock": candidate.get("clock_constraint", {}),
                 "metrics": metrics,
                 "score": score,
+                "pre_cosim_score": pre_cosim_score,
                 "comparison": comparison,
+                "cosim_gate": record.get("cosim_gate", {}),
                 "result_ref": record.get("result_ref"),
             }
         )
@@ -456,14 +476,21 @@ def _render_report(
         metric_value = metrics if isinstance(metrics, Mapping) else {}
         score = value.get("score")
         score_value = score if isinstance(score, Mapping) else {}
+        pre_cosim_score = value.get("pre_cosim_score")
+        pre_cosim_score_value = (
+            pre_cosim_score if isinstance(pre_cosim_score, Mapping) else {}
+        )
         comparison = value.get("comparison")
         comparison_value = comparison if isinstance(comparison, Mapping) else {}
+        cosim_gate = value.get("cosim_gate")
+        cosim_gate_value = cosim_gate if isinstance(cosim_gate, Mapping) else {}
         lines.extend(
             [
                 "",
                 f"- Latency / II: `{metric_value.get('latency')} / {metric_value.get('interval')}`",
                 f"- Resources / clock: `{metric_value.get('resources')} / {metric_value.get('estimated_clock_period_ns')} ns`",
                 f"- PPA cost / hard constraints: `{score_value.get('ppa_cost')} / {score_value.get('hard_constraints_passed')}`",
+                f"- {'探索 CoSim 门控' if chinese else 'Exploration CoSim gate'}: eligible `{cosim_gate_value.get('eligible')}`, reason `{cosim_gate_value.get('reason')}`, Candidate/Best PPA `{pre_cosim_score_value.get('ppa_cost')} / {cosim_gate_value.get('incumbent_ppa_cost')}`",
                 f"- {'比较结果' if chinese else 'Comparison'}: winner `{comparison_value.get('winner')}`, reason `{comparison_value.get('reason')}`",
             ]
         )

@@ -190,6 +190,23 @@ class V2AcceptanceTests(unittest.TestCase):
             result["checks"]["public_inputs_and_kernel_only_patches_bound"]
         )
 
+    def test_rebuilt_manifest_cannot_hide_tampered_cosim_gate(self) -> None:
+        gate_path = self.optimization_run / "cosim_gates/candidate_001.json"
+        gate = json.loads(gate_path.read_text(encoding="utf-8"))
+        gate["eligible"] = False
+        gate_path.write_text(json.dumps(gate, sort_keys=True), encoding="utf-8")
+        build_artifact_manifest(self.optimization_run)
+
+        result = compute_v2_acceptance(
+            self.spec, self.optimization_run, self.rejection_run
+        )
+
+        self.assertEqual(result["overall_status"], "FAIL")
+        self.assertFalse(result["checks"]["exploration_cosim_gated"])
+        self.assertIn(
+            "EXPLORATION_COSIM_GATE_INVALID", result["reason_codes"]
+        )
+
     def test_rebuilt_manifest_cannot_hide_patch_source_lineage_mismatch(self) -> None:
         registry_path = self.optimization_run / "candidate_registry.json"
         registry = json.loads(registry_path.read_text(encoding="utf-8"))

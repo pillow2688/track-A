@@ -6,7 +6,7 @@ import hashlib
 import json
 import math
 import os
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from functools import cmp_to_key
 from pathlib import Path
 from typing import Mapping, Protocol
@@ -26,7 +26,12 @@ from .repair import (
 from .scoring import CandidateScore, ScoringConfig, compare_scores, score_candidate
 from .task import PublicTask
 from .tools import ToolBackend
-from .validation import CandidateValidation, validate_candidate, validate_csim_only
+from .validation import (
+    CandidateValidation,
+    complete_candidate_cosim,
+    validate_candidate,
+    validate_csim_only,
+)
 from .workflow import RunConfig, _RunLock, _append_trace, _atomic_json, run_v0
 
 
@@ -133,11 +138,12 @@ class OptimizationProvider(Protocol):
 @dataclass(frozen=True)
 class OptimizationConfig:
     scoring: ScoringConfig
-    max_rounds: int = 4
+    max_rounds: int = 6
     max_no_improvement_rounds: int = 2
     max_llm_calls: int = 6
     max_final_attempts: int = 2
     final_reserve_credits: int = 25
+    exploration_cosim_policy: str = "ppa_gate"
     patch_limits: PatchLimits = field(
         default_factory=lambda: PatchLimits(max_changed_lines=30, max_hunks=4)
     )
@@ -153,6 +159,8 @@ class OptimizationConfig:
             raise ValueError("LLM call limit cannot be lower than the round limit")
         if self.final_reserve_credits < 0:
             raise ValueError("final reserve credits must be non-negative")
+        if self.exploration_cosim_policy != "ppa_gate":
+            raise ValueError("unsupported exploration cosim policy")
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -162,8 +170,23 @@ class OptimizationConfig:
             "max_llm_calls": self.max_llm_calls,
             "max_final_attempts": self.max_final_attempts,
             "final_reserve_credits": self.final_reserve_credits,
+            "exploration_cosim_policy": self.exploration_cosim_policy,
             "patch_limits": asdict(self.patch_limits),
         }
+
+
+@dataclass(frozen=True)
+class ExplorationCosimGate:
+    candidate_id: str
+    incumbent_id: str
+    eligible: bool
+    reason: str
+    candidate_ppa_cost: float | None
+    incumbent_ppa_cost: float | None
+    candidate_hard_constraints_passed: bool
+
+    def to_dict(self) -> dict[str, object]:
+        return asdict(self)
 
 
 def _canonical_digest(value: object) -> str:
@@ -242,26 +265,31 @@ def _write_v2_experimental_report(
                 "",
                 "## Candidate rounds",
                 "",
-                "| Round | Parent | Class | Candidate | Decision |",
-                "|---:|---|---|---|---|",
+                "| Round | Parent | Class | Candidate | CoSim gate | CoSim | Decision |",
+                "|---:|---|---|---|---|---|---|",
             ]
         )
         rounds = result.get("rounds")
         for item in rounds if isinstance(rounds, list) else []:
             value = item if isinstance(item, Mapping) else {}
+            gate = value.get("cosim_gate")
+            gate_value = gate if isinstance(gate, Mapping) else {}
+            candidates = registry.get("candidates")
+            candidate_map = candidates if isinstance(candidates, Mapping) else {}
+            candidate = candidate_map.get(value.get("candidate_id"))
+            candidate_value = candidate if isinstance(candidate, Mapping) else {}
+            validation = candidate_value.get("validation")
+            validation_value = validation if isinstance(validation, Mapping) else {}
+            cosim = validation_value.get("cosim")
+            cosim_value = cosim if isinstance(cosim, Mapping) else {}
             lines.append(
-                "| "
-                + " | ".join(
-                    str(value.get(key, ""))
-                    for key in (
-                        "round_index",
-                        "parent_candidate_id",
-                        "optimization_class",
-                        "candidate_id",
-                        "decision",
-                    )
-                )
-                + " |"
+                f"| {value.get('round_index', '')} | "
+                f"{value.get('parent_candidate_id', '')} | "
+                f"{value.get('optimization_class', '')} | "
+                f"{value.get('candidate_id', '')} | "
+                f"{gate_value.get('eligible')} / {gate_value.get('reason')} | "
+                f"{cosim_value.get('status', 'NOT_RUN')} | "
+                f"{value.get('decision', '')} |"
             )
         final_validation = result.get("final_validation")
         final_value = final_validation if isinstance(final_validation, Mapping) else {}
@@ -368,14 +396,29 @@ def select_optimization(
     metrics: Mapping[str, object],
     *,
     source: str,
-    attempted: tuple[str, ...],
+    attempted: tuple[str | tuple[str, str], ...],
     failures: tuple[tuple[str, str], ...],
 ) -> OptimizationDecision:
     """Select one untried class from structured evidence without side effects."""
 
-    if any(item not in ALLOWED_OPTIMIZATIONS for item in attempted):
-        raise ValueError("attempted optimization contains an unsupported class")
     digest = _canonical_digest(metrics)
+    attempted_same_metrics: set[str] = set()
+    for item in attempted:
+        if isinstance(item, str):
+            optimization_class = item
+            metrics_digest = digest
+        elif (
+            isinstance(item, tuple)
+            and len(item) == 2
+            and all(isinstance(value, str) for value in item)
+        ):
+            optimization_class, metrics_digest = item
+        else:
+            raise ValueError("attempted optimization record is invalid")
+        if optimization_class not in ALLOWED_OPTIMIZATIONS:
+            raise ValueError("attempted optimization contains an unsupported class")
+        if metrics_digest == digest:
+            attempted_same_metrics.add(optimization_class)
     failed_same = {
         optimization_class
         for optimization_class, metrics_digest in failures
@@ -384,7 +427,7 @@ def select_optimization(
     available = [
         item
         for item in ALLOWED_OPTIMIZATIONS
-        if item not in attempted and item not in failed_same
+        if item not in attempted_same_metrics and item not in failed_same
     ]
     if not available:
         return OptimizationDecision(
@@ -816,6 +859,66 @@ def _score_from_validation(
     )
 
 
+def _score_for_cosim_gate(
+    *,
+    candidate_id: str,
+    baseline_metrics: Mapping[str, object],
+    candidate_metrics: Mapping[str, object],
+    validation: CandidateValidation,
+    config: ScoringConfig,
+    proposal: PatchProposal,
+    credits_used: int,
+) -> CandidateScore:
+    """Score CSim+Synth evidence without pretending that CoSim has passed."""
+
+    gate_validation = {
+        stage: dict(record)
+        for stage, record in validation.validation.items()
+    }
+    gate_validation["cosim"] = {"status": "NOT_RUN"}
+    return score_candidate(
+        candidate_id=candidate_id,
+        baseline=baseline_metrics,
+        candidate=candidate_metrics,
+        validation=gate_validation,
+        clock=validation.clock_constraint,
+        config=replace(config, required_verification_tier=3),
+        input_tokens=proposal.input_tokens,
+        output_tokens=proposal.output_tokens,
+        cached_input_tokens=proposal.cached_input_tokens,
+        credits_used=credits_used,
+    )
+
+
+def evaluate_exploration_cosim_gate(
+    candidate: CandidateScore,
+    incumbent: CandidateScore,
+) -> ExplorationCosimGate:
+    """Allow expensive exploration CoSim only for a strict PPA improvement."""
+
+    if candidate.verification_tier < 3 or not candidate.hard_constraints_passed:
+        eligible = False
+        reason = "PRE_COSIM_HARD_CONSTRAINTS"
+    elif candidate.ppa_cost is None or incumbent.ppa_cost is None:
+        eligible = False
+        reason = "PPA_COST_UNAVAILABLE"
+    elif candidate.ppa_cost < incumbent.ppa_cost:
+        eligible = True
+        reason = "STRICT_PPA_IMPROVEMENT"
+    else:
+        eligible = False
+        reason = "PPA_NOT_BETTER"
+    return ExplorationCosimGate(
+        candidate_id=candidate.candidate_id,
+        incumbent_id=incumbent.candidate_id,
+        eligible=eligible,
+        reason=reason,
+        candidate_ppa_cost=candidate.ppa_cost,
+        incumbent_ppa_cost=incumbent.ppa_cost,
+        candidate_hard_constraints_passed=candidate.hard_constraints_passed,
+    )
+
+
 def run_v2_rejection(
     task: PublicTask,
     run_dir: str | Path,
@@ -1153,7 +1256,7 @@ def run_v2(
 
     budget = BudgetLedger(run_root / "budget_ledger.jsonl", run_config.budget)
     rounds: list[dict[str, object]] = []
-    attempted: list[str] = []
+    attempted: list[tuple[str, str]] = []
     failures: list[tuple[str, str]] = []
     no_improvement = 0
     best_id = "candidate_000"
@@ -1290,12 +1393,12 @@ def run_v2(
             raise ValueError(
                 f"durable round Provider ledger binding is invalid: {round_path.name}"
             )
-        attempted.append(optimization_class)
         metrics_digest = (
             str(selector.get("metrics_digest"))
             if isinstance(selector, Mapping)
             else ""
         )
+        attempted.append((optimization_class, metrics_digest))
         candidate_id = round_record.get("candidate_id")
         if isinstance(candidate_id, str):
             candidate_record = candidates.get(candidate_id)
@@ -1366,6 +1469,109 @@ def run_v2(
                 )
             score_ref = candidate_record.get("score_ref")
             metrics_ref = candidate_record.get("metrics_ref")
+            csim_record = candidate_validation.get("csim")
+            synth_record = candidate_validation.get("synth")
+            cosim_record = candidate_validation.get("cosim")
+            reached_cosim_gate = (
+                isinstance(csim_record, Mapping)
+                and csim_record.get("status") == "PASS"
+                and isinstance(synth_record, Mapping)
+                and synth_record.get("status") == "PASS"
+                and candidate_clock.get("passed") is True
+            )
+            pre_score_ref = candidate_record.get("pre_cosim_score_ref")
+            gate_ref = candidate_record.get("cosim_gate_ref")
+            if reached_cosim_gate:
+                if (
+                    not isinstance(metrics_ref, str)
+                    or not isinstance(pre_score_ref, str)
+                    or not isinstance(gate_ref, str)
+                    or round_record.get("pre_cosim_score_ref") != pre_score_ref
+                    or round_record.get("cosim_gate_ref") != gate_ref
+                ):
+                    raise ValueError(
+                        f"durable Candidate CoSim gate evidence is missing: {candidate_id}"
+                    )
+                candidate_metrics = _read_report(run_root, metrics_ref)
+                gate_validation = CandidateValidation(
+                    status="DONE",
+                    stop_reason="CANDIDATE_SYNTH_VERIFIED",
+                    validation={
+                        str(key): dict(value)
+                        for key, value in candidate_validation.items()
+                        if isinstance(value, Mapping)
+                    },
+                    clock_constraint=dict(candidate_clock),
+                    metrics_ref=metrics_ref,
+                    budget={},
+                )
+                recomputed_pre_score = _score_for_cosim_gate(
+                    candidate_id=candidate_id,
+                    baseline_metrics=baseline_metrics,
+                    candidate_metrics=candidate_metrics,
+                    validation=gate_validation,
+                    config=optimization_config.scoring,
+                    proposal=proposal,
+                    credits_used=int(
+                        candidate_record.get("pre_cosim_credits_used", -1)
+                    ),
+                )
+                stored_pre_score = _read_score(run_root, pre_score_ref)
+                expected_gate = evaluate_exploration_cosim_gate(
+                    recomputed_pre_score, scores[best_id]
+                )
+                try:
+                    stored_gate = json.loads(
+                        (run_root / gate_ref).read_text(encoding="utf-8")
+                    )
+                except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+                    raise ValueError(
+                        f"durable Candidate CoSim gate is unreadable: {candidate_id}"
+                    ) from exc
+                if (
+                    _canonical_digest(stored_pre_score.to_dict())
+                    != _canonical_digest(recomputed_pre_score.to_dict())
+                    or not isinstance(stored_gate, dict)
+                    or _canonical_digest(stored_gate)
+                    != _canonical_digest(expected_gate.to_dict())
+                    or _canonical_digest(round_record.get("cosim_gate"))
+                    != _canonical_digest(expected_gate.to_dict())
+                ):
+                    raise ValueError(
+                        f"durable Candidate CoSim gate binding is invalid: {candidate_id}"
+                    )
+                cosim_status = (
+                    cosim_record.get("status")
+                    if isinstance(cosim_record, Mapping)
+                    else None
+                )
+                if (
+                    expected_gate.eligible and cosim_status == "NOT_RUN"
+                ) or (
+                    not expected_gate.eligible and cosim_status != "NOT_RUN"
+                ):
+                    raise ValueError(
+                        f"durable Candidate CoSim gate action is invalid: {candidate_id}"
+                    )
+                if (
+                    not expected_gate.eligible
+                    and round_record.get("decision") != "REJECTED_NOT_BETTER"
+                ):
+                    raise ValueError(
+                        f"durable Candidate CoSim gate decision is invalid: {candidate_id}"
+                    )
+            elif any(
+                value is not None
+                for value in (
+                    pre_score_ref,
+                    gate_ref,
+                    round_record.get("pre_cosim_score_ref"),
+                    round_record.get("cosim_gate_ref"),
+                )
+            ):
+                raise ValueError(
+                    f"durable rejected Candidate has premature CoSim gate evidence: {candidate_id}"
+                )
             if isinstance(score_ref, str) and isinstance(metrics_ref, str):
                 candidate_metrics = _read_report(run_root, metrics_ref)
                 recovered_validation = CandidateValidation(
@@ -1525,7 +1731,7 @@ def run_v2(
         if decision.optimization_class is None:
             exploration_stop_reason = decision.stop_reason or "NO_DISTINCT_OPTIMIZATION"
             break
-        attempted.append(decision.optimization_class)
+        attempted.append((decision.optimization_class, decision.metrics_digest))
         snapshot = budget.snapshot()
         context = OptimizationContext(
             task_id=task.id,
@@ -1635,7 +1841,7 @@ def run_v2(
                     )
                 candidate_id = materialized.candidate_id
                 round_record["candidate_id"] = candidate_id
-                validation = validate_candidate(
+                preliminary = validate_candidate(
                     task,
                     application.patched_bytes,
                     candidate_id,
@@ -1643,8 +1849,82 @@ def run_v2(
                     run_config,
                     backend=backend,
                     validation_scope="exploration",
+                    run_cosim=False,
                 )
+                validation = preliminary
+                pre_cosim_credits = (
+                    int(preliminary.budget["credits_used"]) - before_credits
+                )
+                candidate_metrics: dict[str, object] | None = None
+                pre_cosim_score: CandidateScore | None = None
+                cosim_gate: ExplorationCosimGate | None = None
+                score: CandidateScore | None = None
+                comparison = None
+                score_ref: str | None = None
+                comparison_ref: str | None = None
+                if preliminary.status == "DONE" and preliminary.metrics_ref is not None:
+                    candidate_metrics = _read_report(
+                        run_root, preliminary.metrics_ref
+                    )
+                    pre_cosim_score = _score_for_cosim_gate(
+                        candidate_id=candidate_id,
+                        baseline_metrics=baseline_metrics,
+                        candidate_metrics=candidate_metrics,
+                        validation=preliminary,
+                        config=optimization_config.scoring,
+                        proposal=proposal,
+                        credits_used=pre_cosim_credits,
+                    )
+                    cosim_gate = evaluate_exploration_cosim_gate(
+                        pre_cosim_score, scores[best_id]
+                    )
+                    pre_cosim_score_ref = f"scores/{candidate_id}.pre_cosim.json"
+                    cosim_gate_ref = f"cosim_gates/{candidate_id}.json"
+                    _atomic_json(
+                        run_root / pre_cosim_score_ref,
+                        pre_cosim_score.to_dict(),
+                    )
+                    _atomic_json(run_root / cosim_gate_ref, cosim_gate.to_dict())
+                    round_record["pre_cosim_score_ref"] = pre_cosim_score_ref
+                    round_record["cosim_gate_ref"] = cosim_gate_ref
+                    round_record["cosim_gate"] = cosim_gate.to_dict()
+                    _append_trace(
+                        run_root / "trace.jsonl",
+                        "V2_COSIM_GATE_EVALUATED",
+                        round_index=round_index,
+                        candidate_id=candidate_id,
+                        incumbent_id=best_id,
+                        eligible=cosim_gate.eligible,
+                        reason=cosim_gate.reason,
+                        result_ref=cosim_gate_ref,
+                    )
+                    if cosim_gate.eligible:
+                        validation = complete_candidate_cosim(
+                            task,
+                            application.patched_bytes,
+                            candidate_id,
+                            run_root,
+                            run_config,
+                            preliminary,
+                            backend=backend,
+                            validation_scope="exploration",
+                        )
                 candidate_credits = int(validation.budget["credits_used"]) - before_credits
+                if validation.status == "DONE" and candidate_metrics is not None:
+                    score = _score_from_validation(
+                        candidate_id=candidate_id,
+                        baseline_metrics=baseline_metrics,
+                        candidate_metrics=candidate_metrics,
+                        validation=validation,
+                        config=optimization_config.scoring,
+                        proposal=proposal,
+                        credits_used=candidate_credits,
+                    )
+                    score_ref = f"scores/{candidate_id}.json"
+                    _atomic_json(run_root / score_ref, score.to_dict())
+                    comparison = compare_scores(score, scores[best_id])
+                    comparison_ref = f"comparisons/{candidate_id}.json"
+                    _atomic_json(run_root / comparison_ref, comparison.to_dict())
                 with _RunLock(run_root):
                     registry = manager.load_registry()
                     candidates = registry["candidates"]
@@ -1653,6 +1933,12 @@ def run_v2(
                     candidate["clock_constraint"] = validation.clock_constraint
                     candidate["metrics_ref"] = validation.metrics_ref
                     candidate["credits_used"] = candidate_credits
+                    if pre_cosim_score is not None and cosim_gate is not None:
+                        candidate["pre_cosim_credits_used"] = pre_cosim_credits
+                        candidate["pre_cosim_score_ref"] = round_record[
+                            "pre_cosim_score_ref"
+                        ]
+                        candidate["cosim_gate_ref"] = round_record["cosim_gate_ref"]
                     if validation.status != "DONE" or validation.metrics_ref is None:
                         candidate["status"] = "REJECTED_VALIDATION"
                         candidate["rejection_reason"] = validation.stop_reason
@@ -1662,23 +1948,15 @@ def run_v2(
                         failures.append((decision.optimization_class, decision.metrics_digest))
                         no_improvement += 1
                     else:
-                        candidate_metrics = _read_report(
-                            run_root, validation.metrics_ref
-                        )
-                        score = _score_from_validation(
-                            candidate_id=candidate_id,
-                            baseline_metrics=baseline_metrics,
-                            candidate_metrics=candidate_metrics,
-                            validation=validation,
-                            config=optimization_config.scoring,
-                            proposal=proposal,
-                            credits_used=candidate_credits,
-                        )
-                        score_ref = f"scores/{candidate_id}.json"
-                        _atomic_json(run_root / score_ref, score.to_dict())
-                        comparison = compare_scores(score, scores[best_id])
-                        comparison_ref = f"comparisons/{candidate_id}.json"
-                        _atomic_json(run_root / comparison_ref, comparison.to_dict())
+                        if (
+                            candidate_metrics is None
+                            or score is None
+                            or comparison is None
+                            or score_ref is None
+                            or comparison_ref is None
+                            or cosim_gate is None
+                        ):
+                            raise ValueError("completed exploration Candidate lacks gate evidence")
                         candidate["score_ref"] = score_ref
                         candidate["comparison_ref"] = comparison_ref
                         scores[candidate_id] = score
@@ -1688,7 +1966,7 @@ def run_v2(
                         round_record["score_ref"] = score_ref
                         round_record["comparison_ref"] = comparison_ref
                         round_record["comparison"] = comparison.to_dict()
-                        if comparison.strictly_better:
+                        if cosim_gate.eligible and comparison.strictly_better:
                             previous_best = best_id
                             candidate["status"] = "PROMOTED"
                             candidate["selection_status"] = "PROMOTED"
@@ -1701,7 +1979,11 @@ def run_v2(
                         else:
                             candidate["status"] = "REJECTED_NOT_BETTER"
                             candidate["selection_status"] = "REJECTED"
-                            candidate["rejection_reason"] = comparison.reason
+                            candidate["rejection_reason"] = (
+                                comparison.reason
+                                if cosim_gate.eligible
+                                else cosim_gate.reason
+                            )
                             registry["active_candidate_id"] = best_id
                             round_record["decision"] = "REJECTED_NOT_BETTER"
                             no_improvement += 1

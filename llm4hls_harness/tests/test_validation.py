@@ -7,7 +7,10 @@ from pathlib import Path
 from llm4hls_agent.budget import BudgetConfig
 from llm4hls_agent.task import load_public_task
 from llm4hls_agent.tools import BackendResult, ToolConfig
-from llm4hls_agent.validation import validate_candidate
+from llm4hls_agent.validation import (
+    complete_candidate_cosim,
+    validate_candidate,
+)
 from llm4hls_agent.workflow import RunConfig
 
 
@@ -126,6 +129,43 @@ class CandidateValidationTests(unittest.TestCase):
             ],
             ["final", "final", "final"],
         )
+
+    def test_exploration_can_stop_after_synth_then_complete_cosim(self) -> None:
+        run_root = self.root / "gated-run"
+
+        preliminary = validate_candidate(
+            self.task,
+            self.task.kernel_bytes,
+            "candidate_001",
+            run_root,
+            self.config,
+            backend=PassingBackend(),
+            validation_scope="exploration",
+            run_cosim=False,
+        )
+
+        self.assertEqual(preliminary.status, "DONE")
+        self.assertEqual(preliminary.stop_reason, "CANDIDATE_SYNTH_VERIFIED")
+        self.assertEqual(preliminary.validation["csim"]["status"], "PASS")
+        self.assertEqual(preliminary.validation["synth"]["status"], "PASS")
+        self.assertEqual(preliminary.validation["cosim"]["status"], "NOT_RUN")
+        self.assertEqual(preliminary.budget["tool_used"]["cosim"], 0)
+
+        completed = complete_candidate_cosim(
+            self.task,
+            self.task.kernel_bytes,
+            "candidate_001",
+            run_root,
+            self.config,
+            preliminary,
+            backend=PassingBackend(),
+            validation_scope="exploration",
+        )
+
+        self.assertEqual(completed.status, "DONE")
+        self.assertEqual(completed.stop_reason, "CANDIDATE_VERIFIED")
+        self.assertEqual(completed.validation["cosim"]["status"], "PASS")
+        self.assertEqual(completed.budget["tool_used"]["cosim"], 1)
 
     def test_unsupported_scope_is_rejected_before_charging(self) -> None:
         with self.assertRaisesRegex(ValueError, "scope"):

@@ -172,9 +172,9 @@ def build_parser() -> argparse.ArgumentParser:
     optimize.add_argument("--cost-synth", type=int, default=_env_int("LLM4HLS_COST_SYNTH", 4))
     optimize.add_argument("--cost-cosim", type=int, default=_env_int("LLM4HLS_COST_COSIM", 20))
     optimize.add_argument("--cost-llm", type=int, default=_env_int("LLM4HLS_COST_LLM", 0))
-    optimize.add_argument("--max-csim-calls", type=int, default=6)
-    optimize.add_argument("--max-synth-calls", type=int, default=6)
-    optimize.add_argument("--max-cosim-calls", type=int, default=6)
+    optimize.add_argument("--max-csim-calls", type=int, default=8)
+    optimize.add_argument("--max-synth-calls", type=int, default=8)
+    optimize.add_argument("--max-cosim-calls", type=int, default=8)
     optimize.add_argument("--max-llm-calls", type=int, default=6)
     optimize.add_argument("--csim-timeout", type=float, default=_env_float("LLM4HLS_CSIM_TIMEOUT_S", 180.0))
     optimize.add_argument("--synth-timeout", type=float, default=_env_float("LLM4HLS_SYNTH_TIMEOUT_S", 900.0))
@@ -187,7 +187,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path(__file__).resolve().parent / "config" / "v2_scoring.yaml",
     )
-    optimize.add_argument("--max-optimization-rounds", type=int, default=4)
+    optimize.add_argument("--max-optimization-rounds", type=int, default=6)
     optimize.add_argument("--max-no-improvement-rounds", type=int, default=2)
     optimize.add_argument("--max-final-attempts", type=int, default=2)
     optimize.add_argument("--final-reserve-credits", type=int, default=25)

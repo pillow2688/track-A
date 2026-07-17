@@ -147,21 +147,35 @@ and Manifest hashes. All raw evidence links are relative to `runs/`.
 
 V2 uses the self-contained 256-element U55C `vector_add` fixture. Its baseline
 is functionally correct and intentionally conservative (`PIPELINE II=16`). At
-most four primary rounds are attempted, each round permits one optimization
-class, and exploration stops after two consecutive no-improvement rounds. A
-Candidate can become best only after CSim, synthesis, CoSim, clock, and resource
-constraints pass. The comparator order is verification tier, hard constraints,
-PPA cost (latency/II first), then Token/Credit cost and stable ID.
+most six Candidate attempts are allowed, each round permits one optimization
+class, and exploration stops after two consecutive no-improvement rounds. Each
+Candidate runs CSim and synthesis first. Only a strict Synth-PPA improvement
+over the current best is allowed to spend exploration CoSim credits. A gated
+Candidate can become best only after CoSim, clock, and resource constraints
+also pass. The final best is independently validated with complete CSim,
+synthesis, and CoSim. The comparator order remains verification tier, hard
+constraints, PPA cost (latency/II first), then Token/Credit cost and stable ID.
+
+The accepted V2 evidence in `runs/v2-optimize-final` is frozen and must not be
+overwritten. Use a new run directory for this gated policy.
+
+The final V2 release record is
+[`releases/v2-ppa-gated-final.md`](releases/v2-ppa-gated-final.md), with machine-readable
+metadata in [`releases/v2-ppa-gated-final.json`](releases/v2-ppa-gated-final.json). The
+global champion is fixed as `v2-optimize-final/candidate_004`; later real gated-regression
+Candidates are cost-policy evidence and cannot replace it. Development proceeds to V3
+LangGraph orchestration after this release.
 
 With the API and Vitis environment configured above, run the real optimization:
 
 ```bash
 python3 -m llm4hls_agent optimize examples/u55c_v2_optimize_task \
-  --run-dir runs/v2-optimize-final \
+  --run-dir runs/next-ppa-gated \
   --vitis-root "$LLM4HLS_VITIS_HLS_ROOT" \
   --clock-ns 10 --minimum-frequency-mhz 100 \
-  --credit-limit 160 --max-optimization-rounds 4 \
+  --credit-limit 160 --max-optimization-rounds 6 \
   --max-no-improvement-rounds 2 --max-final-attempts 2 \
+  --max-csim-calls 8 --max-synth-calls 8 --max-cosim-calls 8 \
   --final-reserve-credits 25 \
   --csim-timeout 180 --synth-timeout 900 --cosim-timeout 900
 ```

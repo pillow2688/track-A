@@ -102,6 +102,24 @@ class OptimizationSelectorTests(unittest.TestCase):
 
         self.assertNotEqual(second.optimization_class, "LOOP_PIPELINE")
 
+    def test_improved_metrics_can_retry_an_optimization_class(self) -> None:
+        previous = self.metrics(interval=16, latency=4098)
+        first = select_optimization(
+            previous,
+            source="for (int i = 0; i < 256; ++i) {}",
+            attempted=(),
+            failures=(),
+        )
+
+        second = select_optimization(
+            self.metrics(interval=8, latency=2049),
+            source="for (int i = 0; i < 256; ++i) {}",
+            attempted=(("LOOP_PIPELINE", first.metrics_digest),),
+            failures=(),
+        )
+
+        self.assertEqual(second.optimization_class, "LOOP_PIPELINE")
+
     def test_exhausted_whitelist_stops_explicitly(self) -> None:
         decision = select_optimization(
             self.metrics(interval=1, latency=1),
@@ -473,6 +491,16 @@ class V2WorkflowTests(unittest.TestCase):
             "REJECTED_NOT_BETTER",
         )
         self.assertEqual(
+            registry["candidates"]["candidate_004"]["validation"]["cosim"]["status"],
+            "NOT_RUN",
+        )
+        self.assertNotIn(("cosim", 4), self.backend.calls)
+        self.assertEqual(
+            result["budget"]["tool_used"],
+            {"cosim": 4, "csim": 6, "llm": 4, "synth": 5},
+        )
+        self.assertEqual(result["budget"]["credits_used"], 106)
+        self.assertEqual(
             registry["candidates"]["candidate_003"]["parent_id"],
             "candidate_002",
         )
@@ -510,6 +538,10 @@ class V2WorkflowTests(unittest.TestCase):
             ref = result["final_validation"][stage]["result_ref"]
             action = json.loads((self.run_root / ref).read_text(encoding="utf-8"))
             self.assertEqual(action["validation_scope"], "final")
+
+    def test_default_candidate_and_no_improvement_limits_match_policy(self) -> None:
+        self.assertEqual(self.optimization_config.max_rounds, 6)
+        self.assertEqual(self.optimization_config.max_no_improvement_rounds, 2)
 
     def test_final_reserve_cannot_be_lower_than_configured_final_tool_cost(self) -> None:
         unsafe = replace(self.optimization_config, final_reserve_credits=24)
@@ -656,12 +688,12 @@ class V2WorkflowTests(unittest.TestCase):
         self.assertEqual(result["status"], "DONE")
         self.assertEqual(result["stop_reason"], "FALLBACK_VERIFIED")
         self.assertEqual(result["best_candidate_id"], "candidate_002")
-        self.assertEqual(result["final_candidate_id"], "candidate_004")
+        self.assertEqual(result["final_candidate_id"], "candidate_001")
         self.assertEqual(
             result["fallback"],
             {
                 "from": "candidate_002",
-                "to": "candidate_004",
+                "to": "candidate_001",
                 "reason": "COSIM_COSIM_FAIL",
             },
         )
@@ -739,7 +771,7 @@ class V2WorkflowTests(unittest.TestCase):
         self.assertEqual(result["status"], "DONE")
         self.assertEqual(result["rounds"][0]["candidate_id"], "candidate_001")
         self.assertEqual(result["budget"]["tool_used"]["llm"], 4)
-        self.assertEqual(result["budget"]["credits_used"], 126)
+        self.assertEqual(result["budget"]["credits_used"], 106)
 
     def test_recovery_rejects_tampered_durable_round_binding(self) -> None:
         from llm4hls_agent import optimization

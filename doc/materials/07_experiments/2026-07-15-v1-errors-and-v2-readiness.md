@@ -192,3 +192,60 @@ SHA-256 均为
 未改动机器权威证据。报告扫描未发现 `/home/`、`file://`、HTML 或外部 URL。独立审查
 修复后，全套 136 项单元测试、Python compileall、`git diff --check`、强化后的 `accept-v2`
 和 `review-v2` 均重新通过；真实 LLM/Vitis 原始运行无需重跑。
+
+## 10. 2026-07-17 V2 Candidate 冻结决定
+
+停止继续追求 V2 PPA，正式冻结 `candidate_004`。该 Candidate 在 Registry 中为 `FINAL`，
+同时是 best/final Candidate；源码 SHA-256 为
+`ee5a0fc7b61f578159487877bde799f14dc53a51ddd40d7013bc9a7988aec65e`，最终独立
+CSim/Synth/CoSim/Clock 均通过，机器验收为 `REAL/PASS`。
+
+冻结后不得在 V2 下继续创建优化 Candidate、请求新的 PPA 模型提案、为继续探索 PPA
+重跑 Vitis，或覆盖 `runs/v2-optimize-final`、`runs/v2-safety-rejection-final`、
+`runs/v2-acceptance`。未来若修改源码、约束或优化目标，必须进入新版本并使用新的运行目录，
+重新生成独立的 Vitis 与验收证据。平铺冻结记录为
+`runs/V2_CANDIDATE_004_FROZEN.md`；现有机器权威证据不作任何修改。
+
+## 11. 2026-07-17 后续 PPA 成本门控策略
+
+后续新运行采用 `CSim -> Synth -> PPA gate -> conditional CoSim`：Candidate 先完成 CSim、
+Synth、时钟和资源检查，只有 Synth PPA 严格优于当前 best 才执行探索 CoSim；不优于 best
+的 Candidate 明确记录 `CoSim=NOT_RUN` 并拒绝。通过门控的 Candidate 仍须 CoSim PASS
+才能提升，最终 best 仍独立完成 CSim/Synth/CoSim，不降低最终正确性要求。
+
+默认最多 6 次 Candidate 尝试，连续 2 次无提升即停止。同一优化类仅在 best 和 metrics
+digest 已变化时允许再次尝试。机器证据新增 pre-CoSim score 和 CoSim gate 决策，恢复与
+Acceptance Evaluator 都会重算并绑定该决策；篡改 gate 后即使重建 Manifest 也必须 FAIL。
+单元 fixture 中一个不优于 best 的 Candidate 因跳过一次 CoSim，运行 Credits 从 126
+降为 106。该数字仅证明确定性门控节省 20-credit 的一次测试调用，不是新的真实 Vitis
+实验结果。
+
+本策略只用于新的运行目录，不覆盖已冻结的 `candidate_004`、正式 V2 运行、Ledger、Trace、
+Manifest 或验收报告。本轮按冻结决定没有调用 DeepSeek，也没有重新运行 Vitis；未来进入
+新版本真实验收时必须重新生成独立的 Vitis 和机器验收证据。
+
+## 12. 2026-07-17 V2 门控回归与最终发布
+
+经用户明确批准，在独立目录 `runs/next-ppa-gated-real` 追加了一次真实 DeepSeek/Vitis
+门控回归；这次运行不修改第 9、10 节冻结的任何原始证据。回归共物化 5 个优化 Candidate，
+最终本地 best 为 `candidate_003`，CSim/Synth/CoSim/Clock 全部 PASS，Latency/II 为
+257/256，PPA cost 为 0.6005631669。它差于全局冠军 `v2-optimize-final/candidate_004` 的
+128/129 和 0.4006831529，因此发布状态为 `VALID_BUT_NOT_GLOBAL_BEST`，不得替换冠军。
+
+门控回归调用 CSim/Synth/CoSim 为 7/7/4，消耗 115 credits；此前正式运行调用为 6/6/6，
+消耗 150 credits。少运行 2 次 CoSim 毛节省 40 credits，多运行一组 CSim+Synth 增加
+5 credits，净节省 35 credits。5 次 DeepSeek 调用无 fallback，input/output/cached/total
+Token 为 9481/2436/2432/11917。独立机器验收目录
+`runs/v2-gated-regression-acceptance` 使用 Evaluator v2.1 重新计算，结果为 `REAL/PASS`，
+包括 `exploration_cosim_gated=true`，无 reason code。
+
+V2 最终发布 ID 为 `v2-ppa-gated-final`。全局冠军发布状态固定为
+`FROZEN_GLOBAL_CHAMPION`，源码 SHA-256 为
+`ee5a0fc7b61f578159487877bde799f14dc53a51ddd40d7013bc9a7988aec65e`。优化流程固定为
+`CSim -> Synth -> strict PPA gate -> conditional CoSim`，仅 CoSim、时钟和资源硬约束均
+PASS 的严格改善 Candidate 才能晋升；最多 6 个优化 Candidate，连续 2 次无提升停止，
+最终 best 必须独立完整复验。机器可读及中英文 release 记录位于
+`llm4hls_harness/releases/`。冻结冠军又由当前 Evaluator v2.1 离线重算并写入独立目录
+`runs/v2-release-acceptance`，结果为 `REAL/PASS`，原 `runs/v2-acceptance` 不作修改。
+发布前 140 项快速单元测试、Python compileall、release Hash 绑定检查和
+`git diff --check` 全部通过。V2 至此完成，下一阶段为 V3 LangGraph 编排。

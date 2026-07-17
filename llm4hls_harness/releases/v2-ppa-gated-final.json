@@ -1,0 +1,141 @@
+{
+  "schema_version": 1,
+  "release_id": "v2-ppa-gated-final",
+  "git_tag": "v2-ppa-gated-final",
+  "version": "V2",
+  "release_date": "2026-07-17",
+  "status": "FINAL",
+  "global_champion": {
+    "run_ref": "../runs/v2-optimize-final",
+    "candidate_id": "candidate_004",
+    "release_status": "FROZEN_GLOBAL_CHAMPION",
+    "code_hash": "ee5a0fc7b61f578159487877bde799f14dc53a51ddd40d7013bc9a7988aec65e",
+    "source_sha256": "ee5a0fc7b61f578159487877bde799f14dc53a51ddd40d7013bc9a7988aec65e",
+    "patch_sha256": "768fa8cc6f402a8a1666d7d2adb7d6602ef6048bcaab14d032a0c08f45e1e1e0",
+    "candidate_registry_sha256": "19ebad480ee43700f9b4aa8ebb4b0b7f83abaf0885d738ba214d94303c2783c2",
+    "v2_result_sha256": "7329336787f4ce99c300bc6feb52d1da1900b3e6df40fd6aee19ee58a3f1ee69",
+    "artifact_manifest_sha256": "aee4310f17753a359264153a6e1a77f4e8f5f007030abc7edbed5a5b12740419",
+    "metrics": {
+      "latency_worst": 128,
+      "ii_max": 129,
+      "estimated_clock_period_ns": 0.88,
+      "lut": 4829,
+      "ff": 129,
+      "dsp": 0,
+      "bram_18k": 0,
+      "ppa_cost": 0.4006831528927021
+    },
+    "final_validation": {
+      "csim": "PASS",
+      "synth": "PASS",
+      "cosim": "PASS",
+      "clock": "PASS"
+    }
+  },
+  "optimization_policy": {
+    "validation_order": [
+      "csim",
+      "synth",
+      "strict_ppa_gate",
+      "conditional_cosim"
+    ],
+    "promotion_requires": [
+      "strict_ppa_improvement_over_current_best",
+      "cosim_pass",
+      "clock_pass",
+      "resource_constraints_pass"
+    ],
+    "max_optimization_candidates": 6,
+    "max_consecutive_no_improvement": 2,
+    "final_best_requires_independent_full_validation": true
+  },
+  "gated_regression": {
+    "run_ref": "../runs/next-ppa-gated-real",
+    "candidate_id": "candidate_003",
+    "release_status": "VALID_BUT_NOT_GLOBAL_BEST",
+    "code_hash": "a978363d0c0a33ead185456ebada46f8c51bd2e489817ded6c30c0e07ac06670",
+    "source_sha256": "a978363d0c0a33ead185456ebada46f8c51bd2e489817ded6c30c0e07ac06670",
+    "patch_sha256": "0a64369bdc8a0b62858ee378d345157ea6843844ca6167b38509cc3c1185a9fa",
+    "candidate_registry_sha256": "526cfff81eaa9e0d78cf032ee90336fe3d965d9c65879fb7dff4582da60a7d60",
+    "v2_result_sha256": "e38804cdec681f4f68edf300d194758357cff2895976e2a24e49a08276d16793",
+    "artifact_manifest_sha256": "69e209597b17115b9aed8f2211b1e3bce02ba8bf40fdef032fdaf1887df690bd",
+    "metrics": {
+      "latency_worst": 257,
+      "ii_max": 256,
+      "estimated_clock_period_ns": 2.334,
+      "lut": 2820,
+      "ff": 10,
+      "dsp": 0,
+      "bram_18k": 0,
+      "ppa_cost": 0.6005631669379635
+    },
+    "final_validation": {
+      "csim": "PASS",
+      "synth": "PASS",
+      "cosim": "PASS",
+      "clock": "PASS"
+    },
+    "stop_reason": "NO_IMPROVEMENT_LIMIT",
+    "fallback_used": false,
+    "llm": {
+      "provider": "openai-compatible",
+      "model": "deepseek-v4-pro",
+      "calls": 5,
+      "input_tokens": 9481,
+      "output_tokens": 2436,
+      "cached_input_tokens": 2432,
+      "total_tokens": 11917
+    },
+    "tool_calls": {
+      "csim": 7,
+      "synth": 7,
+      "cosim": 4
+    },
+    "credits_used": 115,
+    "credits_remaining": 45,
+    "comparison_to_previous_run": {
+      "previous_credits_used": 150,
+      "previous_cosim_calls": 6,
+      "cosim_calls_reduced": 2,
+      "gross_cosim_credits_saved": 40,
+      "additional_csim_and_synth_credits": 5,
+      "net_credits_saved": 35
+    }
+  },
+  "acceptance": {
+    "global_champion": {
+      "result_ref": "../runs/v2-release-acceptance/acceptance_result.json",
+      "result_sha256": "ff585393de42eb2232eb08a14bc724c7e764c3fa23f99699ef1f3fcbdc9f2196",
+      "evaluator_version": "v2.1",
+      "evidence_tier": "REAL",
+      "overall_status": "PASS",
+      "reason_codes": [],
+      "exploration_cosim_gated": true
+    },
+    "gated_regression": {
+      "result_ref": "../runs/v2-gated-regression-acceptance/acceptance_result.json",
+      "result_sha256": "83c3dac575832e6f0fdcbdd2ac36751e58d7b67e4c234916cc3952fbe3b35302",
+      "evaluator_version": "v2.1",
+      "evidence_tier": "REAL",
+      "overall_status": "PASS",
+      "reason_codes": [],
+      "exploration_cosim_gated": true
+    },
+    "safety_rejection_manifest_sha256": "4000b1bda7763273d39f641c2ef3719c451ff77f5fc07cc0c5fb05e12ac2d815",
+    "release_status": "PASS"
+  },
+  "verification": {
+    "release_record_hash_bindings": "PASS",
+    "fast_unit_tests": {
+      "status": "PASS",
+      "count": 140
+    },
+    "python_compileall": "PASS",
+    "git_diff_check": "PASS"
+  },
+  "transition": {
+    "v2_closed": true,
+    "next_stage": "V3_LANGGRAPH_ORCHESTRATION",
+    "global_champion_replaced_by_regression": false
+  }
+}

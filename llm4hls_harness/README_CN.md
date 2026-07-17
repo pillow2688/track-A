@@ -108,20 +108,32 @@ Final gates、Candidate 提升/回滚、Tokens、工具调用、Credits、Ledger
 ## V2 Candidate 与 PPA 循环
 
 V2 使用自包含的 256 元素 U55C `vector_add` fixture。Baseline 功能正确，但故意使用
-保守的 `PIPELINE II=16`。最多执行四个主轮次，每轮只允许一种优化类；连续两轮无改进
-即停止探索。Candidate 只有在 CSim、综合、CoSim、时钟和资源硬约束全部通过后才有资格
-成为 best。比较顺序固定为验证等级、硬约束、以 latency/II 为主的 PPA、Token/Credit
-成本和稳定 Candidate ID。
+保守的 `PIPELINE II=16`。最多允许六次 Candidate 尝试，每轮只允许一种优化类；连续两轮
+无改进即停止探索。每个 Candidate 先运行 CSim 和 Synth，只有 Synth PPA 严格优于当前
+best 才允许消耗探索 CoSim Credits；通过门控的 Candidate 还必须通过 CoSim、时钟和资源
+硬约束后才能成为 best。最终 best 必须再独立完整运行 CSim、Synth 和 CoSim。比较顺序
+仍固定为验证等级、硬约束、以 latency/II 为主的 PPA、Token/Credit 成本和稳定 Candidate
+ID。
+
+`runs/v2-optimize-final` 中已验收的 V2 证据已经冻结，禁止覆盖。使用该门控策略时必须选择
+新的运行目录。
+
+V2 的最终发布记录为
+[`releases/v2-ppa-gated-final_CN.md`](releases/v2-ppa-gated-final_CN.md)，机器可读元数据为
+[`releases/v2-ppa-gated-final.json`](releases/v2-ppa-gated-final.json)。全局冠军固定为
+`v2-optimize-final/candidate_004`；后续真实门控回归 Candidate 仅作为成本策略证据，不能
+替换该冠军。V2 发布完成后进入 V3 LangGraph 编排阶段。
 
 配置好前述 API 与 Vitis 环境后运行真实优化：
 
 ```bash
 python3 -m llm4hls_agent optimize examples/u55c_v2_optimize_task \
-  --run-dir runs/v2-optimize-final \
+  --run-dir runs/next-ppa-gated \
   --vitis-root "$LLM4HLS_VITIS_HLS_ROOT" \
   --clock-ns 10 --minimum-frequency-mhz 100 \
-  --credit-limit 160 --max-optimization-rounds 4 \
+  --credit-limit 160 --max-optimization-rounds 6 \
   --max-no-improvement-rounds 2 --max-final-attempts 2 \
+  --max-csim-calls 8 --max-synth-calls 8 --max-cosim-calls 8 \
   --final-reserve-credits 25 \
   --csim-timeout 180 --synth-timeout 900 --cosim-timeout 900
 ```

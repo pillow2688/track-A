@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 from collections import defaultdict
+from dataclasses import replace
 from pathlib import Path
 from typing import Mapping
 
@@ -20,9 +21,10 @@ from .repair import (
     unified_diff_targets_kernel,
 )
 from .scoring import CandidateScore, ScoringConfig, compare_scores, score_candidate
+from .optimization import evaluate_exploration_cosim_gate
 
 
-EVALUATOR_VERSION = "v2.0"
+EVALUATOR_VERSION = "v2.1"
 
 
 class V2AcceptanceError(RuntimeError):
@@ -260,7 +262,9 @@ def _score_evidence(
     registry: Mapping[str, object],
     candidates: Mapping[str, Mapping[str, object]],
     scoring: ScoringConfig,
-) -> tuple[bool, bool]:
+    *,
+    cosim_policy: str | None,
+) -> tuple[bool, bool, bool]:
     workflow = _covered_json(root, paths, "workflow_result.json")
     baseline = candidates["candidate_000"]
     baseline_metrics = _report_from_action(root, paths, baseline.get("metrics_ref"))
@@ -283,7 +287,7 @@ def _score_evidence(
             cached_tokens = int(candidate.get("cached_input_tokens", 0))
             credits = int(candidate.get("credits_used", 0))
         if not isinstance(validation, Mapping) or not isinstance(clock, Mapping):
-            return False, False
+            return False, False, False
         if not _validation_actions_bound(
             root,
             paths,
@@ -293,7 +297,7 @@ def _score_evidence(
             expected_scope="exploration",
             stages=("csim", "synth", "cosim"),
         ):
-            return False, False
+            return False, False, False
         metrics = _report_from_action(root, paths, candidate.get("metrics_ref"))
         recomputed = score_candidate(
             candidate_id=candidate_id,
@@ -308,47 +312,127 @@ def _score_evidence(
             credits_used=credits,
         )
         if recomputed.to_dict() != stored:
-            return False, False
+            return False, False, False
         scores[candidate_id] = recomputed
 
     if "candidate_000" not in scores:
-        return False, False
+        return False, False, False
     current_best = "candidate_000"
     rounds = result.get("rounds")
     if not isinstance(rounds, list):
-        return False, False
+        return False, False, False
+    gate_evidence_valid = True
     for expected_index, raw_round in enumerate(rounds, start=1):
         if not isinstance(raw_round, Mapping):
-            return False, False
+            return False, False, False
         round_record = _covered_json(root, paths, raw_round.get("result_ref"))
         if round_record.get("round_index") != expected_index:
-            return False, False
+            return False, False, False
         if round_record.get("parent_candidate_id") != current_best:
-            return False, False
+            return False, False, False
         candidate_id = round_record.get("candidate_id")
         decision = round_record.get("decision")
+        candidate = candidates.get(candidate_id) if isinstance(candidate_id, str) else None
+        if cosim_policy == "ppa_gate" and isinstance(candidate, Mapping):
+            validation = candidate.get("validation")
+            clock = candidate.get("clock_constraint")
+            if not isinstance(validation, Mapping) or not isinstance(clock, Mapping):
+                return False, False, False
+            csim = validation.get("csim")
+            synth = validation.get("synth")
+            cosim = validation.get("cosim")
+            reached_gate = (
+                isinstance(csim, Mapping)
+                and csim.get("status") == "PASS"
+                and isinstance(synth, Mapping)
+                and synth.get("status") == "PASS"
+                and clock.get("passed") is True
+            )
+            pre_score_ref = candidate.get("pre_cosim_score_ref")
+            gate_ref = candidate.get("cosim_gate_ref")
+            if reached_gate:
+                if (
+                    not isinstance(pre_score_ref, str)
+                    or not isinstance(gate_ref, str)
+                    or round_record.get("pre_cosim_score_ref") != pre_score_ref
+                    or round_record.get("cosim_gate_ref") != gate_ref
+                ):
+                    return False, False, False
+                gate_validation = {
+                    str(stage): dict(record)
+                    for stage, record in validation.items()
+                    if isinstance(record, Mapping)
+                }
+                gate_validation["cosim"] = {"status": "NOT_RUN"}
+                metrics = _report_from_action(
+                    root, paths, candidate.get("metrics_ref")
+                )
+                recomputed_pre = score_candidate(
+                    candidate_id=str(candidate_id),
+                    baseline=baseline_metrics,
+                    candidate=metrics,
+                    validation=gate_validation,
+                    clock=clock,
+                    config=replace(scoring, required_verification_tier=3),
+                    input_tokens=int(candidate.get("input_tokens", 0)),
+                    output_tokens=int(candidate.get("output_tokens", 0)),
+                    cached_input_tokens=int(candidate.get("cached_input_tokens", 0)),
+                    credits_used=int(candidate.get("pre_cosim_credits_used", -1)),
+                )
+                expected_gate = evaluate_exploration_cosim_gate(
+                    recomputed_pre, scores[current_best]
+                ).to_dict()
+                if (
+                    recomputed_pre.to_dict()
+                    != _covered_json(root, paths, pre_score_ref)
+                    or expected_gate != _covered_json(root, paths, gate_ref)
+                    or expected_gate != round_record.get("cosim_gate")
+                ):
+                    return False, False, False
+                eligible = expected_gate.get("eligible") is True
+                cosim_status = (
+                    cosim.get("status") if isinstance(cosim, Mapping) else None
+                )
+                if (
+                    eligible and cosim_status == "NOT_RUN"
+                ) or (
+                    not eligible and cosim_status != "NOT_RUN"
+                ):
+                    gate_evidence_valid = False
+                if not eligible and decision != "REJECTED_NOT_BETTER":
+                    gate_evidence_valid = False
+            elif any(
+                value is not None
+                for value in (
+                    pre_score_ref,
+                    gate_ref,
+                    round_record.get("pre_cosim_score_ref"),
+                    round_record.get("cosim_gate_ref"),
+                )
+            ):
+                gate_evidence_valid = False
         if not isinstance(candidate_id, str) or candidate_id not in scores:
             if decision == "PROMOTED":
-                return False, False
+                return False, False, False
             continue
         comparison = compare_scores(scores[candidate_id], scores[current_best])
         comparison_ref = round_record.get("comparison_ref")
         if not isinstance(comparison_ref, str):
-            return False, False
+            return False, False, False
         normalized_comparison = json.loads(json.dumps(comparison.to_dict()))
         if normalized_comparison != _covered_json(root, paths, comparison_ref):
-            return False, False
+            return False, False, False
         if comparison.strictly_better:
             if decision != "PROMOTED":
-                return False, False
+                return False, False, False
             current_best = candidate_id
         elif decision != "REJECTED_NOT_BETTER":
-            return False, False
+            return False, False, False
     recorded_best = result.get("best_candidate_id")
     best_valid = (
         current_best == recorded_best == registry.get("best_candidate_id")
     )
-    return True, best_valid
+    return True, best_valid, gate_evidence_valid
 
 
 def _ledger_accounting(
@@ -601,6 +685,8 @@ def _validation_actions_bound(
         record = values.get(stage)
         if not isinstance(record, Mapping):
             return False
+        if record.get("status") == "NOT_RUN":
+            continue
         try:
             action = _covered_json(root, paths, record.get("result_ref"))
         except V2AcceptanceError:
@@ -783,14 +869,19 @@ def compute_v2_acceptance(
         ) and _public_inputs_bound(
             reject_root, reject_paths, rejection_candidates
         )
-        scores_ok, best_ok = _score_evidence(
+        scores_ok, best_ok, cosim_gate_ok = _score_evidence(
             opt_root,
             opt_paths,
             opt_result,
             opt_registry,
             candidates,
             scoring,
-        ) if tree_ok else (False, False)
+            cosim_policy=(
+                str(optimization_snapshot.get("exploration_cosim_policy"))
+                if optimization_snapshot.get("exploration_cosim_policy") is not None
+                else None
+            ),
+        ) if tree_ok else (False, False, False)
         opt_accounting, opt_summary = _ledger_accounting(
             opt_root, opt_paths, opt_result
         )
@@ -838,6 +929,7 @@ def compute_v2_acceptance(
         "candidate_tree_valid": tree_ok and rejection_tree_ok,
         "public_inputs_and_kernel_only_patches_bound": public_inputs_ok,
         "scores_recomputed": scores_ok,
+        "exploration_cosim_gated": cosim_gate_ok,
         "two_real_llm_candidates": llm_count >= minimum_candidates,
         "best_matches_recomputed_comparator": best_ok,
         "final_candidate_verified": _final_validation(
@@ -861,6 +953,7 @@ def compute_v2_acceptance(
         "candidate_tree_valid": "CANDIDATE_TREE_INVALID",
         "public_inputs_and_kernel_only_patches_bound": "PUBLIC_INPUT_BINDING_INVALID",
         "scores_recomputed": "SCORE_RECOMPUTE_MISMATCH",
+        "exploration_cosim_gated": "EXPLORATION_COSIM_GATE_INVALID",
         "two_real_llm_candidates": "INSUFFICIENT_REAL_LLM_CANDIDATES",
         "best_matches_recomputed_comparator": "BEST_CANDIDATE_MISMATCH",
         "final_candidate_verified": "FINAL_VALIDATION_INVALID",

@@ -693,6 +693,13 @@ static -> csim -> synth -> optional cosim
 3. 候选即将成为重要 checkpoint，且预算允许；
 4. 任务本身标记 `requires_cosim=true`。
 
+PPA Candidate 采用确定性的两段式探索门控：先运行 `csim -> synth` 并检查时钟、资源和
+结构化 PPA；只有其 Synth PPA 严格优于当前 best，才运行探索期 cosim。未严格改善的
+Candidate 直接记录 `cosim=NOT_RUN` 和拒绝原因，不得成为 best；有改善资格的 Candidate
+只有在 cosim PASS 后才允许进入正式字典序比较和提升。无论探索期是否运行过 cosim，
+最终 best 仍必须独立执行完整 `final csim -> final synth -> final cosim`。这一门控只减少
+不可能提升的候选验证成本，不降低最终正确性等级。
+
 最终阶段必须执行：
 
 ```text
@@ -1130,6 +1137,18 @@ efficiency = ppa_improvement / (tokens + alpha * tool_credits)
 - 报告中的主要瓶颈未变化；
 - 预计收益很小但 hidden correctness、资源或 timing 风险上升；
 - 剩余预算更适合一次高价值验证。
+
+默认 PPA 策略最多物化 6 个优化 Candidate，并在连续 2 个不同尝试没有提升时停止。
+同一优化类只有在 best 已变化、结构化 metrics digest 也随之变化后才允许再次尝试；同一
+metrics 上的重复类、重复 Patch 或重复失败不得消耗新的探索轮次。候选上限、连续无改善
+上限和各工具调用上限都必须保持可配置。
+
+版本发布时必须把“单次运行 best”和“跨运行全局冠军”分开。新运行只能在自身 Candidate
+tree 内提升 local best；若其最终 PPA 未严格优于已冻结全局冠军，即使完整验证通过，也只能
+标记为 `VALID_BUT_NOT_GLOBAL_BEST`。全局冠军只通过独立 release 记录冻结，记录 Candidate、
+源码/Patch/Manifest SHA-256、最终验证、PPA、策略和机器验收结果；不得回写或伪造原始
+Candidate Registry 状态。后续编排版本若要替换冠军，必须显式加载冠军证据并使用同一
+确定性比较器进行跨运行比较。
 
 若尚无有效候选，停止结果是 `FAILED(NO_VALID_CANDIDATE)`；若已有有效候选，则进入 `FINALIZE`。
 
