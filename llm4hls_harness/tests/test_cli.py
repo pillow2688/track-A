@@ -11,12 +11,16 @@ from unittest.mock import patch
 try:
     from llm4hls_agent.cli import main
     from llm4hls_agent.tools import BackendResult
+    from llm4hls_agent.v2_team_report import V2TeamReportError
 except ModuleNotFoundError:
     def main(*_args: object, **_kwargs: object) -> int:
         raise AssertionError("V0 CLI is not implemented")
 
     def BackendResult(*_args: object, **_kwargs: object):  # type: ignore[misc]
         raise AssertionError("V0 CLI is not implemented")
+
+    class V2TeamReportError(RuntimeError):
+        pass
 
 
 def make_task(root: Path) -> None:
@@ -78,6 +82,63 @@ class RepairingBackend(PassingBackend):
 
 
 class CliTests(unittest.TestCase):
+    def test_report_v2_run_prints_external_offline_report_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            run_dir = root / "run"
+            run_dir.mkdir()
+            output = root / "review.md"
+            stdout = io.StringIO()
+            with patch(
+                "llm4hls_agent.cli.write_v2_team_report",
+                return_value=output.resolve(),
+            ) as write, patch(
+                "llm4hls_agent.cli.manifest_digest", return_value="abc123"
+            ), redirect_stdout(stdout):
+                return_code = main(
+                    [
+                        "report-v2-run",
+                        "--run-dir",
+                        str(run_dir),
+                        "--output",
+                        str(output),
+                    ]
+                )
+
+        summary = json.loads(stdout.getvalue())
+        self.assertEqual(return_code, 0)
+        self.assertEqual(summary["status"], "DONE")
+        self.assertEqual(summary["report"], str(output.resolve()))
+        self.assertEqual(summary["manifest_sha256"], "abc123")
+        self.assertEqual(write.call_args.kwargs["mode"], "offline")
+
+    def test_report_v2_run_error_does_not_replace_existing_output(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            run_dir = root / "run"
+            run_dir.mkdir()
+            output = root / "review.md"
+            output.write_text("keep-me", encoding="utf-8")
+            stderr = io.StringIO()
+            with patch(
+                "llm4hls_agent.cli.write_v2_team_report",
+                side_effect=V2TeamReportError("MANIFEST_VERIFICATION_FAILED"),
+            ), redirect_stderr(stderr):
+                return_code = main(
+                    [
+                        "report-v2-run",
+                        "--run-dir",
+                        str(run_dir),
+                        "--output",
+                        str(output),
+                    ]
+                )
+
+            self.assertEqual(output.read_text(encoding="utf-8"), "keep-me")
+        error = json.loads(stderr.getvalue())
+        self.assertEqual(return_code, 3)
+        self.assertEqual(error["error_type"], "V2TeamReportError")
+
     def test_review_v2_prints_flat_markdown_report_references(self) -> None:
         expected = {
             "status": "PASS",
@@ -226,9 +287,15 @@ class CliTests(unittest.TestCase):
             provider = run.call_args.args[4]
             self.assertEqual(run_config.budget.credit_limit, 160)
             self.assertEqual(run_config.budget.tool_limits["llm"], 6)
+            self.assertEqual(run_config.minimum_frequency_mhz, 200.0)
             self.assertEqual(optimization_config.max_rounds, 4)
             self.assertEqual(optimization_config.max_no_improvement_rounds, 2)
             self.assertEqual(optimization_config.max_final_attempts, 2)
+            self.assertTrue(optimization_config.scoring.official_score_enabled)
+            self.assertEqual(
+                optimization_config.exploration_cosim_policy,
+                "official_score_gate",
+            )
             self.assertEqual(provider.config.model, "deepseek-v4-pro")
 
     def test_review_v1_prints_flat_offline_report_references(self) -> None:

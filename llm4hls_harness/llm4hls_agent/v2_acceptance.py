@@ -20,11 +20,20 @@ from .repair import (
     relocate_unified_diff_hunks,
     unified_diff_targets_kernel,
 )
-from .scoring import CandidateScore, ScoringConfig, compare_scores, score_candidate
+from .scoring import (
+    OFFICIAL_ACCELERATION_CAP,
+    OFFICIAL_SCORE_VERSION,
+    OFFICIAL_SCORE_SOURCE,
+    CandidateScore,
+    ScoringConfig,
+    compare_scores,
+    estimate_official_score_proxy,
+    score_candidate,
+)
 from .optimization import evaluate_exploration_cosim_gate
 
 
-EVALUATOR_VERSION = "v2.1"
+EVALUATOR_VERSION = "v2.3"
 
 
 class V2AcceptanceError(RuntimeError):
@@ -95,11 +104,78 @@ def _scoring_config(snapshot: Mapping[str, object]) -> ScoringConfig:
         raise V2AcceptanceError("scoring configuration is invalid")
     if not isinstance(official, Mapping):
         raise V2AcceptanceError("official score configuration is invalid")
+    enabled = official.get("enabled")
+    legacy_fields = {"enabled"}
+    versioned_fields = {"enabled", "version", "acceleration_cap"}
+    official_fields = frozenset(official)
+    if not isinstance(enabled, bool) or official_fields not in {
+        frozenset(legacy_fields),
+        frozenset(versioned_fields),
+    }:
+        raise V2AcceptanceError("official score configuration is invalid")
+    if enabled and official_fields != frozenset(versioned_fields):
+        raise V2AcceptanceError(
+            "enabled official score evidence must freeze its formula version"
+        )
+    version = official.get("version", OFFICIAL_SCORE_VERSION)
+    cap = official.get("acceleration_cap", OFFICIAL_ACCELERATION_CAP)
     return ScoringConfig(
         weights={str(key): float(value) for key, value in weights.items()},
         max_resource_percent={str(key): float(value) for key, value in caps.items()},
         required_verification_tier=int(snapshot["required_verification_tier"]),
-        official_score_enabled=official.get("enabled") is True,
+        official_score_enabled=enabled,
+        official_score_version=str(version),
+        official_acceleration_cap=float(cap),
+    )
+
+
+def _trusted_official_metadata(
+    spec: Mapping[str, object],
+) -> tuple[int | None, bool | None]:
+    difficulty = spec.get("required_task_difficulty")
+    requires_cosim = spec.get("required_task_requires_cosim")
+    if (
+        isinstance(difficulty, bool)
+        or not isinstance(difficulty, int)
+        or difficulty <= 0
+        or not isinstance(requires_cosim, bool)
+    ):
+        return None, None
+    return difficulty, requires_cosim
+
+
+def _official_score_metadata_bound(
+    root: Path,
+    paths: set[str],
+    spec: Mapping[str, object],
+) -> bool:
+    difficulty, requires_cosim = _trusted_official_metadata(spec)
+    if difficulty is None or requires_cosim is None:
+        return False
+    task_spec = _covered_json(root, paths, "task_spec.json")
+    return (
+        task_spec.get("task_id") == spec.get("task_id")
+        and task_spec.get("difficulty") == difficulty
+        and task_spec.get("requires_cosim") is requires_cosim
+    )
+
+
+def _official_scoring_policy_bound(
+    scoring: ScoringConfig,
+    optimization_snapshot: Mapping[str, object],
+    spec: Mapping[str, object],
+) -> bool:
+    required_cap = spec.get("required_official_acceleration_cap")
+    return (
+        spec.get("required_official_score_enabled") is True
+        and scoring.official_score_enabled
+        and scoring.official_score_version
+        == spec.get("required_official_score_version")
+        and not isinstance(required_cap, bool)
+        and isinstance(required_cap, (int, float))
+        and scoring.official_acceleration_cap == float(required_cap)
+        and optimization_snapshot.get("exploration_cosim_policy")
+        == spec.get("required_exploration_cosim_policy")
     )
 
 
@@ -264,8 +340,14 @@ def _score_evidence(
     scoring: ScoringConfig,
     *,
     cosim_policy: str | None,
+    official_difficulty: int | None,
+    official_requires_cosim: bool | None,
 ) -> tuple[bool, bool, bool]:
     workflow = _covered_json(root, paths, "workflow_result.json")
+    if scoring.official_score_enabled and (
+        official_difficulty is None or official_requires_cosim is None
+    ):
+        return False, False, False
     baseline = candidates["candidate_000"]
     baseline_metrics = _report_from_action(root, paths, baseline.get("metrics_ref"))
     scores: dict[str, CandidateScore] = {}
@@ -299,6 +381,17 @@ def _score_evidence(
         ):
             return False, False, False
         metrics = _report_from_action(root, paths, candidate.get("metrics_ref"))
+        official_score = (
+            estimate_official_score_proxy(
+                difficulty=int(official_difficulty),
+                baseline=baseline_metrics,
+                candidate=metrics,
+                validation=validation,
+                requires_cosim=bool(official_requires_cosim),
+            )
+            if scoring.official_score_enabled
+            else None
+        )
         recomputed = score_candidate(
             candidate_id=candidate_id,
             baseline=baseline_metrics,
@@ -310,6 +403,10 @@ def _score_evidence(
             output_tokens=output_tokens,
             cached_input_tokens=cached_tokens,
             credits_used=credits,
+            official_score=official_score,
+            official_score_source=(
+                OFFICIAL_SCORE_SOURCE if official_score is not None else None
+            ),
         )
         if recomputed.to_dict() != stored:
             return False, False, False
@@ -321,7 +418,8 @@ def _score_evidence(
     rounds = result.get("rounds")
     if not isinstance(rounds, list):
         return False, False, False
-    gate_evidence_valid = True
+    gate_policies = {"ppa_gate", "official_score_gate"}
+    gate_evidence_valid = cosim_policy in gate_policies
     for expected_index, raw_round in enumerate(rounds, start=1):
         if not isinstance(raw_round, Mapping):
             return False, False, False
@@ -333,7 +431,7 @@ def _score_evidence(
         candidate_id = round_record.get("candidate_id")
         decision = round_record.get("decision")
         candidate = candidates.get(candidate_id) if isinstance(candidate_id, str) else None
-        if cosim_policy == "ppa_gate" and isinstance(candidate, Mapping):
+        if cosim_policy in gate_policies and isinstance(candidate, Mapping):
             validation = candidate.get("validation")
             clock = candidate.get("clock_constraint")
             if not isinstance(validation, Mapping) or not isinstance(clock, Mapping):
@@ -367,6 +465,18 @@ def _score_evidence(
                 metrics = _report_from_action(
                     root, paths, candidate.get("metrics_ref")
                 )
+                official_score = (
+                    estimate_official_score_proxy(
+                        difficulty=int(official_difficulty),
+                        baseline=baseline_metrics,
+                        candidate=metrics,
+                        validation=gate_validation,
+                        requires_cosim=bool(official_requires_cosim),
+                        provisional_cosim=True,
+                    )
+                    if scoring.official_score_enabled
+                    else None
+                )
                 recomputed_pre = score_candidate(
                     candidate_id=str(candidate_id),
                     baseline=baseline_metrics,
@@ -378,9 +488,15 @@ def _score_evidence(
                     output_tokens=int(candidate.get("output_tokens", 0)),
                     cached_input_tokens=int(candidate.get("cached_input_tokens", 0)),
                     credits_used=int(candidate.get("pre_cosim_credits_used", -1)),
+                    official_score=official_score,
+                    official_score_source=(
+                        OFFICIAL_SCORE_SOURCE if official_score is not None else None
+                    ),
                 )
                 expected_gate = evaluate_exploration_cosim_gate(
-                    recomputed_pre, scores[current_best]
+                    recomputed_pre,
+                    scores[current_best],
+                    policy=str(cosim_policy),
                 ).to_dict()
                 if (
                     recomputed_pre.to_dict()
@@ -803,6 +919,19 @@ def compute_v2_acceptance(
     spec = _read_json(Path(spec_path).resolve())
     if spec.get("schema_version") != 1 or spec.get("evidence_tier") not in {"REAL", "TEST"}:
         raise V2AcceptanceError("invalid V2 acceptance specification")
+    required_cap = spec.get("required_official_acceleration_cap")
+    if (
+        spec.get("required_official_score_enabled") is not True
+        or spec.get("required_official_score_version") != OFFICIAL_SCORE_VERSION
+        or isinstance(required_cap, bool)
+        or not isinstance(required_cap, (int, float))
+        or float(required_cap) != OFFICIAL_ACCELERATION_CAP
+        or spec.get("required_exploration_cosim_policy")
+        != "official_score_gate"
+    ):
+        raise V2AcceptanceError(
+            "V2 acceptance specification must require the frozen official proxy"
+        )
     opt_root = Path(optimization_run).resolve()
     reject_root = Path(rejection_run).resolve()
     reasons: list[str] = []
@@ -839,6 +968,21 @@ def compute_v2_acceptance(
         if not isinstance(scoring_snapshot, Mapping):
             raise V2AcceptanceError("V2 scoring snapshot is missing")
         scoring = _scoring_config(scoring_snapshot)
+        official_policy_ok = _official_scoring_policy_bound(
+            scoring, optimization_snapshot, spec
+        )
+        official_difficulty, official_requires_cosim = _trusted_official_metadata(
+            spec
+        )
+        official_metadata_ok = (
+            scoring.official_score_enabled
+            and (
+                _official_score_metadata_bound(opt_root, opt_paths, spec)
+                and _official_score_metadata_bound(
+                    reject_root, reject_paths, spec
+                )
+            )
+        )
         patch_limits_snapshot = optimization_snapshot.get("patch_limits")
         if not isinstance(patch_limits_snapshot, Mapping):
             raise V2AcceptanceError("V2 Patch limits snapshot is missing")
@@ -881,6 +1025,8 @@ def compute_v2_acceptance(
                 if optimization_snapshot.get("exploration_cosim_policy") is not None
                 else None
             ),
+            official_difficulty=official_difficulty,
+            official_requires_cosim=official_requires_cosim,
         ) if tree_ok else (False, False, False)
         opt_accounting, opt_summary = _ledger_accounting(
             opt_root, opt_paths, opt_result
@@ -928,6 +1074,8 @@ def compute_v2_acceptance(
         "backend_valid": opt_backend and reject_backend,
         "candidate_tree_valid": tree_ok and rejection_tree_ok,
         "public_inputs_and_kernel_only_patches_bound": public_inputs_ok,
+        "official_scoring_policy_bound": official_policy_ok,
+        "official_score_metadata_bound": official_metadata_ok,
         "scores_recomputed": scores_ok,
         "exploration_cosim_gated": cosim_gate_ok,
         "two_real_llm_candidates": llm_count >= minimum_candidates,
@@ -952,6 +1100,8 @@ def compute_v2_acceptance(
         "backend_valid": "BACKEND_NOT_ALLOWED",
         "candidate_tree_valid": "CANDIDATE_TREE_INVALID",
         "public_inputs_and_kernel_only_patches_bound": "PUBLIC_INPUT_BINDING_INVALID",
+        "official_scoring_policy_bound": "OFFICIAL_SCORING_POLICY_INVALID",
+        "official_score_metadata_bound": "OFFICIAL_SCORE_METADATA_INVALID",
         "scores_recomputed": "SCORE_RECOMPUTE_MISMATCH",
         "exploration_cosim_gated": "EXPLORATION_COSIM_GATE_INVALID",
         "two_real_llm_candidates": "INSUFFICIENT_REAL_LLM_CANDIDATES",

@@ -106,6 +106,32 @@ def build_repair_prompt(context: RepairContext) -> str:
 
 
 def build_optimization_prompt(context: OptimizationContext) -> str:
+    score_policy = (
+        {
+            "kind": "PUBLIC_OFFICIAL_SCORE_PROXY",
+            "difficulty": context.difficulty,
+            "primary_metric": "synthesis latency.worst",
+            "acceleration": "baseline_latency / candidate_latency",
+            "acceleration_cap": context.official_acceleration_cap,
+            "formula": (
+                "if functional == 0: 0; else: difficulty * (0.5 + "
+                "0.2*synthesizable + 0.3*min(acceleration, acceleration_cap)"
+                "/acceleration_cap)"
+            ),
+            "current_proxy_score": context.current_official_score,
+            "note": (
+                "The local value is a public-validation proxy; hidden correctness "
+                "is unknown. Reduce worst-case synthesis latency without breaking "
+                "CSim, Synth, CoSim, clock, or resource constraints. II and resources "
+                "do not directly increase the official score."
+            ),
+        }
+        if context.official_score_enabled
+        else {
+            "kind": "INTERNAL_PPA",
+            "note": "Minimize the configured internal latency, II, and resource cost.",
+        }
+    )
     objective = {
         "task_id": context.task_id,
         "parent_candidate_id": context.parent_candidate_id,
@@ -119,6 +145,7 @@ def build_optimization_prompt(context: OptimizationContext) -> str:
         "current_clock_constraint": dict(context.current_clock_constraint),
         "failed_actions": [dict(item) for item in context.failed_actions],
         "hls_rules": list(context.hls_rules),
+        "score_policy": score_policy,
     }
     constraints = {
         "top": context.top,
@@ -137,10 +164,22 @@ def build_optimization_prompt(context: OptimizationContext) -> str:
         "remaining_credits": context.remaining_credits,
         "final_reserve_credits": context.final_reserve_credits,
     }
+    role = (
+        "You are a Vitis HLS official-score optimization agent."
+        if context.official_score_enabled
+        else "You are a Vitis HLS internal-PPA optimization agent."
+    )
+    objective_text = (
+        "Improve the official public proxy score with one minimal Patch while "
+        "preserving correctness and the interface."
+        if context.official_score_enabled
+        else "Improve the internal PPA score with one minimal Patch while preserving "
+        "correctness and the interface."
+    )
     return "\n".join(
         [
-            "ROLE\nYou are a Vitis HLS PPA optimization agent.",
-            "OBJECTIVE\nImprove the stated bottleneck with one minimal Patch while preserving correctness and the interface.",
+            "ROLE\n" + role,
+            "OBJECTIVE\n" + objective_text,
             "OPTIMIZATION\n" + json.dumps(objective, sort_keys=True),
             "RELEVANT SOURCE\n" + context.source_excerpt,
             "CONSTRAINTS\n" + json.dumps(constraints, sort_keys=True),
@@ -430,7 +469,7 @@ class OpenAICompatibleOptimizationProvider:
     def fingerprint(self) -> str:
         return ":".join(
             [
-                "openai-compatible-optimization-v1",
+                "openai-compatible-optimization-v2-official-score",
                 self.config.base_url,
                 self.config.model,
                 str(self.config.max_output_tokens),

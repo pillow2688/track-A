@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "selection_policy": "official_public_first",
+  "distribution": "source_checkout_only; intentionally excluded from Python package data pending license review",
+  "collections": [
+    {
+      "id": "fpt26_official_public_poc",
+      "priority": 0,
+      "path": "official/fpt26-harness-public",
+      "source": "https://anonymous.4open.science/r/fpt26-harness",
+      "retrieved_on": "2026-07-18",
+      "scope": "official public PoC examples; not the hidden competition task set",
+      "license_status": "not declared in the public snapshot; verify before redistribution",
+      "contains_hidden_or_reference_files": false,
+      "harness_compatibility": {
+        "status": "all task packages load; metered execution budgets are not yet official-compatible",
+        "reason": "this harness charges baseline/final verification while the official grader runs outside the agent budget",
+        "required_explicit_overrides": {
+          "dotProduct_optimize": "at least 50 credits for baseline+final, or 75 for one fully validated exploration Candidate",
+          "projection_bugfix": "at least 26 credits for one repair closure",
+          "residual_stream_deadlock": "the published 80-credit budget can cover the basic strict-validation path"
+        }
+      },
+      "tasks": [
+        "dotProduct_optimize",
+        "projection_bugfix",
+        "residual_stream_deadlock"
+      ]
+    },
+    {
+      "id": "project_examples",
+      "priority": 1,
+      "path": "../examples",
+      "scope": "locally maintained harness fixtures",
+      "contains_hidden_or_reference_files": false
+    }
+  ]
+}

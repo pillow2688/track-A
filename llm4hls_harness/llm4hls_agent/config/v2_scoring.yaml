@@ -18,6 +18,8 @@
   },
   "required_verification_tier": 4,
   "official_score": {
-    "enabled": false
+    "enabled": true,
+    "version": "public_proxy_v1",
+    "acceleration_cap": 8.0
   }
 }

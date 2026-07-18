@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "source_root": "https://anonymous.4open.science/r/fpt26-harness/tasks",
+  "retrieved_at_utc": "2026-07-18T09:53:30Z",
+  "hash_algorithm": "sha256",
+  "content_scope": "selected minimal public task files, not a complete repository snapshot",
+  "snapshot_commit": null,
+  "license_status": "not declared in the public snapshot; verify before redistribution",
+  "excludes": ["hidden", "reference"],
+  "files": {
+    "dotProduct_optimize/dotProduct.cpp": "1bca40f5d5cffe6db31aac1e84ed18ee756059ce67de8ef6d33dec578e1ca05c",
+    "dotProduct_optimize/dotProduct.h": "ddb3f29dccd09d73c8f2a8df41707839597c168b832dd8cb7051793a38e77205",
+    "dotProduct_optimize/dotProduct_tb.cpp": "afea831358b1760028958e52f50e1ee294f07cecac5f4d894e0ead1e2ad57f93",
+    "dotProduct_optimize/task.toml": "ed87fbfa2e995a479e500db78b2c387874f77f04fcc5541ff420f4fe2612f102",
+    "projection_bugfix/projection.cpp": "eed237714637529c534e6e0ed2a2086611ce73999bcb64b20a949f9bb5e88eaf",
+    "projection_bugfix/projection.h": "6749ac7755a998295c94c4c2782e4b45a9f0a0ace449482699adab31b434412e",
+    "projection_bugfix/projection_tb.cpp": "897587836c90af8c689f153ea5de200790dd7c8f73edd1c314df14a02de41967",
+    "projection_bugfix/task.toml": "06800aa26fcd56ee1b7e35c740d31a3c56a853cefa9d3a0a6b1158371adeb7b2",
+    "residual_stream_deadlock/residual.cpp": "a0f40b47dea175d761e22f26edb42ac72f2ba5e25e21fdc460887fe2c639457b",
+    "residual_stream_deadlock/residual.h": "0a6cdb9de0b0172dd05abcc6614cb4f470ee3e119579b65b66c48477c36654ee",
+    "residual_stream_deadlock/residual_tb.cpp": "bb9f48528823f6e428f2d3ddaa65730df80af1aa2b47da890db9ea4e4e047a7a",
+    "residual_stream_deadlock/task.toml": "f215020b154574924f4930a50b28ef6f80c337c8809a7017428feed863e8f453"
+  }
+}

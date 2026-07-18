@@ -105,6 +105,13 @@ def _collect_review_data(
     reject_registry = _read_json(rejection_root / "candidate_registry.json")
     workflow = _read_json(optimization_root / "workflow_result.json")
     run_config = _read_json(optimization_root / "run_config.json")
+    optimization_config = _read_json(
+        optimization_root / "optimization_config.json"
+    )
+    scoring_raw = optimization_config.get("scoring")
+    scoring = scoring_raw if isinstance(scoring_raw, Mapping) else {}
+    official_raw = scoring.get("official_score")
+    official = official_raw if isinstance(official_raw, Mapping) else {}
     candidates_raw = opt_registry.get("candidates")
     candidates = candidates_raw if isinstance(candidates_raw, Mapping) else {}
     baseline = candidates.get("candidate_000")
@@ -117,6 +124,16 @@ def _collect_review_data(
     final_candidate = final_raw if isinstance(final_raw, Mapping) else {}
     final_metrics = _action_report(
         optimization_root, final_candidate.get("metrics_ref")
+    )
+    baseline_score = (
+        _read_json(optimization_root / str(baseline_value["score_ref"]))
+        if isinstance(baseline_value.get("score_ref"), str)
+        else {}
+    )
+    final_score = (
+        _read_json(optimization_root / str(final_candidate["score_ref"]))
+        if isinstance(final_candidate.get("score_ref"), str)
+        else {}
     )
 
     candidate_rows: list[dict[str, object]] = []
@@ -150,6 +167,15 @@ def _collect_review_data(
                     score.get("ppa_cost")
                     if score.get("ppa_cost") is not None
                     else pre_cosim_score.get("ppa_cost")
+                ),
+                "official_score": (
+                    score.get("official_score")
+                    if score.get("official_score") is not None
+                    else pre_cosim_score.get("official_score")
+                ),
+                "official_score_source": (
+                    score.get("official_score_source")
+                    or pre_cosim_score.get("official_score_source")
                 ),
                 "hard_constraints_passed": (
                     score.get("hard_constraints_passed")
@@ -276,6 +302,22 @@ def _collect_review_data(
         "baseline_clock": workflow.get("clock_constraint", {}),
         "baseline_metrics": baseline_metrics,
         "final_metrics": final_metrics,
+        "baseline_score": baseline_score,
+        "final_score": final_score,
+        "score_policy": {
+            "primary": (
+                "official_public_proxy"
+                if official.get("enabled") is True
+                else "internal_ppa"
+            ),
+            "official_score_enabled": official.get("enabled"),
+            "official_score_version": official.get("version"),
+            "official_acceleration_cap": official.get("acceleration_cap"),
+            "exploration_cosim_policy": optimization_config.get(
+                "exploration_cosim_policy"
+            ),
+            "ppa_role": "tie_break_and_hard_constraints",
+        },
         "candidates": candidate_rows,
         "rounds": round_rows,
         "best_candidate_id": opt_result.get("best_candidate_id"),
@@ -393,22 +435,43 @@ def _render_report(
     baseline_value = baseline_metrics if isinstance(baseline_metrics, Mapping) else {}
     final_metrics = data.get("final_metrics")
     final_metric_value = final_metrics if isinstance(final_metrics, Mapping) else {}
+    baseline_score = data.get("baseline_score")
+    baseline_score_value = (
+        baseline_score if isinstance(baseline_score, Mapping) else {}
+    )
+    final_score = data.get("final_score")
+    final_score_value = final_score if isinstance(final_score, Mapping) else {}
+    score_policy = data.get("score_policy")
+    score_policy_value = (
+        score_policy if isinstance(score_policy, Mapping) else {}
+    )
     lines.extend(
         [
             "",
-            "## 基线 PPA" if chinese else "## Baseline PPA",
+            "## 评分策略" if chinese else "## Scoring policy",
+            "",
+            f"- {'主指标' if chinese else 'Primary metric'}: `{score_policy_value.get('primary')}`",
+            f"- {'官方代理公式版本 / 加速上限' if chinese else 'Official proxy version / acceleration cap'}: `{score_policy_value.get('official_score_version')} / {score_policy_value.get('official_acceleration_cap')}x`",
+            f"- {'探索 CoSim 门控' if chinese else 'Exploration CoSim policy'}: `{score_policy_value.get('exploration_cosim_policy')}`",
+            f"- {'PPA 作用' if chinese else 'PPA role'}: `{'并列决胜与硬约束' if chinese else 'tie-break and hard constraints'}`",
+            "",
+            "## 基线 PPA 与官方代理分" if chinese else "## Baseline PPA and official proxy score",
             "",
             f"- {'验证' if chinese else 'Validation'}: `CSim/Synth/CoSim PASS`",
             f"- {'时钟约束' if chinese else 'Clock constraint'}: `{data.get('baseline_clock')}`",
+            f"- {'官方代理分 / 来源' if chinese else 'Official proxy score / source'}: `{baseline_score_value.get('official_score')} / {baseline_score_value.get('official_score_source')}`",
+            f"- {'PPA 并列决胜成本' if chinese else 'PPA tie-break cost'}: `{baseline_score_value.get('ppa_cost')}`",
             f"- Latency: `{baseline_value.get('latency')}`",
             f"- II: `{baseline_value.get('interval')}`",
             f"- Resources: `{baseline_value.get('resources')}`",
             f"- Estimated clock: `{baseline_value.get('estimated_clock_period_ns')}` ns",
             "",
-            "### 基线与最终 PPA 对比" if chinese else "### Baseline vs Final PPA",
+            "### 基线与最终分数 / PPA 对比" if chinese else "### Baseline vs Final score / PPA",
             "",
             "| Metric | Baseline | Final |",
             "|---|---:|---:|",
+            f"| Official proxy score | `{baseline_score_value.get('official_score')}` | `{final_score_value.get('official_score')}` |",
+            f"| PPA tie-break cost | `{baseline_score_value.get('ppa_cost')}` | `{final_score_value.get('ppa_cost')}` |",
             f"| Latency worst | `{(baseline_value.get('latency') or {}).get('worst') if isinstance(baseline_value.get('latency'), Mapping) else None}` | `{(final_metric_value.get('latency') or {}).get('worst') if isinstance(final_metric_value.get('latency'), Mapping) else None}` |",
             f"| II max | `{(baseline_value.get('interval') or {}).get('max') if isinstance(baseline_value.get('interval'), Mapping) else None}` | `{(final_metric_value.get('interval') or {}).get('max') if isinstance(final_metric_value.get('interval'), Mapping) else None}` |",
             f"| Estimated clock ns | `{baseline_value.get('estimated_clock_period_ns')}` | `{final_metric_value.get('estimated_clock_period_ns')}` |",
@@ -416,8 +479,8 @@ def _render_report(
             "",
             "## 候选树" if chinese else "## Candidate tree",
             "",
-            "| Candidate | Parent | Kind | Class | Status | Provider / Model | Tokens in/out/cached | Credits | PPA cost |",
-            "|---|---|---|---|---|---|---:|---:|---:|",
+            "| Candidate | Parent | Kind | Class | Status | Provider / Model | Tokens in/out/cached | Credits | Official proxy / source | PPA tie-break |",
+            "|---|---|---|---|---|---|---:|---:|---:|---:|",
         ]
     )
     candidates = data.get("candidates")
@@ -428,7 +491,8 @@ def _render_report(
             f"`{value.get('kind')}` | `{_fmt(value.get('optimization_class'))}` | "
             f"`{value.get('status')}` | `{_fmt(value.get('provider'))} / {_fmt(value.get('model'))}` | "
             f"`{value.get('input_tokens')}/{value.get('output_tokens')}/{value.get('cached_input_tokens')}` | "
-            f"`{value.get('credits_used')}` | `{_fmt(value.get('ppa_cost'))}` |"
+            f"`{value.get('credits_used')}` | `{_fmt(value.get('official_score'))} / {_fmt(value.get('official_score_source'))}` | "
+            f"`{_fmt(value.get('ppa_cost'))}` |"
         )
 
     rounds = data.get("rounds")
@@ -489,8 +553,9 @@ def _render_report(
                 "",
                 f"- Latency / II: `{metric_value.get('latency')} / {metric_value.get('interval')}`",
                 f"- Resources / clock: `{metric_value.get('resources')} / {metric_value.get('estimated_clock_period_ns')} ns`",
-                f"- PPA cost / hard constraints: `{score_value.get('ppa_cost')} / {score_value.get('hard_constraints_passed')}`",
-                f"- {'探索 CoSim 门控' if chinese else 'Exploration CoSim gate'}: eligible `{cosim_gate_value.get('eligible')}`, reason `{cosim_gate_value.get('reason')}`, Candidate/Best PPA `{pre_cosim_score_value.get('ppa_cost')} / {cosim_gate_value.get('incumbent_ppa_cost')}`",
+                f"- {'官方代理分 / 来源' if chinese else 'Official proxy score / source'}: `{score_value.get('official_score', pre_cosim_score_value.get('official_score'))} / {score_value.get('official_score_source', pre_cosim_score_value.get('official_score_source'))}`",
+                f"- {'PPA 并列决胜成本 / 硬约束' if chinese else 'PPA tie-break cost / hard constraints'}: `{score_value.get('ppa_cost', pre_cosim_score_value.get('ppa_cost'))} / {score_value.get('hard_constraints_passed', pre_cosim_score_value.get('hard_constraints_passed'))}`",
+                f"- {'探索 CoSim 门控' if chinese else 'Exploration CoSim gate'}: eligible `{cosim_gate_value.get('eligible')}`, reason `{cosim_gate_value.get('reason')}`, Candidate/Best official `{pre_cosim_score_value.get('official_score')} / {cosim_gate_value.get('incumbent_official_score')}`, PPA tie-break `{pre_cosim_score_value.get('ppa_cost')} / {cosim_gate_value.get('incumbent_ppa_cost')}`",
                 f"- {'比较结果' if chinese else 'Comparison'}: winner `{comparison_value.get('winner')}`, reason `{comparison_value.get('reason')}`",
             ]
         )

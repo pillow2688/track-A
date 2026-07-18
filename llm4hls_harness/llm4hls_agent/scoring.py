@@ -19,6 +19,10 @@ _RESOURCE_NAMES = {
     "uram": "URAM",
 }
 
+OFFICIAL_ACCELERATION_CAP = 8.0
+OFFICIAL_SCORE_VERSION = "public_proxy_v1"
+OFFICIAL_SCORE_SOURCE = "PUBLIC_VALIDATION_PROXY_V1"
+
 
 def _number(value: object, *, name: str, positive: bool) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
@@ -39,8 +43,26 @@ class ScoringConfig:
     max_resource_percent: Mapping[str, float]
     required_verification_tier: int = 4
     official_score_enabled: bool = False
+    official_score_version: str = OFFICIAL_SCORE_VERSION
+    official_acceleration_cap: float = OFFICIAL_ACCELERATION_CAP
 
     def __post_init__(self) -> None:
+        if not isinstance(self.official_score_enabled, bool):
+            raise ValueError("official score enabled flag must be boolean")
+        if self.official_score_version != OFFICIAL_SCORE_VERSION:
+            raise ValueError(
+                f"official score version must be {OFFICIAL_SCORE_VERSION}"
+            )
+        cap = _number(
+            self.official_acceleration_cap,
+            name="official acceleration cap",
+            positive=True,
+        )
+        if cap != OFFICIAL_ACCELERATION_CAP:
+            raise ValueError(
+                f"official acceleration cap must be {OFFICIAL_ACCELERATION_CAP:g}"
+            )
+        object.__setattr__(self, "official_acceleration_cap", cap)
         object.__setattr__(self, "weights", MappingProxyType(dict(self.weights)))
         object.__setattr__(
             self,
@@ -53,7 +75,11 @@ class ScoringConfig:
             "ppa_weights": dict(self.weights),
             "max_resource_percent": dict(self.max_resource_percent),
             "required_verification_tier": self.required_verification_tier,
-            "official_score": {"enabled": self.official_score_enabled},
+            "official_score": {
+                "enabled": self.official_score_enabled,
+                "version": self.official_score_version,
+                "acceleration_cap": self.official_acceleration_cap,
+            },
         }
 
 
@@ -70,13 +96,14 @@ class CandidateScore:
     cached_input_tokens: int
     credits_used: int
     official_score: float | None = None
+    official_score_source: str | None = None
 
     @property
     def tokens_used(self) -> int:
         return self.input_tokens + self.output_tokens
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        value: dict[str, object] = {
             "candidate_id": self.candidate_id,
             "verification_tier": self.verification_tier,
             "hard_constraints_passed": self.hard_constraints_passed,
@@ -90,6 +117,9 @@ class CandidateScore:
             "tokens_used": self.tokens_used,
             "credits_used": self.credits_used,
         }
+        if self.official_score_source is not None:
+            value["official_score_source"] = self.official_score_source
+        return value
 
     @classmethod
     def from_dict(cls, value: Mapping[str, object]) -> "CandidateScore":
@@ -113,6 +143,11 @@ class CandidateScore:
             cached_input_tokens=int(value["cached_input_tokens"]),
             credits_used=int(value["credits_used"]),
             official_score=float(official) if official is not None else None,
+            official_score_source=(
+                str(value["official_score_source"])
+                if value.get("official_score_source") is not None
+                else None
+            ),
         )
 
 
@@ -177,17 +212,37 @@ def load_scoring_config(path: str | Path) -> ScoringConfig:
     if isinstance(tier, bool) or not isinstance(tier, int) or tier not in range(1, 5):
         raise ValueError("required verification tier must be between 1 and 4")
     official = value.get("official_score")
-    if (
-        not isinstance(official, dict)
-        or set(official) != {"enabled"}
-        or not isinstance(official.get("enabled"), bool)
-    ):
+    if not isinstance(official, dict) or not isinstance(official.get("enabled"), bool):
+        raise ValueError("official score configuration is invalid")
+    legacy_fields = {"enabled"}
+    versioned_fields = {"enabled", "version", "acceleration_cap"}
+    if set(official) == legacy_fields:
+        official_version = OFFICIAL_SCORE_VERSION
+        official_cap = OFFICIAL_ACCELERATION_CAP
+    elif set(official) == versioned_fields:
+        official_version = official.get("version")
+        if official_version != OFFICIAL_SCORE_VERSION:
+            raise ValueError(
+                f"official score version must be {OFFICIAL_SCORE_VERSION}"
+            )
+        official_cap = _number(
+            official.get("acceleration_cap"),
+            name="official acceleration cap",
+            positive=True,
+        )
+        if official_cap != OFFICIAL_ACCELERATION_CAP:
+            raise ValueError(
+                f"official acceleration cap must be {OFFICIAL_ACCELERATION_CAP:g}"
+            )
+    else:
         raise ValueError("official score configuration is invalid")
     return ScoringConfig(
         weights=weights,
         max_resource_percent=caps,
         required_verification_tier=tier,
         official_score_enabled=official["enabled"],
+        official_score_version=official_version,
+        official_acceleration_cap=official_cap,
     )
 
 
@@ -234,6 +289,74 @@ def _metric_values(metrics: Mapping[str, object]) -> dict[str, float]:
     return values
 
 
+def _official_latency(metrics: Mapping[str, object]) -> float | None:
+    """Mirror the official grader's worst-latency, then average fallback."""
+
+    latency = metrics.get("latency")
+    if not isinstance(latency, Mapping):
+        return None
+    for key in ("worst", "average"):
+        try:
+            return _number(latency.get(key), name=f"latency {key}", positive=True)
+        except ValueError:
+            continue
+    return None
+
+
+def estimate_official_score_proxy(
+    *,
+    difficulty: int,
+    baseline: Mapping[str, object],
+    candidate: Mapping[str, object],
+    validation: Mapping[str, object],
+    requires_cosim: bool,
+    provisional_cosim: bool = False,
+) -> float:
+    """Estimate the public part of the official score without hidden inputs.
+
+    The competition grader uses a hidden CSim and, for structural tasks, a
+    hidden CoSim.  This local value therefore remains a proxy.  During the
+    pre-CoSim gate, ``provisional_cosim`` explicitly means "score this only to
+    decide whether the Candidate is worth CoSim, assuming that CoSim passes".
+    Promotion still requires the real local CoSim result.
+    """
+
+    if isinstance(difficulty, bool) or not isinstance(difficulty, int) or difficulty <= 0:
+        raise ValueError("difficulty must be a positive integer")
+    if not isinstance(requires_cosim, bool) or not isinstance(provisional_cosim, bool):
+        raise ValueError("official score flags must be booleans")
+
+    def status(stage: str) -> object:
+        record = validation.get(stage)
+        return record.get("status") if isinstance(record, Mapping) else None
+
+    csim_pass = status("csim") == "PASS"
+    cosim_status = status("cosim")
+    cosim_pass = not requires_cosim or cosim_status == "PASS"
+    if requires_cosim and provisional_cosim and cosim_status == "NOT_RUN":
+        cosim_pass = True
+    functional_pass = csim_pass and cosim_pass
+    synth_pass = status("synth") == "PASS"
+
+    if not functional_pass:
+        return 0.0
+
+    acceleration: float | None = None
+    if synth_pass:
+        baseline_latency = _official_latency(baseline)
+        candidate_latency = _official_latency(candidate)
+        if baseline_latency is not None and candidate_latency is not None:
+            acceleration = baseline_latency / candidate_latency
+
+    ppa_norm = (
+        min(acceleration, OFFICIAL_ACCELERATION_CAP) / OFFICIAL_ACCELERATION_CAP
+        if acceleration is not None
+        else 0.0
+    )
+    quality = 0.5 + 0.2 * (1.0 if synth_pass else 0.0) + 0.3 * ppa_norm
+    return round(float(difficulty) * quality, 4)
+
+
 def score_candidate(
     *,
     candidate_id: str,
@@ -247,6 +370,7 @@ def score_candidate(
     cached_input_tokens: int,
     credits_used: int,
     official_score: float | None = None,
+    official_score_source: str | None = None,
 ) -> CandidateScore:
     for name, value in (
         ("input tokens", input_tokens),
@@ -336,6 +460,10 @@ def score_candidate(
         parsed_official = _number(
             official_score, name="official score", positive=False
         )
+        if not isinstance(official_score_source, str) or not official_score_source:
+            raise ValueError("official score source must identify the score provenance")
+    elif official_score_source is not None:
+        raise ValueError("official score source requires an official score")
     if config.official_score_enabled and parsed_official is None:
         failures.append("OFFICIAL_SCORE_MISSING")
         hard_passed = False
@@ -353,6 +481,7 @@ def score_candidate(
         cached_input_tokens=cached_input_tokens,
         credits_used=credits_used,
         official_score=parsed_official,
+        official_score_source=official_score_source if parsed_official is not None else None,
     )
 
 

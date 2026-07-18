@@ -73,6 +73,9 @@ def optimization_context() -> OptimizationContext:
         kernel_name="kernel.cpp",
         part="xcu55c-fsvh2892-2L-e",
         clock_ns=10.0,
+        difficulty=3,
+        official_score_enabled=True,
+        current_official_score=2.35,
     )
 
 
@@ -177,6 +180,11 @@ class OpenAICompatibleProviderTests(unittest.TestCase):
         self.assertIn('"allowed_optimization_class": "LOOP_PIPELINE"', prompt)
         self.assertIn('"final_reserve_credits": 25', prompt)
         self.assertIn("maximum interval is 16", prompt)
+        self.assertIn('"kind": "PUBLIC_OFFICIAL_SCORE_PROXY"', prompt)
+        self.assertIn('"acceleration_cap": 8.0', prompt)
+        self.assertIn("baseline_latency / candidate_latency", prompt)
+        self.assertIn("synthesis latency.worst", prompt)
+        self.assertIn("if functional == 0: 0", prompt)
         self.assertNotIn("secret-test-key", prompt)
         self.assertNotIn("kernel_tb.cpp", prompt)
         provider = OpenAICompatibleOptimizationProvider(self.config())

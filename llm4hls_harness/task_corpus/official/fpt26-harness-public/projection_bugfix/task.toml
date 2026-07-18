@@ -1,0 +1,13 @@
+task_id = "projection_bugfix"
+task_type = "repair"
+difficulty = 2
+top = "projection"
+kernel_file = "projection.cpp"
+header_files = ["projection.h"]
+public_tb = "projection_tb.cpp"
+budget = 20
+initial_condition = "Compiles and synthesizes, but FAILS C-simulation: a functional bug in the angle==0 branch (the z coordinate drops one vertex term instead of averaging all three)."
+
+[target]
+part = "xcu55c-fsvh2892-2L-e"
+clock_ns = 5.0

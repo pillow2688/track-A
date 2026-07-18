@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "llm4hls-agent"
 version = "0.1.0"
-description = "Budget-audited V0-V1 repair harness for FPT 2026 Track A"
+description = "Budget-audited V0-V2 repair and optimization harness for FPT 2026 Track A"
 requires-python = ">=3.11"
 dependencies = []
 
@@ -16,4 +16,4 @@ llm4hls-v0 = "llm4hls_agent.cli:main_entry"
 include = ["llm4hls_agent*"]
 
 [tool.setuptools.package-data]
-llm4hls_agent = ["config/*.json"]
+llm4hls_agent = ["config/*.json", "config/*.yaml"]

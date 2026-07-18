@@ -30,6 +30,7 @@ from .task import TaskPackageError, load_public_task
 from .tools import ToolBackend, ToolConfig
 from .v2_acceptance import V2AcceptanceError, evaluate_v2_acceptance
 from .v2_review import V2ReviewError, generate_v2_review_reports
+from .v2_team_report import V2TeamReportError, write_v2_team_report
 from .workflow import RunArtifactError, RunConfig, run_v0
 
 
@@ -39,6 +40,11 @@ def _env_int(name: str, default: int) -> int:
 
 def _env_float(name: str, default: float) -> float:
     return float(os.environ.get(name, str(default)))
+
+
+def _env_optional_float(name: str) -> float | None:
+    value = os.environ.get(name)
+    return float(value) if value is not None else None
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -154,7 +160,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="debug-only: use the narrow V0 vector-add fallback after provider failure",
     )
     optimize = subparsers.add_parser(
-        "optimize", help="run the V2 Candidate tree and PPA optimization loop"
+        "optimize",
+        help="run the V2 Candidate tree and official-proxy optimization loop",
     )
     optimize.add_argument("task_dir", type=Path)
     optimize.add_argument("--run-dir", type=Path, required=True)
@@ -181,7 +188,12 @@ def build_parser() -> argparse.ArgumentParser:
     optimize.add_argument("--cosim-timeout", type=float, default=_env_float("LLM4HLS_COSIM_TIMEOUT_S", 900.0))
     optimize.add_argument("--token-budget", type=int, default=_env_int("LLM4HLS_TOKEN_BUDGET", 32768))
     optimize.add_argument("--runtime-limit", type=float, default=_env_float("LLM4HLS_RUNTIME_LIMIT_S", 7200.0))
-    optimize.add_argument("--minimum-frequency-mhz", type=float, default=_env_float("LLM4HLS_MIN_FREQUENCY_MHZ", 100.0))
+    optimize.add_argument(
+        "--minimum-frequency-mhz",
+        type=float,
+        default=_env_optional_float("LLM4HLS_MIN_FREQUENCY_MHZ"),
+        help="hard clock gate; defaults to 1000 / task clock_ns",
+    )
     optimize.add_argument(
         "--scoring-config",
         type=Path,
@@ -286,6 +298,12 @@ def build_parser() -> argparse.ArgumentParser:
     review_v2.add_argument("--optimization-run", type=Path)
     review_v2.add_argument("--rejection-run", type=Path)
     review_v2.add_argument("--acceptance-result", type=Path)
+    report_v2 = subparsers.add_parser(
+        "report-v2-run",
+        help="offline: render one sealed V2 optimize run into an external team report",
+    )
+    report_v2.add_argument("--run-dir", type=Path, required=True)
+    report_v2.add_argument("--output", type=Path, required=True)
     return parser
 
 
@@ -473,6 +491,25 @@ def main(
             return 3
         print(json.dumps(summary, sort_keys=True))
         return 0 if summary["status"] == "PASS" else 2
+    if args.command == "report-v2-run":
+        try:
+            output = write_v2_team_report(
+                args.run_dir,
+                mode="offline",
+                output_path=args.output,
+            )
+            summary = {
+                "status": "DONE",
+                "run_dir": str(Path(args.run_dir).resolve()),
+                "report": str(output),
+                "manifest_ref": "artifact_manifest.json",
+                "manifest_sha256": manifest_digest(args.run_dir),
+            }
+        except (OSError, ArtifactManifestError, V2TeamReportError) as exc:
+            _print_error(exc)
+            return 3
+        print(json.dumps(summary, sort_keys=True))
+        return 0
     if args.command != "run":
         raise AssertionError(f"unsupported command: {args.command}")
     try:
@@ -697,7 +734,11 @@ def _main_optimize(args: argparse.Namespace, *, backend: ToolBackend | None) -> 
             RunConfig(
                 tool=tool,
                 budget=budget,
-                minimum_frequency_mhz=args.minimum_frequency_mhz,
+                minimum_frequency_mhz=(
+                    args.minimum_frequency_mhz
+                    if args.minimum_frequency_mhz is not None
+                    else 1000.0 / tool.clock_ns
+                ),
             ),
             OptimizationConfig(
                 scoring=load_scoring_config(args.scoring_config),
@@ -718,6 +759,7 @@ def _main_optimize(args: argparse.Namespace, *, backend: ToolBackend | None) -> 
         BudgetError,
         RunArtifactError,
         ArtifactManifestError,
+        V2TeamReportError,
         V1Error,
         ValueError,
     ) as exc:

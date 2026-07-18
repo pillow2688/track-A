@@ -123,6 +123,12 @@ class V2AcceptanceTests(unittest.TestCase):
                     "task_id": self.task.id,
                     "required_provider": "openai-compatible",
                     "required_model": "deepseek-v4-pro",
+                    "required_official_acceleration_cap": 8.0,
+                    "required_official_score_enabled": True,
+                    "required_official_score_version": "public_proxy_v1",
+                    "required_exploration_cosim_policy": "official_score_gate",
+                    "required_task_difficulty": self.task.difficulty,
+                    "required_task_requires_cosim": self.task.requires_cosim,
                     "required_toolchain": "Vitis 2025.2",
                     "required_backend_fingerprint": (
                         "tests.test_optimization.PPASequenceBackend"
@@ -145,10 +151,95 @@ class V2AcceptanceTests(unittest.TestCase):
 
         self.assertEqual(result["overall_status"], "TEST_PASS")
         self.assertTrue(result["checks"]["candidate_tree_valid"])
+        self.assertTrue(result["checks"]["official_scoring_policy_bound"])
+        self.assertTrue(result["checks"]["official_score_metadata_bound"])
+        self.assertTrue(result["checks"]["scores_recomputed"])
+        self.assertTrue(result["checks"]["exploration_cosim_gated"])
         self.assertTrue(result["checks"]["two_real_llm_candidates"])
         self.assertTrue(result["checks"]["best_matches_recomputed_comparator"])
         self.assertTrue(result["checks"]["rejected_candidate_did_not_pollute_best"])
         self.assertTrue(result["checks"]["ledger_trace_actions_consistent"])
+
+        optimization_config = json.loads(
+            (self.optimization_run / "optimization_config.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertTrue(optimization_config["scoring"]["official_score"]["enabled"])
+        self.assertEqual(
+            optimization_config["exploration_cosim_policy"],
+            "official_score_gate",
+        )
+        candidate_score = json.loads(
+            (self.optimization_run / "scores/candidate_001.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertIsInstance(candidate_score["official_score"], float)
+        self.assertEqual(
+            candidate_score["official_score_source"],
+            "PUBLIC_VALIDATION_PROXY_V1",
+        )
+
+    def test_rebuilt_manifest_cannot_hide_official_metadata_tamper(self) -> None:
+        task_spec_path = self.optimization_run / "task_spec.json"
+        task_spec = json.loads(task_spec_path.read_text(encoding="utf-8"))
+        task_spec["difficulty"] = self.task.difficulty + 1
+        task_spec_path.write_text(json.dumps(task_spec, sort_keys=True), encoding="utf-8")
+        build_artifact_manifest(self.optimization_run)
+
+        result = compute_v2_acceptance(
+            self.spec, self.optimization_run, self.rejection_run
+        )
+
+        self.assertEqual(result["overall_status"], "FAIL")
+        self.assertFalse(result["checks"]["official_score_metadata_bound"])
+        self.assertIn("OFFICIAL_SCORE_METADATA_INVALID", result["reason_codes"])
+
+    def test_rebuilt_manifest_cannot_hide_official_score_source_tamper(self) -> None:
+        score_path = self.optimization_run / "scores/candidate_002.json"
+        score = json.loads(score_path.read_text(encoding="utf-8"))
+        score["official_score_source"] = "FORGED_PROXY"
+        score_path.write_text(json.dumps(score, sort_keys=True), encoding="utf-8")
+        build_artifact_manifest(self.optimization_run)
+
+        result = compute_v2_acceptance(
+            self.spec, self.optimization_run, self.rejection_run
+        )
+
+        self.assertEqual(result["overall_status"], "FAIL")
+        self.assertFalse(result["checks"]["scores_recomputed"])
+        self.assertIn("SCORE_RECOMPUTE_MISMATCH", result["reason_codes"])
+
+    def test_rebuilt_manifest_cannot_change_official_formula_version(self) -> None:
+        config_path = self.optimization_run / "optimization_config.json"
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        config["scoring"]["official_score"]["version"] = "public_proxy_v2"
+        config_path.write_text(json.dumps(config, sort_keys=True), encoding="utf-8")
+        build_artifact_manifest(self.optimization_run)
+
+        result = compute_v2_acceptance(
+            self.spec, self.optimization_run, self.rejection_run
+        )
+
+        self.assertEqual(result["overall_status"], "FAIL")
+        self.assertIn("EVIDENCE_INVALID", result["reason_codes"])
+
+    def test_acceptance_rejects_run_that_disables_official_scoring(self) -> None:
+        config_path = self.optimization_run / "optimization_config.json"
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        config["scoring"]["official_score"]["enabled"] = False
+        config["exploration_cosim_policy"] = "ppa_gate"
+        config_path.write_text(json.dumps(config, sort_keys=True), encoding="utf-8")
+        build_artifact_manifest(self.optimization_run)
+
+        result = compute_v2_acceptance(
+            self.spec, self.optimization_run, self.rejection_run
+        )
+
+        self.assertEqual(result["overall_status"], "FAIL")
+        self.assertFalse(result["checks"]["official_scoring_policy_bound"])
+        self.assertIn("OFFICIAL_SCORING_POLICY_INVALID", result["reason_codes"])
 
     def test_equivalent_bare_kernel_patch_headers_remain_bound(self) -> None:
         registry_path = self.optimization_run / "candidate_registry.json"

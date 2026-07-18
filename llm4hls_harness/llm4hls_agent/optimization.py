@@ -23,7 +23,15 @@ from .repair import (
     normalize_unified_diff_headers,
     relocate_unified_diff_hunks,
 )
-from .scoring import CandidateScore, ScoringConfig, compare_scores, score_candidate
+from .scoring import (
+    OFFICIAL_ACCELERATION_CAP,
+    OFFICIAL_SCORE_SOURCE,
+    CandidateScore,
+    ScoringConfig,
+    compare_scores,
+    estimate_official_score_proxy,
+    score_candidate,
+)
 from .task import PublicTask
 from .tools import ToolBackend
 from .validation import (
@@ -32,6 +40,7 @@ from .validation import (
     validate_candidate,
     validate_csim_only,
 )
+from .v2_team_report import write_v2_team_report
 from .workflow import RunConfig, _RunLock, _append_trace, _atomic_json, run_v0
 
 
@@ -72,6 +81,22 @@ class OptimizationDecision:
 
 
 @dataclass(frozen=True)
+class OptimizationSelectionContext:
+    metrics_digest: str
+    attempted_same_metrics: tuple[str, ...]
+    failed_same_metrics: tuple[str, ...]
+    available_classes: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "metrics_digest": self.metrics_digest,
+            "attempted_same_metrics": list(self.attempted_same_metrics),
+            "failed_same_metrics": list(self.failed_same_metrics),
+            "available_classes": list(self.available_classes),
+        }
+
+
+@dataclass(frozen=True)
 class OptimizationContext:
     task_id: str
     parent_candidate_id: str
@@ -93,6 +118,10 @@ class OptimizationContext:
     kernel_name: str
     part: str
     clock_ns: float
+    difficulty: int
+    official_score_enabled: bool
+    current_official_score: float | None
+    official_acceleration_cap: float = OFFICIAL_ACCELERATION_CAP
 
     def __post_init__(self) -> None:
         if self.allowed_optimization_class not in ALLOWED_OPTIMIZATIONS:
@@ -101,6 +130,28 @@ class OptimizationContext:
             raise ValueError("optimization round index must be positive")
         if self.remaining_tokens < 0 or self.final_reserve_credits < 0:
             raise ValueError("optimization budget values must be non-negative")
+        if (
+            isinstance(self.difficulty, bool)
+            or not isinstance(self.difficulty, int)
+            or self.difficulty <= 0
+        ):
+            raise ValueError("optimization difficulty must be positive")
+        if not isinstance(self.official_score_enabled, bool):
+            raise ValueError("official score enabled flag must be boolean")
+        if self.current_official_score is not None and (
+            isinstance(self.current_official_score, bool)
+            or not isinstance(self.current_official_score, (int, float))
+            or not math.isfinite(float(self.current_official_score))
+            or float(self.current_official_score) < 0
+        ):
+            raise ValueError("current official score must be finite and non-negative")
+        if (
+            isinstance(self.official_acceleration_cap, bool)
+            or not isinstance(self.official_acceleration_cap, (int, float))
+            or not math.isfinite(float(self.official_acceleration_cap))
+            or self.official_acceleration_cap <= 0
+        ):
+            raise ValueError("official acceleration cap must be positive")
         if not 1 <= len(self.hls_rules) <= 3 or any(
             not isinstance(rule, str) or not rule.strip() for rule in self.hls_rules
         ):
@@ -128,6 +179,10 @@ class OptimizationContext:
             "kernel_name": self.kernel_name,
             "part": self.part,
             "clock_ns": self.clock_ns,
+            "difficulty": self.difficulty,
+            "official_score_enabled": self.official_score_enabled,
+            "current_official_score": self.current_official_score,
+            "official_acceleration_cap": self.official_acceleration_cap,
         }
 
 
@@ -143,7 +198,7 @@ class OptimizationConfig:
     max_llm_calls: int = 6
     max_final_attempts: int = 2
     final_reserve_credits: int = 25
-    exploration_cosim_policy: str = "ppa_gate"
+    exploration_cosim_policy: str = "auto"
     patch_limits: PatchLimits = field(
         default_factory=lambda: PatchLimits(max_changed_lines=30, max_hunks=4)
     )
@@ -159,8 +214,22 @@ class OptimizationConfig:
             raise ValueError("LLM call limit cannot be lower than the round limit")
         if self.final_reserve_credits < 0:
             raise ValueError("final reserve credits must be non-negative")
-        if self.exploration_cosim_policy != "ppa_gate":
+        if self.exploration_cosim_policy == "auto":
+            object.__setattr__(
+                self,
+                "exploration_cosim_policy",
+                (
+                    "official_score_gate"
+                    if self.scoring.official_score_enabled
+                    else "ppa_gate"
+                ),
+            )
+        if self.exploration_cosim_policy not in {"ppa_gate", "official_score_gate"}:
             raise ValueError("unsupported exploration cosim policy")
+        if self.scoring.official_score_enabled != (
+            self.exploration_cosim_policy == "official_score_gate"
+        ):
+            raise ValueError("official scoring and exploration gate policy disagree")
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -184,9 +253,29 @@ class ExplorationCosimGate:
     candidate_ppa_cost: float | None
     incumbent_ppa_cost: float | None
     candidate_hard_constraints_passed: bool
+    policy: str = "ppa_gate"
+    candidate_official_score: float | None = None
+    incumbent_official_score: float | None = None
 
     def to_dict(self) -> dict[str, object]:
-        return asdict(self)
+        value = {
+            "candidate_id": self.candidate_id,
+            "incumbent_id": self.incumbent_id,
+            "eligible": self.eligible,
+            "reason": self.reason,
+            "candidate_ppa_cost": self.candidate_ppa_cost,
+            "incumbent_ppa_cost": self.incumbent_ppa_cost,
+            "candidate_hard_constraints_passed": self.candidate_hard_constraints_passed,
+        }
+        if self.policy == "official_score_gate":
+            value.update(
+                {
+                    "policy": self.policy,
+                    "candidate_official_score": self.candidate_official_score,
+                    "incumbent_official_score": self.incumbent_official_score,
+                }
+            )
+        return value
 
 
 def _canonical_digest(value: object) -> str:
@@ -237,6 +326,17 @@ def _write_v2_experimental_report(
     calls = budget_value.get("tool_used")
     call_value = calls if isinstance(calls, Mapping) else {}
     workflow = str(result.get("workflow", ""))
+
+    def candidate_score(candidate: Mapping[str, object]) -> dict[str, object]:
+        for field in ("score_ref", "pre_cosim_score_ref"):
+            reference = candidate.get(field)
+            if isinstance(reference, str):
+                try:
+                    return _read_score(run_root, reference).to_dict()
+                except ValueError:
+                    continue
+        return {}
+
     lines = [
         "# V2 Experimental Report",
         "",
@@ -260,13 +360,44 @@ def _write_v2_experimental_report(
         lines.append(f"| {tool} | {call_value.get(tool, 0)} |")
 
     if workflow == "V2_CANDIDATE_PPA":
+        try:
+            optimization_snapshot = json.loads(
+                (run_root / "optimization_config.json").read_text(encoding="utf-8")
+            )
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            optimization_snapshot = {}
+        scoring_snapshot = (
+            optimization_snapshot.get("scoring", {})
+            if isinstance(optimization_snapshot, Mapping)
+            else {}
+        )
+        official_snapshot = (
+            scoring_snapshot.get("official_score", {})
+            if isinstance(scoring_snapshot, Mapping)
+            else {}
+        )
+        candidates = registry.get("candidates")
+        candidate_map = candidates if isinstance(candidates, Mapping) else {}
+        baseline_record = candidate_map.get("candidate_000")
+        baseline_record_value = (
+            baseline_record if isinstance(baseline_record, Mapping) else {}
+        )
+        baseline_score = candidate_score(baseline_record_value)
         lines.extend(
             [
                 "",
+                "## Scoring policy",
+                "",
+                f"- Primary: `{'official public proxy' if official_snapshot.get('enabled') is True else 'internal PPA'}`",
+                f"- Official proxy version / acceleration cap: `{official_snapshot.get('version')} / {official_snapshot.get('acceleration_cap')}x`",
+                f"- Exploration CoSim policy: `{optimization_snapshot.get('exploration_cosim_policy') if isinstance(optimization_snapshot, Mapping) else None}`",
+                f"- Baseline official proxy / source: `{baseline_score.get('official_score')} / {baseline_score.get('official_score_source')}`",
+                f"- PPA role / baseline cost: `tie-break and hard constraints / {baseline_score.get('ppa_cost')}`",
+                "",
                 "## Candidate rounds",
                 "",
-                "| Round | Parent | Class | Candidate | CoSim gate | CoSim | Decision |",
-                "|---:|---|---|---|---|---|---|",
+                "| Round | Parent | Class | Candidate | CoSim gate | Candidate / Best official | Candidate / Best PPA tie-break | CoSim | Decision |",
+                "|---:|---|---|---|---|---:|---:|---|---|",
             ]
         )
         rounds = result.get("rounds")
@@ -274,8 +405,6 @@ def _write_v2_experimental_report(
             value = item if isinstance(item, Mapping) else {}
             gate = value.get("cosim_gate")
             gate_value = gate if isinstance(gate, Mapping) else {}
-            candidates = registry.get("candidates")
-            candidate_map = candidates if isinstance(candidates, Mapping) else {}
             candidate = candidate_map.get(value.get("candidate_id"))
             candidate_value = candidate if isinstance(candidate, Mapping) else {}
             validation = candidate_value.get("validation")
@@ -288,6 +417,8 @@ def _write_v2_experimental_report(
                 f"{value.get('optimization_class', '')} | "
                 f"{value.get('candidate_id', '')} | "
                 f"{gate_value.get('eligible')} / {gate_value.get('reason')} | "
+                f"{gate_value.get('candidate_official_score')} / {gate_value.get('incumbent_official_score')} | "
+                f"{gate_value.get('candidate_ppa_cost')} / {gate_value.get('incumbent_ppa_cost')} | "
                 f"{cosim_value.get('status', 'NOT_RUN')} | "
                 f"{value.get('decision', '')} |"
             )
@@ -312,10 +443,9 @@ def _write_v2_experimental_report(
                 f"`{value.get('validation_scope', '')}` | {link} |"
             )
         final_id = result.get("final_candidate_id")
-        candidates = registry.get("candidates")
-        candidate_map = candidates if isinstance(candidates, Mapping) else {}
         final_candidate = candidate_map.get(final_id)
         final_record = final_candidate if isinstance(final_candidate, Mapping) else {}
+        final_score = candidate_score(final_record)
         metrics_ref = final_record.get("metrics_ref")
         metrics: Mapping[str, object] = {}
         if isinstance(metrics_ref, str):
@@ -326,8 +456,10 @@ def _write_v2_experimental_report(
         lines.extend(
             [
                 "",
-                "## Final PPA metrics",
+                "## Final selected score and PPA metrics",
                 "",
+                f"- Official proxy / source: `{final_score.get('official_score')} / {final_score.get('official_score_source')}`",
+                f"- PPA tie-break cost: `{final_score.get('ppa_cost')}`",
                 f"- Estimated clock period: `{metrics.get('estimated_clock_period_ns')}` ns",
                 f"- Latency: `{metrics.get('latency')}`",
                 f"- II: `{metrics.get('interval')}`",
@@ -377,7 +509,13 @@ def _finalize_v2_artifacts(
     result: Mapping[str, object],
     registry: Mapping[str, object],
 ) -> None:
-    _write_v2_experimental_report(run_root, result, registry)
+    if result.get("workflow") == "V2_CANDIDATE_PPA":
+        # The optimize report is reconstructed from persisted evidence rather
+        # than trusting the caller's in-memory view.
+        write_v2_team_report(run_root, mode="automatic")
+    else:
+        # Keep the focused safety-rejection report for its distinct workflow.
+        _write_v2_experimental_report(run_root, result, registry)
     build_artifact_manifest(run_root)
 
 
@@ -392,15 +530,13 @@ def _positive_metric(metrics: Mapping[str, object], group: str, name: str) -> fl
     return parsed
 
 
-def select_optimization(
+def describe_optimization_selection(
     metrics: Mapping[str, object],
     *,
-    source: str,
     attempted: tuple[str | tuple[str, str], ...],
     failures: tuple[tuple[str, str], ...],
-) -> OptimizationDecision:
-    """Select one untried class from structured evidence without side effects."""
-
+) -> OptimizationSelectionContext:
+    """Describe the exact same-metrics branch set used by the Selector."""
     digest = _canonical_digest(metrics)
     attempted_same_metrics: set[str] = set()
     for item in attempted:
@@ -424,11 +560,42 @@ def select_optimization(
         for optimization_class, metrics_digest in failures
         if metrics_digest == digest
     }
-    available = [
+    if any(item not in ALLOWED_OPTIMIZATIONS for item in failed_same):
+        raise ValueError("failed optimization contains an unsupported class")
+    available = tuple(
         item
         for item in ALLOWED_OPTIMIZATIONS
         if item not in attempted_same_metrics and item not in failed_same
-    ]
+    )
+    return OptimizationSelectionContext(
+        metrics_digest=digest,
+        attempted_same_metrics=tuple(
+            item for item in ALLOWED_OPTIMIZATIONS if item in attempted_same_metrics
+        ),
+        failed_same_metrics=tuple(
+            item for item in ALLOWED_OPTIMIZATIONS if item in failed_same
+        ),
+        available_classes=available,
+    )
+
+
+def select_optimization(
+    metrics: Mapping[str, object],
+    *,
+    source: str,
+    attempted: tuple[str | tuple[str, str], ...],
+    failures: tuple[tuple[str, str], ...],
+) -> OptimizationDecision:
+    """Select one untried class from structured evidence without side effects."""
+
+    del source
+    selection = describe_optimization_selection(
+        metrics,
+        attempted=attempted,
+        failures=failures,
+    )
+    digest = selection.metrics_digest
+    available = selection.available_classes
     if not available:
         return OptimizationDecision(
             optimization_class=None,
@@ -844,7 +1011,20 @@ def _score_from_validation(
     config: ScoringConfig,
     proposal: PatchProposal | None,
     credits_used: int,
+    difficulty: int,
+    requires_cosim: bool,
 ) -> CandidateScore:
+    official_score = (
+        estimate_official_score_proxy(
+            difficulty=difficulty,
+            baseline=baseline_metrics,
+            candidate=candidate_metrics,
+            validation=validation.validation,
+            requires_cosim=requires_cosim,
+        )
+        if config.official_score_enabled
+        else None
+    )
     return score_candidate(
         candidate_id=candidate_id,
         baseline=baseline_metrics,
@@ -856,6 +1036,10 @@ def _score_from_validation(
         output_tokens=proposal.output_tokens if proposal is not None else 0,
         cached_input_tokens=proposal.cached_input_tokens if proposal is not None else 0,
         credits_used=credits_used,
+        official_score=official_score,
+        official_score_source=(
+            OFFICIAL_SCORE_SOURCE if official_score is not None else None
+        ),
     )
 
 
@@ -868,6 +1052,8 @@ def _score_for_cosim_gate(
     config: ScoringConfig,
     proposal: PatchProposal,
     credits_used: int,
+    difficulty: int,
+    requires_cosim: bool,
 ) -> CandidateScore:
     """Score CSim+Synth evidence without pretending that CoSim has passed."""
 
@@ -876,6 +1062,18 @@ def _score_for_cosim_gate(
         for stage, record in validation.validation.items()
     }
     gate_validation["cosim"] = {"status": "NOT_RUN"}
+    official_score = (
+        estimate_official_score_proxy(
+            difficulty=difficulty,
+            baseline=baseline_metrics,
+            candidate=candidate_metrics,
+            validation=gate_validation,
+            requires_cosim=requires_cosim,
+            provisional_cosim=True,
+        )
+        if config.official_score_enabled
+        else None
+    )
     return score_candidate(
         candidate_id=candidate_id,
         baseline=baseline_metrics,
@@ -887,18 +1085,52 @@ def _score_for_cosim_gate(
         output_tokens=proposal.output_tokens,
         cached_input_tokens=proposal.cached_input_tokens,
         credits_used=credits_used,
+        official_score=official_score,
+        official_score_source=(
+            OFFICIAL_SCORE_SOURCE if official_score is not None else None
+        ),
     )
 
 
 def evaluate_exploration_cosim_gate(
     candidate: CandidateScore,
     incumbent: CandidateScore,
+    *,
+    policy: str = "auto",
 ) -> ExplorationCosimGate:
-    """Allow expensive exploration CoSim only for a strict PPA improvement."""
+    """Allow expensive CoSim only for a strict primary-score improvement."""
+
+    if policy == "auto":
+        policy = (
+            "official_score_gate"
+            if candidate.official_score is not None
+            and incumbent.official_score is not None
+            else "ppa_gate"
+        )
+    if policy not in {"ppa_gate", "official_score_gate"}:
+        raise ValueError("unsupported exploration CoSim gate policy")
 
     if candidate.verification_tier < 3 or not candidate.hard_constraints_passed:
         eligible = False
         reason = "PRE_COSIM_HARD_CONSTRAINTS"
+    elif policy == "official_score_gate":
+        if candidate.official_score is None or incumbent.official_score is None:
+            eligible = False
+            reason = "OFFICIAL_SCORE_UNAVAILABLE"
+        elif candidate.official_score > incumbent.official_score:
+            eligible = True
+            reason = "STRICT_OFFICIAL_SCORE_IMPROVEMENT"
+        elif (
+            candidate.official_score == incumbent.official_score
+            and candidate.ppa_cost is not None
+            and incumbent.ppa_cost is not None
+            and candidate.ppa_cost < incumbent.ppa_cost
+        ):
+            eligible = True
+            reason = "OFFICIAL_SCORE_TIE_PPA_IMPROVEMENT"
+        else:
+            eligible = False
+            reason = "OFFICIAL_SCORE_NOT_BETTER"
     elif candidate.ppa_cost is None or incumbent.ppa_cost is None:
         eligible = False
         reason = "PPA_COST_UNAVAILABLE"
@@ -916,6 +1148,9 @@ def evaluate_exploration_cosim_gate(
         candidate_ppa_cost=candidate.ppa_cost,
         incumbent_ppa_cost=incumbent.ppa_cost,
         candidate_hard_constraints_passed=candidate.hard_constraints_passed,
+        policy=policy,
+        candidate_official_score=candidate.official_score,
+        incumbent_official_score=incumbent.official_score,
     )
 
 
@@ -1197,18 +1432,58 @@ def run_v2(
             raise ValueError("completed V2 budget does not match the ledger")
         verify_artifact_manifest(run_root)
         return completed
+    _atomic_json(run_root / "optimization_config.json", optimization_snapshot)
     baseline = run_v0(task, run_root, run_config, backend=backend)
     if baseline.get("status") != "DONE":
+        try:
+            registry = json.loads(
+                (run_root / "candidate_registry.json").read_text(encoding="utf-8")
+            )
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ValueError(f"failed V2 baseline Registry is unreadable: {exc}") from exc
+        if not isinstance(registry, dict):
+            raise ValueError("failed V2 baseline Registry is not an object")
         result = {
             "schema_version": 1,
             "workflow": "V2_CANDIDATE_PPA",
+            "task_id": task.id,
             "status": "FAILED",
             "stop_reason": "BASELINE_NOT_VERIFIED",
+            "exploration_stop_reason": "BASELINE_NOT_VERIFIED",
+            "baseline_candidate_id": "candidate_000",
+            "best_candidate_id": registry.get("best_candidate_id"),
+            "final_candidate_id": registry.get("final_candidate_id"),
+            "rounds": [],
+            "no_improvement_rounds": 0,
+            "final_validation": {},
+            "final_attempts": [],
+            "final_clock_constraint": baseline.get("clock_constraint", {}),
+            "budget": baseline.get("budget", {}),
+            "fallback": None,
             "baseline": baseline,
+            "artifacts": {
+                "candidate_registry": "candidate_registry.json",
+                "budget_ledger": "budget_ledger.jsonl",
+                "trace": "trace.jsonl",
+                "result": "v2_result.json",
+                "experimental_report": "experimental_report.md",
+                "artifact_manifest": "artifact_manifest.json",
+            },
         }
         _atomic_json(run_root / "v2_result.json", result)
+        _append_trace(
+            run_root / "trace.jsonl",
+            "V2_RUN_COMPLETED",
+            status="FAILED",
+            stop_reason="BASELINE_NOT_VERIFIED",
+            best_candidate_id=registry.get("best_candidate_id"),
+            final_candidate_id=registry.get("final_candidate_id"),
+            credits_used=result["budget"].get("credits_used", 0),
+            tokens_used=result["budget"].get("tokens_used", 0),
+            result_ref="v2_result.json",
+        )
+        _finalize_v2_artifacts(run_root, result, registry)
         return result
-    _atomic_json(run_root / "optimization_config.json", optimization_snapshot)
     manager = CandidateManager(run_root, task)
     registry = manager.load_registry()
     candidates = registry["candidates"]
@@ -1237,6 +1512,8 @@ def run_v2(
         config=optimization_config.scoring,
         proposal=None,
         credits_used=baseline_credits,
+        difficulty=task.difficulty,
+        requires_cosim=task.requires_cosim,
     )
     scores: dict[str, CandidateScore] = {"candidate_000": baseline_score}
     metrics_by_candidate: dict[str, dict[str, object]] = {
@@ -1284,12 +1561,26 @@ def run_v2(
             attempted=tuple(attempted),
             failures=tuple(failures),
         )
+        expected_selection_context = describe_optimization_selection(
+            metrics_by_candidate[best_id],
+            attempted=tuple(attempted),
+            failures=tuple(failures),
+        ).to_dict()
+        stored_selection_context = round_record.get("selection_context")
         if (
             round_record.get("parent_candidate_id") != best_id
             or not isinstance(selector, Mapping)
             or _canonical_digest(dict(selector))
             != _canonical_digest(asdict(expected_selector))
             or expected_selector.optimization_class != optimization_class
+            or (
+                stored_selection_context is not None
+                and (
+                    not isinstance(stored_selection_context, Mapping)
+                    or _canonical_digest(dict(stored_selection_context))
+                    != _canonical_digest(expected_selection_context)
+                )
+            )
         ):
             raise ValueError(
                 f"durable round binding is invalid: {round_path.name}"
@@ -1339,6 +1630,9 @@ def run_v2(
             kernel_name=task.kernel_name,
             part=run_config.tool.part,
             clock_ns=run_config.tool.clock_ns,
+            difficulty=task.difficulty,
+            official_score_enabled=optimization_config.scoring.official_score_enabled,
+            current_official_score=scores[best_id].official_score,
         )
         stable_context = _stable_context_value(expected_context.to_dict())
         context_digest = _canonical_digest(stable_context)
@@ -1515,10 +1809,14 @@ def run_v2(
                     credits_used=int(
                         candidate_record.get("pre_cosim_credits_used", -1)
                     ),
+                    difficulty=task.difficulty,
+                    requires_cosim=task.requires_cosim,
                 )
                 stored_pre_score = _read_score(run_root, pre_score_ref)
                 expected_gate = evaluate_exploration_cosim_gate(
-                    recomputed_pre_score, scores[best_id]
+                    recomputed_pre_score,
+                    scores[best_id],
+                    policy=optimization_config.exploration_cosim_policy,
                 )
                 try:
                     stored_gate = json.loads(
@@ -1590,6 +1888,8 @@ def run_v2(
                     config=optimization_config.scoring,
                     proposal=proposal,
                     credits_used=int(candidate_record.get("credits_used", -1)),
+                    difficulty=task.difficulty,
+                    requires_cosim=task.requires_cosim,
                 )
                 stored_score = _read_score(run_root, score_ref)
                 if (
@@ -1714,7 +2014,12 @@ def run_v2(
     if registry.get("best_candidate_id") != best_id:
         raise ValueError("Candidate Registry best disagrees with durable rounds")
 
-    for round_index in range(len(rounds) + 1, optimization_config.max_rounds + 1):
+    next_round_index = len(rounds) + 1
+    if no_improvement >= optimization_config.max_no_improvement_rounds:
+        exploration_stop_reason = "NO_IMPROVEMENT_LIMIT"
+        next_round_index = optimization_config.max_rounds + 1
+
+    for round_index in range(next_round_index, optimization_config.max_rounds + 1):
         try:
             _ensure_round_affordable(budget, optimization_config)
         except BudgetExceeded:
@@ -1725,6 +2030,11 @@ def run_v2(
         decision = select_optimization(
             current_metrics,
             source=current_source.decode("utf-8"),
+            attempted=tuple(attempted),
+            failures=tuple(failures),
+        )
+        selection_context = describe_optimization_selection(
+            current_metrics,
             attempted=tuple(attempted),
             failures=tuple(failures),
         )
@@ -1762,6 +2072,9 @@ def run_v2(
             kernel_name=task.kernel_name,
             part=run_config.tool.part,
             clock_ns=run_config.tool.clock_ns,
+            difficulty=task.difficulty,
+            official_score_enabled=optimization_config.scoring.official_score_enabled,
+            current_official_score=scores[best_id].official_score,
         )
         try:
             proposal, provider_ref, request_ref, provider_error = (
@@ -1785,6 +2098,7 @@ def run_v2(
             "parent_candidate_id": best_id,
             "optimization_class": decision.optimization_class,
             "selector": asdict(decision),
+            "selection_context": selection_context.to_dict(),
             "context_digest": _canonical_digest(
                 _stable_context_value(context.to_dict())
             ),
@@ -1874,9 +2188,13 @@ def run_v2(
                         config=optimization_config.scoring,
                         proposal=proposal,
                         credits_used=pre_cosim_credits,
+                        difficulty=task.difficulty,
+                        requires_cosim=task.requires_cosim,
                     )
                     cosim_gate = evaluate_exploration_cosim_gate(
-                        pre_cosim_score, scores[best_id]
+                        pre_cosim_score,
+                        scores[best_id],
+                        policy=optimization_config.exploration_cosim_policy,
                     )
                     pre_cosim_score_ref = f"scores/{candidate_id}.pre_cosim.json"
                     cosim_gate_ref = f"cosim_gates/{candidate_id}.json"
@@ -1919,6 +2237,8 @@ def run_v2(
                         config=optimization_config.scoring,
                         proposal=proposal,
                         credits_used=candidate_credits,
+                        difficulty=task.difficulty,
+                        requires_cosim=task.requires_cosim,
                     )
                     score_ref = f"scores/{candidate_id}.json"
                     _atomic_json(run_root / score_ref, score.to_dict())
@@ -1986,6 +2306,12 @@ def run_v2(
                             )
                             registry["active_candidate_id"] = best_id
                             round_record["decision"] = "REJECTED_NOT_BETTER"
+                            failures.append(
+                                (
+                                    decision.optimization_class,
+                                    decision.metrics_digest,
+                                )
+                            )
                             no_improvement += 1
                     manager.save_registry(registry)
         round_ref = f"optimization_rounds/round_{round_index:03d}.json"
@@ -2091,6 +2417,7 @@ def run_v2(
             overall_stop_reason = "FINAL_VALIDATION_FAILED"
             registry["final_candidate_id"] = None
         manager.save_registry(registry)
+    final_budget = budget.snapshot()
     result = {
         "schema_version": 1,
         "workflow": "V2_CANDIDATE_PPA",
@@ -2106,7 +2433,7 @@ def run_v2(
         "final_validation": final_validation.validation,
         "final_attempts": final_attempts,
         "final_clock_constraint": final_validation.clock_constraint,
-        "budget": final_validation.budget,
+        "budget": final_budget,
         "fallback": fallback,
         "artifacts": {
             "candidate_registry": "candidate_registry.json",
@@ -2125,8 +2452,8 @@ def run_v2(
         stop_reason=overall_stop_reason,
         best_candidate_id=registry.get("best_candidate_id"),
         final_candidate_id=registry.get("final_candidate_id"),
-        credits_used=final_validation.budget["credits_used"],
-        tokens_used=final_validation.budget["tokens_used"],
+        credits_used=final_budget["credits_used"],
+        tokens_used=final_budget["tokens_used"],
         result_ref="v2_result.json",
     )
     stored_result = json.loads(

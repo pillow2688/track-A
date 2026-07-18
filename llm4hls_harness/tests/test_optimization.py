@@ -15,12 +15,14 @@ from llm4hls_agent.optimization import (
     ALLOWED_OPTIMIZATIONS,
     OptimizationConfig,
     OptimizationContext,
+    describe_optimization_selection,
+    evaluate_exploration_cosim_gate,
     run_v2,
     run_v2_rejection,
     select_optimization,
 )
 from llm4hls_agent.repair import PatchProposal, RepairProviderError
-from llm4hls_agent.scoring import ScoringConfig
+from llm4hls_agent.scoring import CandidateScore, ScoringConfig
 from llm4hls_agent.task import load_public_task
 from llm4hls_agent.tools import BackendResult, ToolConfig
 from llm4hls_agent.workflow import RunConfig
@@ -131,6 +133,58 @@ class OptimizationSelectorTests(unittest.TestCase):
         self.assertIsNone(decision.optimization_class)
         self.assertEqual(decision.stop_reason, "NO_DISTINCT_OPTIMIZATION")
 
+    def test_official_score_tie_uses_internal_ppa_for_cosim_gate(self) -> None:
+        common = {
+            "verification_tier": 3,
+            "hard_constraints_passed": True,
+            "hard_failures": (),
+            "components": {},
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cached_input_tokens": 0,
+            "credits_used": 5,
+            "official_score": 3.0,
+            "official_score_source": "PUBLIC_VALIDATION_PROXY_V1",
+        }
+        incumbent = CandidateScore(
+            candidate_id="candidate_001", ppa_cost=0.5, **common
+        )
+        candidate = CandidateScore(
+            candidate_id="candidate_002", ppa_cost=0.4, **common
+        )
+
+        gate = evaluate_exploration_cosim_gate(
+            candidate,
+            incumbent,
+            policy="official_score_gate",
+        )
+
+        self.assertTrue(gate.eligible)
+        self.assertEqual(gate.reason, "OFFICIAL_SCORE_TIE_PPA_IMPROVEMENT")
+
+    def test_selection_context_explains_same_metrics_branch_set(self) -> None:
+        metrics = self.metrics(interval=16, latency=4098)
+        digest = select_optimization(
+            metrics,
+            source="for (;;) {}",
+            attempted=(),
+            failures=(),
+        ).metrics_digest
+
+        context = describe_optimization_selection(
+            metrics,
+            attempted=(("LOOP_PIPELINE", digest),),
+            failures=(("MEMORY_LAYOUT", digest),),
+        )
+
+        self.assertEqual(context.metrics_digest, digest)
+        self.assertEqual(context.attempted_same_metrics, ("LOOP_PIPELINE",))
+        self.assertEqual(context.failed_same_metrics, ("MEMORY_LAYOUT",))
+        self.assertEqual(
+            context.available_classes,
+            ("LOOP_UNROLL", "LOOP_RESTRUCTURE"),
+        )
+
 
 def make_workflow_task(root: Path) -> None:
     root.mkdir()
@@ -227,6 +281,20 @@ class ExcerptFailureProvider:
         )
 
 
+class RejectOnceThenSucceedProvider(SequenceOptimizationProvider):
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def fingerprint(self) -> str:
+        return "reject-once-then-succeed-provider-v1"
+
+    def propose_optimization(self, context: OptimizationContext) -> PatchProposal:
+        self.calls += 1
+        if self.calls == 1:
+            raise RepairProviderError("injected first-round provider rejection")
+        return super().propose_optimization(replace(context, round_index=1))
+
+
 class InvalidPatchOptimizationProvider(SequenceOptimizationProvider):
     def fingerprint(self) -> str:
         return "invalid-patch-optimization-provider-v1"
@@ -292,6 +360,129 @@ class PPASequenceBackend:
         return BackendResult(True, "pass", 0, 0.1)
 
 
+class BaselineCsimFailureBackend(PPASequenceBackend):
+    def run(self, kind: str, *, kernel_bytes: bytes, **kwargs: object) -> BackendResult:
+        if kind == "csim":
+            self.calls.append((kind, self.factor(kernel_bytes)))
+            return BackendResult(
+                False,
+                "runtime_fail",
+                1,
+                0.1,
+                ["injected baseline public mismatch"],
+            )
+        return super().run(kind, kernel_bytes=kernel_bytes, **kwargs)
+
+
+class OfficialScoreConflictBackend(PPASequenceBackend):
+    def run(self, kind: str, *, kernel_bytes: bytes, **kwargs: object) -> BackendResult:
+        factor = self.factor(kernel_bytes)
+        if kind != "synth":
+            return super().run(kind, kernel_bytes=kernel_bytes, **kwargs)
+        self.calls.append((kind, factor))
+        latency, interval, lut = {
+            0: (1000, 1, 100),
+            1: (400, 1, 100),
+            2: (399, 16, 900),
+        }[factor]
+        return BackendResult(
+            True,
+            "pass",
+            0,
+            0.1,
+            report={
+                "estimated_clock_period_ns": 5.0,
+                "latency": {"best": latency, "average": latency, "worst": latency},
+                "interval": {"min": interval, "max": interval},
+                "resources": {
+                    "LUT": lut,
+                    "FF": 200,
+                    "DSP": 0,
+                    "BRAM_18K": 0,
+                    "URAM": 0,
+                },
+                "available_resources": {
+                    "LUT": 1000,
+                    "FF": 2000,
+                    "DSP": 100,
+                    "BRAM_18K": 100,
+                    "URAM": 50,
+                },
+            },
+        )
+
+
+class RejectPromoteRetryBackend(PPASequenceBackend):
+    def run(self, kind: str, *, kernel_bytes: bytes, **kwargs: object) -> BackendResult:
+        factor = self.factor(kernel_bytes)
+        if kind != "synth":
+            return super().run(kind, kernel_bytes=kernel_bytes, **kwargs)
+        self.calls.append((kind, factor))
+        latency, interval = {
+            0: (1000, 16),
+            1: (1200, 16),
+            2: (400, 16),
+            4: (200, 4),
+        }[factor]
+        return BackendResult(
+            True,
+            "pass",
+            0,
+            0.1,
+            report={
+                "estimated_clock_period_ns": 5.0,
+                "latency": {"best": latency, "average": latency, "worst": latency},
+                "interval": {"min": interval, "max": interval},
+                "resources": {
+                    "LUT": 100,
+                    "FF": 200,
+                    "DSP": 0,
+                    "BRAM_18K": 0,
+                    "URAM": 0,
+                },
+                "available_resources": {
+                    "LUT": 1000,
+                    "FF": 2000,
+                    "DSP": 100,
+                    "BRAM_18K": 100,
+                    "URAM": 50,
+                },
+            },
+        )
+
+
+class RejectPromoteRetryProvider(SequenceOptimizationProvider):
+    def fingerprint(self) -> str:
+        return "reject-promote-retry-provider-v1"
+
+    def propose_optimization(self, context: OptimizationContext) -> PatchProposal:
+        old, new = {1: (0, 1), 2: (0, 2), 3: (2, 4)}[context.round_index]
+        patch = (
+            "--- a/kernel.cpp\n"
+            "+++ b/kernel.cpp\n"
+            "@@ -1,5 +1,5 @@\n"
+            ' #include "kernel.h"\n'
+            " void kernel(int *out) {\n"
+            f"-    int factor = {old};\n"
+            f"+    int factor = {new};\n"
+            "     *out = factor;\n"
+            " }\n"
+        )
+        return PatchProposal(
+            patch=patch,
+            provider="openai-compatible",
+            model="deepseek-v4-pro",
+            input_tokens=100 + context.round_index,
+            output_tokens=20,
+            cached_input_tokens=10,
+            hypothesis="exercise reject, promote, and retry recovery",
+            change_class=context.allowed_optimization_class,
+            expected_effect="improve the configured fake PPA",
+            risk="low",
+            required_validation=("csim", "synth", "cosim"),
+        )
+
+
 class FinalBestFailureBackend(PPASequenceBackend):
     def __init__(self) -> None:
         super().__init__()
@@ -309,6 +500,28 @@ class FinalBestFailureBackend(PPASequenceBackend):
                     1,
                     0.1,
                     ["final-only injected CoSim failure"],
+                )
+        return super().run(kind, kernel_bytes=kernel_bytes, **kwargs)
+
+
+class EveryFinalCosimFailureBackend(PPASequenceBackend):
+    def __init__(self) -> None:
+        super().__init__()
+        self.cosim_calls: dict[int, int] = {}
+
+    def run(self, kind: str, *, kernel_bytes: bytes, **kwargs: object) -> BackendResult:
+        factor = self.factor(kernel_bytes)
+        if kind == "cosim":
+            count = self.cosim_calls.get(factor, 0) + 1
+            self.cosim_calls[factor] = count
+            if count >= 2:
+                self.calls.append((kind, factor))
+                return BackendResult(
+                    False,
+                    "cosim_fail",
+                    1,
+                    0.1,
+                    ["injected final CoSim failure"],
                 )
         return super().run(kind, kernel_bytes=kernel_bytes, **kwargs)
 
@@ -509,6 +722,7 @@ class V2WorkflowTests(unittest.TestCase):
         manifest = verify_artifact_manifest(self.run_root)
         self.assertEqual(manifest["workflow"], "V2_CANDIDATE_PPA")
         for round_record in result["rounds"]:
+            self.assertIn("selection_context", round_record)
             self.assertIn("request_ref", round_record)
             request_ref = round_record["request_ref"]
             request = json.loads(
@@ -542,6 +756,106 @@ class V2WorkflowTests(unittest.TestCase):
     def test_default_candidate_and_no_improvement_limits_match_policy(self) -> None:
         self.assertEqual(self.optimization_config.max_rounds, 6)
         self.assertEqual(self.optimization_config.max_no_improvement_rounds, 2)
+
+    def test_baseline_failure_is_a_complete_sealed_v2_terminal_run(self) -> None:
+        run_root = self.root / "baseline-failure"
+
+        result = run_v2(
+            self.task,
+            run_root,
+            self.run_config,
+            self.optimization_config,
+            SequenceOptimizationProvider(),
+            backend=BaselineCsimFailureBackend(),
+        )
+
+        self.assertEqual(result["status"], "FAILED")
+        self.assertEqual(result["stop_reason"], "BASELINE_NOT_VERIFIED")
+        self.assertEqual(result["task_id"], self.task.id)
+        self.assertEqual(result["rounds"], [])
+        self.assertEqual(result["budget"]["tool_used"]["csim"], 1)
+        self.assertTrue((run_root / "optimization_config.json").is_file())
+        self.assertTrue((run_root / "experimental_report.md").is_file())
+        manifest = verify_artifact_manifest(run_root)
+        covered = {item["path"] for item in manifest["artifacts"]}
+        self.assertIn("v2_result.json", covered)
+        self.assertIn("experimental_report.md", covered)
+
+    def test_provider_rejection_continues_and_next_round_can_promote(self) -> None:
+        provider = RejectOnceThenSucceedProvider()
+        config = replace(self.optimization_config, max_rounds=2)
+
+        result = run_v2(
+            self.task,
+            self.root / "reject-then-promote",
+            self.run_config,
+            config,
+            provider,
+            backend=PPASequenceBackend(),
+        )
+
+        self.assertEqual(
+            [round_record["decision"] for round_record in result["rounds"]],
+            ["PROVIDER_REJECTED", "PROMOTED"],
+        )
+        self.assertEqual(
+            [round_record["parent_candidate_id"] for round_record in result["rounds"]],
+            ["candidate_000", "candidate_000"],
+        )
+        self.assertIsNone(result["rounds"][0]["candidate_id"])
+        self.assertEqual(result["rounds"][1]["candidate_id"], "candidate_001")
+        self.assertEqual(result["best_candidate_id"], "candidate_001")
+        self.assertEqual(result["final_candidate_id"], "candidate_001")
+        self.assertEqual(result["no_improvement_rounds"], 0)
+        self.assertEqual(result["exploration_stop_reason"], "MAX_OPTIMIZATION_ROUNDS")
+        self.assertEqual(provider.calls, 2)
+
+    def test_official_score_gate_checks_latency_improvement_before_ppa(self) -> None:
+        scoring = replace(
+            self.optimization_config.scoring,
+            official_score_enabled=True,
+        )
+        config = replace(
+            self.optimization_config,
+            scoring=scoring,
+            max_rounds=2,
+            exploration_cosim_policy="official_score_gate",
+        )
+        run_root = self.root / "official-score-gate"
+        backend = OfficialScoreConflictBackend()
+
+        result = run_v2(
+            self.task,
+            run_root,
+            self.run_config,
+            config,
+            SequenceOptimizationProvider(),
+            backend=backend,
+        )
+
+        first = json.loads(
+            (run_root / "scores/candidate_001.pre_cosim.json").read_text()
+        )
+        second = json.loads(
+            (run_root / "scores/candidate_002.pre_cosim.json").read_text()
+        )
+        second_gate = json.loads(
+            (run_root / "cosim_gates/candidate_002.json").read_text()
+        )
+        self.assertGreater(second["ppa_cost"], first["ppa_cost"])
+        self.assertGreater(second["official_score"], first["official_score"])
+        self.assertTrue(second_gate["eligible"])
+        self.assertEqual(second_gate["policy"], "official_score_gate")
+        self.assertEqual(
+            second_gate["reason"], "STRICT_OFFICIAL_SCORE_IMPROVEMENT"
+        )
+        self.assertIn(("cosim", 2), backend.calls)
+        self.assertEqual(result["best_candidate_id"], "candidate_002")
+        self.assertEqual(result["final_candidate_id"], "candidate_002")
+        report = (run_root / "experimental_report.md").read_text(encoding="utf-8")
+        self.assertIn("official public proxy", report)
+        self.assertIn("public_proxy_v1", report)
+        self.assertIn("PPA tie-break", report)
 
     def test_final_reserve_cannot_be_lower_than_configured_final_tool_cost(self) -> None:
         unsafe = replace(self.optimization_config, final_reserve_credits=24)
@@ -639,6 +953,93 @@ class V2WorkflowTests(unittest.TestCase):
             self.assertEqual(provider_result["output_tokens"], 23)
             self.assertTrue((run_root / round_record["request_ref"]).is_file())
 
+    def test_recovery_honors_durable_no_improvement_limit(self) -> None:
+        from llm4hls_agent import optimization
+
+        run_root = self.root / "durable-no-improvement"
+        original_append_trace = optimization._append_trace
+
+        def interrupt_after_second_round(path, event, **payload):
+            original_append_trace(path, event, **payload)
+            if event == "V2_ROUND_COMPLETED" and payload.get("round_index") == 2:
+                raise KeyboardInterrupt("injected after durable rejection round")
+
+        with patch(
+            "llm4hls_agent.optimization._append_trace",
+            side_effect=interrupt_after_second_round,
+        ), self.assertRaises(KeyboardInterrupt):
+            run_v2(
+                self.task,
+                run_root,
+                self.run_config,
+                self.optimization_config,
+                ExcerptFailureProvider(),
+                backend=PPASequenceBackend(),
+            )
+
+        result = run_v2(
+            self.task,
+            run_root,
+            self.run_config,
+            self.optimization_config,
+            ExcerptFailureProvider(),
+            backend=PPASequenceBackend(),
+        )
+
+        self.assertEqual(len(result["rounds"]), 2)
+        self.assertEqual(result["exploration_stop_reason"], "NO_IMPROVEMENT_LIMIT")
+        self.assertEqual(result["budget"]["tool_used"]["llm"], 2)
+
+    def test_recovery_preserves_not_better_failure_history_after_promotion(self) -> None:
+        from llm4hls_agent import optimization
+
+        run_root = self.root / "reject-promote-retry-recovery"
+        config = replace(self.optimization_config, max_rounds=3)
+        original_append_trace = optimization._append_trace
+
+        def interrupt_after_third_round(path, event, **payload):
+            original_append_trace(path, event, **payload)
+            if event == "V2_ROUND_COMPLETED" and payload.get("round_index") == 3:
+                raise KeyboardInterrupt("injected after retry round")
+
+        with patch(
+            "llm4hls_agent.optimization._append_trace",
+            side_effect=interrupt_after_third_round,
+        ), self.assertRaises(KeyboardInterrupt):
+            run_v2(
+                self.task,
+                run_root,
+                self.run_config,
+                config,
+                RejectPromoteRetryProvider(),
+                backend=RejectPromoteRetryBackend(),
+            )
+
+        result = run_v2(
+            self.task,
+            run_root,
+            self.run_config,
+            config,
+            RejectPromoteRetryProvider(),
+            backend=RejectPromoteRetryBackend(),
+        )
+        third_request = json.loads(
+            (
+                run_root
+                / result["rounds"][2]["request_ref"]
+            ).read_text(encoding="utf-8")
+        )
+
+        self.assertEqual(
+            [record["decision"] for record in result["rounds"]],
+            ["REJECTED_NOT_BETTER", "PROMOTED", "PROMOTED"],
+        )
+        self.assertEqual(result["best_candidate_id"], "candidate_003")
+        self.assertEqual(
+            third_request["context"]["failed_actions"][0]["optimization_class"],
+            "LOOP_PIPELINE",
+        )
+
     def test_completed_run_is_reused_without_duplicate_charges(self) -> None:
         first = run_v2(
             self.task,
@@ -727,6 +1128,40 @@ class V2WorkflowTests(unittest.TestCase):
         self.assertEqual(result["stop_reason"], "FINAL_VALIDATION_FAILED")
         self.assertEqual(len(result["final_attempts"]), 1)
         self.assertIsNone(result["final_candidate_id"])
+
+    def test_all_failed_final_attempts_still_report_complete_ledger_budget(self) -> None:
+        run_config = replace(
+            self.run_config,
+            budget=BudgetConfig(
+                credit_limit=200,
+                costs={"csim": 1, "synth": 4, "cosim": 20, "llm": 0},
+                tool_limits={"csim": 7, "synth": 7, "cosim": 7, "llm": 6},
+                token_limit=32768,
+                runtime_limit_seconds=3600.0,
+            ),
+        )
+        run_root = self.root / "all-final-attempts-fail"
+
+        result = run_v2(
+            self.task,
+            run_root,
+            run_config,
+            self.optimization_config,
+            SequenceOptimizationProvider(),
+            backend=EveryFinalCosimFailureBackend(),
+        )
+        budget_state = json.loads(
+            (run_root / "budget_state.json").read_text(encoding="utf-8")
+        )
+
+        self.assertEqual(result["status"], "FAILED")
+        self.assertEqual(result["stop_reason"], "FINAL_VALIDATION_FAILED")
+        self.assertEqual(len(result["final_attempts"]), 2)
+        self.assertEqual(result["budget"]["credits_used"], 131)
+        self.assertEqual(
+            result["budget"]["credits_used"], budget_state["credits_used"]
+        )
+        self.assertEqual(result["budget"]["tool_used"], budget_state["tool_used"])
 
     def test_restart_after_completed_round_does_not_repeat_first_round(self) -> None:
         from llm4hls_agent import optimization

@@ -1,0 +1,14 @@
+task_id = "residual_stream_deadlock"
+task_type = "structural"
+difficulty = 4
+top = "residual"
+kernel_file = "residual.cpp"
+header_files = ["residual.h"]
+public_tb = "residual_tb.cpp"
+budget = 80
+requires_cosim = true
+initial_condition = "PASSES C-simulation but DEADLOCKS in C/RTL co-simulation. A DATAFLOW skip/residual connection where stage A writes its ENTIRE main stream before writing any of its skip stream; unbounded C-sim FIFOs hide this, but bounded RTL FIFOs (depth 2) cannot buffer the burst and the pipeline deadlocks. C-sim alone would wrongly report the design correct."
+
+[target]
+part = "xcu55c-fsvh2892-2L-e"
+clock_ns = 5.0

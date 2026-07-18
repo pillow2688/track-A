@@ -4,12 +4,17 @@ import json
 import math
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from llm4hls_agent.scoring import (
     CandidateScore,
+    OFFICIAL_ACCELERATION_CAP,
+    OFFICIAL_SCORE_SOURCE,
+    OFFICIAL_SCORE_VERSION,
     ScoringConfig,
     compare_scores,
+    estimate_official_score_proxy,
     load_scoring_config,
     score_candidate,
 )
@@ -131,12 +136,61 @@ class ScoringTests(unittest.TestCase):
     def test_loads_json_compatible_yaml_and_requires_weights_sum_to_one(self) -> None:
         self.assertEqual(self.config.weights["latency"], 0.45)
         self.assertAlmostEqual(sum(self.config.weights.values()), 1.0)
+        self.assertEqual(self.config.official_score_version, OFFICIAL_SCORE_VERSION)
+        self.assertEqual(
+            self.config.official_acceleration_cap, OFFICIAL_ACCELERATION_CAP
+        )
+        self.assertEqual(
+            self.config.to_dict()["official_score"],
+            {
+                "enabled": False,
+                "version": "public_proxy_v1",
+                "acceleration_cap": 8.0,
+            },
+        )
 
         invalid = dict(self.config_value)
         invalid["ppa_weights"] = dict(self.config_value["ppa_weights"])
         invalid["ppa_weights"]["latency"] = 0.46
         self.config_path.write_text(json.dumps(invalid), encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "sum"):
+            load_scoring_config(self.config_path)
+
+    def test_versioned_official_proxy_config_rejects_formula_drift(self) -> None:
+        versioned = dict(self.config_value)
+        versioned["official_score"] = {
+            "enabled": True,
+            "version": OFFICIAL_SCORE_VERSION,
+            "acceleration_cap": OFFICIAL_ACCELERATION_CAP,
+        }
+        self.config_path.write_text(json.dumps(versioned), encoding="utf-8")
+
+        loaded = load_scoring_config(self.config_path)
+
+        self.assertTrue(loaded.official_score_enabled)
+        self.assertEqual(loaded.to_dict()["official_score"], versioned["official_score"])
+
+        for field, invalid_value, message in (
+            ("version", "public_proxy_v2", "version"),
+            ("acceleration_cap", 4.0, "acceleration cap"),
+        ):
+            with self.subTest(field=field):
+                invalid = dict(versioned)
+                invalid["official_score"] = dict(versioned["official_score"])
+                invalid["official_score"][field] = invalid_value
+                self.config_path.write_text(json.dumps(invalid), encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, message):
+                    load_scoring_config(self.config_path)
+
+    def test_official_proxy_config_requires_complete_version_tuple(self) -> None:
+        incomplete = dict(self.config_value)
+        incomplete["official_score"] = {
+            "enabled": True,
+            "version": OFFICIAL_SCORE_VERSION,
+        }
+        self.config_path.write_text(json.dumps(incomplete), encoding="utf-8")
+
+        with self.assertRaisesRegex(ValueError, "configuration"):
             load_scoring_config(self.config_path)
 
     def test_zero_baseline_resource_is_finite(self) -> None:
@@ -217,6 +271,94 @@ class ScoringTests(unittest.TestCase):
         self.assertFalse(score.hard_constraints_passed)
         self.assertIsNone(score.ppa_cost)
         self.assertIn("INVALID_LATENCY", score.hard_failures)
+
+    def test_official_public_proxy_matches_formula_and_eight_x_cap(self) -> None:
+        baseline = self.metrics(latency=800)
+        validation = self.validation(4)
+
+        four_x = estimate_official_score_proxy(
+            difficulty=2,
+            baseline=baseline,
+            candidate=self.metrics(latency=200),
+            validation=validation,
+            requires_cosim=True,
+        )
+        beyond_cap = estimate_official_score_proxy(
+            difficulty=2,
+            baseline=baseline,
+            candidate=self.metrics(latency=50),
+            validation=validation,
+            requires_cosim=True,
+        )
+
+        self.assertEqual(four_x, 1.7)
+        self.assertEqual(beyond_cap, 2.0)
+
+    def test_official_public_proxy_is_zero_until_required_cosim_passes(self) -> None:
+        tier_three = self.validation(3)
+        kwargs = {
+            "difficulty": 3,
+            "baseline": self.metrics(latency=800),
+            "candidate": self.metrics(latency=400),
+            "validation": tier_three,
+            "requires_cosim": True,
+        }
+
+        self.assertEqual(estimate_official_score_proxy(**kwargs), 0.0)
+        self.assertEqual(
+            estimate_official_score_proxy(**kwargs, provisional_cosim=True),
+            2.325,
+        )
+
+    def test_enabled_official_score_is_required_and_outranks_internal_ppa(self) -> None:
+        official_config = replace(self.config, official_score_enabled=True)
+        missing = score_candidate(
+            candidate_id="candidate_missing",
+            baseline=self.metrics(),
+            candidate=self.metrics(),
+            validation=self.validation(4),
+            clock=self.clock(),
+            config=official_config,
+            input_tokens=0,
+            output_tokens=0,
+            cached_input_tokens=0,
+            credits_used=0,
+        )
+        self.assertFalse(missing.hard_constraints_passed)
+        self.assertIn("OFFICIAL_SCORE_MISSING", missing.hard_failures)
+
+        faster_but_larger = score_candidate(
+            candidate_id="candidate_fast",
+            baseline=self.metrics(latency=100, ii=10, lut=100),
+            candidate=self.metrics(latency=50, ii=20, lut=900),
+            validation=self.validation(4),
+            clock=self.clock(),
+            config=official_config,
+            input_tokens=100,
+            output_tokens=0,
+            cached_input_tokens=0,
+            credits_used=25,
+            official_score=0.8,
+            official_score_source=OFFICIAL_SCORE_SOURCE,
+        )
+        smaller_but_slower = score_candidate(
+            candidate_id="candidate_small",
+            baseline=self.metrics(latency=100, ii=10, lut=100),
+            candidate=self.metrics(latency=60, ii=5, lut=100),
+            validation=self.validation(4),
+            clock=self.clock(),
+            config=official_config,
+            input_tokens=100,
+            output_tokens=0,
+            cached_input_tokens=0,
+            credits_used=25,
+            official_score=0.79,
+            official_score_source=OFFICIAL_SCORE_SOURCE,
+        )
+
+        comparison = compare_scores(faster_but_larger, smaller_but_slower)
+        self.assertEqual(comparison.winner, "candidate_fast")
+        self.assertEqual(comparison.reason, "OFFICIAL_SCORE")
 
 
 if __name__ == "__main__":

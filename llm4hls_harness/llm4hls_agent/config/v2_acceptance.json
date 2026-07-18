@@ -1,11 +1,17 @@
 {
-  "acceptance_id": "v2-u55c-candidate-ppa",
+  "acceptance_id": "v2-u55c-candidate-official-proxy",
   "evidence_tier": "REAL",
   "minimum_real_llm_candidates": 2,
   "require_no_fallback": true,
   "required_backend_fingerprint": "llm4hls_agent.vitis.VitisBackend:v0.4",
   "required_model": "deepseek-v4-pro",
+  "required_official_acceleration_cap": 8.0,
+  "required_official_score_enabled": true,
+  "required_official_score_version": "public_proxy_v1",
+  "required_exploration_cosim_policy": "official_score_gate",
   "required_provider": "openai-compatible",
+  "required_task_difficulty": 2,
+  "required_task_requires_cosim": true,
   "required_toolchain": "Vitis 2025.2",
   "schema_version": 1,
   "task_id": "u55c_vector_add_optimize"
