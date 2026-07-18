@@ -169,6 +169,11 @@ python3 -m llm4hls_agent review-v2 --runs-root runs
 `review-v2` 不调用模型或 Vitis，只在 `runs/` 根目录平铺生成
 `V2_ACCEPTANCE_REPORT_CN.md` 和 `V2_ACCEPTANCE_REPORT.md`，不生成 HTML。
 
+2026-07-18 的两次真实 Vitis 团队复盘已按“只发布核心 Markdown、不提交生产运行环境”
+整理到 [`releases/v2-team-reports-2026-07-18/`](releases/v2-team-reports-2026-07-18/README.md)。
+阅读顺序、数据流、证据边界和本地重建方法见
+[《V2 核心报告阅读与更新指南》](../doc/materials/07_experiments/2026-07-18-v2-core-report-guide.md)。
+
 ## 官方参考实现对应内部哪个阶段
 
 官方实现不能直接归入一个内部阶段，需要分别看“功能宽度”和“工程深度”：
