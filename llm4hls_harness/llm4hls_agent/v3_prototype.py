@@ -45,6 +45,12 @@ from .scoring import (
 from .task import PublicTask
 from .tools import BackendResult, ToolBackend, ToolResult, ToolServer
 from .v3_evidence import build_synth_evidence
+from .v3_failure_evidence import (
+    extract_cosim_failure_evidence,
+    extract_csim_failure_evidence,
+    extract_synth_failure_evidence,
+)
+from .v3_phase_router import PhaseMode, PhaseRoutingError, route_phase
 from .v3_planner import (
     PLANNER_ACTION_SCHEMA,
     PLANNER_INPUT_SCHEMA,
@@ -99,6 +105,11 @@ class V3PrototypeState(TypedDict, total=False):
     task_id: str
     run_dir: str
     phase: str
+    mode: str
+    phase_decision: dict[str, object]
+    failure_evidence: dict[str, object]
+    failure_evidence_ref: str
+    failure_evidence_sha256: str
     status: str
     stop_reason: str
     baseline_candidate_id: str
@@ -133,8 +144,10 @@ class V3PrototypeState(TypedDict, total=False):
     final_synth_evidence_ref: str
     final_synth_evidence_sha256: str
     baseline_clock: dict[str, object]
+    baseline_resource: dict[str, object]
     best_clock: dict[str, object]
     candidate_clock: dict[str, object]
+    candidate_resource: dict[str, object]
     final_clock: dict[str, object]
     final_validation: dict[str, dict[str, object]]
     baseline_score_ref: str
@@ -754,6 +767,8 @@ def _build_round_planner_input(
     return build_planner_input(
         task=_task_spec(runtime.task),
         round_state={
+            "mode": str(state.get("mode", PhaseMode.OPTIMIZE.value)),
+            "failure_evidence": dict(state.get("failure_evidence", {})),
             "round_index": round_index,
             "rounds_completed": int(state.get("rounds_completed", 0)),
             "consecutive_no_improvement": int(
@@ -1034,6 +1049,10 @@ def _build_package_manifest(
         "schema_version": "v3a.package-manifest.v1",
         "workflow": WORKFLOW_NAME,
         "task_id": runtime.task.id,
+        "mode": result.get("mode", "UNROUTED"),
+        "phase_decision": result.get("phase_decision", {}),
+        "failure_evidence_ref": result.get("failure_evidence_ref"),
+        "failure_evidence_sha256": result.get("failure_evidence_sha256"),
         "validation_profile": runtime.validation_profile,
         "status": result.get("status"),
         "final_candidate_id": final_candidate_id,
@@ -1323,6 +1342,25 @@ def _validate_candidate_operation_request(
         ):
             raise RuntimeError("PROMOTE Candidate decision is malformed")
         return
+    if operation_type == "PROMOTE_CORRECTNESS":
+        if (
+            set(registry_updates) != {"best_candidate_id", "active_candidate_id"}
+            or registry_updates.get("best_candidate_id")
+            != request.get("candidate_id")
+            or registry_updates.get("active_candidate_id") is not None
+            or set(candidate_updates) != {"status", "verification_mode"}
+            or candidate_updates.get("status") != "CORRECTNESS_VERIFIED"
+            or candidate_updates.get("verification_mode")
+            not in {
+                PhaseMode.REPAIR.value,
+                PhaseMode.SYNTH_FIX.value,
+                PhaseMode.STRUCTURAL_FIX.value,
+            }
+        ):
+            raise RuntimeError(
+                "PROMOTE_CORRECTNESS Candidate decision is malformed"
+            )
+        return
     if operation_type == "REJECT":
         if (
             dict(registry_updates) != {"active_candidate_id": None}
@@ -1393,6 +1431,45 @@ def _validate_candidate_operation_request(
             )
         ):
             raise RuntimeError("COMMIT_FINAL Candidate decision is malformed")
+        return
+    if operation_type == "COMMIT_FINAL_CORRECTNESS":
+        required_candidate_updates = {
+            "status",
+            "verification_mode",
+            "final_validation",
+            "final_metrics_ref",
+            "final_synth_evidence_ref",
+            "final_synth_evidence_sha256",
+        }
+        if (
+            set(registry_updates)
+            != {"final_candidate_id", "final_attempt_candidate_id"}
+            or any(
+                registry_updates.get(key) != request.get("candidate_id")
+                for key in registry_updates
+            )
+            or set(candidate_updates) != required_candidate_updates
+            or candidate_updates.get("status") != "FINAL_VERIFIED"
+            or candidate_updates.get("verification_mode")
+            not in {
+                PhaseMode.REPAIR.value,
+                PhaseMode.SYNTH_FIX.value,
+                PhaseMode.STRUCTURAL_FIX.value,
+            }
+            or not isinstance(candidate_updates.get("final_validation"), Mapping)
+            or any(
+                not isinstance(candidate_updates.get(key), str)
+                or not candidate_updates.get(key)
+                for key in (
+                    "final_metrics_ref",
+                    "final_synth_evidence_ref",
+                    "final_synth_evidence_sha256",
+                )
+            )
+        ):
+            raise RuntimeError(
+                "COMMIT_FINAL_CORRECTNESS Candidate decision is malformed"
+            )
         return
     raise RuntimeError(f"unknown Candidate decision type: {operation_type}")
 
@@ -1859,6 +1936,62 @@ def _clock_constraint(
         "maximum_period_ns": maximum,
         "estimated_period_ns": estimated,
         "passed": bool(valid and float(estimated) <= maximum),
+    }
+
+
+def _resource_constraint(
+    report: Mapping[str, object] | None, scoring: ScoringConfig
+) -> dict[str, object]:
+    resource_names = {
+        "lut": "LUT",
+        "ff": "FF",
+        "dsp": "DSP",
+        "bram": "BRAM_18K",
+        "uram": "URAM",
+    }
+    used = report.get("resources") if isinstance(report, Mapping) else None
+    available = (
+        report.get("available_resources") if isinstance(report, Mapping) else None
+    )
+    violations: list[dict[str, object]] = []
+    utilization: dict[str, float] = {}
+    if not isinstance(used, Mapping) or not isinstance(available, Mapping):
+        violations.append({"reason": "RESOURCE_REPORT_UNAVAILABLE"})
+    else:
+        for key, report_name in resource_names.items():
+            used_value = used.get(report_name)
+            available_value = available.get(report_name)
+            if (
+                isinstance(used_value, bool)
+                or not isinstance(used_value, (int, float))
+                or isinstance(available_value, bool)
+                or not isinstance(available_value, (int, float))
+                or not math.isfinite(float(used_value))
+                or not math.isfinite(float(available_value))
+                or float(used_value) < 0
+                or float(available_value) <= 0
+            ):
+                violations.append(
+                    {"resource": report_name, "reason": "INVALID_RESOURCE_REPORT"}
+                )
+                continue
+            percent = 100.0 * float(used_value) / float(available_value)
+            utilization[report_name] = percent
+            cap = float(scoring.max_resource_percent[key])
+            if percent > cap:
+                violations.append(
+                    {
+                        "resource": report_name,
+                        "used": float(used_value),
+                        "available": float(available_value),
+                        "utilization_percent": percent,
+                        "maximum_percent": cap,
+                    }
+                )
+    return {
+        "passed": not violations,
+        "utilization_percent": utilization,
+        "violations": violations,
     }
 
 
@@ -2357,6 +2490,11 @@ def _initialize(runtime: _Runtime, _state: V3PrototypeState) -> V3PrototypeState
         "task_id": runtime.task.id,
         "run_dir": str(runtime.run_root),
         "phase": "BASELINE",
+        "mode": "UNROUTED",
+        "phase_decision": {},
+        "failure_evidence": {},
+        "failure_evidence_ref": "",
+        "failure_evidence_sha256": "",
         "status": "RUNNING" if allowed else "FAILED",
         "stop_reason": (
             "RUNNING" if allowed else "BASELINE_AND_FINAL_CLOSURE_UNAFFORDABLE"
@@ -2435,7 +2573,16 @@ def _baseline_synth(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeSt
         result.report if result is not None else None,
         runtime.config.minimum_frequency_mhz,
     )
-    ok = bool(result is not None and result.ok and metrics_ref and clock["passed"])
+    resource = _resource_constraint(
+        result.report if result is not None else None, runtime.scoring
+    )
+    ok = bool(
+        result is not None
+        and result.ok
+        and metrics_ref
+        and clock["passed"]
+        and resource["passed"]
+    )
     if (
         ok
         and runtime.validation_profile == FAST_EXPERIMENT_PROFILE
@@ -2464,6 +2611,7 @@ def _baseline_synth(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeSt
             if synth_evidence_ref
             else {}
         ),
+        "resource_constraint": resource,
     }
     return {
         "baseline_metrics_ref": metrics_ref or "",
@@ -2473,11 +2621,14 @@ def _baseline_synth(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeSt
         "best_synth_evidence_ref": synth_evidence_ref,
         "best_synth_evidence_sha256": synth_evidence_sha256,
         "baseline_clock": clock,
+        "baseline_resource": resource,
         "best_clock": clock,
         "last_tool_ok": ok,
         "last_tool_phase": result.phase if result is not None else str(record.get("phase")),
         "status": "RUNNING" if ok else "FAILED",
-        "stop_reason": "RUNNING" if ok else "BASELINE_SYNTH_OR_CLOCK_FAILED",
+        "stop_reason": (
+            "RUNNING" if ok else "BASELINE_SYNTH_CLOCK_OR_RESOURCE_FAILED"
+        ),
         "best_candidate_id": candidate_id,
         "node_events": [event],
     }
@@ -2507,6 +2658,281 @@ def _baseline_cosim(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeSt
         "status": "RUNNING" if ok else "FAILED",
         "stop_reason": "RUNNING" if ok else "BASELINE_COSIM_FAILED",
         "best_candidate_id": candidate_id,
+        "node_events": [event],
+    }
+
+
+def _phase_router(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeState:
+    """Classify baseline evidence without spending tokens or changing tools."""
+
+    candidate_id = state["baseline_candidate_id"]
+    validation = _registry_validation(runtime, candidate_id)
+    csim_record: object = validation.get("csim")
+    synth_record: object = validation.get("synth")
+    cosim_record: object = validation.get("cosim")
+
+    # A successful HLS invocation that misses the required clock is still a
+    # synthesis-stage failure for task routing.
+    clock = state.get("baseline_clock", {})
+    resource = state.get("baseline_resource", {})
+    if (
+        isinstance(synth_record, Mapping)
+        and isinstance(clock, Mapping)
+        and isinstance(resource, Mapping)
+        and (clock.get("passed") is False or resource.get("passed") is False)
+    ):
+        synth_record = {
+            **synth_record,
+            "status": "FAIL",
+            "ok": False,
+            "phase": "clock_violation",
+        }
+
+    try:
+        decision = route_phase(
+            baseline_csim=csim_record,
+            baseline_synth=synth_record,
+            baseline_cosim=cosim_record,
+            task_metadata=runtime.task,
+            requires_cosim=runtime.task.requires_cosim,
+        )
+    except PhaseRoutingError as exc:
+        event = _event(
+            runtime,
+            node="phase_router",
+            phase="ROUTE",
+            candidate_id=candidate_id,
+            action="route_baseline_to_task_mode",
+            why="Select the next task phase from completed baseline evidence.",
+            outcome="PHASE_ROUTING_FAILED",
+            details={"error": str(exc)},
+        )
+        return {
+            "mode": "ROUTING_ERROR",
+            "status": "FAILED",
+            "stop_reason": "PHASE_ROUTING_FAILED",
+            "last_tool_ok": False,
+            "last_tool_reason": str(exc),
+            "node_events": [event],
+        }
+
+    decision_value = decision.to_dict()
+
+    # The broken baseline is still the immutable parent/incumbent for a repair
+    # Candidate.  Successful baseline paths already establish this binding in
+    # their validation node; failure paths reach the Router before that point.
+    manager = CandidateManager(runtime.run_root, runtime.task)
+    registry = manager.load_registry()
+    if registry.get("best_candidate_id") is None:
+        registry["best_candidate_id"] = candidate_id
+        manager.save_registry(registry)
+
+    failed_stage = {
+        PhaseMode.REPAIR: "csim",
+        PhaseMode.SYNTH_FIX: "synth",
+        PhaseMode.STRUCTURAL_FIX: "cosim",
+    }.get(decision.mode)
+    failure_evidence: dict[str, object] = {}
+    evidence_ref = ""
+    evidence_sha256 = ""
+    if failed_stage is not None:
+        record = validation.get(failed_stage, {})
+        if not isinstance(record, Mapping):
+            raise RuntimeError(f"baseline {failed_stage} validation is invalid")
+        if not isinstance(record.get("result_ref"), str) or not record.get(
+            "result_ref"
+        ):
+            reason = f"BASELINE_{failed_stage.upper()}_INFRASTRUCTURE_FAILURE"
+            event = _event(
+                runtime,
+                node="phase_router",
+                phase="ROUTE",
+                candidate_id=candidate_id,
+                action="refuse_unbound_failure_as_code_repair",
+                why="A repair Planner requires a completed, hash-bound tool result.",
+                outcome=reason,
+                details={"phase_decision": decision_value},
+            )
+            return {
+                "phase": decision.mode.value,
+                "mode": decision.mode.value,
+                "phase_decision": decision_value,
+                "status": "FAILED",
+                "stop_reason": reason,
+                "last_tool_ok": False,
+                "last_tool_reason": reason,
+                "node_events": [event],
+            }
+        result = _completed_tool_result(
+            runtime,
+            record.get("result_ref"),
+            expected_kind=failed_stage,
+            expected_candidate_id=candidate_id,
+            expected_scope="exploration",
+        )
+        result_value: object = result
+        validation_evidence: dict[str, object] = dict(record)
+        if failed_stage == "synth" and (
+            clock.get("passed") is False or resource.get("passed") is False
+        ):
+            result_value = {
+                **result.to_dict(),
+                "ok": False,
+                "phase": "constraint_violation",
+            }
+        if failed_stage == "synth" and clock.get("passed") is False:
+            validation_evidence["clock_violation"] = dict(clock)
+            validation_evidence["target_clock_period_ns"] = (
+                1000.0 / runtime.config.minimum_frequency_mhz
+            )
+        if failed_stage == "synth" and resource.get("passed") is False:
+            raw_violations = resource.get("violations", [])
+            validation_evidence["resource_violations"] = [
+                "resource violation: "
+                + json.dumps(item, ensure_ascii=False, sort_keys=True)
+                for item in raw_violations
+                if isinstance(item, Mapping)
+            ]
+        extractor = {
+            "csim": extract_csim_failure_evidence,
+            "synth": extract_synth_failure_evidence,
+            "cosim": extract_cosim_failure_evidence,
+        }[failed_stage]
+        failure_evidence = extractor(
+            result_value,
+            validation_evidence=validation_evidence,
+        ).to_dict()
+        evidence_ref = f"evidence/failures/baseline_{failed_stage}.json"
+        evidence_path = runtime.run_root / evidence_ref
+        _write_once_or_verify(evidence_path, failure_evidence)
+        evidence_sha256 = _sha256_file(evidence_path)
+
+    event = _event(
+        runtime,
+        node="phase_router",
+        phase="ROUTE",
+        candidate_id=candidate_id,
+        action="route_baseline_to_task_mode",
+        why="Use CSim, Synth, required CoSim and task metadata as a deterministic gate.",
+        outcome=decision.mode.value,
+        result_ref=evidence_ref or None,
+        details={
+            "phase_decision": decision_value,
+            "failure_evidence_ref": evidence_ref or None,
+            "failure_evidence_sha256": evidence_sha256 or None,
+        },
+    )
+    return {
+        "phase": decision.mode.value,
+        "mode": decision.mode.value,
+        "phase_decision": decision_value,
+        "failure_evidence": failure_evidence,
+        "failure_evidence_ref": evidence_ref,
+        "failure_evidence_sha256": evidence_sha256,
+        "status": "RUNNING",
+        "stop_reason": "RUNNING",
+        "last_tool_ok": True,
+        "last_tool_reason": decision.reason,
+        "node_events": [event],
+    }
+
+
+def _evaluate_task_round_budget(
+    runtime: _Runtime, state: V3PrototypeState
+) -> V3PrototypeState:
+    """Reserve one task-repair attempt and the unchanged final closure."""
+
+    mode = str(state.get("mode", ""))
+    if mode not in {
+        PhaseMode.REPAIR.value,
+        PhaseMode.SYNTH_FIX.value,
+        PhaseMode.STRUCTURAL_FIX.value,
+    }:
+        raise RuntimeError(f"task repair budget received invalid mode: {mode}")
+    round_index = int(state.get("round_index", 1))
+    planner_round_limit = (
+        runtime.max_planner_rounds
+        if runtime.live_planner is not None
+        else len(runtime.proposals)
+    )
+    no_improvement = int(state.get("no_improvement_rounds", 0))
+    if round_index > planner_round_limit:
+        gate: dict[str, object] = {
+            "policy": "task_repair_round_limit",
+            "allowed": False,
+            "required_calls": {},
+            "required_credits": 0,
+            "blockers": ["no_more_distinct_repair_proposals"],
+        }
+        reason = "MAX_TASK_REPAIR_ROUNDS"
+    elif no_improvement >= runtime.max_no_improvement_rounds:
+        gate = {
+            "policy": "task_repair_no_improvement_limit",
+            "allowed": False,
+            "required_calls": {},
+            "required_credits": 0,
+            "blockers": [
+                f"no_improvement:{no_improvement}>="
+                f"{runtime.max_no_improvement_rounds}"
+            ],
+        }
+        reason = "TASK_REPAIR_NO_IMPROVEMENT_LIMIT"
+    else:
+        candidate_calls = {
+            PhaseMode.REPAIR.value: {
+                "csim": 1,
+                "synth": 1,
+                "cosim": 1 if runtime.task.requires_cosim else 0,
+            },
+            PhaseMode.SYNTH_FIX.value: {"csim": 1, "synth": 1, "cosim": 0},
+            PhaseMode.STRUCTURAL_FIX.value: {
+                "csim": 1,
+                "synth": 0,
+                "cosim": 1,
+            },
+        }[mode]
+        required = {
+            stage: candidate_calls[stage] + _FULL_CLOSURE_CALLS[stage]
+            for stage in _FULL_CLOSURE_CALLS
+        }
+        required_tokens = 0
+        if runtime.live_planner is not None:
+            prepared = runtime.live_planner.prepare(
+                _build_round_planner_input(runtime, state)
+            )
+            if not isinstance(prepared, PreparedPlannerCall):
+                raise RuntimeError("live Planner prepare() returned an invalid request")
+            required["llm"] = 1
+            required_tokens = prepared.estimated_tokens
+        gate = _budget_affordability(
+            runtime,
+            required_calls=required,
+            policy=f"{mode.lower()}_candidate_plus_final_closure",
+            required_tokens=required_tokens,
+        )
+        reason = (
+            "TASK_REPAIR_BUDGET_AVAILABLE"
+            if gate["allowed"] is True
+            else "TASK_REPAIR_SKIPPED_FINAL_RESERVE"
+        )
+    allowed = gate["allowed"] is True
+    event = _event(
+        runtime,
+        node="evaluate_task_round_budget",
+        phase=mode,
+        candidate_id=state["best_candidate_id"],
+        action="reserve_task_repair_and_final_validation_budget",
+        why="A repair attempt may start only when its mode-specific checks and fresh final closure remain affordable.",
+        outcome=reason,
+        round_index=round_index,
+    )
+    return {
+        "budget_gate": gate,
+        "last_tool_ok": allowed,
+        "last_tool_reason": reason,
+        "status": "RUNNING" if allowed else "FAILED",
+        "stop_reason": "RUNNING" if allowed else reason,
+        "exploration_stop_reason": "RUNNING" if allowed else reason,
         "node_events": [event],
     }
 
@@ -2609,6 +3035,7 @@ def _evaluate_round_budget(
 
 def _plan_candidate(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeState:
     round_index = int(state.get("round_index", 1))
+    mode = str(state.get("mode", PhaseMode.OPTIMIZE.value))
     input_ref = f"planner/inputs/round_{round_index:03d}.json"
     input_path = runtime.run_root / input_ref
     current_input = _build_round_planner_input(runtime, state)
@@ -2786,7 +3213,7 @@ def _plan_candidate(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeSt
     event = _event(
         runtime,
         node="plan_candidate",
-        phase="OPTIMIZE",
+        phase=mode,
         candidate_id=state["best_candidate_id"],
         action=(
             "live_planner_proposal"
@@ -2841,7 +3268,7 @@ def _plan_candidate(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeSt
         },
     )
     update: V3PrototypeState = {
-        "phase": "OPTIMIZE",
+        "phase": mode,
         "planner_ref": proposal_ref,
         "planner_action_id": action_id,
         "planner_input_ref": input_ref,
@@ -2870,6 +3297,7 @@ def _materialize_candidate(
     runtime: _Runtime, state: V3PrototypeState
 ) -> V3PrototypeState:
     parent_id = state["best_candidate_id"]
+    mode = str(state.get("mode", PhaseMode.OPTIMIZE.value))
     round_index = int(state.get("round_index", 1))
     proposal = _current_proposal(runtime, state)
     manager = CandidateManager(runtime.run_root, runtime.task)
@@ -2888,7 +3316,8 @@ def _materialize_candidate(
                 or candidate.get("parent_id") == parent_id
             )
             same_bundle = (
-                runtime.validation_profile == FAST_EXPERIMENT_PROFILE
+                mode == PhaseMode.OPTIMIZE.value
+                and runtime.validation_profile == FAST_EXPERIMENT_PROFILE
                 and candidate.get("kind") != "baseline"
                 and candidate.get("change_class") == proposal.change_class
             )
@@ -2922,7 +3351,7 @@ def _materialize_candidate(
         event = _event(
             runtime,
             node="materialize_candidate",
-            phase="OPTIMIZE",
+            phase=mode,
             candidate_id=None,
             action="deduplicate_patch_before_candidate_allocation",
             why=f"The same parent/Patch was already evaluated as {duplicate_id}.",
@@ -2949,7 +3378,7 @@ def _materialize_candidate(
         event = _event(
             runtime,
             node="materialize_candidate",
-            phase="OPTIMIZE",
+            phase=mode,
             candidate_id=None,
             action="validate_patch_before_candidate_allocation",
             why=str(exc),
@@ -2968,7 +3397,12 @@ def _materialize_candidate(
         parent_id=parent_id,
         patch_text=proposal.patch,
         application=application,
-        kind="optimization",
+        kind={
+            PhaseMode.REPAIR.value: "repair",
+            PhaseMode.SYNTH_FIX.value: "synth_fix",
+            PhaseMode.STRUCTURAL_FIX.value: "structural_fix",
+            PhaseMode.OPTIMIZE.value: "optimization",
+        }.get(mode, "optimization"),
         metadata={
             "planner_ref": state["planner_ref"],
             "planner_action_id": state["planner_action_id"],
@@ -3020,7 +3454,7 @@ def _materialize_candidate(
     event = _event(
         runtime,
         node="materialize_candidate",
-        phase="OPTIMIZE",
+        phase=mode,
         candidate_id=materialized.candidate_id,
         action="validate_patch_and_create_immutable_candidate",
         why=(
@@ -3040,6 +3474,7 @@ def _materialize_candidate(
         "candidate_synth_evidence_sha256": "",
         "candidate_score_ref": "",
         "candidate_clock": {},
+        "candidate_resource": {},
         "cosim_gate": {"eligible": False, "reason": "NOT_EVALUATED"},
         "node_events": [event],
     }
@@ -3098,7 +3533,7 @@ def _candidate_csim(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeSt
     result, record, event = _run_tool(
         runtime,
         node="candidate_csim",
-        phase="OPTIMIZE",
+        phase=str(state.get("mode", PhaseMode.OPTIMIZE.value)),
         candidate_id=candidate_id,
         stage="csim",
         validation_scope="exploration",
@@ -3124,7 +3559,7 @@ def _candidate_synth(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeS
     result, record, event = _run_tool(
         runtime,
         node="candidate_synth",
-        phase="OPTIMIZE",
+        phase=str(state.get("mode", PhaseMode.OPTIMIZE.value)),
         candidate_id=candidate_id,
         stage="synth",
         validation_scope="exploration",
@@ -3147,17 +3582,35 @@ def _candidate_synth(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeS
         result.report if result is not None else None,
         runtime.config.minimum_frequency_mhz,
     )
-    ok = bool(result is not None and result.ok and metrics_ref and clock["passed"])
+    resource = _resource_constraint(
+        result.report if result is not None else None, runtime.scoring
+    )
+    # Preserve the existing V3-B optimization score gate: optimize candidates
+    # are compared by the scorer after synthesis.  Repair candidates, however,
+    # must not be promoted merely because synthesis returned successfully when
+    # they still violate a hard resource constraint.
+    resource_gate_required = (
+        state.get("mode") != PhaseMode.OPTIMIZE.value
+    )
+    ok = bool(
+        result is not None
+        and result.ok
+        and metrics_ref
+        and clock["passed"]
+        and (resource["passed"] or not resource_gate_required)
+    )
     if synth_evidence_ref:
         event["details"] = {
             "synth_evidence_ref": synth_evidence_ref,
             "synth_evidence_sha256": synth_evidence_sha256,
+            "resource_constraint": resource,
         }
     update: V3PrototypeState = {
         "candidate_metrics_ref": metrics_ref or "",
         "candidate_synth_evidence_ref": synth_evidence_ref,
         "candidate_synth_evidence_sha256": synth_evidence_sha256,
         "candidate_clock": clock,
+        "candidate_resource": resource,
         "last_tool_ok": ok,
         "last_tool_phase": result.phase if result is not None else str(record.get("phase")),
         "node_events": [event],
@@ -3165,7 +3618,7 @@ def _candidate_synth(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeS
     if not ok:
         update["cosim_gate"] = {
             "eligible": False,
-            "reason": "CANDIDATE_SYNTH_OR_CLOCK_FAILED",
+            "reason": "CANDIDATE_SYNTH_CLOCK_OR_RESOURCE_FAILED",
         }
     return update
 
@@ -3419,7 +3872,7 @@ def _candidate_cosim(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeS
     result, record, event = _run_tool(
         runtime,
         node="candidate_cosim",
-        phase="OPTIMIZE",
+        phase=str(state.get("mode", PhaseMode.OPTIMIZE.value)),
         candidate_id=candidate_id,
         stage="cosim",
         validation_scope="exploration",
@@ -3527,6 +3980,90 @@ def _promote_candidate(runtime: _Runtime, state: V3PrototypeState) -> V3Prototyp
     }
 
 
+def _promote_correctness_candidate(
+    runtime: _Runtime, state: V3PrototypeState
+) -> V3PrototypeState:
+    """Accept a mode-specific repair without inventing a PPA baseline score."""
+
+    mode = str(state.get("mode", ""))
+    candidate_id = state["active_candidate_id"]
+    if candidate_id is None:
+        raise RuntimeError("correctness promotion has no active Candidate")
+    required_stages = {
+        PhaseMode.REPAIR.value: (
+            ("csim", "synth", "cosim")
+            if runtime.task.requires_cosim
+            else ("csim", "synth")
+        ),
+        PhaseMode.SYNTH_FIX.value: ("csim", "synth"),
+        PhaseMode.STRUCTURAL_FIX.value: ("csim", "cosim"),
+    }.get(mode)
+    if required_stages is None:
+        raise RuntimeError(f"correctness promotion received invalid mode: {mode}")
+    validation = _registry_validation(runtime, candidate_id)
+    for stage in required_stages:
+        record = validation.get(stage)
+        if not isinstance(record, Mapping) or not (
+            record.get("status") == "PASS" or record.get("ok") is True
+        ):
+            raise RuntimeError(
+                f"correctness promotion lacks {stage.upper()} PASS"
+            )
+    reason = f"{mode}_VALIDATION_PASS"
+    decision_ref = _commit_registry_operation(
+        runtime,
+        operation_type="PROMOTE_CORRECTNESS",
+        candidate_id=candidate_id,
+        expected_best_id=state["best_candidate_id"],
+        expected_registry_revision=int(state.get("registry_revision", 0)),
+        round_index=int(state.get("round_index", 1)),
+        reason=reason,
+        registry_updates={
+            "best_candidate_id": candidate_id,
+            "active_candidate_id": None,
+        },
+        candidate_updates={
+            "status": "CORRECTNESS_VERIFIED",
+            "verification_mode": mode,
+        },
+    )
+    event = _event(
+        runtime,
+        node="promote_correctness_candidate",
+        phase="DECIDE",
+        candidate_id=candidate_id,
+        action="promote_mode_verified_repair",
+        why="The Candidate passed every exploration check required by its routed task mode.",
+        outcome=reason,
+        result_ref=decision_ref,
+        round_index=int(state.get("round_index", 1)),
+        details={"required_stages": list(required_stages), "mode": mode},
+    )
+    update: V3PrototypeState = {
+        "phase": "DECIDE",
+        "active_candidate_id": None,
+        "best_candidate_id": candidate_id,
+        "last_round_improved": True,
+        "rounds_completed": int(state.get("rounds_completed", 0)) + 1,
+        "no_improvement_rounds": 0,
+        "exploration_stop_reason": reason,
+        "decision_ref": decision_ref,
+        "registry_revision": int(state.get("registry_revision", 0)) + 1,
+        "node_events": [event],
+    }
+    metrics_ref = state.get("candidate_metrics_ref")
+    if isinstance(metrics_ref, str) and metrics_ref:
+        update["best_metrics_ref"] = metrics_ref
+        update["best_synth_evidence_ref"] = str(
+            state.get("candidate_synth_evidence_ref", "")
+        )
+        update["best_synth_evidence_sha256"] = str(
+            state.get("candidate_synth_evidence_sha256", "")
+        )
+        update["best_clock"] = dict(state.get("candidate_clock", {}))
+    return update
+
+
 def _reject_candidate(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeState:
     incumbent_id = state["best_candidate_id"]
     candidate_id = state["active_candidate_id"]
@@ -3566,6 +4103,7 @@ def _reject_candidate(runtime: _Runtime, state: V3PrototypeState) -> V3Prototype
         "candidate_synth_evidence_sha256": "",
         "candidate_score_ref": "",
         "candidate_clock": {},
+        "candidate_resource": {},
         "last_round_improved": False,
         "decision_ref": decision_ref,
         "registry_revision": int(state.get("registry_revision", 0)) + 1,
@@ -3580,7 +4118,7 @@ def _advance_round(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeSta
     event = _event(
         runtime,
         node="advance_round",
-        phase="OPTIMIZE",
+        phase=str(state.get("mode", PhaseMode.OPTIMIZE.value)),
         candidate_id=state["best_candidate_id"],
         action="advance_optimization_round",
         why=(
@@ -3592,7 +4130,7 @@ def _advance_round(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeSta
         round_index=round_index,
     )
     return {
-        "phase": "OPTIMIZE",
+        "phase": str(state.get("mode", PhaseMode.OPTIMIZE.value)),
         "round_index": round_index + 1,
         "rounds_completed": int(state.get("rounds_completed", 0)) + 1,
         "no_improvement_rounds": no_improvement,
@@ -3695,6 +4233,28 @@ def _fallback_verified(
 def _evaluate_final_fallback(
     runtime: _Runtime, state: V3PrototypeState
 ) -> V3PrototypeState:
+    mode = str(state.get("mode", PhaseMode.OPTIMIZE.value))
+    if mode != PhaseMode.OPTIMIZE.value:
+        gate = _budget_affordability(
+            runtime,
+            required_calls=_FULL_CLOSURE_CALLS,
+            policy="task_repair_no_broken_baseline_fallback",
+        )
+        event = _event(
+            runtime,
+            node="evaluate_final_fallback",
+            phase="FINAL",
+            candidate_id=state.get("final_attempt_candidate_id"),
+            action="refuse_unverified_broken_baseline_fallback",
+            why=str(state.get("stop_reason", "FINAL_VALIDATION_FAILED")),
+            outcome="NO_VERIFIED_TASK_REPAIR_FALLBACK",
+            details={"mode": mode},
+        )
+        return {
+            "budget_gate": gate,
+            "last_tool_ok": False,
+            "node_events": [event],
+        }
     attempted = list(state.get("final_attempted_candidate_ids", []))
     registry = CandidateManager(runtime.run_root, runtime.task).load_registry()
     candidates = registry.get("candidates")
@@ -3916,18 +4476,83 @@ def _final_cosim(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeState
     candidate_id = state["final_attempt_candidate_id"]
     if candidate_id is None:
         raise RuntimeError("final validation has no selected attempt")
-    validation = update["final_validation"]
-    baseline_metrics = _completed_synth_report(
-        runtime,
-        state["baseline_metrics_ref"],
-        candidate_id=state["baseline_candidate_id"],
-        validation_scope="exploration",
+    validation = _validated_validation(
+        runtime, candidate_id, update["final_validation"]
     )
     final_metrics = _completed_synth_report(
         runtime,
         state["final_metrics_ref"],
         candidate_id=candidate_id,
         validation_scope="final",
+    )
+    mode = str(state.get("mode", PhaseMode.OPTIMIZE.value))
+    if mode != PhaseMode.OPTIMIZE.value:
+        if mode not in {
+            PhaseMode.REPAIR.value,
+            PhaseMode.SYNTH_FIX.value,
+            PhaseMode.STRUCTURAL_FIX.value,
+        }:
+            raise RuntimeError(f"final correctness commit has invalid mode: {mode}")
+        qualification = score_candidate(
+            candidate_id=candidate_id,
+            baseline=final_metrics,
+            candidate=final_metrics,
+            validation=validation,
+            clock=state["final_clock"],
+            config=replace(runtime.scoring, official_score_enabled=False),
+            input_tokens=0,
+            output_tokens=0,
+            cached_input_tokens=0,
+            credits_used=sum(
+                int(runtime.config.budget.costs[stage])
+                for stage in ("csim", "synth", "cosim")
+            ),
+        )
+        if not qualification.hard_constraints_passed:
+            return update | {
+                "status": "FAILED",
+                "stop_reason": "FINAL_CORRECTNESS_CONSTRAINT_FAILED",
+                "last_tool_reason": ",".join(qualification.hard_failures),
+                "final_candidate_id": None,
+            }
+        decision_ref = _commit_registry_operation(
+            runtime,
+            operation_type="COMMIT_FINAL_CORRECTNESS",
+            candidate_id=candidate_id,
+            expected_best_id=state["best_candidate_id"],
+            expected_registry_revision=int(state.get("registry_revision", 0)),
+            round_index=int(state.get("round_index", 1)),
+            reason="FINAL_FULL_CLOSURE_PASS",
+            registry_updates={
+                "final_candidate_id": candidate_id,
+                "final_attempt_candidate_id": candidate_id,
+            },
+            candidate_updates={
+                "status": "FINAL_VERIFIED",
+                "verification_mode": mode,
+                "final_validation": validation,
+                "final_metrics_ref": state["final_metrics_ref"],
+                "final_synth_evidence_ref": state.get(
+                    "final_synth_evidence_ref"
+                ),
+                "final_synth_evidence_sha256": state.get(
+                    "final_synth_evidence_sha256"
+                ),
+            },
+        )
+        return update | {
+            "final_score_ref": "",
+            "decision_ref": decision_ref,
+            "registry_revision": int(state.get("registry_revision", 0)) + 1,
+            "final_candidate_id": candidate_id,
+            "status": "DONE",
+            "stop_reason": f"{mode}_FINALIZED",
+        }
+    baseline_metrics = _completed_synth_report(
+        runtime,
+        state["baseline_metrics_ref"],
+        candidate_id=state["baseline_candidate_id"],
+        validation_scope="exploration",
     )
     score = _score(
         runtime,
@@ -4035,12 +4660,21 @@ def _candidate_round_summaries(
             parsed_risk = {"summary": candidate.get("risk")}
         decision = candidate.get("status")
         decision_reason = candidate.get("rejection_reason")
+        verification_mode = candidate.get("verification_mode")
         if decision == "PROMOTED":
             decision_reason = (
                 "STRICT_LATENCY_IMPROVEMENT_COSIM_DEFERRED"
                 if cosim_status == "NOT_RUN"
                 else "STRICT_LATENCY_IMPROVEMENT_COSIM_PASS"
             )
+        elif decision == "CORRECTNESS_VERIFIED":
+            decision_reason = f"{verification_mode}_VALIDATION_PASS"
+        elif decision == "FINAL_VERIFIED" and verification_mode in {
+            PhaseMode.REPAIR.value,
+            PhaseMode.SYNTH_FIX.value,
+            PhaseMode.STRUCTURAL_FIX.value,
+        }:
+            decision_reason = f"{verification_mode}_FINAL_CLOSURE_PASS"
         elif decision == "FINAL_VERIFIED" and cosim_status == "NOT_RUN":
             decision_reason = (
                 "PROMOTED_EXPLORATION_BEST_COSIM_DEFERRED;FINAL_CLOSURE_PASS"
@@ -4061,6 +4695,13 @@ def _candidate_round_summaries(
                 "risk_decision": parsed_risk,
                 "cosim": cosim_status,
                 "cosim_reason": (
+                    "NOT_REQUIRED_DURING_MODE_VALIDATION;FINAL_CLOSURE_PASS"
+                    if cosim_status == "NOT_RUN"
+                    and verification_mode in {
+                        PhaseMode.REPAIR.value,
+                        PhaseMode.SYNTH_FIX.value,
+                    }
+                    else
                     "DEFERRED_LOW_RISK"
                     if cosim_status == "NOT_RUN"
                     and decision in {"PROMOTED", "FINAL_VERIFIED"}
@@ -4271,7 +4912,14 @@ def _render_team_report(
     return "\n".join(
         [
             (
-                "# V3-B Fast Experiment 团队复盘报告"
+                "# V3-C Task-Aware HLS Agent 团队复盘报告"
+                if result.get("mode")
+                in {
+                    PhaseMode.REPAIR.value,
+                    PhaseMode.SYNTH_FIX.value,
+                    PhaseMode.STRUCTURAL_FIX.value,
+                }
+                else "# V3-B Fast Experiment 团队复盘报告"
                 if result.get("validation_profile") == FAST_EXPERIMENT_PROFILE
                 else (
                     "# V3-B0 Live Planner 原型团队复盘报告"
@@ -4286,6 +4934,11 @@ def _render_team_report(
             ),
             "",
             f"- Task: `{runtime.task.id}`",
+            f"- Routed mode: `{result.get('mode', 'UNROUTED')}`",
+            "- Phase decision: `"
+            + report_cell(result.get("phase_decision", {}))
+            + "`",
+            f"- Failure evidence: `{result.get('failure_evidence_ref') or '-'}`",
             f"- Validation profile: `{result.get('validation_profile', 'strict')}`",
             f"- Status: `{result.get('status', 'FAILED')}`",
             f"- Stop reason: `{result.get('stop_reason', 'UNKNOWN')}`",
@@ -4388,6 +5041,11 @@ def _write_report(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeStat
             ),
         },
         "task_id": runtime.task.id,
+        "mode": state.get("mode", "UNROUTED"),
+        "phase_decision": state.get("phase_decision", {}),
+        "failure_evidence": state.get("failure_evidence", {}),
+        "failure_evidence_ref": state.get("failure_evidence_ref"),
+        "failure_evidence_sha256": state.get("failure_evidence_sha256"),
         "validation_profile": runtime.validation_profile,
         "status": state.get("status", "FAILED"),
         "stop_reason": state.get("stop_reason", "UNKNOWN"),
@@ -4492,6 +5150,7 @@ def _write_report(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeStat
             "planner_inputs": "planner/inputs",
             "planner_outputs": "planner/outputs",
             "synth_evidence": "evidence/synth",
+            "failure_evidence": "evidence/failures",
             "package_manifest": "control/package_manifest.json",
             "team_report": "v3_team_report.md",
             "result": "v3_prototype_result.json",
@@ -4560,13 +5219,67 @@ def _pass_or_finalize(state: V3PrototypeState) -> str:
 
 def _baseline_cosim_route(runtime: _Runtime, state: V3PrototypeState) -> str:
     if state.get("last_tool_ok") is not True:
-        return "report"
+        return "route"
     if (
         runtime.validation_profile == STRICT_VALIDATION_PROFILE
         or runtime.task.requires_cosim
     ):
         return "cosim"
-    return "optimize"
+    return "route"
+
+
+def _phase_mode_route(state: V3PrototypeState) -> str:
+    if state.get("last_tool_ok") is not True:
+        return "report"
+    mode = str(state.get("mode", ""))
+    return {
+        PhaseMode.REPAIR.value: "repair",
+        PhaseMode.SYNTH_FIX.value: "synth_fix",
+        PhaseMode.STRUCTURAL_FIX.value: "structural_fix",
+        PhaseMode.OPTIMIZE.value: "optimize",
+    }.get(mode, "report")
+
+
+def _candidate_csim_route(state: V3PrototypeState) -> str:
+    if state.get("last_tool_ok") is not True:
+        return "reject"
+    if state.get("mode") == PhaseMode.STRUCTURAL_FIX.value:
+        return "cosim"
+    return "synth"
+
+
+def _candidate_synth_route(runtime: _Runtime, state: V3PrototypeState) -> str:
+    if state.get("last_tool_ok") is not True:
+        return "reject"
+    mode = str(state.get("mode", PhaseMode.OPTIMIZE.value))
+    if mode == PhaseMode.OPTIMIZE.value:
+        return "score"
+    if mode == PhaseMode.REPAIR.value and runtime.task.requires_cosim:
+        return "cosim"
+    return "accept"
+
+
+def _candidate_cosim_route(state: V3PrototypeState) -> str:
+    if state.get("last_tool_ok") is not True:
+        return "reject"
+    # Checkpoints created by V3-B predate the task-aware ``mode`` field.  They
+    # represent optimize runs, so keep the same backward-compatible default as
+    # _round_mode_route and _candidate_synth_route.
+    if state.get("mode") in {
+        None,
+        "",
+        "UNROUTED",
+        PhaseMode.OPTIMIZE.value,
+    }:
+        return "promote"
+    return "accept"
+
+
+def _round_mode_route(state: V3PrototypeState) -> str:
+    mode = state.get("mode")
+    if mode in {None, "", "UNROUTED", PhaseMode.OPTIMIZE.value}:
+        return "optimize"
+    return "repair"
 
 
 def _gate_route(state: V3PrototypeState) -> str:
@@ -4590,6 +5303,11 @@ def build_v3_prototype_graph(runtime: _Runtime, checkpointer: SqliteSaver):
     graph.add_node("baseline_csim", lambda state: _baseline_csim(runtime, state))
     graph.add_node("baseline_synth", lambda state: _baseline_synth(runtime, state))
     graph.add_node("baseline_cosim", lambda state: _baseline_cosim(runtime, state))
+    graph.add_node("phase_router", lambda state: _phase_router(runtime, state))
+    graph.add_node(
+        "evaluate_task_round_budget",
+        lambda state: _evaluate_task_round_budget(runtime, state),
+    )
     graph.add_node(
         "evaluate_round_budget", lambda state: _evaluate_round_budget(runtime, state)
     )
@@ -4612,6 +5330,10 @@ def build_v3_prototype_graph(runtime: _Runtime, checkpointer: SqliteSaver):
     )
     graph.add_node("candidate_cosim", lambda state: _candidate_cosim(runtime, state))
     graph.add_node("promote_candidate", lambda state: _promote_candidate(runtime, state))
+    graph.add_node(
+        "promote_correctness_candidate",
+        lambda state: _promote_correctness_candidate(runtime, state),
+    )
     graph.add_node("reject_candidate", lambda state: _reject_candidate(runtime, state))
     graph.add_node("advance_round", lambda state: _advance_round(runtime, state))
     graph.add_node(
@@ -4637,22 +5359,33 @@ def build_v3_prototype_graph(runtime: _Runtime, checkpointer: SqliteSaver):
     )
     graph.add_conditional_edges(
         "baseline_csim",
-        _pass_or_report,
-        {"pass": "baseline_synth", "report": "write_report"},
+        lambda state: "synth" if state.get("last_tool_ok") is True else "route",
+        {"synth": "baseline_synth", "route": "phase_router"},
     )
     graph.add_conditional_edges(
         "baseline_synth",
         lambda state: _baseline_cosim_route(runtime, state),
         {
             "cosim": "baseline_cosim",
+            "route": "phase_router",
+        },
+    )
+    graph.add_edge("baseline_cosim", "phase_router")
+    graph.add_conditional_edges(
+        "phase_router",
+        _phase_mode_route,
+        {
+            "repair": "evaluate_task_round_budget",
+            "synth_fix": "evaluate_task_round_budget",
+            "structural_fix": "evaluate_task_round_budget",
             "optimize": "evaluate_round_budget",
             "report": "write_report",
         },
     )
     graph.add_conditional_edges(
-        "baseline_cosim",
+        "evaluate_task_round_budget",
         _pass_or_report,
-        {"pass": "evaluate_round_budget", "report": "write_report"},
+        {"pass": "plan_candidate", "report": "write_report"},
     )
     graph.add_conditional_edges(
         "evaluate_round_budget",
@@ -4668,13 +5401,22 @@ def build_v3_prototype_graph(runtime: _Runtime, checkpointer: SqliteSaver):
     graph.add_edge("record_rejected_proposal", "advance_round")
     graph.add_conditional_edges(
         "candidate_csim",
-        _pass_or_select,
-        {"pass": "candidate_synth", "select": "reject_candidate"},
+        _candidate_csim_route,
+        {
+            "synth": "candidate_synth",
+            "cosim": "candidate_cosim",
+            "reject": "reject_candidate",
+        },
     )
     graph.add_conditional_edges(
         "candidate_synth",
-        _pass_or_select,
-        {"pass": "candidate_score_gate", "select": "reject_candidate"},
+        lambda state: _candidate_synth_route(runtime, state),
+        {
+            "score": "candidate_score_gate",
+            "cosim": "candidate_cosim",
+            "accept": "promote_correctness_candidate",
+            "reject": "reject_candidate",
+        },
     )
     graph.add_conditional_edges(
         "candidate_score_gate",
@@ -4696,12 +5438,24 @@ def build_v3_prototype_graph(runtime: _Runtime, checkpointer: SqliteSaver):
     )
     graph.add_conditional_edges(
         "candidate_cosim",
-        _pass_or_select,
-        {"pass": "promote_candidate", "select": "reject_candidate"},
+        _candidate_cosim_route,
+        {
+            "promote": "promote_candidate",
+            "accept": "promote_correctness_candidate",
+            "reject": "reject_candidate",
+        },
     )
     graph.add_edge("promote_candidate", "advance_round")
+    graph.add_edge("promote_correctness_candidate", "select_final_attempt")
     graph.add_edge("reject_candidate", "advance_round")
-    graph.add_edge("advance_round", "evaluate_round_budget")
+    graph.add_conditional_edges(
+        "advance_round",
+        _round_mode_route,
+        {
+            "optimize": "evaluate_round_budget",
+            "repair": "evaluate_task_round_budget",
+        },
+    )
     graph.add_edge("select_final_attempt", "evaluate_final_budget")
     graph.add_conditional_edges(
         "evaluate_final_budget",

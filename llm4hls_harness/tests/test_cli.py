@@ -551,6 +551,7 @@ class V3PrototypeCliTests(unittest.TestCase):
             provider,
             final_reserve_credits=25,
             max_output_tokens=512,
+            read_only_headers={"kernel.h": "void kernel();\n"},
         )
         task, called_run_dir, config = run.call_args.args
         self.assertEqual(task.id, "cli_fixture")

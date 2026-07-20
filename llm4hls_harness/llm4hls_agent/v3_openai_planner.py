@@ -31,7 +31,9 @@ from .v3_evidence import SYNTH_EVIDENCE_SCHEMA
 
 OPENAI_V3_ADAPTER_REQUEST_SCHEMA = "v3b.openai-v2-adapter-request.v1"
 OPENAI_V3_FAST_REQUEST_SCHEMA = "v3b.openai-fast-experiment-request.v1"
+OPENAI_V3_TASK_AWARE_REQUEST_SCHEMA = "v3c.openai-task-aware-request.v1"
 OPENAI_V3_ADAPTER_VERSION = "openai-v2-compat-planner-adapter-v1"
+TASK_AWARE_MODES = frozenset({"REPAIR", "SYNTH_FIX", "STRUCTURAL_FIX"})
 
 
 class V3OpenAIPlannerError(RuntimeError):
@@ -54,6 +56,14 @@ class AuditableOptimizationProvider(Protocol):
     ) -> Mapping[str, object]: ...
 
     def propose_fast_experiment(
+        self, context: Mapping[str, object]
+    ) -> PatchProposal: ...
+
+    def describe_task_aware_request(
+        self, context: Mapping[str, object]
+    ) -> Mapping[str, object]: ...
+
+    def propose_task_aware(
         self, context: Mapping[str, object]
     ) -> PatchProposal: ...
 
@@ -228,6 +238,54 @@ def _source_and_report(
                 f"Planner input {name} Synth evidence binding is invalid"
             )
     return source, report_copy, evidence
+
+
+def _source_only(
+    run_root: Path,
+    candidate: Mapping[str, object],
+    *,
+    name: str,
+) -> str:
+    """Resolve a hash-bound kernel without requiring successful Synth metrics."""
+
+    _text(candidate.get("candidate_id"), f"{name}.candidate_id")
+    source_artifact = _resolve_binding(
+        run_root, candidate.get("source"), name=f"{name}.source"
+    )
+    assert source_artifact is not None
+    if candidate.get("code_hash") != source_artifact.digest:
+        raise V3OpenAIPlannerError(f"Planner input {name} code hash is invalid")
+    try:
+        return source_artifact.data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise V3OpenAIPlannerError(
+            f"Planner input {name} source is not UTF-8"
+        ) from exc
+
+
+def _task_aware_failure_evidence(
+    round_state: Mapping[str, object], *, mode: str
+) -> dict[str, object]:
+    """Accept only the bounded extractor output expected for the routed mode."""
+
+    raw = _mapping(round_state.get("failure_evidence"), "round.failure_evidence")
+    expected_schema = {
+        "REPAIR": "v3c.csim-failure-evidence.v1",
+        "SYNTH_FIX": "v3c.synth-failure-evidence.v1",
+        "STRUCTURAL_FIX": "v3c.cosim-failure-evidence.v1",
+    }[mode]
+    if raw.get("schema_version") != expected_schema:
+        raise V3OpenAIPlannerError(
+            "Planner input failure evidence does not match the routed mode"
+        )
+    evidence = _sanitize_evidence_value(_json_copy(raw))
+    if not isinstance(evidence, dict):
+        raise V3OpenAIPlannerError("Planner input failure evidence is invalid")
+    # The extractor is intentionally small. Refuse accidental complete logs at
+    # the final Planner boundary instead of silently sending them to the model.
+    if len(canonical_json(evidence)) > 24_000:
+        raise V3OpenAIPlannerError("Planner input failure evidence is not bounded")
+    return evidence
 
 
 _POSIX_LOCAL_PATH = re.compile(
@@ -473,6 +531,100 @@ class OpenAICompatibleV3PlannerAdapter:
         policy = _mapping(value.get("policy"), "policy")
         budget = _mapping(value.get("budget"), "budget")
 
+        mode_value = round_state.get("mode", "OPTIMIZE")
+        # V3-A1 inputs and in-flight checkpoints predate PhaseRouter. Preserve
+        # their exact optimization path while new routed runs use explicit modes.
+        if mode_value == "UNROUTED":
+            mode_value = "OPTIMIZE"
+        if not isinstance(mode_value, str) or mode_value not in (
+            TASK_AWARE_MODES | {"OPTIMIZE"}
+        ):
+            raise V3OpenAIPlannerError("Planner input round.mode is unsupported")
+        if mode_value in TASK_AWARE_MODES:
+            source = _source_only(self.run_root, incumbent, name="incumbent")
+            failure_evidence = _task_aware_failure_evidence(
+                round_state, mode=mode_value
+            )
+            requires_cosim = task.get("requires_cosim")
+            if not isinstance(requires_cosim, bool):
+                raise V3OpenAIPlannerError(
+                    "Planner input task.requires_cosim must be boolean"
+                )
+            read_only_files = [
+                name
+                for name in (
+                    *sorted(self.read_only_headers),
+                    task.get("public_tb"),
+                    "task.toml",
+                    "description.md",
+                )
+                if isinstance(name, str) and name
+            ]
+            context: dict[str, object] = {
+                "mode": mode_value,
+                "task": {
+                    "task_id": task.get("task_id"),
+                    "task_type": task.get("task_type"),
+                    "top": task.get("top"),
+                    "kernel_file": task.get("kernel_file"),
+                    "initial_condition": task.get("initial_condition"),
+                    "requires_cosim": requires_cosim,
+                    "part": task.get("part"),
+                    "clock_ns": task.get("clock_ns"),
+                },
+                "current_kernel": source,
+                "description": str(task.get("description") or ""),
+                "read_only_headers": dict(self.read_only_headers),
+                "failure_evidence": failure_evidence,
+                "budget": {
+                    "remaining_tokens": budget.get("tokens_remaining"),
+                    "remaining_credits": budget.get("credits_remaining"),
+                    "round_index": round_state.get("round_index"),
+                    "rounds_completed": round_state.get("rounds_completed"),
+                    "final_reserve_credits": self.final_reserve_credits,
+                },
+                "constraints": {
+                    "allowed_files": [task.get("kernel_file")],
+                    "read_only_files": read_only_files,
+                    "preserve_top": task.get("top"),
+                    "preserve_interface": True,
+                    "planner_cannot_choose_tools_or_final": True,
+                },
+            }
+            provider_request = self.provider.describe_task_aware_request(context)
+            if not isinstance(provider_request, Mapping):
+                raise V3OpenAIPlannerError(
+                    "task-aware provider request audit must be an object"
+                )
+            encoded_provider_request = canonical_json(provider_request)
+            if (
+                self._configured_secret is not None
+                and self._configured_secret.encode("utf-8")
+                in encoded_provider_request
+            ):
+                raise V3OpenAIPlannerError(
+                    "task-aware provider request audit contains its API key"
+                )
+            request = {
+                "schema_version": OPENAI_V3_TASK_AWARE_REQUEST_SCHEMA,
+                "adapter_version": OPENAI_V3_ADAPTER_VERSION,
+                "provider_fingerprint": self._provider_fingerprint,
+                "selection": {
+                    "mode": mode_value,
+                    "failure_evidence_schema": failure_evidence.get(
+                        "schema_version"
+                    ),
+                },
+                "context_sha256": canonical_sha256(context),
+                "provider_request": dict(provider_request),
+            }
+            return PreparedPlannerCall(
+                request=request,
+                estimated_input_tokens=max(1, len(encoded_provider_request)),
+                max_output_tokens=self.max_output_tokens,
+                dispatch_context=context,
+            )
+
         source, incumbent_report, incumbent_evidence = _source_and_report(
             self.run_root, incumbent, name="incumbent"
         )
@@ -709,6 +861,36 @@ class OpenAICompatibleV3PlannerAdapter:
 
     def invoke(self, prepared: PreparedPlannerCall) -> PatchProposal:
         context = prepared.dispatch_context
+        if (
+            isinstance(context, Mapping)
+            and context.get("mode") in TASK_AWARE_MODES
+        ):
+            request = prepared.request
+            if (
+                request.get("schema_version")
+                != OPENAI_V3_TASK_AWARE_REQUEST_SCHEMA
+                or request.get("provider_fingerprint")
+                != self._provider_fingerprint
+                or request.get("context_sha256") != canonical_sha256(context)
+            ):
+                raise V3OpenAIPlannerError(
+                    "prepared task-aware Planner request binding is invalid"
+                )
+            proposal = self.provider.propose_task_aware(context)
+            if not isinstance(proposal, PatchProposal):
+                raise V3OpenAIPlannerError(
+                    "task-aware provider returned an invalid proposal"
+                )
+            expected_change_class = {
+                "REPAIR": "FUNCTIONAL_REPAIR",
+                "SYNTH_FIX": "SYNTHESIS_REPAIR",
+                "STRUCTURAL_FIX": "STRUCTURAL_REPAIR",
+            }[str(context["mode"])]
+            if proposal.change_class != expected_change_class:
+                raise V3OpenAIPlannerError(
+                    "task-aware proposal class diverges from the routed mode"
+                )
+            return proposal
         if self.fast_experiment:
             if not isinstance(context, Mapping):
                 raise V3OpenAIPlannerError(

@@ -242,6 +242,10 @@ def main(argv: list[str] | None = None) -> int:
                     provider,
                     final_reserve_credits=args.final_reserve_credits,
                     max_output_tokens=args.llm_max_output_tokens,
+                    read_only_headers={
+                        name: content.decode("utf-8")
+                        for name, content in task.headers.items()
+                    },
                 )
             proposals: tuple[PatchProposal, ...] = ()
             token_limit = 32768 if args.token_budget is None else args.token_budget

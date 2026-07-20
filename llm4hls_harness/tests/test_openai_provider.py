@@ -10,6 +10,7 @@ from llm4hls_agent.openai_provider import (
     OpenAICompatibleRepairProvider,
     build_optimization_prompt,
     build_repair_prompt,
+    build_task_aware_prompt,
 )
 from llm4hls_agent.optimization import OptimizationContext
 from llm4hls_agent.repair import RepairContext, RepairProviderError
@@ -79,6 +80,51 @@ def optimization_context() -> OptimizationContext:
     )
 
 
+def task_aware_context(mode: str = "REPAIR") -> dict[str, object]:
+    schema = {
+        "REPAIR": "v3c.csim-failure-evidence.v1",
+        "SYNTH_FIX": "v3c.synth-failure-evidence.v1",
+        "STRUCTURAL_FIX": "v3c.cosim-failure-evidence.v1",
+    }[mode]
+    return {
+        "mode": mode,
+        "task": {
+            "task_id": "fixture",
+            "task_type": "repair",
+            "top": "vector_add",
+            "kernel_file": "kernel.cpp",
+            "initial_condition": "repair public behavior",
+            "requires_cosim": mode == "STRUCTURAL_FIX",
+            "part": "xcu55c-fsvh2892-2L-e",
+            "clock_ns": 10.0,
+        },
+        "current_kernel": "void vector_add(int a[4]) { a[0] -= 1; }\n",
+        "description": "Repair the public fixture.",
+        "read_only_headers": {"kernel.h": "void vector_add(int a[4]);\n"},
+        "failure_evidence": {
+            "schema_version": schema,
+            "failure_kind": "runtime_fail",
+            "error_summary": "expected 1, actual -1",
+            "source_locations": ["kernel.cpp:1"],
+            "relevant_log_lines": ["public mismatch: expected 1 actual -1"],
+        },
+        "budget": {
+            "remaining_tokens": 4096,
+            "remaining_credits": 55,
+            "round_index": 1,
+            "rounds_completed": 0,
+            "final_reserve_credits": 25,
+        },
+        "constraints": {
+            "allowed_files": ["kernel.cpp"],
+            "read_only_files": ["kernel.h", "kernel_tb.cpp"],
+            "preserve_top": "vector_add",
+            "preserve_interface": True,
+            "planner_cannot_choose_tools_or_final": True,
+        },
+    }
+
+
 class OpenAICompatibleProviderTests(unittest.TestCase):
     def config(self, **overrides: object) -> OpenAICompatibleConfig:
         values = {
@@ -118,6 +164,30 @@ class OpenAICompatibleProviderTests(unittest.TestCase):
                 if required_validation is not None
                 else ["csim", "synth", "cosim"],
                 "patch": "--- a/kernel.cpp\n+++ b/kernel.cpp\n@@ -1 +1 @@\n-#pragma HLS PIPELINE II=16\n+#pragma HLS PIPELINE II=1\n",
+            }
+        )
+
+    def task_aware_response_content(self, mode: str = "REPAIR") -> str:
+        change_class = {
+            "REPAIR": "FUNCTIONAL_REPAIR",
+            "SYNTH_FIX": "SYNTHESIS_REPAIR",
+            "STRUCTURAL_FIX": "STRUCTURAL_REPAIR",
+        }[mode]
+        return json.dumps(
+            {
+                "hypothesis": "the reported failure is caused by one local defect",
+                "primary_failure": "public validation failure",
+                "evidence_used": ["kernel.cpp:1", "expected 1 actual -1"],
+                "change_class": change_class,
+                "expected_effect": "restore the routed validation stage",
+                "risk": {"level": "LOW", "dimensions": []},
+                "patch": (
+                    "--- a/kernel.cpp\n"
+                    "+++ b/kernel.cpp\n"
+                    "@@ -1 +1 @@\n"
+                    "-void vector_add(int a[4]) { a[0] -= 1; }\n"
+                    "+void vector_add(int a[4]) { a[0] += 1; }\n"
+                ),
             }
         )
 
@@ -281,6 +351,51 @@ class OpenAICompatibleProviderTests(unittest.TestCase):
         proposal = provider.propose_optimization(optimization_context())
 
         self.assertEqual(proposal.required_validation, ("csim", "synth", "cosim"))
+
+    def test_task_aware_provider_uses_one_mode_specific_contract(self) -> None:
+        for mode, expected_class, expected_validation in (
+            ("REPAIR", "FUNCTIONAL_REPAIR", ("csim", "synth")),
+            ("SYNTH_FIX", "SYNTHESIS_REPAIR", ("csim", "synth")),
+            ("STRUCTURAL_FIX", "STRUCTURAL_REPAIR", ("csim", "cosim")),
+        ):
+            with self.subTest(mode=mode):
+                captured: dict[str, object] = {}
+
+                def transport(request, _timeout, *, mode=mode):
+                    captured.update(json.loads(request.data.decode("utf-8")))
+                    return 200, {}, envelope(self.task_aware_response_content(mode))
+
+                provider = OpenAICompatibleOptimizationProvider(
+                    self.config(), transport=transport
+                )
+                context_value = task_aware_context(mode)
+                prompt = build_task_aware_prompt(context_value)
+                proposal = provider.propose_task_aware(context_value)
+                audit = provider.describe_task_aware_request(context_value)
+
+                self.assertIn("MODE\n" + mode, prompt)
+                self.assertIn("BOUNDED FAILURE EVIDENCE", prompt)
+                self.assertNotIn("secret-test-key", prompt)
+                self.assertEqual(proposal.change_class, expected_class)
+                self.assertEqual(proposal.required_validation, expected_validation)
+                self.assertEqual(json.loads(proposal.risk)["mode"], mode)
+                self.assertIn("task-aware AMD Vitis HLS Planner", captured["messages"][0]["content"])  # type: ignore[index]
+                self.assertNotIn("secret-test-key", json.dumps(audit))
+
+    def test_task_aware_provider_rejects_class_outside_routed_mode(self) -> None:
+        response = json.loads(self.task_aware_response_content("REPAIR"))
+        response["change_class"] = "STRUCTURAL_REPAIR"
+        provider = OpenAICompatibleOptimizationProvider(
+            self.config(),
+            transport=lambda _request, _timeout: (
+                200,
+                {},
+                envelope(json.dumps(response)),
+            ),
+        )
+
+        with self.assertRaisesRegex(RepairProviderError, "does not match mode"):
+            provider.propose_task_aware(task_aware_context("REPAIR"))
 
     def test_invalid_content_and_missing_usage_are_rejected(self) -> None:
         cases = [

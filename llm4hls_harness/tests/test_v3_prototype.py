@@ -242,6 +242,18 @@ def prototype_config(task, *, credit_limit: int = 80) -> RunConfig:
 
 @unittest.skipIf(run_v3_prototype is None, "V3 optional dependencies are not installed")
 class V3PrototypeTests(unittest.TestCase):
+    def test_legacy_checkpoint_without_mode_keeps_optimize_cosim_route(self) -> None:
+        self.assertIsNotNone(v3_prototype_module)
+        for legacy_mode in (None, "", "UNROUTED"):
+            state = {"last_tool_ok": True}
+            if legacy_mode is not None:
+                state["mode"] = legacy_mode
+            with self.subTest(mode=legacy_mode):
+                self.assertEqual(
+                    v3_prototype_module._candidate_cosim_route(state),
+                    "promote",
+                )
+
     def test_a1_happy_path_seals_planner_and_synth_evidence_contracts(self) -> None:
         project = Path(__file__).resolve().parents[1]
         task = load_public_task(project / "examples" / "u55c_v2_optimize_task")
@@ -924,6 +936,7 @@ class V3PrototypeTests(unittest.TestCase):
                     "baseline_csim",
                     "baseline_synth",
                     "baseline_cosim",
+                    "phase_router",
                     "evaluate_round_budget",
                     "plan_candidate",
                     "materialize_candidate",

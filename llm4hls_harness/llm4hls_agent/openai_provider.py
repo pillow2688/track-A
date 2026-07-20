@@ -18,6 +18,7 @@ from .repair import PatchProposal, RepairContext, RepairProviderError
 
 DEFAULT_MODEL = "deepseek-v4-pro"
 FAST_EXPERIMENT_RESPONSE_SCHEMA = "v3b.fast-planner-response.v1"
+TASK_AWARE_RESPONSE_SCHEMA = "v3c.task-aware-planner-response.v1"
 FAST_EXPERIMENT_STRATEGIES = (
     "ARRAY_PARTITION",
     "MEMORY_PARTITION",
@@ -42,6 +43,21 @@ FAST_EXPERIMENT_SYSTEM_PROMPT = (
     "diff for the current kernel, with exact hunk start positions and exact old/new line "
     "counts. Never claim that a tool ran or that a Candidate passed validation."
 )
+TASK_AWARE_SYSTEM_PROMPT = (
+    "You are one task-aware AMD Vitis HLS Planner. The supplied mode is an "
+    "authoritative routing decision made by deterministic code. Propose exactly one "
+    "minimal kernel-only repair Patch for that mode, using only the supplied public "
+    "kernel, read-only headers, task description, and bounded failure evidence. "
+    "Preserve numerical semantics except for the diagnosed functional defect, preserve "
+    "the top signature and interfaces, and never modify tests, headers, metadata, "
+    "budgets, tool policy, Candidate promotion, or final selection. Return strict JSON "
+    "only. Never claim that a tool ran or that a Candidate passed validation."
+)
+TASK_AWARE_CHANGE_CLASS = {
+    "REPAIR": "FUNCTIONAL_REPAIR",
+    "SYNTH_FIX": "SYNTHESIS_REPAIR",
+    "STRUCTURAL_FIX": "STRUCTURAL_REPAIR",
+}
 _UNIFIED_HUNK_HEADER = re.compile(
     r"^@@ -(?P<old_start>\d+)(?:,\d+)? "
     r"\+(?P<new_start>\d+)(?:,\d+)? @@(?P<suffix>.*)$"
@@ -345,6 +361,148 @@ def build_fast_experiment_prompt(context: Mapping[str, object]) -> str:
             + "\nReturn exactly this JSON object and no Markdown fences or commentary.",
         ]
     )
+
+
+def build_task_aware_prompt(context: Mapping[str, object]) -> str:
+    """Build one bounded repair request for the deterministic PhaseRouter mode."""
+
+    required = {
+        "mode",
+        "task",
+        "current_kernel",
+        "description",
+        "read_only_headers",
+        "failure_evidence",
+        "budget",
+        "constraints",
+    }
+    if set(context) != required:
+        raise ValueError("task-aware Planner context has an invalid field set")
+    mode = str(context["mode"])
+    if mode not in TASK_AWARE_CHANGE_CLASS:
+        raise ValueError("task-aware Planner mode is unsupported")
+    objectives = {
+        "REPAIR": (
+            "Repair the observed CSim compile/runtime/functional failure while "
+            "preserving every unrelated behavior."
+        ),
+        "SYNTH_FIX": (
+            "Make the kernel synthesizable and satisfy the reported clock/resource "
+            "constraint without changing its C-level behavior or interface."
+        ),
+        "STRUCTURAL_FIX": (
+            "Repair the observed C/RTL structural failure, focusing on DATAFLOW, "
+            "hls::stream, FIFO ordering/depth, and interface behavior."
+        ),
+    }
+    response_contract = {
+        "hypothesis": "non-empty string",
+        "primary_failure": "non-empty string",
+        "evidence_used": ["one or more concise supplied evidence facts"],
+        "change_class": TASK_AWARE_CHANGE_CLASS[mode],
+        "expected_effect": "non-empty string",
+        "risk": {
+            "level": "LOW|MEDIUM|HIGH",
+            "dimensions": ["zero or more concise risk dimensions"],
+        },
+        "patch": "one directly applicable unified diff",
+    }
+    return "\n".join(
+        [
+            "ROLE\nYou are the repair-capable mode of one task-aware AMD Vitis HLS Planner.",
+            "MODE\n" + mode,
+            "OBJECTIVE\n" + objectives[mode],
+            "PUBLIC TASK\n"
+            + json.dumps(context["task"], ensure_ascii=False, sort_keys=True),
+            "CURRENT KERNEL\n" + str(context["current_kernel"]),
+            "PUBLIC TASK DESCRIPTION\n" + str(context["description"]),
+            "READ-ONLY HEADERS\n"
+            + json.dumps(
+                context["read_only_headers"], ensure_ascii=False, sort_keys=True
+            ),
+            "BOUNDED FAILURE EVIDENCE\n"
+            + json.dumps(
+                context["failure_evidence"], ensure_ascii=False, sort_keys=True
+            ),
+            "BUDGET SUMMARY\n"
+            + json.dumps(context["budget"], ensure_ascii=False, sort_keys=True),
+            "CONSTRAINTS\n"
+            + json.dumps(context["constraints"], ensure_ascii=False, sort_keys=True),
+            (
+                "PATCH VALIDITY\nThe unified diff must apply directly to the supplied "
+                "kernel and target only its filename. Keep the change minimal. Before "
+                "returning, recount every hunk old/new line count exactly."
+            ),
+            "OUTPUT SCHEMA\n"
+            + json.dumps(response_contract, ensure_ascii=False, sort_keys=True)
+            + "\nReturn exactly this JSON object and no Markdown fences or commentary.",
+        ]
+    )
+
+
+def _strict_task_aware_response(
+    content: object, *, mode: str
+) -> dict[str, object]:
+    if mode not in TASK_AWARE_CHANGE_CLASS:
+        raise RepairProviderError("task-aware Planner mode is unsupported")
+    if not isinstance(content, str) or not content.strip():
+        raise RepairProviderError("task-aware Planner response content is empty")
+    try:
+        value = json.loads(content.strip())
+    except json.JSONDecodeError as exc:
+        raise RepairProviderError(
+            "task-aware Planner response is not strict JSON"
+        ) from exc
+    required = {
+        "hypothesis",
+        "primary_failure",
+        "evidence_used",
+        "change_class",
+        "expected_effect",
+        "risk",
+        "patch",
+    }
+    if not isinstance(value, dict) or set(value) != required:
+        raise RepairProviderError(
+            "task-aware Planner response has an invalid field set"
+        )
+    for name in (
+        "hypothesis",
+        "primary_failure",
+        "expected_effect",
+        "patch",
+    ):
+        if not isinstance(value[name], str) or not str(value[name]).strip():
+            raise RepairProviderError(f"task-aware Planner field {name} is empty")
+    if value["change_class"] != TASK_AWARE_CHANGE_CLASS[mode]:
+        raise RepairProviderError(
+            "task-aware Planner change_class does not match mode"
+        )
+    evidence = value["evidence_used"]
+    if (
+        not isinstance(evidence, list)
+        or not 1 <= len(evidence) <= 8
+        or any(not isinstance(item, str) or not item.strip() for item in evidence)
+    ):
+        raise RepairProviderError(
+            "task-aware Planner evidence_used must contain 1-8 strings"
+        )
+    risk = value["risk"]
+    if not isinstance(risk, dict) or set(risk) != {"level", "dimensions"}:
+        raise RepairProviderError("task-aware Planner risk has an invalid field set")
+    dimensions = risk.get("dimensions")
+    if risk.get("level") not in {"LOW", "MEDIUM", "HIGH"} or (
+        not isinstance(dimensions, list)
+        or len(dimensions) > 8
+        or any(not isinstance(item, str) or not item.strip() for item in dimensions)
+    ):
+        raise RepairProviderError("task-aware Planner risk is invalid")
+    patch = str(value["patch"])
+    if "```" in patch or "--- " not in patch or "+++ " not in patch:
+        raise RepairProviderError(
+            "task-aware Planner patch must be one unified diff"
+        )
+    return value
 
 
 def _strict_fast_experiment_response(content: object) -> dict[str, object]:
@@ -727,6 +885,90 @@ class OpenAICompatibleOptimizationProvider:
                 system_prompt=FAST_EXPERIMENT_SYSTEM_PROMPT,
             ),
         }
+
+    def describe_task_aware_request(
+        self, context: Mapping[str, object]
+    ) -> dict[str, object]:
+        prompt = build_task_aware_prompt(context)
+        return {
+            "schema_version": TASK_AWARE_RESPONSE_SCHEMA,
+            "provider": "openai-compatible",
+            "model": self.config.model,
+            "endpoint": self.config.chat_completions_url,
+            "http_body": _completion_body(
+                self.config,
+                prompt=prompt,
+                system_prompt=TASK_AWARE_SYSTEM_PROMPT,
+            ),
+        }
+
+    def propose_task_aware(
+        self, context: Mapping[str, object]
+    ) -> PatchProposal:
+        mode = str(context.get("mode"))
+        task = context.get("task")
+        requires_cosim = (
+            task.get("requires_cosim") if isinstance(task, Mapping) else None
+        )
+        if not isinstance(requires_cosim, bool):
+            raise RepairProviderError(
+                "task-aware Planner task.requires_cosim must be boolean"
+            )
+        completion = _request_completion(
+            self.config,
+            self._transport,
+            prompt=build_task_aware_prompt(context),
+            system_prompt=TASK_AWARE_SYSTEM_PROMPT,
+        )
+        try:
+            parsed = _strict_task_aware_response(completion.content, mode=mode)
+        except RepairProviderError as exc:
+            raise RepairProviderError(
+                str(exc),
+                input_tokens=completion.input_tokens,
+                output_tokens=completion.output_tokens,
+                cached_input_tokens=completion.cached_input_tokens,
+                duration_seconds=completion.duration_seconds,
+                request_id=completion.request_id,
+                response_excerpt=completion.content[:2000],
+            ) from exc
+        if mode == "REPAIR":
+            required_validation = (
+                ("csim", "synth", "cosim")
+                if requires_cosim
+                else ("csim", "synth")
+            )
+        elif mode == "SYNTH_FIX":
+            required_validation = ("csim", "synth")
+        elif mode == "STRUCTURAL_FIX":
+            required_validation = ("csim", "cosim")
+        else:  # The strict parser already rejects unsupported modes.
+            raise RepairProviderError("task-aware Planner mode is unsupported")
+        risk = dict(parsed["risk"])
+        risk.update(
+            {
+                "mode": mode,
+                "primary_failure": str(parsed["primary_failure"]),
+                "evidence_used": [
+                    str(item) for item in parsed["evidence_used"]
+                ],
+            }
+        )
+        return PatchProposal(
+            patch=_normalize_unified_diff_hunk_counts(str(parsed["patch"])),
+            provider="openai-compatible-task-aware",
+            model=self.config.model,
+            input_tokens=completion.input_tokens,
+            output_tokens=completion.output_tokens,
+            cached_input_tokens=completion.cached_input_tokens,
+            request_id=completion.request_id,
+            duration_seconds=completion.duration_seconds,
+            hypothesis=str(parsed["hypothesis"]),
+            change_class=str(parsed["change_class"]),
+            expected_effect=str(parsed["expected_effect"]),
+            risk=json.dumps(risk, ensure_ascii=False, sort_keys=True),
+            required_validation=required_validation,
+        )
 
     def propose_fast_experiment(
         self, context: Mapping[str, object]

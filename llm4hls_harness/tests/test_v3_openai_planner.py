@@ -17,11 +17,13 @@ from llm4hls_agent.openai_provider import (
 from llm4hls_agent.task import load_public_task
 from llm4hls_agent.v3_openai_planner import (
     OPENAI_V3_ADAPTER_REQUEST_SCHEMA,
+    OPENAI_V3_TASK_AWARE_REQUEST_SCHEMA,
     OpenAICompatibleV3PlannerAdapter,
     V3OpenAIPlannerError,
     _history_state,
     _metrics_with_evidence,
 )
+from llm4hls_agent.v3_planner import build_planner_input
 import llm4hls_agent.v3_openai_planner as openai_planner_module
 from llm4hls_agent.v3_prototype import run_v3_prototype
 
@@ -66,7 +68,140 @@ def _optimization_response() -> str:
     )
 
 
+def _task_aware_response(mode: str) -> str:
+    change_class = {
+        "REPAIR": "FUNCTIONAL_REPAIR",
+        "SYNTH_FIX": "SYNTHESIS_REPAIR",
+        "STRUCTURAL_FIX": "STRUCTURAL_REPAIR",
+    }[mode]
+    return json.dumps(
+        {
+            "hypothesis": "apply the smallest repair supported by the evidence",
+            "primary_failure": "public validation failed",
+            "evidence_used": ["kernel.cpp:1 reports the routed failure"],
+            "change_class": change_class,
+            "expected_effect": "restore the routed validation stage",
+            "risk": {"level": "LOW", "dimensions": []},
+            "patch": (
+                "--- a/kernel.cpp\n"
+                "+++ b/kernel.cpp\n"
+                "@@ -1 +1 @@\n"
+                "-void top(int *a) { a[0] = 0; }\n"
+                "+void top(int *a) { a[0] = 1; }\n"
+            ),
+        },
+        sort_keys=True,
+    )
+
+
 class V3OpenAIPlannerTests(unittest.TestCase):
+    def test_task_aware_modes_do_not_require_successful_synth_metrics(self) -> None:
+        for mode, evidence_schema, expected_class in (
+            ("REPAIR", "v3c.csim-failure-evidence.v1", "FUNCTIONAL_REPAIR"),
+            (
+                "SYNTH_FIX",
+                "v3c.synth-failure-evidence.v1",
+                "SYNTHESIS_REPAIR",
+            ),
+            (
+                "STRUCTURAL_FIX",
+                "v3c.cosim-failure-evidence.v1",
+                "STRUCTURAL_REPAIR",
+            ),
+        ):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
+                run_root = Path(directory).resolve()
+                source_path = run_root / "candidates" / "candidate_000" / "kernel.cpp"
+                source_path.parent.mkdir(parents=True)
+                source = b"void top(int *a) { a[0] = 0; }\n"
+                source_path.write_bytes(source)
+                source_sha = hashlib.sha256(source).hexdigest()
+                candidate = {
+                    "candidate_id": "candidate_000",
+                    "parent_id": None,
+                    "kind": "baseline",
+                    "status": "BASELINE",
+                    "source": {
+                        "ref": str(source_path.relative_to(run_root)),
+                        "sha256": source_sha,
+                    },
+                    "code_hash": source_sha,
+                    "metrics": {"ref": None, "sha256": None},
+                    "synth_evidence": {"ref": None, "sha256": None},
+                    "validation": {},
+                }
+                planner_input = build_planner_input(
+                    task={
+                        "task_id": "fixture",
+                        "task_type": "repair",
+                        "difficulty": 1,
+                        "top": "top",
+                        "part": "xcu55c-fsvh2892-2L-e",
+                        "clock_ns": 10.0,
+                        "requires_cosim": mode == "STRUCTURAL_FIX",
+                        "initial_condition": "repair public behavior",
+                        "description": "A public task-aware fixture.",
+                        "kernel_file": "kernel.cpp",
+                        "public_tb": "kernel_tb.cpp",
+                    },
+                    round_state={
+                        "round_index": 1,
+                        "rounds_completed": 0,
+                        "parent_candidate_id": "candidate_000",
+                        "mode": mode,
+                        "failure_evidence": {
+                            "schema_version": evidence_schema,
+                            "failure_kind": "runtime_fail",
+                            "error_summary": "failure at /tmp/private/kernel.cpp:1",
+                            "source_locations": ["kernel.cpp:1"],
+                            "relevant_log_lines": [
+                                "Bearer private-token at /tmp/private/run.log"
+                            ],
+                        },
+                    },
+                    incumbent=candidate,
+                    baseline=candidate,
+                    history=[],
+                    policy={},
+                    budget={"tokens_remaining": 10_000, "credits_remaining": 80},
+                )
+                captured: dict[str, object] = {}
+
+                def transport(request, _timeout, *, mode=mode):
+                    captured.update(json.loads(request.data.decode("utf-8")))
+                    return 200, {}, _envelope(_task_aware_response(mode))
+
+                provider = OpenAICompatibleOptimizationProvider(
+                    OpenAICompatibleConfig(
+                        base_url="https://llm.example/v1",
+                        api_key="task-aware-secret",
+                        model="fixture-task-aware",
+                        max_output_tokens=512,
+                    ),
+                    transport=transport,
+                )
+                planner = OpenAICompatibleV3PlannerAdapter(
+                    run_root,
+                    provider,
+                    fast_experiment=True,
+                    read_only_headers={"kernel.h": "void top(int *a);\n"},
+                )
+
+                prepared = planner.prepare(planner_input)
+                proposal = planner.invoke(prepared)
+
+                self.assertEqual(
+                    prepared.request["schema_version"],
+                    OPENAI_V3_TASK_AWARE_REQUEST_SCHEMA,
+                )
+                self.assertEqual(prepared.request["selection"]["mode"], mode)
+                self.assertEqual(proposal.change_class, expected_class)
+                prompt = captured["messages"][1]["content"]  # type: ignore[index]
+                self.assertIn("MODE\n" + mode, prompt)
+                self.assertNotIn("/tmp/private", prompt)
+                self.assertNotIn("private-token", prompt)
+                self.assertNotIn("task-aware-secret", json.dumps(prepared.request))
+
     def test_mocked_openai_provider_completes_one_live_v3_round(self) -> None:
         project = Path(__file__).resolve().parents[1]
         task = load_public_task(project / "examples" / "u55c_v2_optimize_task")
