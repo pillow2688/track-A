@@ -25,7 +25,8 @@ V3-A1 不改变原有 `run`、`repair` 或 `optimize`（V2）入口。它通过�
 原型会跳过这一轮优化，改为最终验证已通过的 baseline。
 
 ```bash
-cd /home/ying/CompetitionTrackA/track-A
+PROJECT_ROOT=/absolute/path/to/track-A
+cd "$PROJECT_ROOT"
 python3 -m venv .venv
 .venv/bin/python -m pip install -e 'llm4hls_harness[v3]'
 
@@ -41,12 +42,14 @@ task 和 Patch 启动同一 CLI：
 
 ```bash
 distrobox enter vitis-2025-2
-cd /home/ying/CompetitionTrackA/track-A
+PROJECT_ROOT=/absolute/path/to/track-A
+VITIS_ROOT=/absolute/path/to/AMD/2025.2/Vitis
+cd "$PROJECT_ROOT"
 .venv/bin/llm4hls-v3-prototype \
   --task-dir llm4hls_harness/examples/u55c_v2_optimize_task \
   --patch-file llm4hls_harness/examples/u55c_v3_prototype.diff \
   --run-dir runs/v3a1-prototype-vitis --backend vitis \
-  --vitis-root /home/ying/CompetitionTrackA/vitis/AMD/2025.2/Vitis
+  --vitis-root "$VITIS_ROOT"
 ```
 
 `demo` 后端必须标记为 `ORCHESTRATION_SMOKE_ONLY`，不能冒充 HLS 或模型能力证据。`vitis` 后端会真实运行三类工具；结果保存在 `v3_prototype_result.json`，逐节点复盘保存在 `v3_team_report.md`，LangGraph checkpoint 保存在 `graph_checkpoints.sqlite`，`control/package_manifest.json` 与 Candidate/Planner 决策日志负责恢复和防篡改。下一步是 V3-B：把确定性适配器替换为受预算计费、可恢复的自主 LLM Planner，同时不授予模型直接工具或文件系统权限。
@@ -55,15 +58,152 @@ cd /home/ying/CompetitionTrackA/track-A
 `vitis` 模式会在启动 Graph 前检查 `<vitis-root>/settings64.sh`，缺失时不会调用工具或消耗
 Credit。完整真实闭环成功标记为 `REAL_VITIS_VALIDATED`，已经启动但失败标记为
 `REAL_VITIS_ATTEMPT_FAILED`。`vitis-2025-2` 是当前本地开发环境，不是比赛最终提交的 Docker 镜像；最终比赛
-Docker 的构建与验收属于 V4，目前尚未完成。
+Docker 仍属于 V4；下节只提供最小 Agent clean-room 镜像和 Vitis preflight，尚未完成容器内真实 HLS 验收。
+
+## V3-D Docker / clean-room 复现
+
+[`Dockerfile`](Dockerfile) 使用带 digest 的 Python 3.12.11 linux/amd64 基础镜像，构建的
+只是 **Agent 镜像**；只额外安装版本 preflight 所需且已固定版本的 Debian `libX11`/locale
+包，不包含 Vitis 本体。[`requirements-v3.lock`](requirements-v3.lock) 固定全部 Python
+传递依赖及 artifact hash；只应使用该文件顶部记录的命令重新生成。构建上下文排除
+`.env*`、密钥、运行产物、official tasks，以及 V3-D 的全部 `golden/` 和
+`hidden_like/` 目录。真实 Provider 运行需要配置时，可把 [`.env.example`](.env.example)
+复制为本地 `.env`；模板只有占位符，填值后的文件继续被 Git 忽略。
+
+在本目录构建镜像：
+
+```bash
+docker build --platform linux/amd64 --tag llm4hls-v3d:py3.12 .
+```
+
+唯一受支持入口是 `scripts/v3d-reproduce.sh`，它有四个显式模式：`demo-smoke`、
+`official-smoke`、`quick-tests` 和 `real-preflight`。单条记录的规范 demo smoke 命令如下：
+
+```bash
+mkdir -p "$PWD/runs/container"
+docker run --rm --platform linux/amd64 \
+  --user "$(id -u):$(id -g)" \
+  --volume "$PWD/runs/container:/outputs:Z" \
+  llm4hls-v3d:py3.12 demo-smoke
+```
+
+它只运行一条 synthetic V3-D batch 记录，并在宿主机生成
+`runs/container/v3d-demo-smoke/{benchmark_results.jsonl,summary.json,summary.csv,report.md}`。
+输出 population 必须标记为 `DEMO`，real-evidence headline 的 run 数必须为 0。它只证明
+打包与编排，不是 CSim、Synth、CoSim、PPA、模型质量或竞赛证据。
+
+官方公开源码不会烘焙进镜像。另行取得公开官方 corpus 后，以只读方式挂载，并对三个
+官方 task package 执行 deterministic fixture 编排：
+
+```bash
+OFFICIAL_PUBLIC="$PWD/task_corpus/official/fpt26-harness-public"
+docker run --rm --platform linux/amd64 \
+  --user "$(id -u):$(id -g)" \
+  --mount type=bind,src="$PWD/runs/container",dst=/outputs \
+  --mount type=bind,src="$OFFICIAL_PUBLIC",dst=/official-corpus,readonly \
+  llm4hls-v3d:py3.12 official-smoke
+```
+
+该命令必须且只选择 `projection_bugfix`、`dotProduct_optimize`、
+`residual_stream_deadlock`。输出目录是
+`runs/container/v3d-official-three-smoke/`，包含七个 batch 文件和
+`official_smoke_receipt.json`。三条记录全部明确标记为 `DETERMINISTIC`；receipt 明确写
+`DETERMINISTIC_FIXTURE_ONLY`、真实 LLM 调用 0、真实 HLS action 0、真实证据 run 0。
+synthetic 记录的 CSim/Synth/CoSim 调用数均为 0；它只验证任务加载、
+选择、带 mode 标签的 fixture 编排、持久化和汇总。
+
+要在全新容器依赖环境里运行完整快速 unittest，把当前 harness 源码只读挂载：
+
+```bash
+docker run --rm --platform linux/amd64 \
+  --user "$(id -u):$(id -g)" \
+  --mount type=bind,src="$PWD",dst=/workspace,readonly \
+  llm4hls-v3d:py3.12 quick-tests
+```
+
+`quick-tests` 以 `/workspace` 为显式 source root 执行 `unittest discover`，并带有限超时；
+不会启动 Vitis 或调用模型。这是 clean dependency/runtime 验证，与镜像内单条 demo 以及
+外部挂载的官方 fixture smoke 分开记录。
+
+AMD Vitis 2025.2 及其 license 是专有软件，本镜像**不会下载、复制或再分发它们**。检查
+宿主机安装时，必须把完整 `2025.2` 安装目录以只读方式挂载到相同绝对路径；厂商 setup
+脚本可能绝对引用同级的 `Vivado` 与 `Model_Composer`。唯一规范 real-runtime preflight
+命令如下：
+
+```bash
+VITIS_2025_2=/absolute/path/to/AMD/2025.2
+docker run --rm --platform linux/amd64 \
+  --user "$(id -u):$(id -g)" \
+  --security-opt label=disable \
+  --mount type=bind,src="$PWD/runs/container",dst=/outputs \
+  --mount type=bind,src="$VITIS_2025_2",dst="$VITIS_2025_2",readonly \
+  --env LLM4HLS_VITIS_HLS_ROOT="$VITIS_2025_2/Vitis" \
+  llm4hls-v3d:py3.12 real-preflight
+```
+
+`:Z` 只给可丢弃的输出目录设置私有 SELinux label。preflight 则禁用容器 label，确保庞大的
+厂商目录保持只读且绝不被递归 relabel；不要给 Vitis mount 添加 `:Z`。
+
+preflight 会要求 `settings64.sh` 存在、source 它、确认 `vitis-run` 位于指定根目录、严格
+匹配 `2025.2`、检查输出挂载，并且只执行 `vitis-run --version`。它的 JSON 固定标记为
+`VITIS_PREFLIGHT_ONLY` 和 `hls_actions_started=0`，同时保存到
+`/outputs/vitis-2025.2-preflight.json`，绝不能当作真实 Vitis PASS。runtime
+缺失、版本错误、动态库不兼容或输出不可写都会 fail closed 并返回退出码 3。由于该检查
+不会启动 HLS，license 变量缺失只产生 warning。
+
+如果挂载的 Vitis 与 Agent 镜像的 Debian userspace 不兼容，应在厂商支持的宿主机或
+Distrobox runtime 中运行同一入口。这属于外部 runtime 方案，不是自包含 Docker。
+真实证据仍必须来自后续 `--backend vitis` 运行，并由结构化终态产物标记为
+`REAL_VITIS_VALIDATED`；镜像构建与本 preflight 都不声称得到该结果。
+
+clean-room 每层都有有限 timeout：
+
+| 边界 | 默认值 | 覆盖方式 |
+| --- | ---: | --- |
+| demo batch 预算 | 120 秒 | `LLM4HLS_DEMO_BATCH_TIMEOUT_S` |
+| demo 外层强制终止 | 180 秒 + 15 秒 TERM 宽限 | `LLM4HLS_DEMO_SMOKE_TIMEOUT_S` |
+| 官方 fixture batch 预算 | 180 秒 | `LLM4HLS_OFFICIAL_BATCH_TIMEOUT_S` |
+| 官方 fixture 外层强制终止 | 240 秒 + 15 秒 TERM 宽限 | `LLM4HLS_OFFICIAL_SMOKE_TIMEOUT_S` |
+| 挂载源码快速测试 | 900 秒 + 15 秒 TERM 宽限 | `LLM4HLS_QUICK_TEST_TIMEOUT_S` |
+| Vitis 版本 preflight | 60 秒 + 5 秒 TERM 宽限 | `LLM4HLS_PREFLIGHT_TIMEOUT_S` |
+| 真实 V3 单 run 总时长 | 7200 秒 | `--runtime-limit` |
+| 真实 CSim / Synth / CoSim | 300 / 1800 / 1800 秒 | `--csim-timeout`、`--synth-timeout`、`--cosim-timeout` |
+| V3-D batch 总时长 | overnight 有界运行时必须显式设置 | `--max-runtime` |
+
+输出 bind mount 是持久证据的硬要求：删除容器不能同时删除 Ledger、Trace、Candidate、
+报告或 benchmark summary。不得通过 Docker build argument 传密钥，也不得把 `.env` 烘焙
+进镜像；Provider/license 变量只在对应真实动作确有需要时于 runtime 注入。
+
+### P8 验证记录（2026-07-20）
+
+第一轮 linux/amd64 Docker 验证构建了当前源码的前序镜像：
+`sha256:7b3a0916f279d921fe8bab2b3a51051f07840d9f65540d65e6ce92b2ebdc9734`，
+Python 3.12.11。它的哈希锁定依赖安装、镜像内 import、`pip check`、单条记录
+`demo-smoke` 和外部 Vitis `real-preflight` 均通过。demo 为 1 条 `DEMO`、真实证据 0；
+preflight 报告 `vitis-run v2025.2`、`VITIS_PREFLIGHT_ONLY`、
+`hls_actions_started=0`。
+
+增加 `official-smoke` 和 `quick-tests` 后，两个入口及输出契约通过了 6 项复现资产专项
+测试。`official-smoke` 还在宿主环境针对外部公开 corpus 实际执行，输出恰好 3 条
+`DETERMINISTIC`、真实 LLM/HLS 进程均为 0、真实证据 0，目录为
+`runs/container/p8-host-20260720-r03/`；synthetic summary 会记录 CSim/Synth/CoSim 真实调用均为 0，
+fixture call。这是 host-entrypoint fixture 证据，不是 clean container 结果。
+
+当前会话无法重新构建或运行更新后的镜像：访问 `/var/run/docker.sock` 被拒绝，sandbox
+提升后仍失败，sudo 又需要无法提供的密码。因此上面的 digest 只代表最后一次成功的前序
+构建，不能宣称包含新的四模式入口。Docker daemon 权限恢复后，必须重新执行本文 build、
+`official-smoke` 和 `quick-tests` 三条命令。本次 P8 smoke/preflight 均未启动 CSim、Synth
+或 CoSim，不能作为真实 Vitis 验证证据。
 
 ## V1 OpenAI-compatible 修复
 
 API Provider 默认模型为 `deepseek-v4-pro`。DeepSeek 官方 OpenAI-compatible 地址为 `https://api.deepseek.com`。对 DeepSeek V4 修复请求显式关闭默认 thinking mode，使有限输出预算用于最终 JSON Patch；成功和失败请求都必须记录 Provider 报告的输入/输出 Token。端点和密钥通过环境变量配置；API key 不会写入运行配置、trace、Prompt、动作结果或 Provider 指纹。
 
 ```bash
-cd /home/ying/CompetitionTrackA/track-A/llm4hls_harness
-export LLM4HLS_VITIS_HLS_ROOT=/home/ying/CompetitionTrackA/vitis/AMD/2025.2/Vitis
+PROJECT_ROOT=/absolute/path/to/track-A
+VITIS_ROOT=/absolute/path/to/AMD/2025.2/Vitis
+cd "$PROJECT_ROOT/llm4hls_harness"
+export LLM4HLS_VITIS_HLS_ROOT="$VITIS_ROOT"
 export OPENAI_BASE_URL=https://api.deepseek.com
 export OPENAI_API_KEY=your-secret-value
 export LLM4HLS_MODEL=deepseek-v4-pro
@@ -231,7 +371,7 @@ python3 -m llm4hls_agent review-v2 --runs-root runs
 | V1 最小修复循环 | 原型级覆盖 | 有 LLM 修复循环，但直接返回完整 `.cpp`，没有受限 Patch、候选隔离、结构化诊断和安全回滚 |
 | V2 Candidate/PPA 循环 | 部分覆盖 | 有 synth、latency 比较和 best code；没有 candidate tree、完整验证等级、约束优先排序和多目标 PPA |
 | V3 Budget-Aware LangGraph | 基本没有 | 没有 LangGraph、checkpointer、持久 State、多维预算和可恢复副作用节点 |
-| V4 Competition Hardening | 只有样例素材 | 有 hidden grading、deadlock task、scorecard 和 Dockerfile，但没有完成竞赛级硬化，辅助脚本还存在 2023.2/2025.2 版本漂移 |
+| V4 Competition Hardening | 样例素材加本地最小闭环 | 已有 Agent-only Docker smoke 与 Vitis 2025.2 preflight，但容器内真实 HLS 验收、hidden grading、提交打包和最终硬化仍未完成 |
 
 因此，按“能演示哪些功能”看，官方实现大约达到 V2 原型；按“能否可靠复现、审计和恢复”看，它不能替代我们的 V0 工程底座。当前策略是保留本地 V0，在 V1/V2 中参考官方循环，在 V3 中自行实现持久化 LangGraph，并只把官方评分、deadlock task 和容器文件作为 V4 测试素材。
 

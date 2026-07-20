@@ -62,7 +62,8 @@ Candidate round cannot preserve the final 25-credit reserve, the prototype
 skips that round and finalizes the verified baseline instead.
 
 ```bash
-cd /home/ying/CompetitionTrackA/track-A
+PROJECT_ROOT=/absolute/path/to/track-A
+cd "$PROJECT_ROOT"
 python3 -m venv .venv
 .venv/bin/python -m pip install -e 'llm4hls_harness[v3]'
 
@@ -78,12 +79,14 @@ been created on this machine), then invoke the same CLI with explicit inputs:
 
 ```bash
 distrobox enter vitis-2025-2
-cd /home/ying/CompetitionTrackA/track-A
+PROJECT_ROOT=/absolute/path/to/track-A
+VITIS_ROOT=/absolute/path/to/AMD/2025.2/Vitis
+cd "$PROJECT_ROOT"
 .venv/bin/llm4hls-v3-prototype \
   --task-dir llm4hls_harness/examples/u55c_v2_optimize_task \
   --patch-file llm4hls_harness/examples/u55c_v3_prototype.diff \
   --run-dir runs/v3a1-prototype-vitis --backend vitis \
-  --vitis-root /home/ying/CompetitionTrackA/vitis/AMD/2025.2/Vitis
+  --vitis-root "$VITIS_ROOT"
 ```
 
 The `demo` backend is always labelled `ORCHESTRATION_SMOKE_ONLY`; it is not HLS
@@ -92,8 +95,9 @@ requires `<vitis-root>/settings64.sh`, then invokes the real tools. A completed
 real closure is labelled `REAL_VITIS_VALIDATED`; a started but failed one is
 labelled `REAL_VITIS_ATTEMPT_FAILED`. The
 `vitis-2025-2` Distrobox is only the current local development environment; it
-is not the final competition Docker deliverable. Building and validating that
-submission Docker image belongs to V4 and is not complete yet. Durable
+is not the final competition Docker deliverable. The minimal agent-only
+clean-room image and Vitis preflight are documented below; a complete
+competition image and real containerized HLS acceptance remain V4 work. Durable
 outputs are `v3_prototype_result.json`, the node-by-node `v3_team_report.md`,
 `control/package_manifest.json`, Candidate decision journals, and
 `graph_checkpoints.sqlite`. The result JSON is committed last; terminal
@@ -102,6 +106,167 @@ HLS tool, while the package manifest detects mutation of authoritative
 artifacts. The next step is V3-B: replace the deterministic adapter with a
 budget-charged, recoverable autonomous LLM Planner without giving the model
 direct tool or filesystem authority.
+
+## V3-D Docker / clean-room reproduction
+
+[`Dockerfile`](Dockerfile) builds a linux/amd64 **agent-only** image from a
+digest-pinned Python 3.12.11 base. It adds only pinned Debian `libX11`/locale
+packages needed by the version preflight, not Vitis itself. Python dependencies are fully pinned with
+artifact hashes in [`requirements-v3.lock`](requirements-v3.lock); regenerate
+it only with the command recorded at the top of that file. The build context
+excludes `.env*`, keys, run artifacts, official tasks, and every V3-D
+`golden/`/`hidden_like/` directory. Copy [`.env.example`](.env.example) to a
+local `.env` only when a real provider run needs configuration. The template
+contains placeholders only, and the populated file remains ignored.
+
+Build the image from this directory:
+
+```bash
+docker build --platform linux/amd64 --tag llm4hls-v3d:py3.12 .
+```
+
+There is one supported entrypoint, `scripts/v3d-reproduce.sh`, with four
+explicit modes: `demo-smoke`, `official-smoke`, `quick-tests`, and
+`real-preflight`. The canonical one-record demo smoke command is:
+
+```bash
+mkdir -p "$PWD/runs/container"
+docker run --rm --platform linux/amd64 \
+  --user "$(id -u):$(id -g)" \
+  --volume "$PWD/runs/container:/outputs:Z" \
+  llm4hls-v3d:py3.12 demo-smoke
+```
+
+It runs exactly one synthetic V3-D batch record and writes
+`runs/container/v3d-demo-smoke/{benchmark_results.jsonl,summary.json,summary.csv,report.md}`
+on the host. The output labels the population `DEMO`, keeps the real-evidence
+headline at zero runs, and proves packaging/orchestration only. It is not CSim,
+Synth, CoSim, PPA, model-quality, or competition evidence.
+
+The official public sources are deliberately absent from the image. Mount a
+separately obtained, read-only copy of the public official corpus to run all
+three official task packages through deterministic fixture orchestration:
+
+```bash
+OFFICIAL_PUBLIC="$PWD/task_corpus/official/fpt26-harness-public"
+docker run --rm --platform linux/amd64 \
+  --user "$(id -u):$(id -g)" \
+  --mount type=bind,src="$PWD/runs/container",dst=/outputs \
+  --mount type=bind,src="$OFFICIAL_PUBLIC",dst=/official-corpus,readonly \
+  llm4hls-v3d:py3.12 official-smoke
+```
+
+This requires and selects exactly `projection_bugfix`, `dotProduct_optimize`,
+and `residual_stream_deadlock`. It writes
+`runs/container/v3d-official-three-smoke/`, including the seven batch outputs
+and `official_smoke_receipt.json`. All three rows are explicitly labelled
+`DETERMINISTIC`; the receipt says `DETERMINISTIC_FIXTURE_ONLY`, zero real LLM
+calls, zero real HLS actions, and zero real-evidence runs. The synthetic rows
+report zero CSim/Synth/CoSim calls. It tests
+task loading, selection, mode-labelled fixture orchestration, persistence, and
+aggregation only.
+
+To prove the locked dependencies can run the complete quick unittest suite in
+a fresh container, mount the repository harness read-only. The tests and
+official sources remain outside the built image:
+
+```bash
+docker run --rm --platform linux/amd64 \
+  --user "$(id -u):$(id -g)" \
+  --mount type=bind,src="$PWD",dst=/workspace,readonly \
+  llm4hls-v3d:py3.12 quick-tests
+```
+
+`quick-tests` runs `unittest discover` with `/workspace` as the explicit source
+root and a finite timeout. It does not start Vitis or call a model. This is the
+clean dependency/runtime check; it is separate from the image's built-in
+one-record demo and externally mounted official fixture smoke.
+
+AMD Vitis 2025.2 and its license are proprietary and are **not downloaded,
+copied, or redistributed by this image**. To check a host-supplied installation,
+bind-mount the complete `2025.2` install directory read-only at the same
+absolute path; vendor setup scripts may contain absolute references to sibling
+`Vivado` and `Model_Composer` directories. The one canonical real-runtime
+preflight command is:
+
+```bash
+VITIS_2025_2=/absolute/path/to/AMD/2025.2
+docker run --rm --platform linux/amd64 \
+  --user "$(id -u):$(id -g)" \
+  --security-opt label=disable \
+  --mount type=bind,src="$PWD/runs/container",dst=/outputs \
+  --mount type=bind,src="$VITIS_2025_2",dst="$VITIS_2025_2",readonly \
+  --env LLM4HLS_VITIS_HLS_ROOT="$VITIS_2025_2/Vitis" \
+  llm4hls-v3d:py3.12 real-preflight
+```
+
+`:Z` gives only the disposable output directory a private SELinux label. The
+preflight instead disables the container label so the large vendor tree stays
+read-only and is never recursively relabelled; do not add `:Z` to the Vitis
+mount.
+
+The preflight requires `settings64.sh`, sources it, resolves `vitis-run` under
+the configured root, enforces version `2025.2`, checks the output mount, and
+runs only `vitis-run --version`. Its JSON is labelled
+`VITIS_PREFLIGHT_ONLY` with `hls_actions_started=0`; it can never be cited as a
+real Vitis PASS. The same JSON is saved as
+`/outputs/vitis-2025.2-preflight.json`. Missing runtime, wrong version, incompatible libraries, or an
+unwritable mount fail closed with exit code 3. A license variable is warned
+about but is not required for this zero-HLS preflight.
+
+If bind-mounted Vitis is incompatible with the agent image's Debian userspace,
+run the same entrypoint in a vendor-supported host/Distrobox runtime instead.
+That is an external-runtime topology, not a self-contained Docker image. Real
+evidence still requires a later `--backend vitis` run whose structured terminal
+artifacts say `REAL_VITIS_VALIDATED`; neither this image build nor the preflight
+claims that result.
+
+Timeouts are finite at every clean-room boundary:
+
+| Boundary | Default | Override |
+| --- | ---: | --- |
+| demo batch budget | 120 s | `LLM4HLS_DEMO_BATCH_TIMEOUT_S` |
+| demo outer kill | 180 s + 15 s TERM grace | `LLM4HLS_DEMO_SMOKE_TIMEOUT_S` |
+| official fixture batch budget | 180 s | `LLM4HLS_OFFICIAL_BATCH_TIMEOUT_S` |
+| official fixture outer kill | 240 s + 15 s TERM grace | `LLM4HLS_OFFICIAL_SMOKE_TIMEOUT_S` |
+| mounted-source quick tests | 900 s + 15 s TERM grace | `LLM4HLS_QUICK_TEST_TIMEOUT_S` |
+| Vitis version preflight | 60 s + 5 s TERM grace | `LLM4HLS_PREFLIGHT_TIMEOUT_S` |
+| real V3 per-run wall time | 7200 s | `--runtime-limit` |
+| real CSim / Synth / CoSim | 300 / 1800 / 1800 s | `--csim-timeout`, `--synth-timeout`, `--cosim-timeout` |
+| V3-D batch wall time | required for bounded overnight runs | `--max-runtime` |
+
+The output bind mount is mandatory for durable evidence: deleting a container
+must not delete the Ledger, Trace, Candidate records, reports, or benchmark
+summary. Do not pass secrets as Docker build arguments or bake `.env` into an
+image; pass provider/license variables only at runtime when the corresponding
+real action actually needs them.
+
+### P8 verification record (2026-07-20)
+
+The first linux/amd64 Docker pass built the predecessor of the current source
+as image
+`sha256:7b3a0916f279d921fe8bab2b3a51051f07840d9f65540d65e6ce92b2ebdc9734`
+with Python 3.12.11. Its hash-locked install, in-image imports, `pip check`,
+one-record `demo-smoke`, and external Vitis `real-preflight` passed. The demo
+reported one `DEMO` row and zero real-evidence runs; preflight reported
+`vitis-run v2025.2`, `VITIS_PREFLIGHT_ONLY`, and `hls_actions_started=0`.
+
+After adding `official-smoke` and `quick-tests`, their entrypoints and output
+contracts passed the six reproduction-asset tests. `official-smoke` was also
+executed directly on the host against the external public corpus and produced
+exactly three `DETERMINISTIC` rows, zero real LLM/HLS processes, and zero
+real-evidence runs under `runs/container/p8-host-20260720-r03/`. Its synthetic
+summary reports zero real tool calls. This is host-entrypoint
+fixture evidence, not a clean-container result.
+
+The current session could not rebuild or run the updated image because access
+to `/var/run/docker.sock` was denied, including after sandbox escalation; sudo
+required an unavailable password. Therefore the digest above is retained only
+as the last successful predecessor build and must not be cited as the digest of
+the updated four-mode entrypoint. Re-run the documented build plus
+`official-smoke` and `quick-tests` commands when Docker daemon access is
+restored. No CSim, Synth, or CoSim was started by any P8 smoke or preflight, so
+none of these records claims real Vitis validation.
 
 ## V1 OpenAI-compatible repair
 
@@ -113,8 +278,10 @@ endpoint and secret in the environment; the API key is never written to run
 configuration, traces, prompts, action results, or provider fingerprints.
 
 ```bash
-cd /home/ying/CompetitionTrackA/track-A/llm4hls_harness
-export LLM4HLS_VITIS_HLS_ROOT=/home/ying/CompetitionTrackA/vitis/AMD/2025.2/Vitis
+PROJECT_ROOT=/absolute/path/to/track-A
+VITIS_ROOT=/absolute/path/to/AMD/2025.2/Vitis
+cd "$PROJECT_ROOT/llm4hls_harness"
+export LLM4HLS_VITIS_HLS_ROOT="$VITIS_ROOT"
 export OPENAI_BASE_URL=https://api.deepseek.com
 export OPENAI_API_KEY=your-secret-value
 export LLM4HLS_MODEL=deepseek-v4-pro
@@ -298,7 +465,7 @@ and engineering depth need separate assessment:
 | V1 minimal repair loop | Prototype | It has an LLM repair loop, but returns a complete `.cpp` without constrained patches, candidate isolation, structured diagnosis, or safe rollback |
 | V2 candidate/PPA loop | Partial | It synthesizes candidates and retains lower-latency code, but has no candidate tree, verification tiers, constraint-first ranking, or multi-objective PPA policy |
 | V3 budget-aware LangGraph | Essentially absent | It has no LangGraph, checkpointer, durable State, multidimensional budget, or recoverable side-effect nodes |
-| V4 competition hardening | Example material only | It includes hidden grading, a deadlock task, a scorecard, and Docker material, but is not competition-hardened and its auxiliary scripts retain 2023.2/2025.2 version drift |
+| V4 competition hardening | Example material plus local minimum | The local agent-only Docker smoke and Vitis 2025.2 preflight now exist, but real containerized HLS acceptance, hidden grading, submission packaging, and final hardening remain incomplete |
 
 In short, the official implementation reaches roughly a V2 prototype by
 feature breadth, but it does not replace our V0 engineering foundation for
@@ -410,7 +577,8 @@ or unparseable synthesis report is never treated as a pass.
 ## Fast tests
 
 ```bash
-python3 -m unittest discover -s tests -v
+PYTHONPATH=llm4hls_harness python3 -m unittest discover \
+  -s llm4hls_harness/tests -t llm4hls_harness -v
 ```
 
 The tests use deterministic fake process/tool backends and do not require

@@ -1,0 +1,3 @@
+# The repository-level ignore intentionally excludes all .env.* files. This
+# tracked template is the one exception; real .env files remain ignored.
+!.env.example

@@ -8,8 +8,10 @@
 请在 `vitis-2025-2` Distrobox 容器中运行：
 
 ```bash
-cd /home/ying/CompetitionTrackA/track-A/llm4hls_harness
-export LLM4HLS_VITIS_HLS_ROOT=/home/ying/CompetitionTrackA/vitis/AMD/2025.2/Vitis
+PROJECT_ROOT=/absolute/path/to/track-A
+VITIS_ROOT=/absolute/path/to/AMD/2025.2/Vitis
+cd "$PROJECT_ROOT/llm4hls_harness"
+export LLM4HLS_VITIS_HLS_ROOT="$VITIS_ROOT"
 export LLM4HLS_PART=xcu55c-fsvh2892-2L-e
 python3 -m llm4hls_agent run examples/u55c_smoke_task \
   --run-dir runs/u55c-smoke-100mhz \
