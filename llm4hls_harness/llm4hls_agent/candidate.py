@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Mapping, Protocol
 
 from .task import PublicTask
-from .workflow import RunArtifactError, _atomic_json, _sha256
+from .workflow import RunArtifactError, _atomic_json, _fsync_directory, _sha256
 
 
 class PatchApplicationLike(Protocol):
@@ -206,13 +206,20 @@ class CandidateManager:
             staged_patch = staging_root / "patch.diff"
             staged_metadata = staging_root / "candidate.json"
             staged_source.parent.mkdir(parents=True, exist_ok=False)
-            staged_source.write_bytes(application.patched_bytes)
-            staged_patch.write_text(patch_text, encoding="utf-8")
+            with staged_source.open("wb") as stream:
+                stream.write(application.patched_bytes)
+                stream.flush()
+                os.fsync(stream.fileno())
+            with staged_patch.open("w", encoding="utf-8", newline="\n") as stream:
+                stream.write(patch_text)
+                stream.flush()
+                os.fsync(stream.fileno())
             _atomic_json(staged_metadata, record)
             for path in (staged_source, staged_patch, staged_metadata):
                 path.chmod(stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
             candidate_root.parent.mkdir(parents=True, exist_ok=True)
             os.replace(staging_root, candidate_root)
+            _fsync_directory(candidate_root.parent)
         except Exception:
             shutil.rmtree(staging_root, ignore_errors=True)
             raise

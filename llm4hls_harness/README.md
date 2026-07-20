@@ -13,9 +13,11 @@ rollback. The repair proposal may come from an OpenAI-compatible API or a
 static patch fixture. V2 adds a durable Candidate tree, deterministic
 verification/constraint/PPA/cost comparison, one optimization class per round,
 best-candidate preservation, final revalidation, and safety rejection. V3-A0
-now includes an independent one-Candidate LangGraph vertical prototype;
-autonomous multi-round planning, full recovery transactions, hidden grading,
-and reference-solution use are not included.
+now includes an independent deterministic multi-round LangGraph: a rejected
+Candidate can advance to another scripted proposal, promotion/rejection/final
+selection use recoverable Candidate-operation journals, and the terminal
+package is protected by an artifact hash manifest. Autonomous LLM planning,
+hidden grading, and reference-solution use are not included.
 
 `runs/v1-deepseek-final` is historical evidence that DeepSeek repaired
 `FUNCTIONAL_MISMATCH`, but it predates strict candidate/action binding and the
@@ -36,8 +38,12 @@ headers, and the configured public testbench. Paths entering `hidden/` or
 V3-A0 leaves the existing `run`, `repair`, and `optimize` (V2) commands
 unchanged. Its independent command splits baseline CSim/Synth/CoSim, a scripted
 Planner, Candidate materialization, Candidate CSim/Synth, the CoSim value gate,
-promotion/rejection, final CSim/Synth/CoSim, and reporting into checkpointed
-action nodes.
+promotion/rejection, round continuation/stop, final CSim/Synth/CoSim, and
+reporting into checkpointed action nodes. Repeat `--patch-file` to provide an
+ordered deterministic proposal sequence; one file preserves the original
+single-round behavior. `--max-no-improvement-rounds` controls convergence;
+`--enable-final-fallback` reserves at most one additional fresh final closure
+when the configured credits and tool-call limits can afford it.
 
 The strict happy path costs `25 + 25 + 25 = 75` credits: one complete baseline
 closure, one complete Candidate closure, and one fresh final closure. If a
@@ -78,10 +84,12 @@ labelled `REAL_VITIS_ATTEMPT_FAILED`. The
 is not the final competition Docker deliverable. Building and validating that
 submission Docker image belongs to V4 and is not complete yet. Durable
 outputs are `v3_prototype_result.json`, the node-by-node `v3_team_report.md`,
-and `graph_checkpoints.sqlite`. The result JSON is committed last; terminal
+`control/package_manifest.json`, Candidate decision journals, and
+`graph_checkpoints.sqlite`. The result JSON is committed last; terminal
 re-entry can rebuild a missing generated Markdown report without rerunning any
-HLS tool. This prototype executes one scripted Patch;
-autonomous multi-round LLM planning is the next step.
+HLS tool, while the package manifest detects mutation of authoritative
+artifacts. The next step is A1 loop-level evidence and versioned Planner I/O;
+real autonomous multi-round LLM search remains a later V3-B capability.
 
 ## V1 OpenAI-compatible repair
 

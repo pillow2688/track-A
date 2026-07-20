@@ -19,7 +19,7 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="llm4hls-v3-prototype",
         description=(
-            "Run the isolated one-Candidate V3-A0 LangGraph prototype. "
+            "Run the isolated deterministic multi-round V3-A0 LangGraph. "
             "The default demo backend proves orchestration only; use --backend vitis "
             "for real HLS evidence."
         ),
@@ -32,7 +32,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--patch-file",
         required=True,
-        help="Path to the scripted unified diff used by this prototype.",
+        action="append",
+        help=(
+            "Path to a scripted unified diff. Repeat this option to exercise "
+            "multiple optimization rounds in order."
+        ),
     )
     parser.add_argument("--run-dir", required=True)
     parser.add_argument("--thread-id", default="v3a0-prototype")
@@ -57,6 +61,20 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--synth-timeout", type=float, default=1800.0)
     parser.add_argument("--cosim-timeout", type=float, default=1800.0)
     parser.add_argument("--minimum-frequency-mhz", type=float, default=100.0)
+    parser.add_argument(
+        "--max-no-improvement-rounds",
+        type=int,
+        default=2,
+        help="Stop after this many consecutive rejected/non-improving rounds.",
+    )
+    parser.add_argument(
+        "--enable-final-fallback",
+        action="store_true",
+        help=(
+            "Allow one additional fresh final CSim/Synth/CoSim attempt when "
+            "credits remain. Disabled by default to preserve legacy run identity."
+        ),
+    )
     return parser
 
 
@@ -101,16 +119,29 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         task = load_public_task(args.task_dir)
-        patch = Path(args.patch_file).read_text(encoding="utf-8")
-        proposal = PatchProposal(
-            patch=patch,
-            provider="scripted-v3a0-prototype",
-            model="operator-supplied-patch-v1",
-            hypothesis="Evaluate the operator-supplied scripted prototype patch.",
-            change_class="scripted",
-            expected_effect="Measure the supplied patch against the verified baseline.",
-            risk="operator-supplied: full validation remains mandatory",
-            required_validation=("csim", "synth", "cosim"),
+        proposals = tuple(
+            PatchProposal(
+                patch=Path(patch_file).read_text(encoding="utf-8"),
+                provider="scripted-v3a0-prototype",
+                model="operator-supplied-patch-v1",
+                hypothesis=(
+                    "Evaluate the operator-supplied scripted prototype patch."
+                    if len(args.patch_file) == 1
+                    else f"Evaluate operator-supplied scripted patch {index}."
+                ),
+                change_class="scripted",
+                expected_effect=(
+                    "Measure the supplied patch against the verified baseline."
+                    if len(args.patch_file) == 1
+                    else "Measure the supplied patch against the current verified incumbent."
+                ),
+                risk="operator-supplied: full validation remains mandatory",
+                required_validation=("csim", "synth", "cosim"),
+            )
+            for index, patch_file in enumerate(args.patch_file, 1)
+        )
+        validation_call_limit = len(proposals) + (
+            3 if args.enable_final_fallback else 2
         )
         config = RunConfig(
             tool=ToolConfig(
@@ -131,7 +162,12 @@ def main(argv: list[str] | None = None) -> int:
                     else task.budget
                 ),
                 costs={"csim": 1, "synth": 4, "cosim": 20, "llm": 0},
-                tool_limits={"csim": 3, "synth": 3, "cosim": 3, "llm": 1},
+                tool_limits={
+                    "csim": validation_call_limit,
+                    "synth": validation_call_limit,
+                    "cosim": validation_call_limit,
+                    "llm": len(proposals),
+                },
                 token_limit=4096,
                 runtime_limit_seconds=args.runtime_limit,
             ),
@@ -142,9 +178,11 @@ def main(argv: list[str] | None = None) -> int:
             task,
             args.run_dir,
             config,
-            proposal,
+            proposals,
             backend=backend,
             thread_id=args.thread_id,
+            max_no_improvement_rounds=args.max_no_improvement_rounds,
+            max_final_attempts=2 if args.enable_final_fallback else 1,
         )
     except Exception as exc:
         _print_error(type(exc).__name__, str(exc))
@@ -160,6 +198,8 @@ def main(argv: list[str] | None = None) -> int:
         "task_id": result.get("task_id"),
         "status": result.get("status"),
         "stop_reason": result.get("stop_reason"),
+        "exploration_stop_reason": result.get("exploration_stop_reason"),
+        "rounds_completed": result.get("rounds_completed"),
         "best_candidate_id": result.get("best_candidate_id"),
         "final_candidate_id": result.get("final_candidate_id"),
         "credits_used": result.get("budget", {}).get("credits_used"),
