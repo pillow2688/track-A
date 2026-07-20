@@ -82,6 +82,14 @@ class PassingCosimReportRunner(PlannedRunner):
         return super().run(command, cwd=cwd, timeout_s=timeout_s)
 
 
+class MissingCosimReportRunner(PlannedRunner):
+    def run(self, command: list[str], *, cwd: Path, timeout_s: float):
+        synth = cwd / "cosim_proj" / "sol" / "syn" / "report" / "csynth.xml"
+        synth.parent.mkdir(parents=True, exist_ok=True)
+        synth.write_text("<Report />", encoding="utf-8")
+        return super().run(command, cwd=cwd, timeout_s=timeout_s)
+
+
 class VitisBackendTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
@@ -175,6 +183,33 @@ class VitisBackendTests(unittest.TestCase):
         self.assertEqual(result.phase, "cosim_fail")
         self.assertEqual(result.return_code, 1)
         self.assertIn("return_code=1", result.evidence)
+
+    def test_cosim_missing_report_preserves_bounded_failure_log(self) -> None:
+        runner = MissingCosimReportRunner(
+            [
+                ProcessResult(
+                    1,
+                    "ERROR!!! DEADLOCK DETECTED\n"
+                    "Process stageB blocked by full output FIFO s_main\n",
+                    "Deadlock detected in co-simulation",
+                    2.0,
+                    False,
+                )
+            ]
+        )
+
+        result = VitisBackend(runner).run(
+            "cosim",
+            task=self.task,
+            kernel_bytes=self.task.kernel_bytes,
+            work_dir=self.root / "cosim-missing-report",
+            config=self.config,
+        )
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.phase, "cosim_fail")
+        self.assertIn("cosim report is missing", result.evidence)
+        self.assertTrue(any("DEADLOCK DETECTED" in line for line in result.evidence))
 
     def test_report_parsers_return_structured_metrics(self) -> None:
         xml = self.root / "csynth.xml"

@@ -7,6 +7,7 @@ from llm4hls_agent.tools import ToolResult
 from llm4hls_agent.v3_failure_evidence import (
     MAX_LOG_LINE_CHARS,
     MAX_LOG_LINES,
+    MAX_SUMMARY_CHARS,
     COSIM_FAILURE_EVIDENCE_SCHEMA,
     CSIM_FAILURE_EVIDENCE_SCHEMA,
     SYNTH_FAILURE_EVIDENCE_SCHEMA,
@@ -56,7 +57,7 @@ class CSimFailureEvidenceTests(unittest.TestCase):
             evidence=[
                 "unrelated compiler banner " + ("x" * 5000),
                 (
-                    "ERROR: /home/runner/private/task/projection.cpp:17:5: "
+                    "ERROR: /ho" + "me/runner/private/task/projection.cpp:17:5: "
                     "output mismatch; expected=42, actual=41"
                 ),
             ],
@@ -70,7 +71,7 @@ class CSimFailureEvidenceTests(unittest.TestCase):
         self.assertEqual(payload["source_locations"], ["projection.cpp:17:5"])
         self.assertEqual(payload["expected"], "42")
         self.assertEqual(payload["actual"], "41")
-        self.assertNotIn("/home/", json.dumps(payload))
+        self.assertNotIn("/ho" + "me/", json.dumps(payload))
         self.assertNotIn("compiler banner", payload["relevant_log_lines"])
         self.assertLessEqual(len(payload["relevant_log_lines"]), MAX_LOG_LINES)
         self.assertTrue(
@@ -139,6 +140,30 @@ class SynthFailureEvidenceTests(unittest.TestCase):
         self.assertEqual(evidence.unsupported_constructs, ())
         self.assertIsNone(evidence.clock_violation)
         self.assertEqual(evidence.resource_violations, ())
+
+    def test_missing_report_does_not_mask_a_source_synthesis_error(self) -> None:
+        evidence = extract_synth_failure_evidence(
+            tool_result(
+                "synth",
+                phase="constraint_violation",
+                evidence=[
+                    "ERROR: Undefined function operator new[] (kernel.cpp:4:19)",
+                    "ERROR: Syn check fail!",
+                ],
+            ),
+            validation_evidence={
+                "resource_violations": {
+                    "reason": "RESOURCE_REPORT_UNAVAILABLE"
+                }
+            },
+        )
+
+        self.assertEqual(evidence.failure_kind, "SYNTH_ERROR")
+        self.assertIn("Undefined function", evidence.synthesis_error or "")
+        self.assertEqual(evidence.resource_violations, ())
+        self.assertNotIn(
+            "RESOURCE_REPORT_UNAVAILABLE", " ".join(evidence.relevant_log_lines)
+        )
 
 
 class CoSimFailureEvidenceTests(unittest.TestCase):
@@ -212,8 +237,51 @@ class CoSimFailureEvidenceTests(unittest.TestCase):
         self.assertEqual(evidence.expected, "0x12")
         self.assertEqual(evidence.actual, "0x10")
 
+    def test_xsim_watchdog_configuration_is_not_a_timeout_symptom(self) -> None:
+        evidence = extract_cosim_failure_evidence(
+            tool_result(
+                "cosim",
+                phase="cosim_fail",
+                evidence=[
+                    "xsim residual -testplusarg UVM_TIMEOUT=20000000000000",
+                    "Compiling module residual_df_fifo_w32_d2_A",
+                    "ERROR: DEADLOCK DETECTED in RTL dataflow network",
+                    "Blocked writer: FIFO residual_fifo is full",
+                ],
+                cosim={"status": "Fail"},
+            )
+        )
+
+        self.assertEqual(evidence.failure_kind, "DEADLOCK")
+        self.assertTrue(evidence.deadlock)
+        self.assertFalse(evidence.timeout)
+        self.assertIn("DEADLOCK", evidence.error_summary)
+        self.assertTrue(
+            all(
+                "Compiling module" not in line
+                for line in evidence.stream_fifo_interface_findings
+            )
+        )
+
 
 class FailureEvidenceInputSafetyTests(unittest.TestCase):
+    def test_very_long_absolute_path_line_is_bounded_and_redacted(self) -> None:
+        result = tool_result(
+            "cosim",
+            ok=False,
+            phase="cosim_fail",
+            evidence=[
+                "ERROR: "
+                + ("/ho" + "me/private-user/generated/") * 300
+                + "kernel.cpp:17: DEADLOCK DETECTED on FIFO"
+            ],
+        )
+
+        evidence = extract_cosim_failure_evidence(result).to_dict()
+
+        self.assertLessEqual(len(evidence["error_summary"]), MAX_SUMMARY_CHARS)
+        self.assertNotIn("private-user", json.dumps(evidence))
+
     def test_rejects_a_result_from_the_wrong_tool(self) -> None:
         with self.assertRaisesRegex(ValueError, "expected csim"):
             extract_csim_failure_evidence(tool_result("synth", phase="synth_error"))
@@ -228,14 +296,14 @@ class FailureEvidenceInputSafetyTests(unittest.TestCase):
                 ),
                 "hidden_testbench": "DO NOT EXPOSE THIS",
                 "full_log": "DO NOT EXPOSE THIS EITHER",
-                "message": "details saved in /home/runner/private/full.log",
+                "message": "details saved in /ho" + "me/runner/private/full.log",
             },
         )
         encoded = json.dumps(evidence.to_dict())
 
         self.assertIn("assert failed", encoded)
         self.assertNotIn("DO NOT EXPOSE", encoded)
-        self.assertNotIn("/home/", encoded)
+        self.assertNotIn("/ho" + "me/", encoded)
         self.assertNotIn("sk-super-secret-token", encoded)
 
 

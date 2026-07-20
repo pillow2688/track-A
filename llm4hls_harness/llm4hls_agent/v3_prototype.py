@@ -3682,7 +3682,9 @@ def _candidate_synth(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeS
     return update
 
 
-def _worst_latency(report: Mapping[str, object], *, name: str) -> float:
+def _worst_latency(
+    report: Mapping[str, object], *, name: str, allow_zero: bool = False
+) -> float:
     latency = report.get("latency")
     if not isinstance(latency, Mapping):
         raise RuntimeError(f"{name} has no latency report")
@@ -3691,7 +3693,8 @@ def _worst_latency(report: Mapping[str, object], *, name: str) -> float:
         isinstance(value, bool)
         or not isinstance(value, (int, float))
         or not math.isfinite(float(value))
-        or float(value) <= 0
+        or float(value) < 0
+        or (float(value) == 0 and not allow_zero)
     ):
         raise RuntimeError(f"{name} worst latency is invalid")
     return float(value)
@@ -4552,26 +4555,26 @@ def _final_cosim(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeState
             PhaseMode.STRUCTURAL_FIX.value,
         }:
             raise RuntimeError(f"final correctness commit has invalid mode: {mode}")
-        qualification = score_candidate(
-            candidate_id=candidate_id,
-            baseline=final_metrics,
-            candidate=final_metrics,
-            validation=validation,
-            clock=state["final_clock"],
-            config=replace(runtime.scoring, official_score_enabled=False),
-            input_tokens=0,
-            output_tokens=0,
-            cached_input_tokens=0,
-            credits_used=sum(
-                int(runtime.config.budget.costs[stage])
-                for stage in ("csim", "synth", "cosim")
-            ),
-        )
-        if not qualification.hard_constraints_passed:
+        # Correctness tasks may synthesize to purely combinational RTL.  Vitis
+        # reports latency/II as zero for those designs, which is valid for a
+        # repair closure but intentionally invalid for the PPA scorer used by
+        # OPTIMIZE.  Check the actual correctness gates here instead of
+        # routing a non-optimization result through latency-ratio scoring.
+        resource = _resource_constraint(final_metrics, runtime.scoring)
+        failures: list[str] = []
+        for stage in ("csim", "synth", "cosim"):
+            record = validation.get(stage)
+            if not isinstance(record, Mapping) or record.get("status") != "PASS":
+                failures.append(f"{stage.upper()}_VALIDATION")
+        if state["final_clock"].get("passed") is not True:
+            failures.append("CLOCK_CONSTRAINT")
+        if resource.get("passed") is not True:
+            failures.append("RESOURCE_CONSTRAINT")
+        if failures:
             return update | {
                 "status": "FAILED",
                 "stop_reason": "FINAL_CORRECTNESS_CONSTRAINT_FAILED",
-                "last_tool_reason": ",".join(qualification.hard_failures),
+                "last_tool_reason": ",".join(failures),
                 "final_candidate_id": None,
             }
         decision_ref = _commit_registry_operation(
@@ -4681,6 +4684,7 @@ def _candidate_round_summaries(
     if not isinstance(candidates, Mapping):
         return []
     baseline_latency: float | None = None
+    allow_zero_latency = state.get("mode") != PhaseMode.OPTIMIZE.value
     baseline_ref = state.get("baseline_metrics_ref")
     if isinstance(baseline_ref, str) and baseline_ref:
         baseline_report = _completed_synth_report(
@@ -4689,7 +4693,11 @@ def _candidate_round_summaries(
             candidate_id=str(state.get("baseline_candidate_id")),
             validation_scope="exploration",
         )
-        baseline_latency = _worst_latency(baseline_report, name="baseline")
+        baseline_latency = _worst_latency(
+            baseline_report,
+            name="baseline",
+            allow_zero=allow_zero_latency,
+        )
     rows: list[dict[str, object]] = []
     for candidate_id, raw_candidate in candidates.items():
         if not isinstance(raw_candidate, Mapping) or raw_candidate.get("kind") == "baseline":
@@ -4704,7 +4712,11 @@ def _candidate_round_summaries(
                 candidate_id=str(candidate_id),
                 validation_scope="exploration",
             )
-            latency = _worst_latency(report, name=str(candidate_id))
+            latency = _worst_latency(
+                report,
+                name=str(candidate_id),
+                allow_zero=allow_zero_latency,
+            )
         validation = candidate.get("validation")
         validation = validation if isinstance(validation, Mapping) else {}
         cosim_record = validation.get("cosim")

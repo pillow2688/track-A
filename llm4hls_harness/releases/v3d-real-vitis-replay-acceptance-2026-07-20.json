@@ -1,0 +1,69 @@
+{
+  "schema_version": "v3d.real-vitis-replay-acceptance.v1",
+  "date": "2026-07-20",
+  "evidence_boundary": {
+    "vitis": "REAL_VITIS_VALIDATED",
+    "planner_in_successful_replays": "NOT_REAL_LLM",
+    "atomic_real_llm_acceptance": false,
+    "missing_environment": [
+      "OPENAI_BASE_URL",
+      "OPENAI_API_KEY",
+      "LLM4HLS_MODEL"
+    ]
+  },
+  "runs": [
+    {
+      "mode": "REPAIR",
+      "task_id": "projection_bugfix",
+      "run_id": "v3d-projection-postfix-replay-r02-NOT_REAL_LLM-LOCAL_BUDGET_OVERRIDE",
+      "status": "DONE",
+      "credits_used": 31,
+      "credit_limit": 40,
+      "tokens_used": 0,
+      "tool_calls": {"csim": 3, "synth": 2, "cosim": 1, "llm": 0},
+      "wall_time_seconds": 67.162,
+      "planner_patch_sha256": "9b7c93d97cf6f78708be93cadc3b8076aa45afa0da0a73ec3aede054a9b8db3a",
+      "applied_patch_sha256": "95b88bd5edc86c52c97eb39dc39e5383b1ae3daa9027c2000febd0182489f688",
+      "patch_metadata_normalized": true,
+      "candidate_id": "candidate_001",
+      "final_candidate_id": "candidate_001",
+      "final": {"csim": "PASS", "synth": "PASS", "cosim": "PASS"},
+      "local_budget_override": true
+    },
+    {
+      "mode": "STRUCTURAL_FIX",
+      "task_id": "residual_stream_deadlock",
+      "run_id": "v3d-residual-structural-replay-r04-NOT_REAL_LLM",
+      "status": "DONE",
+      "credits_used": 71,
+      "credit_limit": 100,
+      "tokens_used": 0,
+      "tool_calls": {"csim": 3, "synth": 2, "cosim": 3, "llm": 0},
+      "wall_time_seconds": 114.926,
+      "planner_patch_sha256": "280ffded52f2f7d45e72146bb6cb4838363ccb7c9da4cac70101aec6a4e1ab93",
+      "applied_patch_sha256": "280ffded52f2f7d45e72146bb6cb4838363ccb7c9da4cac70101aec6a4e1ab93",
+      "candidate_id": "candidate_001",
+      "final_candidate_id": "candidate_001",
+      "baseline_cosim": {"deadlock": true, "timeout": false, "rtl_mismatch": false},
+      "final": {"csim": "PASS", "synth": "PASS", "cosim": "PASS"}
+    },
+    {
+      "mode": "SYNTH_FIX",
+      "task_id": "u55c_synthesis_repair",
+      "run_id": "v3d-synth-fix-dynamic-replay-r02-NOT_REAL_LLM",
+      "status": "DONE",
+      "credits_used": 35,
+      "credit_limit": 80,
+      "tokens_used": 0,
+      "tool_calls": {"csim": 3, "synth": 3, "cosim": 1, "llm": 0},
+      "wall_time_seconds": 67.942,
+      "planner_patch_sha256": "a729327e041946ee0666af959bdc19e5d0a6d8ab6ccf08f1b861542ca38ffbd4",
+      "applied_patch_sha256": "acf4264171589901bacd82e510923d7d5dc525bef24b9a1a26d4cd7de2578ea3",
+      "patch_metadata_normalized": true,
+      "candidate_id": "candidate_001",
+      "final_candidate_id": "candidate_001",
+      "baseline_synth_failure_kind": "SYNTH_ERROR",
+      "final": {"csim": "PASS", "synth": "PASS", "cosim": "PASS"}
+    }
+  ]
+}

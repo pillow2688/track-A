@@ -32,7 +32,7 @@ _SOURCE_LOCATION_RE = re.compile(
     re.IGNORECASE,
 )
 _ABSOLUTE_SOURCE_RE = re.compile(
-    rf"(?:(?:[A-Za-z]:)?[/\\])(?:[^\s:()\[\]{{}}]+[/\\])+"
+    rf"(?:(?:[A-Za-z]:)?[/\\])(?:[^/\\\s:()\[\]{{}}]+[/\\])+"
     rf"(?P<name>[^/\\\s:()\[\]{{}}]+\.(?:{_SOURCE_SUFFIXES}))",
     re.IGNORECASE,
 )
@@ -133,6 +133,13 @@ _SYNTH_RELEVANT_TOKENS = (
     "exceeds available",
     "timeout",
 )
+_SYNTH_SOURCE_ERROR_TOKENS = (
+    "undefined function",
+    "syn check fail",
+    "source synthesis",
+    "synthesis failed",
+    "failed during synthesis",
+)
 _UNSUPPORTED_TOKENS = (
     "unsupported",
     "not synthesizable",
@@ -172,6 +179,17 @@ _COSIM_RELEVANT_TOKENS = (
     "failure",
 )
 _STREAM_TOKENS = ("fifo", "stream", "interface", "handshake", "channel")
+_COSIM_SUMMARY_PRIORITY_TOKENS = (
+    "deadlock",
+    "dead lock",
+    "rtl mismatch",
+    "mismatch",
+    "timed out",
+    "timeout expired",
+    "fatal",
+    "error",
+    "failed",
+)
 
 
 @dataclass(frozen=True)
@@ -353,6 +371,10 @@ def _basename(path: str) -> str:
 
 def _sanitize_line(value: str) -> str:
     compact = " ".join(str(value).strip().split())
+    # Tool launch commands can contain thousands of path characters.  Bound
+    # regex input before path redaction so an adversarial or generated log
+    # line cannot trigger excessive backtracking in the sanitizer.
+    compact = compact[: MAX_LOG_LINE_CHARS * 2]
     compact = _ABSOLUTE_SOURCE_RE.sub(lambda match: match.group("name"), compact)
     compact = _UNIX_ABSOLUTE_PATH_RE.sub("<local-path>", compact)
     compact = _WINDOWS_ABSOLUTE_PATH_RE.sub("<local-path>", compact)
@@ -446,6 +468,41 @@ def _unique_bounded(values: Sequence[str], *, limit: int = MAX_LOG_LINES) -> tup
 def _matching_lines(lines: Sequence[str], tokens: Sequence[str]) -> tuple[str, ...]:
     return _unique_bounded(
         [line for line in lines if any(token in line.casefold() for token in tokens)]
+    )
+
+
+def _cosim_diagnostic_lines(lines: Sequence[str]) -> tuple[str, ...]:
+    """Remove simulator launch/configuration noise from CoSim symptoms.
+
+    XSIM command lines commonly contain an ``UVM_TIMEOUT=<value>`` plusarg.
+    That is a configured watchdog, not evidence that the simulation timed out.
+    Module-compilation chatter containing ``fifo`` is likewise not a FIFO
+    finding unless the line also reports an actual diagnostic.
+    """
+
+    diagnostics: list[str] = []
+    for line in lines:
+        lowered = line.casefold()
+        if "uvm_timeout" in lowered:
+            continue
+        if "compiling module" in lowered and not any(
+            token in lowered
+            for token in ("error", "fatal", "failed", "deadlock", "mismatch")
+        ):
+            continue
+        diagnostics.append(line)
+    return tuple(diagnostics)
+
+
+def _resource_report_unavailable(line: str) -> bool:
+    lowered = line.casefold()
+    return any(
+        marker in lowered
+        for marker in (
+            "resource_report_unavailable",
+            "resource report unavailable",
+            "resources unavailable",
+        )
     )
 
 
@@ -623,6 +680,8 @@ def _resource_violations(
                 )
             )
     for line in _matching_lines(lines, _RESOURCE_TOKENS):
+        if _resource_report_unavailable(line):
+            continue
         violations.append(ResourceViolation(summary=line))
     # Keep the structured result bounded even if a malformed report contains
     # hundreds of resource keys.
@@ -640,8 +699,12 @@ def extract_synth_failure_evidence(
         result, "synth"
     )
     lines = _raw_lines(result, validation_evidence)
-    relevant = _matching_lines(lines, _SYNTH_RELEVANT_TOKENS)
-    unsupported = _matching_lines(lines, _UNSUPPORTED_TOKENS)
+    diagnostic_lines = tuple(
+        line for line in lines if not _resource_report_unavailable(line)
+    )
+    relevant = _matching_lines(diagnostic_lines, _SYNTH_RELEVANT_TOKENS)
+    source_errors = _matching_lines(diagnostic_lines, _SYNTH_SOURCE_ERROR_TOKENS)
+    unsupported = _matching_lines(diagnostic_lines, _UNSUPPORTED_TOKENS)
     report = _mapping(_value(result, "report", {}))
     estimated = _number(report.get("estimated_clock_period_ns"))
     target = _recursive_number(validation_evidence, "target_clock_period_ns")
@@ -652,7 +715,7 @@ def extract_synth_failure_evidence(
             "target_clock_period_ns": target,
         }
     else:
-        clock_lines = _matching_lines(lines, _CLOCK_TOKENS)
+        clock_lines = _matching_lines(diagnostic_lines, _CLOCK_TOKENS)
         if clock_lines:
             clock_violation = {"summary": clock_lines[0]}
 
@@ -677,7 +740,7 @@ def extract_synth_failure_evidence(
             ok=ok,
             relevant_lines=relevant,
         )
-    elif phase in {"synth_error", "compile_error"}:
+    elif phase in {"synth_error", "compile_error"} or source_errors:
         failure_kind = "SYNTH_ERROR"
         synthesis_error = _summary(
             tool_name="Synth",
@@ -713,10 +776,10 @@ def extract_synth_failure_evidence(
         return_code=return_code,
         failure_kind=failure_kind,
         synthesis_error=synthesis_error,
-        source_locations=_source_locations(lines),
+        source_locations=_source_locations(diagnostic_lines),
         unsupported_constructs=unsupported,
         clock_violation=clock_violation,
-        resource_violations=_resource_violations(report, lines),
+        resource_violations=_resource_violations(report, diagnostic_lines),
         relevant_log_lines=relevant,
     )
 
@@ -736,14 +799,20 @@ def extract_cosim_failure_evidence(
     status = cosim.get("status")
     if isinstance(status, str) and status.strip():
         lines.append(_sanitize_line(f"cosim status: {status}"))
-    relevant = _matching_lines(lines, _COSIM_RELEVANT_TOKENS)
-    deadlock = _has_positive_marker(lines, "deadlock", aliases=("dead lock",))
-    timeout = phase == "timeout" or _has_positive_marker(
-        lines, "timeout", aliases=("timed out",)
+    diagnostic_lines = _cosim_diagnostic_lines(lines)
+    relevant = _matching_lines(diagnostic_lines, _COSIM_RELEVANT_TOKENS)
+    summary_lines = _matching_lines(
+        diagnostic_lines, _COSIM_SUMMARY_PRIORITY_TOKENS
+    ) or relevant
+    deadlock = _has_positive_marker(
+        diagnostic_lines, "deadlock", aliases=("dead lock",)
     )
-    expected, actual = _mismatch_values(lines)
+    timeout = phase == "timeout" or _has_positive_marker(
+        diagnostic_lines, "timeout", aliases=("timed out",)
+    )
+    expected, actual = _mismatch_values(diagnostic_lines)
     rtl_mismatch = (
-        _has_positive_marker(lines, "mismatch")
+        _has_positive_marker(diagnostic_lines, "mismatch")
         or (
             expected is not None
             and actual is not None
@@ -777,7 +846,7 @@ def extract_cosim_failure_evidence(
             phase=phase,
             return_code=return_code,
             ok=ok,
-            relevant_lines=relevant,
+            relevant_lines=summary_lines,
         ),
         source_locations=_source_locations(lines),
         deadlock=deadlock,
@@ -785,7 +854,9 @@ def extract_cosim_failure_evidence(
         rtl_mismatch=rtl_mismatch,
         expected=expected,
         actual=actual,
-        stream_fifo_interface_findings=_matching_lines(lines, _STREAM_TOKENS),
+        stream_fifo_interface_findings=_matching_lines(
+            diagnostic_lines, _STREAM_TOKENS
+        ),
         relevant_log_lines=relevant,
     )
 

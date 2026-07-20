@@ -187,6 +187,31 @@ class ResourceViolationSmokeBackend(TaskAwareSmokeBackend):
         return replace(result, report=report)
 
 
+class CombinationalRepairSmokeBackend(TaskAwareSmokeBackend):
+    """Model the zero-cycle latency Vitis reports for combinational kernels."""
+
+    def run(
+        self,
+        kind: str,
+        *,
+        kernel_bytes: bytes,
+        work_dir: Path,
+        **kwargs: object,
+    ) -> BackendResult:
+        result = super().run(
+            kind,
+            kernel_bytes=kernel_bytes,
+            work_dir=work_dir,
+            **kwargs,
+        )
+        if kind != "synth":
+            return result
+        report = dict(result.report or {})
+        report["latency"] = {"best": 0, "average": 0, "worst": 0}
+        report["interval"] = {"min": 0, "max": 0}
+        return replace(result, report=report)
+
+
 def task_config(task: PublicTask) -> RunConfig:
     # The official projection task advertises 20 credits, while the unchanged
     # mandatory fresh final closure alone costs 25.  These graph smoke tests
@@ -299,12 +324,16 @@ def _assert_fresh_final_closure(test: unittest.TestCase, result: dict[str, objec
 @unittest.skipIf(run_v3_prototype is None, "V3 optional dependencies are not installed")
 class V3TaskAwareOfficialSmokeTests(unittest.TestCase):
     def _run(
-        self, task_id: str, proposal: PatchProposal | None = None
+        self,
+        task_id: str,
+        proposal: PatchProposal | None = None,
+        *,
+        backend: TaskAwareSmokeBackend | None = None,
     ) -> tuple[
         dict[str, object], dict[str, object], dict[str, object], list[str]
     ]:
         task = load_official(task_id)
-        backend = TaskAwareSmokeBackend(task_id)
+        backend = backend or TaskAwareSmokeBackend(task_id)
         with tempfile.TemporaryDirectory() as directory:
             run_root = Path(directory) / task_id
             result = run_v3_prototype(
@@ -392,6 +421,15 @@ class V3TaskAwareOfficialSmokeTests(unittest.TestCase):
             if event["node"] == "materialize_candidate"
         )
         self.assertTrue(materialized["details"]["patch_metadata_normalized"])
+
+    def test_projection_combinational_zero_latency_still_writes_report(self) -> None:
+        result, _registry, _planner_input, _calls = self._run(
+            "projection_bugfix",
+            backend=CombinationalRepairSmokeBackend("projection_bugfix"),
+        )
+
+        self.assertEqual(result["status"], "DONE")
+        self.assertEqual(result["candidate_rounds"][0]["latency_worst"], 0.0)
 
     def test_dot_product_keeps_existing_optimize_route(self) -> None:
         result, registry, planner_input, calls = self._run("dotProduct_optimize")

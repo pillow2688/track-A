@@ -226,7 +226,29 @@ def _log_evidence(result: ProcessResult) -> list[str]:
         evidence.append("subprocess timeout expired")
     combined = (result.stdout + "\n" + result.stderr).strip()
     if combined:
-        evidence.append(combined[-2000:])
+        lines = [
+            " ".join(line.strip().split())[:512]
+            for line in combined.splitlines()
+            if line.strip()
+        ]
+        diagnostic_tokens = (
+            "error",
+            "fatal",
+            "deadlock",
+            "blocked",
+            "fifo",
+            "stream",
+            "timeout",
+            "timed out",
+            "mismatch",
+            "failed",
+        )
+        relevant = [
+            line
+            for line in lines
+            if any(token in line.casefold() for token in diagnostic_tokens)
+        ]
+        evidence.extend((relevant or lines)[-12:])
     return evidence
 
 
@@ -239,7 +261,7 @@ class VitisBackend:
     def fingerprint(self) -> str:
         """Stable cache identity; bump when command/report semantics change."""
 
-        return "llm4hls_agent.vitis.VitisBackend:v0.5"
+        return "llm4hls_agent.vitis.VitisBackend:v0.7"
 
     def run(
         self,
@@ -464,7 +486,7 @@ class VitisBackend:
         if not report_path.is_file():
             return BackendResult(
                 False, "cosim_fail", process.return_code, process.elapsed_s,
-                ["cosim report is missing"], artifacts,
+                ["cosim report is missing", *_log_evidence(process)], artifacts,
             )
         artifacts["cosim_report"] = _artifact_ref(report_path, work_dir)
         try:
