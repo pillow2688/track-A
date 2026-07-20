@@ -1,21 +1,21 @@
 {
-  "base_sha256": "ae4d8f58b07cc79f60dbfbe41ad0ca73d466bfd4f9f469c0650bc039d4c7b364",
+  "base_sha256": "2b0b84c60566378b624c360c37c0d2f26ef7eb2e723b6415f615932e375f4aa5",
   "engine_version": "v3d.mutation-engine.v1",
   "expected_failing_gate": "ppa",
   "expected_mode": "OPTIMIZE",
-  "mutated_sha256": "a47522cd1309ba32ecba7aa362def846af50edfae7ba2c6cfa07db7e0b3d26f6",
-  "mutation_summary": "功能正确，但循环并行度未显式展开。",
-  "operator": "opt_remove_unroll",
+  "mutated_sha256": "d695b64f8672d1e72ab0bf16589e0d7e82f2427700f2c3c9d8b2a4ad04165f08",
+  "mutation_summary": "两个流式计算级未启用 DATAFLOW 重叠执行。",
+  "operator": "opt_missing_dataflow",
   "operator_version": 1,
   "schema_version": "v3d.mutation-manifest.v1",
   "seed": 405,
   "source_range": {
-    "base_end_line": 12,
-    "base_range_sha256": "39d5cc5cb47bbcf02fd077dff227d1c962dd8b02b622ef0123b450673376a2a3",
-    "base_start_line": 5,
+    "base_end_line": 31,
+    "base_range_sha256": "21fde21e4527def90f39630e3f493c1b8012a1f5308f8a9b5738a7b4b352dad8",
+    "base_start_line": 4,
     "file": "kernel.cpp",
-    "mutated_end_line": 10,
-    "mutated_start_line": 4
+    "mutated_end_line": 30,
+    "mutated_start_line": 3
   },
   "task_id": "v3d_fast_025",
   "version": 1

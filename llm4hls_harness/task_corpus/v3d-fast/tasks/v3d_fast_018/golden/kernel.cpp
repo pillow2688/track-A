@@ -1,7 +1,7 @@
 #include "kernel.h"
 
 // V3D_MUTATION_BEGIN
-static void v3d_produce(
+static void v3d_count_produce(
     const int input[V3D_SIZE],
     hls::stream<int>& main_stream,
     hls::stream<int>& side_stream) {
@@ -14,7 +14,7 @@ static void v3d_produce(
 }
 // V3D_MUTATION_END
 
-static void v3d_consume(
+static void v3d_count_consume(
     hls::stream<int>& main_stream,
     hls::stream<int>& side_stream,
     int output[V3D_SIZE]) {
@@ -31,6 +31,6 @@ void kernel(const int input[V3D_SIZE], int output[V3D_SIZE]) {
     hls::stream<int> side_stream("side_stream");
 #pragma HLS STREAM variable=main_stream depth=1
 #pragma HLS STREAM variable=side_stream depth=1
-    v3d_produce(input, main_stream, side_stream);
-    v3d_consume(main_stream, side_stream, output);
+    v3d_count_produce(input, main_stream, side_stream);
+    v3d_count_consume(main_stream, side_stream, output);
 }

@@ -3,15 +3,16 @@
 #include <iostream>
 
 int main() {
-    const int input[V3D_SIZE] = {-31, 17, 0, 8, -9, 42, 3, -5, 11, -2, 29, 6, -15, 1, 23, -7};
-    int output[V3D_SIZE] = {};
-    kernel(input, output);
-    for (int i = 0; i < V3D_SIZE; ++i) {
-        const int expected = input[i] * 3 + 7;
-        if (output[i] != expected) {
-            std::cerr << "hidden-like mismatch at " << i
-                      << ": expected " << expected
-                      << ", got " << output[i] << "\n";
+    const unsigned char input[V3D_HIST_INPUT_SIZE] = {7, 6, 5, 4, 3, 2, 1, 0, 7, 7, 4, 4, 2, 6, 1, 7};
+    unsigned short bins[V3D_HIST_BINS] = {};
+    unsigned short expected[V3D_HIST_BINS] = {};
+    for (int i = 0; i < V3D_HIST_INPUT_SIZE; ++i) {
+        ++expected[input[i]];
+    }
+    kernel(input, bins);
+    for (int bin = 0; bin < V3D_HIST_BINS; ++bin) {
+        if (bins[bin] != expected[bin]) {
+            std::cerr << "hidden-like histogram mismatch at " << bin << "\n";
             return 1;
         }
     }

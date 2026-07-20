@@ -1,38 +1,39 @@
 #include "kernel.h"
 
-static void v3d_produce(
+static void v3d_rate_produce(
     const int input[V3D_SIZE],
-    hls::stream<int>& main_stream,
-    hls::stream<int>& side_stream) {
+    hls::stream<int>& data_stream,
+    hls::stream<int>& pace_stream) {
 #pragma HLS INLINE off
-    constexpr int v3d_chunk_131_5d7c = 4;
-    for (int base = 0; base < V3D_SIZE; base += v3d_chunk_131_5d7c) {
-        for (int i = base; i < base + v3d_chunk_131_5d7c && i < V3D_SIZE; ++i) {
-            main_stream.write(input[i]);
-        }
-        for (int i = base; i < base + v3d_chunk_131_5d7c && i < V3D_SIZE; ++i) {
-            side_stream.write(input[i] + 1);
-        }
+    constexpr int v3d_rate_bias_131_5d7c = 305;
+    for (int i = 0; i < V3D_SIZE; ++i) {
+#pragma HLS PIPELINE II=1
+        data_stream.write(input[i]);
+        pace_stream.write(i);
+        pace_stream.write(i + v3d_rate_bias_131_5d7c);
+        pace_stream.write(i - v3d_rate_bias_131_5d7c);
     }
 }
 
-static void v3d_consume(
-    hls::stream<int>& main_stream,
-    hls::stream<int>& side_stream,
+static void v3d_rate_consume(
+    hls::stream<int>& data_stream,
+    hls::stream<int>& pace_stream,
     int output[V3D_SIZE]) {
 #pragma HLS INLINE off
     for (int i = 0; i < V3D_SIZE; ++i) {
 #pragma HLS PIPELINE II=1
-        output[i] = main_stream.read() + side_stream.read();
+        const int value = data_stream.read();
+        (void)pace_stream.read();
+        output[i] = value * 2 + 1;
     }
 }
 
 void kernel(const int input[V3D_SIZE], int output[V3D_SIZE]) {
 #pragma HLS DATAFLOW
-    hls::stream<int> main_stream("main_stream");
-    hls::stream<int> side_stream("side_stream");
-#pragma HLS STREAM variable=main_stream depth=1
-#pragma HLS STREAM variable=side_stream depth=1
-    v3d_produce(input, main_stream, side_stream);
-    v3d_consume(main_stream, side_stream, output);
+    hls::stream<int> data_stream("data_stream");
+    hls::stream<int> pace_stream("pace_stream");
+#pragma HLS STREAM variable=data_stream depth=2
+#pragma HLS STREAM variable=pace_stream depth=2
+    v3d_rate_produce(input, data_stream, pace_stream);
+    v3d_rate_consume(data_stream, pace_stream, output);
 }

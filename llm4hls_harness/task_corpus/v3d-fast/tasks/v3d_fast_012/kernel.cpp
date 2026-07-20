@@ -2,10 +2,24 @@
 
 #include <vector>
 
-void kernel(const int input[V3D_SIZE], int output[V3D_SIZE]) {
-    std::vector<int> v3d_buffer_cc_cb37(V3D_SIZE);
-    for (int i = 0; i < V3D_SIZE; ++i) {
-        v3d_buffer_cc_cb37[i] = input[i] * 3 + 7;
-        output[i] = v3d_buffer_cc_cb37[i];
+void kernel(
+    const int lhs[V3D_MATMUL_DIM][V3D_MATMUL_DIM],
+    const int rhs[V3D_MATMUL_DIM][V3D_MATMUL_DIM],
+    int output[V3D_MATMUL_DIM][V3D_MATMUL_DIM]) {
+    std::vector<int> v3d_scratch_cc_cb37(
+        V3D_MATMUL_DIM * V3D_MATMUL_DIM, 0);
+    for (int row = 0; row < V3D_MATMUL_DIM; ++row) {
+        for (int col = 0; col < V3D_MATMUL_DIM; ++col) {
+            for (int inner = 0; inner < V3D_MATMUL_DIM; ++inner) {
+                v3d_scratch_cc_cb37[row * V3D_MATMUL_DIM + col]
+                    += lhs[row][inner] * rhs[inner][col];
+            }
+        }
+    }
+    for (int row = 0; row < V3D_MATMUL_DIM; ++row) {
+        for (int col = 0; col < V3D_MATMUL_DIM; ++col) {
+            output[row][col]
+                = v3d_scratch_cc_cb37[row * V3D_MATMUL_DIM + col];
+        }
     }
 }

@@ -1,21 +1,21 @@
 {
-  "base_sha256": "5372e6e44b5f2cba348143f0958cddedd455d28a6ac02f8695dab2cef55a52ef",
+  "base_sha256": "a15d99eaa773220073945e8119755f5647ad4fcf9ba86d219eaa0fb7bf9c8d10",
   "engine_version": "v3d.mutation-engine.v1",
   "expected_failing_gate": "csim",
   "expected_mode": "REPAIR",
-  "mutated_sha256": "7ae644af056e56ad814c98600def68e7ede0838263c07e2afeb79995ab4f3fd4",
-  "mutation_summary": "独立映射被错误地累积。",
-  "operator": "repair_running_sum",
+  "mutated_sha256": "df8e9d495ef20e9bbc1923d602f6e9b953436beff7653a5f6d6ace1062137c18",
+  "mutation_summary": "前缀和在写回后才累加当前元素。",
+  "operator": "repair_prefix_omitted_term",
   "operator_version": 1,
   "schema_version": "v3d.mutation-manifest.v1",
   "seed": 105,
   "source_range": {
-    "base_end_line": 7,
-    "base_range_sha256": "6302b119010f1ce3fa60e9bd98c9bbc82455679a904aea7d1fb64a919a93ec40",
-    "base_start_line": 5,
+    "base_end_line": 11,
+    "base_range_sha256": "c4a4a4a3250763b86fefe8f9551370ee0495c1bbec4c69b6747a84f9e4b0fdfc",
+    "base_start_line": 7,
     "file": "kernel.cpp",
-    "mutated_end_line": 8,
-    "mutated_start_line": 4
+    "mutated_end_line": 10,
+    "mutated_start_line": 6
   },
   "task_id": "v3d_fast_005",
   "version": 1

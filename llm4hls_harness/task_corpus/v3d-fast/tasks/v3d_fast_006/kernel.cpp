@@ -1,8 +1,16 @@
 #include "kernel.h"
 
-void kernel(const int input[V3D_SIZE], int output[V3D_SIZE]) {
-    for (int v3d_i_6a_f55e = 0; v3d_i_6a_f55e < V3D_SIZE; ++v3d_i_6a_f55e) {
-        int v3d_value_6a = input[v3d_i_6a_f55e] * 3 + 7;
-        output[v3d_i_6a_f55e] = v3d_value_6a < 0 ? 0 : v3d_value_6a;
+void kernel(
+    const unsigned char input[V3D_HIST_INPUT_SIZE],
+    unsigned short bins[V3D_HIST_BINS]) {
+    for (int bin = 0; bin < V3D_HIST_BINS; ++bin) {
+        bins[bin] = 0;
+    }
+    for (int v3d_sample_6a_f55e = 0;
+         v3d_sample_6a_f55e < V3D_HIST_INPUT_SIZE;
+         ++v3d_sample_6a_f55e) {
+        if (input[v3d_sample_6a_f55e] < V3D_HIST_BINS - 1) {
+            ++bins[input[v3d_sample_6a_f55e]];
+        }
     }
 }

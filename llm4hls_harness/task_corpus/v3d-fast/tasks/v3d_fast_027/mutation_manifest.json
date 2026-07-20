@@ -1,21 +1,21 @@
 {
-  "base_sha256": "ae4d8f58b07cc79f60dbfbe41ad0ca73d466bfd4f9f469c0650bc039d4c7b364",
+  "base_sha256": "70f8b796ee587bef67aa0bb6092cda9066ea3bbc0d403623c08c93204a2e4731",
   "engine_version": "v3d.mutation-engine.v1",
   "expected_failing_gate": "ppa",
   "expected_mode": "OPTIMIZE",
-  "mutated_sha256": "5b824294ba597bebe2ce6a7257048871dd4f060131e063cbf95b19ce93abc6db",
-  "mutation_summary": "功能正确，但数组端口并行性不足。",
-  "operator": "opt_remove_partition",
+  "mutated_sha256": "af283eef1057a04be89160c0213a88a63bf212e34e504eb9f8a03ad865fe3c37",
+  "mutation_summary": "循环 II 为一，但 AXI 事务被限制为单拍单 outstanding。",
+  "operator": "opt_transaction_latency_high_with_loop_ii_one",
   "operator_version": 1,
   "schema_version": "v3d.mutation-manifest.v1",
   "seed": 407,
   "source_range": {
-    "base_end_line": 12,
-    "base_range_sha256": "39d5cc5cb47bbcf02fd077dff227d1c962dd8b02b622ef0123b450673376a2a3",
-    "base_start_line": 5,
+    "base_end_line": 14,
+    "base_range_sha256": "2a91e490dde4b370ea53b84686ee3d18ce0ef98684940d62cec574ac6155b1d5",
+    "base_start_line": 4,
     "file": "kernel.cpp",
-    "mutated_end_line": 9,
-    "mutated_start_line": 4
+    "mutated_end_line": 13,
+    "mutated_start_line": 3
   },
   "task_id": "v3d_fast_027",
   "version": 1

@@ -3,15 +3,14 @@
 #include <iostream>
 
 int main() {
-    const int input[V3D_SIZE] = {-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
-    int output[V3D_SIZE] = {};
+    const int input[V3D_PREFIX_SIZE] = {3, -1, 4, 2, -2, 5, 0, 7, -3, 1, 6, -4};
+    int output[V3D_PREFIX_SIZE] = {};
     kernel(input, output);
-    for (int i = 0; i < V3D_SIZE; ++i) {
-        const int expected = input[i] * 3 + 7;
+    int expected = 0;
+    for (int i = 0; i < V3D_PREFIX_SIZE; ++i) {
+        expected += input[i];
         if (output[i] != expected) {
-            std::cerr << "public mismatch at " << i
-                      << ": expected " << expected
-                      << ", got " << output[i] << "\n";
+            std::cerr << "public prefix mismatch at " << i << "\n";
             return 1;
         }
     }

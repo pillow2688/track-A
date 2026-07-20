@@ -1,9 +1,11 @@
 #include "kernel.h"
 
-void kernel(const int input[V3D_SIZE], int output[V3D_SIZE]) {
-    int v3d_acc_69 = 0;
-    for (int v3d_i_69_b2bf = 0; v3d_i_69_b2bf < V3D_SIZE; ++v3d_i_69_b2bf) {
-        v3d_acc_69 += input[v3d_i_69_b2bf] * 3 + 7;
-        output[v3d_i_69_b2bf] = v3d_acc_69;
+void kernel(
+    const int input[V3D_PREFIX_SIZE],
+    int output[V3D_PREFIX_SIZE]) {
+    int v3d_running_69_b2bf = 0;
+    for (int i = 0; i < V3D_PREFIX_SIZE; ++i) {
+        output[i] = v3d_running_69_b2bf;
+        v3d_running_69_b2bf += input[i];
     }
 }

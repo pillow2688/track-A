@@ -7,7 +7,7 @@ header_files = ["kernel.h"]
 public_tb = "kernel_tb.cpp"
 budget = 60
 requires_cosim = false
-initial_condition = "对每个 0 <= i < V3D_SIZE，必须满足 output[i] = input[i] * 3 + 7；V3D_SIZE 固定为 16，合法输入元素范围为 [-1000000, 1000000]。"
+initial_condition = "rows 和 cols 的合法范围均为 [3, 6]；活动矩形内部元素输出自身及上下左右五点之和，活动矩形边界及矩形外的全部输出必须为 0。合法输入元素范围为 [-1000000, 1000000]。"
 
 [target]
 part = "xcu55c-fsvh2892-2L-e"

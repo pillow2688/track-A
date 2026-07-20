@@ -3,15 +3,17 @@
 #include <iostream>
 
 int main() {
-    const int input[V3D_SIZE] = {-31, 17, 0, 8, -9, 42, 3, -5, 11, -2, 29, 6, -15, 1, 23, -7};
-    int output[V3D_SIZE] = {};
+    int input[V3D_BANK_INPUT_SIZE] = {};
+    int output[V3D_BANK_OUTPUT_SIZE] = {};
+    for (int i = 0; i < V3D_BANK_INPUT_SIZE; ++i) input[i] = (i * 11) % 37 - 18;
     kernel(input, output);
-    for (int i = 0; i < V3D_SIZE; ++i) {
-        const int expected = input[i] * 3 + 7;
-        if (output[i] != expected) {
-            std::cerr << "hidden-like mismatch at " << i
-                      << ": expected " << expected
-                      << ", got " << output[i] << "\n";
+    for (int group = 0; group < V3D_BANK_OUTPUT_SIZE; ++group) {
+        int expected = 0;
+        for (int lane = 0; lane < 4; ++lane) {
+            expected += input[group * 4 + lane];
+        }
+        if (output[group] != expected) {
+            std::cerr << "hidden-like banking mismatch at " << group << "\n";
             return 1;
         }
     }

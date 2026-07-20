@@ -1,14 +1,32 @@
 #include "kernel.h"
 
-void kernel(const int input[V3D_SIZE], int output[V3D_SIZE]) {
-    // V3D_MUTATION_BEGIN
-#pragma HLS ARRAY_PARTITION variable=input cyclic factor=4 dim=1
-#pragma HLS ARRAY_PARTITION variable=output cyclic factor=4 dim=1
-v3d_map:
-    for (int i = 0; i < V3D_SIZE; ++i) {
+// V3D_MUTATION_BEGIN
+static void v3d_dataflow_scale(
+    const int input[V3D_DATAFLOW_SIZE],
+    int scaled[V3D_DATAFLOW_SIZE]) {
+#pragma HLS INLINE off
+    for (int i = 0; i < V3D_DATAFLOW_SIZE; ++i) {
 #pragma HLS PIPELINE II=1
-#pragma HLS UNROLL factor=4
-        output[i] = input[i] * 3 + 7;
+        scaled[i] = input[i] * 5;
     }
-    // V3D_MUTATION_END
 }
+
+static void v3d_dataflow_bias(
+    const int scaled[V3D_DATAFLOW_SIZE],
+    int output[V3D_DATAFLOW_SIZE]) {
+#pragma HLS INLINE off
+    for (int i = 0; i < V3D_DATAFLOW_SIZE; ++i) {
+#pragma HLS PIPELINE II=1
+        output[i] = scaled[i] - 3;
+    }
+}
+
+void kernel(
+    const int input[V3D_DATAFLOW_SIZE],
+    int output[V3D_DATAFLOW_SIZE]) {
+#pragma HLS DATAFLOW
+    int scaled[V3D_DATAFLOW_SIZE];
+    v3d_dataflow_scale(input, scaled);
+    v3d_dataflow_bias(scaled, output);
+}
+// V3D_MUTATION_END

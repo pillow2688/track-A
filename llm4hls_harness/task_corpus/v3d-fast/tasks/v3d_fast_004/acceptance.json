@@ -7,13 +7,13 @@
   "evidence_level": "DETERMINISTIC_FIXTURE_NOT_REAL_VITIS",
   "expected_failing_gate": "csim",
   "expected_mode": "REPAIR",
-  "golden_kernel_sha256": "5372e6e44b5f2cba348143f0958cddedd455d28a6ac02f8695dab2cef55a52ef",
+  "golden_kernel_sha256": "63eef7819d60c700735c96405e36902e4678b2eb8c5be1123cf147edcb757d5a",
   "golden_validation": {
     "cosim": "PASS",
     "csim": "PASS",
     "synth": "PASS"
   },
-  "mutated_kernel_sha256": "96bdd5ad84682bf07251b6f53130bfb77a81cca351e64d075c3c3e6d7377bb46",
+  "mutated_kernel_sha256": "c84fdb10b8d8f7fc4f59105416a455e5bfa9fbab7385b210a9445039ceedd6ee",
   "planner_input_policy": {
     "allowed_paths": [
       "task.toml",

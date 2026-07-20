@@ -13,7 +13,7 @@
     "csim": "PASS",
     "synth": "PASS"
   },
-  "mutated_kernel_sha256": "b301f0600515ce3b82fa682d7d7305962ba853bec4e458ac25b3a2a4c0c6e628",
+  "mutated_kernel_sha256": "6940119591ffdc3e06d3c5f4be77109e2f705746004b076811441c5cded32190",
   "planner_input_policy": {
     "allowed_paths": [
       "task.toml",

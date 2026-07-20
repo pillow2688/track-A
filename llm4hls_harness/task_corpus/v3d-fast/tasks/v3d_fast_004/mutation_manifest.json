@@ -1,21 +1,21 @@
 {
-  "base_sha256": "5372e6e44b5f2cba348143f0958cddedd455d28a6ac02f8695dab2cef55a52ef",
+  "base_sha256": "63eef7819d60c700735c96405e36902e4678b2eb8c5be1123cf147edcb757d5a",
   "engine_version": "v3d.mutation-engine.v1",
   "expected_failing_gate": "csim",
   "expected_mode": "REPAIR",
-  "mutated_sha256": "96bdd5ad84682bf07251b6f53130bfb77a81cca351e64d075c3c3e6d7377bb46",
-  "mutation_summary": "输入索引发生循环错位。",
-  "operator": "repair_shifted_index",
+  "mutated_sha256": "c84fdb10b8d8f7fc4f59105416a455e5bfa9fbab7385b210a9445039ceedd6ee",
+  "mutation_summary": "坐标投影读取了相邻点的索引。",
+  "operator": "repair_projection_wrong_index",
   "operator_version": 1,
   "schema_version": "v3d.mutation-manifest.v1",
   "seed": 104,
   "source_range": {
-    "base_end_line": 7,
-    "base_range_sha256": "6302b119010f1ce3fa60e9bd98c9bbc82455679a904aea7d1fb64a919a93ec40",
-    "base_start_line": 5,
+    "base_end_line": 10,
+    "base_range_sha256": "5ddba9f4e39d59115178eef302b093da8102b355714e934758b29043ab6a3e79",
+    "base_start_line": 7,
     "file": "kernel.cpp",
-    "mutated_end_line": 6,
-    "mutated_start_line": 4
+    "mutated_end_line": 10,
+    "mutated_start_line": 6
   },
   "task_id": "v3d_fast_004",
   "version": 1

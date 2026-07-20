@@ -1,12 +1,11 @@
 #include "kernel.h"
 
-void kernel(const int input[V3D_SIZE], int output[V3D_SIZE]) {
-#pragma HLS ARRAY_PARTITION variable=input cyclic factor=4 dim=1
-#pragma HLS ARRAY_PARTITION variable=output cyclic factor=4 dim=1
-v3d_map_193_7fd1:
-    for (int i = 0; i < V3D_SIZE; ++i) {
-#pragma HLS PIPELINE II=4
-#pragma HLS UNROLL factor=4
-        output[i] = input[i] * 3 + 7;
+int kernel(
+    const int lhs[V3D_REDUCTION_SIZE],
+    const int rhs[V3D_REDUCTION_SIZE]) {
+    int v3d_serial_sum_193_7fd1 = 0;
+    for (int i = 0; i < V3D_REDUCTION_SIZE; ++i) {
+        v3d_serial_sum_193_7fd1 += lhs[i] * rhs[i];
     }
+    return v3d_serial_sum_193_7fd1;
 }

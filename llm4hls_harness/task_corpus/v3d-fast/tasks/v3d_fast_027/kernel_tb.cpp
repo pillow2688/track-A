@@ -3,15 +3,14 @@
 #include <iostream>
 
 int main() {
-    const int input[V3D_SIZE] = {-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
-    int output[V3D_SIZE] = {};
+    int input[V3D_TRANSACTION_SIZE] = {};
+    int output[V3D_TRANSACTION_SIZE] = {};
+    for (int i = 0; i < V3D_TRANSACTION_SIZE; ++i) input[i] = i * 5 - 47;
     kernel(input, output);
-    for (int i = 0; i < V3D_SIZE; ++i) {
-        const int expected = input[i] * 3 + 7;
+    for (int i = 0; i < V3D_TRANSACTION_SIZE; ++i) {
+        const int expected = input[i] * 3 + 1;
         if (output[i] != expected) {
-            std::cerr << "public mismatch at " << i
-                      << ": expected " << expected
-                      << ", got " << output[i] << "\n";
+            std::cerr << "public transaction mismatch at " << i << "\n";
             return 1;
         }
     }

@@ -1,21 +1,21 @@
 {
-  "base_sha256": "5372e6e44b5f2cba348143f0958cddedd455d28a6ac02f8695dab2cef55a52ef",
+  "base_sha256": "e5d4115abb23f72450ed3f0f17b79ec5c7f28604e3b5ee688c47d3c4a053285a",
   "engine_version": "v3d.mutation-engine.v1",
   "expected_failing_gate": "csim",
   "expected_mode": "REPAIR",
-  "mutated_sha256": "a064da204bd9a5a183aa54e9fbe60c258335686824f232285d6ad1e5fe8d7fda",
-  "mutation_summary": "负结果被未声明地截断。",
-  "operator": "repair_clamp_negative",
+  "mutated_sha256": "cdab3f98419591c1d60aea7839ffac0523b6e960ac98a2a3511a2fff8c03e942",
+  "mutation_summary": "直方图边界条件遗漏最高合法 bin。",
+  "operator": "repair_histogram_boundary_condition",
   "operator_version": 1,
   "schema_version": "v3d.mutation-manifest.v1",
   "seed": 106,
   "source_range": {
-    "base_end_line": 7,
-    "base_range_sha256": "6302b119010f1ce3fa60e9bd98c9bbc82455679a904aea7d1fb64a919a93ec40",
-    "base_start_line": 5,
+    "base_end_line": 14,
+    "base_range_sha256": "2be1a293cf106e87a16396717876a774758886cc06a8e3725e1973c5db21b314",
+    "base_start_line": 7,
     "file": "kernel.cpp",
-    "mutated_end_line": 7,
-    "mutated_start_line": 4
+    "mutated_end_line": 15,
+    "mutated_start_line": 6
   },
   "task_id": "v3d_fast_006",
   "version": 1

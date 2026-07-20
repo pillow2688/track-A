@@ -1,21 +1,21 @@
 {
-  "base_sha256": "ae4d8f58b07cc79f60dbfbe41ad0ca73d466bfd4f9f469c0650bc039d4c7b364",
+  "base_sha256": "d43510556ebc7e977c60dabd58b45a0afac8da591d1674ff56e78d4ba510707a",
   "engine_version": "v3d.mutation-engine.v1",
   "expected_failing_gate": "ppa",
   "expected_mode": "OPTIMIZE",
-  "mutated_sha256": "08d1d4a291f55be79fb7cfa38163e28caf1adbc81053bf6f1bcc331b1e0dd680",
-  "mutation_summary": "功能正确，但循环展开因子保守。",
-  "operator": "opt_unroll_factor_2",
+  "mutated_sha256": "2a1d82f6f12f0b41e69ef2293bbaa12a76ad809f7d7709b0c425026faed544c8",
+  "mutation_summary": "四路并行读取被单端口本地存储限制。",
+  "operator": "opt_memory_banking_bottleneck",
   "operator_version": 1,
   "schema_version": "v3d.mutation-manifest.v1",
   "seed": 406,
   "source_range": {
-    "base_end_line": 12,
-    "base_range_sha256": "39d5cc5cb47bbcf02fd077dff227d1c962dd8b02b622ef0123b450673376a2a3",
-    "base_start_line": 5,
+    "base_end_line": 21,
+    "base_range_sha256": "644613e4e4b8f78ea532f47d0c5773de6fcb468ab8ac7e85c9d0920f3d4a4294",
+    "base_start_line": 4,
     "file": "kernel.cpp",
-    "mutated_end_line": 11,
-    "mutated_start_line": 4
+    "mutated_end_line": 21,
+    "mutated_start_line": 3
   },
   "task_id": "v3d_fast_026",
   "version": 1

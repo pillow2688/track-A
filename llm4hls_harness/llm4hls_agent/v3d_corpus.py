@@ -40,6 +40,24 @@ PLANNER_VISIBLE_PATHS = (
     "kernel.h",
     "kernel_tb.cpp",
 )
+_ANCHOR_DUAL_STREAM_FAMILIES = {
+    "dual_stream",
+    "producer_burst_deadlock",
+    "stream_order_or_interface_mismatch",
+    "insufficient_fifo_depth",
+}
+_STREAM_FAMILIES = _ANCHOR_DUAL_STREAM_FAMILIES | {
+    "stream_count_mismatch",
+    "producer_consumer_rate_mismatch",
+    "dependency_cycle",
+}
+_OPT_MAP_FAMILIES = {
+    "opt_map",
+    "missing_array_partition",
+    "low_parallel_factor",
+    "missing_unroll",
+    "suboptimal_loop_structure",
+}
 
 _BEGIN_MARKER = "// V3D_MUTATION_BEGIN"
 _END_MARKER = "// V3D_MUTATION_END"
@@ -154,6 +172,61 @@ _STRUCTURAL_REGION = """static void v3d_produce(
 }
 """
 
+_STREAM_COUNT_REGION = """static void v3d_count_produce(
+    const int input[V3D_SIZE],
+    hls::stream<int>& main_stream,
+    hls::stream<int>& side_stream) {
+#pragma HLS INLINE off
+    for (int i = 0; i < V3D_SIZE; ++i) {
+#pragma HLS PIPELINE II=1
+        main_stream.write(input[i]);
+        side_stream.write(input[i] + 1);
+    }
+}
+"""
+
+_STREAM_RATE_REGION = """static void v3d_rate_produce(
+    const int input[V3D_SIZE],
+    hls::stream<int>& data_stream,
+    hls::stream<int>& pace_stream) {
+#pragma HLS INLINE off
+    for (int i = 0; i < V3D_SIZE; ++i) {
+#pragma HLS PIPELINE II=1
+        data_stream.write(input[i]);
+        pace_stream.write(i);
+    }
+}
+"""
+
+_DEPENDENCY_CYCLE_REGION = """static void v3d_cycle_forward(
+    const int input[V3D_SIZE],
+    hls::stream<int>& forward_stream) {
+#pragma HLS INLINE off
+    for (int i = 0; i < V3D_SIZE; ++i) {
+#pragma HLS PIPELINE II=1
+        forward_stream.write(input[i]);
+    }
+}
+
+static void v3d_cycle_consume(
+    hls::stream<int>& forward_stream,
+    int output[V3D_SIZE]) {
+#pragma HLS INLINE off
+    for (int i = 0; i < V3D_SIZE; ++i) {
+#pragma HLS PIPELINE II=1
+        output[i] = forward_stream.read() * 2 + 1;
+    }
+}
+
+void kernel(const int input[V3D_SIZE], int output[V3D_SIZE]) {
+#pragma HLS DATAFLOW
+    hls::stream<int> forward_stream("forward_stream");
+#pragma HLS STREAM variable=forward_stream depth=1
+    v3d_cycle_forward(input, forward_stream);
+    v3d_cycle_consume(forward_stream, output);
+}
+"""
+
 _OPTIMIZE_REGION = """#pragma HLS ARRAY_PARTITION variable=input cyclic factor=4 dim=1
 #pragma HLS ARRAY_PARTITION variable=output cyclic factor=4 dim=1
 v3d_map:
@@ -162,6 +235,183 @@ v3d_map:
 #pragma HLS UNROLL factor=4
         output[i] = input[i] * 3 + 7;
     }
+"""
+
+_PROJECTION_REGION = """    for (int i = 0; i < V3D_POINTS; ++i) {
+        output[i].x = input[i].x;
+        output[i].y = input[i].y;
+    }
+"""
+
+_PREFIX_SUM_REGION = """    int running_sum = 0;
+    for (int i = 0; i < V3D_PREFIX_SIZE; ++i) {
+        running_sum += input[i];
+        output[i] = running_sum;
+    }
+"""
+
+_HISTOGRAM_REGION = """    for (int bin = 0; bin < V3D_HIST_BINS; ++bin) {
+        bins[bin] = 0;
+    }
+    for (int i = 0; i < V3D_HIST_INPUT_SIZE; ++i) {
+        if (input[i] < V3D_HIST_BINS) {
+            ++bins[input[i]];
+        }
+    }
+"""
+
+_VECTOR_ADD_REGION = """    for (int i = 0; i < V3D_VECTOR_SIZE; ++i) {
+        output[i] = lhs[i] + rhs[i];
+    }
+"""
+
+_FIR_REGION = """    for (int i = 0; i < V3D_FIR_SIZE; ++i) {
+        int value = input[i];
+        if (i >= 1) {
+            value += 2 * input[i - 1];
+        }
+        if (i >= 2) {
+            value += input[i - 2];
+        }
+        output[i] = value;
+    }
+"""
+
+_MATMUL_REGION = """void kernel(
+    const int lhs[V3D_MATMUL_DIM][V3D_MATMUL_DIM],
+    const int rhs[V3D_MATMUL_DIM][V3D_MATMUL_DIM],
+    int output[V3D_MATMUL_DIM][V3D_MATMUL_DIM]) {
+    for (int row = 0; row < V3D_MATMUL_DIM; ++row) {
+        for (int col = 0; col < V3D_MATMUL_DIM; ++col) {
+            int sum = 0;
+            for (int inner = 0; inner < V3D_MATMUL_DIM; ++inner) {
+                sum += lhs[row][inner] * rhs[inner][col];
+            }
+            output[row][col] = sum;
+        }
+    }
+}
+"""
+
+_STENCIL_REGION = """void kernel(
+    const int input[V3D_STENCIL_MAX_ROWS][V3D_STENCIL_MAX_COLS],
+    int output[V3D_STENCIL_MAX_ROWS][V3D_STENCIL_MAX_COLS],
+    int rows,
+    int cols) {
+    for (int row = 0; row < V3D_STENCIL_MAX_ROWS; ++row) {
+        for (int col = 0; col < V3D_STENCIL_MAX_COLS; ++col) {
+            output[row][col] = 0;
+        }
+    }
+    for (int row = 1; row < V3D_STENCIL_MAX_ROWS - 1; ++row) {
+        for (int col = 1; col < V3D_STENCIL_MAX_COLS - 1; ++col) {
+            if (row < rows - 1 && col < cols - 1) {
+                output[row][col] = input[row][col]
+                    + input[row - 1][col]
+                    + input[row + 1][col]
+                    + input[row][col - 1]
+                    + input[row][col + 1];
+            }
+        }
+    }
+}
+"""
+
+_DOT_REDUCTION_REGION = """int kernel(
+    const int lhs[V3D_DOT_SIZE],
+    const int rhs[V3D_DOT_SIZE]) {
+    int sum = 0;
+    for (int i = 0; i < V3D_DOT_SIZE; ++i) {
+        sum += lhs[i] * rhs[i];
+    }
+    return sum;
+}
+"""
+
+_OPT_SERIAL_REDUCTION_REGION = """int kernel(
+    const int lhs[V3D_REDUCTION_SIZE],
+    const int rhs[V3D_REDUCTION_SIZE]) {
+#pragma HLS ARRAY_PARTITION variable=lhs cyclic factor=8 dim=1
+#pragma HLS ARRAY_PARTITION variable=rhs cyclic factor=8 dim=1
+    int partial[8] = {};
+#pragma HLS ARRAY_PARTITION variable=partial complete dim=1
+    for (int lane = 0; lane < 8; ++lane) {
+#pragma HLS UNROLL
+        for (int i = lane; i < V3D_REDUCTION_SIZE; i += 8) {
+#pragma HLS PIPELINE II=1
+            partial[lane] += lhs[i] * rhs[i];
+        }
+    }
+    int sum = 0;
+    for (int lane = 0; lane < 8; ++lane) {
+#pragma HLS UNROLL
+        sum += partial[lane];
+    }
+    return sum;
+}
+"""
+
+_OPT_DATAFLOW_REGION = """static void v3d_dataflow_scale(
+    const int input[V3D_DATAFLOW_SIZE],
+    int scaled[V3D_DATAFLOW_SIZE]) {
+#pragma HLS INLINE off
+    for (int i = 0; i < V3D_DATAFLOW_SIZE; ++i) {
+#pragma HLS PIPELINE II=1
+        scaled[i] = input[i] * 5;
+    }
+}
+
+static void v3d_dataflow_bias(
+    const int scaled[V3D_DATAFLOW_SIZE],
+    int output[V3D_DATAFLOW_SIZE]) {
+#pragma HLS INLINE off
+    for (int i = 0; i < V3D_DATAFLOW_SIZE; ++i) {
+#pragma HLS PIPELINE II=1
+        output[i] = scaled[i] - 3;
+    }
+}
+
+void kernel(
+    const int input[V3D_DATAFLOW_SIZE],
+    int output[V3D_DATAFLOW_SIZE]) {
+#pragma HLS DATAFLOW
+    int scaled[V3D_DATAFLOW_SIZE];
+    v3d_dataflow_scale(input, scaled);
+    v3d_dataflow_bias(scaled, output);
+}
+"""
+
+_OPT_MEMORY_BANKING_REGION = """void kernel(
+    const int input[V3D_BANK_INPUT_SIZE],
+    int output[V3D_BANK_OUTPUT_SIZE]) {
+    int banks[4][V3D_BANK_OUTPUT_SIZE];
+#pragma HLS ARRAY_PARTITION variable=banks complete dim=1
+    for (int group = 0; group < V3D_BANK_OUTPUT_SIZE; ++group) {
+#pragma HLS PIPELINE II=1
+        for (int lane = 0; lane < 4; ++lane) {
+#pragma HLS UNROLL
+            banks[lane][group] = input[group * 4 + lane];
+        }
+    }
+    for (int group = 0; group < V3D_BANK_OUTPUT_SIZE; ++group) {
+#pragma HLS PIPELINE II=1
+        output[group] = banks[0][group] + banks[1][group]
+            + banks[2][group] + banks[3][group];
+    }
+}
+"""
+
+_OPT_TRANSACTION_REGION = """void kernel(
+    const int input[V3D_TRANSACTION_SIZE],
+    int output[V3D_TRANSACTION_SIZE]) {
+#pragma HLS INTERFACE m_axi port=input offset=slave bundle=gmem0 max_read_burst_length=64 num_read_outstanding=16
+#pragma HLS INTERFACE m_axi port=output offset=slave bundle=gmem1 max_write_burst_length=64 num_write_outstanding=16
+v3d_transaction_loop:
+    for (int i = 0; i < V3D_TRANSACTION_SIZE; ++i) {
+#pragma HLS PIPELINE II=1
+        output[i] = input[i] * 3 + 1;
+    }
+}
 """
 
 
@@ -262,6 +512,66 @@ def _render_rotated_output(rng: random.Random, seed: int) -> str:
     )
 
 
+def _render_projection_wrong_index(rng: random.Random, seed: int) -> str:
+    index = f"v3d_point_{_tag(rng, seed)}"
+    return (
+        f"    for (int {index} = 0; {index} < V3D_POINTS; ++{index}) {{\n"
+        f"        const int source_index = ({index} + 1) % V3D_POINTS;\n"
+        f"        output[{index}].x = input[source_index].x;\n"
+        f"        output[{index}].y = input[source_index].y;\n"
+        "    }\n"
+    )
+
+
+def _render_prefix_omitted_term(rng: random.Random, seed: int) -> str:
+    tag = _tag(rng, seed)
+    return f"""    int v3d_running_{tag} = 0;
+    for (int i = 0; i < V3D_PREFIX_SIZE; ++i) {{
+        output[i] = v3d_running_{tag};
+        v3d_running_{tag} += input[i];
+    }}
+"""
+
+
+def _render_histogram_boundary_condition(rng: random.Random, seed: int) -> str:
+    tag = _tag(rng, seed)
+    return f"""    for (int bin = 0; bin < V3D_HIST_BINS; ++bin) {{
+        bins[bin] = 0;
+    }}
+    for (int v3d_sample_{tag} = 0;
+         v3d_sample_{tag} < V3D_HIST_INPUT_SIZE;
+         ++v3d_sample_{tag}) {{
+        if (input[v3d_sample_{tag}] < V3D_HIST_BINS - 1) {{
+            ++bins[input[v3d_sample_{tag}]];
+        }}
+    }}
+"""
+
+
+def _render_vector_add_numeric_truncation(rng: random.Random, seed: int) -> str:
+    index = f"v3d_lane_{_tag(rng, seed)}"
+    return (
+        f"    for (int {index} = 0; {index} < V3D_VECTOR_SIZE; ++{index}) {{\n"
+        f"        output[{index}] = (lhs[{index}] + rhs[{index}]) & 0xff;\n"
+        "    }\n"
+    )
+
+
+def _render_fir_wrong_branch(rng: random.Random, seed: int) -> str:
+    tag = _tag(rng, seed)
+    return f"""    for (int i = 0; i < V3D_FIR_SIZE; ++i) {{
+        int v3d_value_{tag} = input[i];
+        if (i > 1) {{
+            v3d_value_{tag} += 2 * input[i - 1];
+        }}
+        if (i >= 2) {{
+            v3d_value_{tag} += input[i - 2];
+        }}
+        output[i] = v3d_value_{tag};
+    }}
+"""
+
+
 def _render_dynamic_allocation(rng: random.Random, seed: int) -> str:
     tag = _tag(rng, seed)
     return f"""void kernel(const int input[V3D_SIZE], int output[V3D_SIZE]) {{
@@ -291,16 +601,16 @@ void kernel(const int input[V3D_SIZE], int output[V3D_SIZE]) {{
 """
 
 
-def _render_function_pointer(rng: random.Random, seed: int) -> str:
+def _render_std_function(rng: random.Random, seed: int) -> str:
     tag = _tag(rng, seed)
-    return f"""static int v3d_transform_{tag}(int value) {{
-    return value * 3 + 7;
-}}
+    return f"""#include <functional>
 
 void kernel(const int input[V3D_SIZE], int output[V3D_SIZE]) {{
-    int (*v3d_function_{tag})(int) = &v3d_transform_{tag};
+    std::function<int(int)> v3d_callable_{tag} = [](int value) {{
+        return value * 3 + 7;
+    }};
     for (int i = 0; i < V3D_SIZE; ++i) {{
-        output[i] = v3d_function_{tag}(input[i]);
+        output[i] = v3d_callable_{tag}(input[i]);
     }}
 }}
 """
@@ -352,6 +662,237 @@ void kernel(const int input[V3D_SIZE], int output[V3D_SIZE]) {{
     const v3d_transform_base_{tag}* transform = &implementation;
     for (int i = 0; i < V3D_SIZE; ++i) {{
         output[i] = transform->apply(input[i]);
+    }}
+}}
+"""
+
+
+def _render_matmul_unsupported_stl(rng: random.Random, seed: int) -> str:
+    tag = _tag(rng, seed)
+    return f"""#include <vector>
+
+void kernel(
+    const int lhs[V3D_MATMUL_DIM][V3D_MATMUL_DIM],
+    const int rhs[V3D_MATMUL_DIM][V3D_MATMUL_DIM],
+    int output[V3D_MATMUL_DIM][V3D_MATMUL_DIM]) {{
+    std::vector<int> v3d_scratch_{tag}(
+        V3D_MATMUL_DIM * V3D_MATMUL_DIM, 0);
+    for (int row = 0; row < V3D_MATMUL_DIM; ++row) {{
+        for (int col = 0; col < V3D_MATMUL_DIM; ++col) {{
+            for (int inner = 0; inner < V3D_MATMUL_DIM; ++inner) {{
+                v3d_scratch_{tag}[row * V3D_MATMUL_DIM + col]
+                    += lhs[row][inner] * rhs[inner][col];
+            }}
+        }}
+    }}
+    for (int row = 0; row < V3D_MATMUL_DIM; ++row) {{
+        for (int col = 0; col < V3D_MATMUL_DIM; ++col) {{
+            output[row][col]
+                = v3d_scratch_{tag}[row * V3D_MATMUL_DIM + col];
+        }}
+    }}
+}}
+"""
+
+
+def _render_stencil_non_static_unbounded_loop(
+    rng: random.Random, seed: int
+) -> str:
+    tag = _tag(rng, seed)
+    return f"""void kernel(
+    const int input[V3D_STENCIL_MAX_ROWS][V3D_STENCIL_MAX_COLS],
+    int output[V3D_STENCIL_MAX_ROWS][V3D_STENCIL_MAX_COLS],
+    int rows,
+    int cols) {{
+    for (int row = 0; row < V3D_STENCIL_MAX_ROWS; ++row) {{
+        for (int col = 0; col < V3D_STENCIL_MAX_COLS; ++col) {{
+            output[row][col] = 0;
+        }}
+    }}
+
+    int v3d_row_order_{tag}[rows];
+    int v3d_initialized_{tag} = 0;
+    while (v3d_initialized_{tag} < rows) {{
+        v3d_row_order_{tag}[v3d_initialized_{tag}] = v3d_initialized_{tag};
+        ++v3d_initialized_{tag};
+    }}
+
+    int v3d_position_{tag} = 1;
+    while (v3d_position_{tag} < rows - 1) {{
+        const int row = v3d_row_order_{tag}[v3d_position_{tag}];
+        int col = 1;
+        while (col < cols - 1) {{
+            output[row][col] = input[row][col]
+                + input[row - 1][col]
+                + input[row + 1][col]
+                + input[row][col - 1]
+                + input[row][col + 1];
+            ++col;
+        }}
+        ++v3d_position_{tag};
+    }}
+}}
+"""
+
+
+def _render_dot_hard_resource_constraint(rng: random.Random, seed: int) -> str:
+    tag = _tag(rng, seed)
+    return f"""int kernel(
+    const int lhs[V3D_DOT_SIZE],
+    const int rhs[V3D_DOT_SIZE]) {{
+    int v3d_sum_{tag} = 0;
+    for (int i = 0; i < V3D_DOT_SIZE; ++i) {{
+        int v3d_product_{tag} = lhs[i] * rhs[i];
+#pragma HLS BIND_OP variable=v3d_product_{tag} op=mul impl=uram latency=1
+        v3d_sum_{tag} += v3d_product_{tag};
+    }}
+    return v3d_sum_{tag};
+}}
+"""
+
+
+def _render_stream_count_mismatch(rng: random.Random, seed: int) -> str:
+    tag = _tag(rng, seed)
+    return f"""static void v3d_count_produce(
+    const int input[V3D_SIZE],
+    hls::stream<int>& main_stream,
+    hls::stream<int>& side_stream) {{
+#pragma HLS INLINE off
+    constexpr int v3d_extra_{tag} = {seed};
+    for (int i = 0; i < V3D_SIZE; ++i) {{
+#pragma HLS PIPELINE II=1
+        main_stream.write(input[i]);
+        side_stream.write(input[i] + 1);
+    }}
+    side_stream.write(v3d_extra_{tag});
+    side_stream.write(v3d_extra_{tag} + 1);
+}}
+"""
+
+
+def _render_stream_rate_mismatch(rng: random.Random, seed: int) -> str:
+    tag = _tag(rng, seed)
+    return f"""static void v3d_rate_produce(
+    const int input[V3D_SIZE],
+    hls::stream<int>& data_stream,
+    hls::stream<int>& pace_stream) {{
+#pragma HLS INLINE off
+    constexpr int v3d_rate_bias_{tag} = {seed};
+    for (int i = 0; i < V3D_SIZE; ++i) {{
+#pragma HLS PIPELINE II=1
+        data_stream.write(input[i]);
+        pace_stream.write(i);
+        pace_stream.write(i + v3d_rate_bias_{tag});
+        pace_stream.write(i - v3d_rate_bias_{tag});
+    }}
+}}
+"""
+
+
+def _render_dependency_cycle(rng: random.Random, seed: int) -> str:
+    tag = _tag(rng, seed)
+    return f"""static void v3d_cycle_seed(
+    hls::stream<int>& feedback_stream) {{
+#pragma HLS INLINE off
+    constexpr int v3d_cycle_token_{tag} = 0;
+    for (int i = 0; i < V3D_SIZE; ++i) {{
+        feedback_stream.write(v3d_cycle_token_{tag});
+    }}
+}}
+
+static void v3d_cycle_forward(
+    const int input[V3D_SIZE],
+    hls::stream<int>& feedback_stream,
+    hls::stream<int>& forward_stream) {{
+#pragma HLS INLINE off
+    for (int i = 0; i < V3D_SIZE; ++i) {{
+#pragma HLS PIPELINE II=1
+        const int dependency = feedback_stream.read();
+        forward_stream.write(input[i] + dependency);
+    }}
+}}
+
+static void v3d_cycle_consume(
+    hls::stream<int>& forward_stream,
+    hls::stream<int>& feedback_stream,
+    int output[V3D_SIZE]) {{
+#pragma HLS INLINE off
+    for (int i = 0; i < V3D_SIZE; ++i) {{
+#pragma HLS PIPELINE II=1
+        output[i] = forward_stream.read() * 2 + 1;
+        feedback_stream.write(0);
+    }}
+}}
+
+void kernel(const int input[V3D_SIZE], int output[V3D_SIZE]) {{
+#pragma HLS DATAFLOW
+    hls::stream<int> feedback_stream("feedback_stream");
+    hls::stream<int> forward_stream("forward_stream");
+#pragma HLS STREAM variable=feedback_stream depth=1
+#pragma HLS STREAM variable=forward_stream depth=1
+    v3d_cycle_seed(feedback_stream);
+    v3d_cycle_forward(input, feedback_stream, forward_stream);
+    v3d_cycle_consume(forward_stream, feedback_stream, output);
+}}
+"""
+
+
+def _render_serial_reduction(rng: random.Random, seed: int) -> str:
+    tag = _tag(rng, seed)
+    return f"""int kernel(
+    const int lhs[V3D_REDUCTION_SIZE],
+    const int rhs[V3D_REDUCTION_SIZE]) {{
+    int v3d_serial_sum_{tag} = 0;
+    for (int i = 0; i < V3D_REDUCTION_SIZE; ++i) {{
+        v3d_serial_sum_{tag} += lhs[i] * rhs[i];
+    }}
+    return v3d_serial_sum_{tag};
+}}
+"""
+
+
+def _render_missing_dataflow(rng: random.Random, seed: int) -> str:
+    tag = _tag(rng, seed)
+    return _OPT_DATAFLOW_REGION.replace(
+        "#pragma HLS DATAFLOW\n", f"v3d_missing_dataflow_{tag}:\n"
+    )
+
+
+def _render_memory_banking_bottleneck(rng: random.Random, seed: int) -> str:
+    tag = _tag(rng, seed)
+    return f"""void kernel(
+    const int input[V3D_BANK_INPUT_SIZE],
+    int output[V3D_BANK_OUTPUT_SIZE]) {{
+    int v3d_single_bank_{tag}[V3D_BANK_INPUT_SIZE];
+#pragma HLS BIND_STORAGE variable=v3d_single_bank_{tag} type=ram_1p impl=bram
+    for (int i = 0; i < V3D_BANK_INPUT_SIZE; ++i) {{
+#pragma HLS PIPELINE II=1
+        v3d_single_bank_{tag}[i] = input[i];
+    }}
+    for (int group = 0; group < V3D_BANK_OUTPUT_SIZE; ++group) {{
+#pragma HLS PIPELINE II=1
+        int sum = 0;
+        for (int lane = 0; lane < 4; ++lane) {{
+#pragma HLS UNROLL
+            sum += v3d_single_bank_{tag}[group * 4 + lane];
+        }}
+        output[group] = sum;
+    }}
+}}
+"""
+
+
+def _render_transaction_latency_high(rng: random.Random, seed: int) -> str:
+    tag = _tag(rng, seed)
+    return f"""void kernel(
+    const int input[V3D_TRANSACTION_SIZE],
+    int output[V3D_TRANSACTION_SIZE]) {{
+#pragma HLS INTERFACE m_axi port=input offset=slave bundle=gmem0 max_read_burst_length=1 num_read_outstanding=1
+#pragma HLS INTERFACE m_axi port=output offset=slave bundle=gmem1 max_write_burst_length=1 num_write_outstanding=1
+v3d_transaction_loop_{tag}:
+    for (int i = 0; i < V3D_TRANSACTION_SIZE; ++i) {{
+#pragma HLS PIPELINE II=1
+        output[i] = input[i] * 3 + 1;
     }}
 }}
 """
@@ -468,30 +1009,30 @@ _OPERATORS: Mapping[str, _MutationOperator] = {
         _operator("repair_off_by_one", "REPAIR", "csim", _COMMON_REGION, _render_off_by_one),
         _operator("repair_wrong_multiplier", "REPAIR", "csim", _COMMON_REGION, _render_wrong_multiplier),
         _operator("repair_bias_sign", "REPAIR", "csim", _COMMON_REGION, _render_bias_sign),
-        _operator("repair_shifted_index", "REPAIR", "csim", _COMMON_REGION, _render_shifted_index),
-        _operator("repair_running_sum", "REPAIR", "csim", _COMMON_REGION, _render_running_sum),
-        _operator("repair_clamp_negative", "REPAIR", "csim", _COMMON_REGION, _render_clamp_negative),
-        _operator("repair_branch_inversion", "REPAIR", "csim", _COMMON_REGION, _render_branch_inversion),
-        _operator("repair_rotated_output", "REPAIR", "csim", _COMMON_REGION, _render_rotated_output),
+        _operator("repair_projection_wrong_index", "REPAIR", "csim", _PROJECTION_REGION, _render_projection_wrong_index),
+        _operator("repair_prefix_omitted_term", "REPAIR", "csim", _PREFIX_SUM_REGION, _render_prefix_omitted_term),
+        _operator("repair_histogram_boundary_condition", "REPAIR", "csim", _HISTOGRAM_REGION, _render_histogram_boundary_condition),
+        _operator("repair_vector_add_numeric_truncation", "REPAIR", "csim", _VECTOR_ADD_REGION, _render_vector_add_numeric_truncation),
+        _operator("repair_fir_wrong_branch", "REPAIR", "csim", _FIR_REGION, _render_fir_wrong_branch),
         _operator("synth_dynamic_allocation", "SYNTH_FIX", "synth", _SYNTH_REGION, _render_dynamic_allocation),
         _operator("synth_recursion", "SYNTH_FIX", "synth", _SYNTH_REGION, _render_recursion),
-        _operator("synth_function_pointer", "SYNTH_FIX", "synth", _SYNTH_REGION, _render_function_pointer),
-        _operator("synth_std_vector", "SYNTH_FIX", "synth", _SYNTH_REGION, _render_std_vector),
-        _operator("synth_exception", "SYNTH_FIX", "synth", _SYNTH_REGION, _render_exception),
-        _operator("synth_virtual_dispatch", "SYNTH_FIX", "synth", _SYNTH_REGION, _render_virtual_dispatch),
+        _operator("synth_std_function", "SYNTH_FIX", "synth", _SYNTH_REGION, _render_std_function),
+        _operator("synth_matmul_unsupported_stl", "SYNTH_FIX", "synth", _MATMUL_REGION, _render_matmul_unsupported_stl),
+        _operator("synth_stencil_non_static_unbounded_loop", "SYNTH_FIX", "synth", _STENCIL_REGION, _render_stencil_non_static_unbounded_loop),
+        _operator("synth_dot_hard_resource_constraint", "SYNTH_FIX", "synth", _DOT_REDUCTION_REGION, _render_dot_hard_resource_constraint),
         _operator("struct_main_burst", "STRUCTURAL_FIX", "cosim", _STRUCTURAL_REGION, _render_structural("main")),
         _operator("struct_side_burst", "STRUCTURAL_FIX", "cosim", _STRUCTURAL_REGION, _render_structural("side")),
         _operator("struct_main_chunk_3", "STRUCTURAL_FIX", "cosim", _STRUCTURAL_REGION, _render_structural("main", 3)),
-        _operator("struct_side_chunk_3", "STRUCTURAL_FIX", "cosim", _STRUCTURAL_REGION, _render_structural("side", 3)),
-        _operator("struct_main_chunk_4", "STRUCTURAL_FIX", "cosim", _STRUCTURAL_REGION, _render_structural("main", 4)),
-        _operator("struct_side_chunk_4", "STRUCTURAL_FIX", "cosim", _STRUCTURAL_REGION, _render_structural("side", 4)),
-        _operator("opt_remove_pipeline", "OPTIMIZE", "ppa", _OPTIMIZE_REGION, _render_optimize(pipeline_ii=None)),
+        _operator("struct_stream_count_mismatch", "STRUCTURAL_FIX", "cosim", _STREAM_COUNT_REGION, _render_stream_count_mismatch),
+        _operator("struct_producer_consumer_rate_mismatch", "STRUCTURAL_FIX", "cosim", _STREAM_RATE_REGION, _render_stream_rate_mismatch),
+        _operator("struct_dependency_cycle", "STRUCTURAL_FIX", "cosim", _DEPENDENCY_CYCLE_REGION, _render_dependency_cycle),
+        _operator("opt_serial_reduction", "OPTIMIZE", "ppa", _OPT_SERIAL_REDUCTION_REGION, _render_serial_reduction),
+        _operator("opt_missing_dataflow", "OPTIMIZE", "ppa", _OPT_DATAFLOW_REGION, _render_missing_dataflow),
+        _operator("opt_memory_banking_bottleneck", "OPTIMIZE", "ppa", _OPT_MEMORY_BANKING_REGION, _render_memory_banking_bottleneck),
+        _operator("opt_transaction_latency_high_with_loop_ii_one", "OPTIMIZE", "ppa", _OPT_TRANSACTION_REGION, _render_transaction_latency_high),
+        _operator("opt_serial_loop", "OPTIMIZE", "ppa", _OPTIMIZE_REGION, _render_optimize(pipeline_ii=None, unroll=None, partition=False)),
         _operator("opt_pipeline_ii_2", "OPTIMIZE", "ppa", _OPTIMIZE_REGION, _render_optimize(pipeline_ii=2)),
-        _operator("opt_pipeline_ii_4", "OPTIMIZE", "ppa", _OPTIMIZE_REGION, _render_optimize(pipeline_ii=4)),
-        _operator("opt_pipeline_ii_8", "OPTIMIZE", "ppa", _OPTIMIZE_REGION, _render_optimize(pipeline_ii=8)),
         _operator("opt_remove_unroll", "OPTIMIZE", "ppa", _OPTIMIZE_REGION, _render_optimize(unroll=None)),
-        _operator("opt_unroll_factor_2", "OPTIMIZE", "ppa", _OPTIMIZE_REGION, _render_optimize(unroll=2)),
-        _operator("opt_remove_partition", "OPTIMIZE", "ppa", _OPTIMIZE_REGION, _render_optimize(partition=False)),
         _operator("opt_serial_two_pass", "OPTIMIZE", "ppa", _OPTIMIZE_REGION, _render_serial_two_pass),
     )
 }
@@ -501,31 +1042,31 @@ TASK_SPECS: tuple[TaskSpec, ...] = (
     TaskSpec("v3d_fast_001", "REPAIR", "repair_off_by_one", 101, "map", 1, "循环上界遗漏最后一个元素。"),
     TaskSpec("v3d_fast_002", "REPAIR", "repair_wrong_multiplier", 102, "map", 1, "逐元素缩放系数不符合公开语义。"),
     TaskSpec("v3d_fast_003", "REPAIR", "repair_bias_sign", 103, "map", 1, "逐元素偏置方向错误。"),
-    TaskSpec("v3d_fast_004", "REPAIR", "repair_shifted_index", 104, "map", 2, "输入索引发生循环错位。"),
-    TaskSpec("v3d_fast_005", "REPAIR", "repair_running_sum", 105, "map", 2, "独立映射被错误地累积。"),
-    TaskSpec("v3d_fast_006", "REPAIR", "repair_clamp_negative", 106, "map", 2, "负结果被未声明地截断。"),
-    TaskSpec("v3d_fast_007", "REPAIR", "repair_branch_inversion", 107, "map", 2, "符号分支对非负输入采用错误公式。"),
-    TaskSpec("v3d_fast_008", "REPAIR", "repair_rotated_output", 108, "map", 2, "输出索引发生循环错位。"),
+    TaskSpec("v3d_fast_004", "REPAIR", "repair_projection_wrong_index", 104, "coordinate_projection", 2, "坐标投影读取了相邻点的索引。"),
+    TaskSpec("v3d_fast_005", "REPAIR", "repair_prefix_omitted_term", 105, "prefix_sum", 2, "前缀和在写回后才累加当前元素。"),
+    TaskSpec("v3d_fast_006", "REPAIR", "repair_histogram_boundary_condition", 106, "histogram", 2, "直方图边界条件遗漏最高合法 bin。"),
+    TaskSpec("v3d_fast_007", "REPAIR", "repair_vector_add_numeric_truncation", 107, "vector_add", 2, "向量加法结果被截断为八位数值。"),
+    TaskSpec("v3d_fast_008", "REPAIR", "repair_fir_wrong_branch", 108, "fir_1d", 2, "FIR 第二抽头在首个有效位置采用错误分支。"),
     TaskSpec("v3d_fast_009", "SYNTH_FIX", "synth_dynamic_allocation", 201, "synth_map", 2, "C 仿真正确，但核心路径使用动态内存。"),
     TaskSpec("v3d_fast_010", "SYNTH_FIX", "synth_recursion", 202, "synth_map", 3, "C 仿真正确，但实现依赖递归调用。"),
-    TaskSpec("v3d_fast_011", "SYNTH_FIX", "synth_function_pointer", 203, "synth_map", 3, "C 仿真正确，但数据路径使用函数指针。"),
-    TaskSpec("v3d_fast_012", "SYNTH_FIX", "synth_std_vector", 204, "synth_map", 2, "C 仿真正确，但核心路径使用动态 STL 容器。"),
-    TaskSpec("v3d_fast_013", "SYNTH_FIX", "synth_exception", 205, "synth_map", 3, "C 仿真正确，但核心路径包含异常控制流。"),
-    TaskSpec("v3d_fast_014", "SYNTH_FIX", "synth_virtual_dispatch", 206, "synth_map", 3, "C 仿真正确，但核心路径包含虚函数分派。"),
-    TaskSpec("v3d_fast_015", "STRUCTURAL_FIX", "struct_main_burst", 301, "dual_stream", 4, "双流生产者先突发写主流，RTL 有界 FIFO 形成背压环。"),
-    TaskSpec("v3d_fast_016", "STRUCTURAL_FIX", "struct_side_burst", 302, "dual_stream", 4, "双流生产者先突发写旁路流，RTL 有界 FIFO 形成背压环。"),
-    TaskSpec("v3d_fast_017", "STRUCTURAL_FIX", "struct_main_chunk_3", 303, "dual_stream", 4, "主流按三元素分块领先旁路流，超过 FIFO 深度。"),
-    TaskSpec("v3d_fast_018", "STRUCTURAL_FIX", "struct_side_chunk_3", 304, "dual_stream", 4, "旁路流按三元素分块领先主流，超过 FIFO 深度。"),
-    TaskSpec("v3d_fast_019", "STRUCTURAL_FIX", "struct_main_chunk_4", 305, "dual_stream", 4, "主流按四元素分块领先旁路流，超过 FIFO 深度。"),
-    TaskSpec("v3d_fast_020", "STRUCTURAL_FIX", "struct_side_chunk_4", 306, "dual_stream", 4, "旁路流按四元素分块领先主流，超过 FIFO 深度。"),
-    TaskSpec("v3d_fast_021", "OPTIMIZE", "opt_remove_pipeline", 401, "opt_map", 2, "功能正确，但核心循环未流水化。"),
-    TaskSpec("v3d_fast_022", "OPTIMIZE", "opt_pipeline_ii_2", 402, "opt_map", 2, "功能正确，但请求的流水间隔仍有收紧空间。"),
-    TaskSpec("v3d_fast_023", "OPTIMIZE", "opt_pipeline_ii_4", 403, "opt_map", 2, "功能正确，但流水启动间隔偏大。"),
-    TaskSpec("v3d_fast_024", "OPTIMIZE", "opt_pipeline_ii_8", 404, "opt_map", 2, "功能正确，但流水启动间隔明显偏大。"),
-    TaskSpec("v3d_fast_025", "OPTIMIZE", "opt_remove_unroll", 405, "opt_map", 2, "功能正确，但循环并行度未显式展开。"),
-    TaskSpec("v3d_fast_026", "OPTIMIZE", "opt_unroll_factor_2", 406, "opt_map", 3, "功能正确，但循环展开因子保守。"),
-    TaskSpec("v3d_fast_027", "OPTIMIZE", "opt_remove_partition", 407, "opt_map", 3, "功能正确，但数组端口并行性不足。"),
-    TaskSpec("v3d_fast_028", "OPTIMIZE", "opt_serial_two_pass", 408, "opt_map", 3, "功能正确，但可融合的数据路径被串行拆成两遍。", True),
+    TaskSpec("v3d_fast_011", "SYNTH_FIX", "synth_std_function", 203, "synth_map", 3, "C 仿真正确，但数据路径使用运行时 std::function callable。"),
+    TaskSpec("v3d_fast_012", "SYNTH_FIX", "synth_matmul_unsupported_stl", 204, "matmul_4x4", 2, "矩阵乘法数据路径使用动态 std::vector 暂存。"),
+    TaskSpec("v3d_fast_013", "SYNTH_FIX", "synth_stencil_non_static_unbounded_loop", 205, "stencil_2d", 3, "二维模板实现使用运行时数组维度及无静态上界 while 循环。"),
+    TaskSpec("v3d_fast_014", "SYNTH_FIX", "synth_dot_hard_resource_constraint", 206, "dot_reduction", 3, "点积乘法被硬绑定到不支持的 URAM 运算实现。"),
+    TaskSpec("v3d_fast_015", "STRUCTURAL_FIX", "struct_main_burst", 301, "producer_burst_deadlock", 4, "双流生产者先突发写主流，RTL 有界 FIFO 形成背压环。"),
+    TaskSpec("v3d_fast_016", "STRUCTURAL_FIX", "struct_side_burst", 302, "stream_order_or_interface_mismatch", 4, "双流生产者先突发写旁路流，RTL 有界 FIFO 形成背压环。"),
+    TaskSpec("v3d_fast_017", "STRUCTURAL_FIX", "struct_main_chunk_3", 303, "insufficient_fifo_depth", 4, "主流按三元素分块领先旁路流，超过 FIFO 深度。"),
+    TaskSpec("v3d_fast_018", "STRUCTURAL_FIX", "struct_stream_count_mismatch", 304, "stream_count_mismatch", 4, "生产者比消费者多写两个内部流 token。"),
+    TaskSpec("v3d_fast_019", "STRUCTURAL_FIX", "struct_producer_consumer_rate_mismatch", 305, "producer_consumer_rate_mismatch", 4, "生产者每周期写入三个节拍 token，而消费者只读取一个。"),
+    TaskSpec("v3d_fast_020", "STRUCTURAL_FIX", "struct_dependency_cycle", 306, "dependency_cycle", 4, "数据流级之间形成有界反馈依赖环。"),
+    TaskSpec("v3d_fast_021", "OPTIMIZE", "opt_serial_loop", 401, "missing_array_partition", 2, "功能正确，但核心循环没有流水、展开或数组分区并行性。"),
+    TaskSpec("v3d_fast_022", "OPTIMIZE", "opt_pipeline_ii_2", 402, "low_parallel_factor", 2, "功能正确，但请求的流水间隔仍有收紧空间。"),
+    TaskSpec("v3d_fast_023", "OPTIMIZE", "opt_serial_reduction", 403, "serial_reduction", 2, "点积归约被串行累加器限制。"),
+    TaskSpec("v3d_fast_024", "OPTIMIZE", "opt_remove_unroll", 404, "missing_unroll", 2, "映射循环缺少展开并行性。"),
+    TaskSpec("v3d_fast_025", "OPTIMIZE", "opt_missing_dataflow", 405, "missing_dataflow", 2, "两个流式计算级未启用 DATAFLOW 重叠执行。"),
+    TaskSpec("v3d_fast_026", "OPTIMIZE", "opt_memory_banking_bottleneck", 406, "memory_banking_bottleneck", 3, "四路并行读取被单端口本地存储限制。"),
+    TaskSpec("v3d_fast_027", "OPTIMIZE", "opt_transaction_latency_high_with_loop_ii_one", 407, "transaction_latency_high_with_loop_ii_one", 3, "循环 II 为一，但 AXI 事务被限制为单拍单 outstanding。"),
+    TaskSpec("v3d_fast_028", "OPTIMIZE", "opt_serial_two_pass", 408, "suboptimal_loop_structure", 3, "功能正确，但可融合的数据路径被串行拆成两遍。", True),
 )
 
 
@@ -625,6 +1166,168 @@ void kernel(const int input[V3D_SIZE], int output[V3D_SIZE]);
 #endif
 """
 
+_PROJECTION_HEADER = """#ifndef V3D_KERNEL_H
+#define V3D_KERNEL_H
+
+constexpr int V3D_POINTS = 8;
+
+struct V3DPoint3D {
+    int x;
+    int y;
+    int z;
+};
+
+struct V3DPoint2D {
+    int x;
+    int y;
+};
+
+void kernel(
+    const V3DPoint3D input[V3D_POINTS],
+    V3DPoint2D output[V3D_POINTS]);
+
+#endif
+"""
+
+_PREFIX_SUM_HEADER = """#ifndef V3D_KERNEL_H
+#define V3D_KERNEL_H
+
+constexpr int V3D_PREFIX_SIZE = 12;
+
+void kernel(
+    const int input[V3D_PREFIX_SIZE],
+    int output[V3D_PREFIX_SIZE]);
+
+#endif
+"""
+
+_HISTOGRAM_HEADER = """#ifndef V3D_KERNEL_H
+#define V3D_KERNEL_H
+
+constexpr int V3D_HIST_INPUT_SIZE = 16;
+constexpr int V3D_HIST_BINS = 8;
+
+void kernel(
+    const unsigned char input[V3D_HIST_INPUT_SIZE],
+    unsigned short bins[V3D_HIST_BINS]);
+
+#endif
+"""
+
+_VECTOR_ADD_HEADER = """#ifndef V3D_KERNEL_H
+#define V3D_KERNEL_H
+
+constexpr int V3D_VECTOR_SIZE = 16;
+
+void kernel(
+    const int lhs[V3D_VECTOR_SIZE],
+    const int rhs[V3D_VECTOR_SIZE],
+    int output[V3D_VECTOR_SIZE]);
+
+#endif
+"""
+
+_FIR_HEADER = """#ifndef V3D_KERNEL_H
+#define V3D_KERNEL_H
+
+constexpr int V3D_FIR_SIZE = 16;
+
+void kernel(
+    const int input[V3D_FIR_SIZE],
+    int output[V3D_FIR_SIZE]);
+
+#endif
+"""
+
+_MATMUL_HEADER = """#ifndef V3D_KERNEL_H
+#define V3D_KERNEL_H
+
+constexpr int V3D_MATMUL_DIM = 4;
+
+void kernel(
+    const int lhs[V3D_MATMUL_DIM][V3D_MATMUL_DIM],
+    const int rhs[V3D_MATMUL_DIM][V3D_MATMUL_DIM],
+    int output[V3D_MATMUL_DIM][V3D_MATMUL_DIM]);
+
+#endif
+"""
+
+_STENCIL_HEADER = """#ifndef V3D_KERNEL_H
+#define V3D_KERNEL_H
+
+constexpr int V3D_STENCIL_MAX_ROWS = 6;
+constexpr int V3D_STENCIL_MAX_COLS = 6;
+
+void kernel(
+    const int input[V3D_STENCIL_MAX_ROWS][V3D_STENCIL_MAX_COLS],
+    int output[V3D_STENCIL_MAX_ROWS][V3D_STENCIL_MAX_COLS],
+    int rows,
+    int cols);
+
+#endif
+"""
+
+_DOT_REDUCTION_HEADER = """#ifndef V3D_KERNEL_H
+#define V3D_KERNEL_H
+
+constexpr int V3D_DOT_SIZE = 32;
+
+int kernel(
+    const int lhs[V3D_DOT_SIZE],
+    const int rhs[V3D_DOT_SIZE]);
+
+#endif
+"""
+
+_OPT_SERIAL_REDUCTION_HEADER = """#ifndef V3D_KERNEL_H
+#define V3D_KERNEL_H
+
+constexpr int V3D_REDUCTION_SIZE = 64;
+
+int kernel(
+    const int lhs[V3D_REDUCTION_SIZE],
+    const int rhs[V3D_REDUCTION_SIZE]);
+
+#endif
+"""
+
+_OPT_DATAFLOW_HEADER = """#ifndef V3D_KERNEL_H
+#define V3D_KERNEL_H
+
+constexpr int V3D_DATAFLOW_SIZE = 32;
+
+void kernel(
+    const int input[V3D_DATAFLOW_SIZE],
+    int output[V3D_DATAFLOW_SIZE]);
+
+#endif
+"""
+
+_OPT_MEMORY_BANKING_HEADER = """#ifndef V3D_KERNEL_H
+#define V3D_KERNEL_H
+
+constexpr int V3D_BANK_INPUT_SIZE = 64;
+constexpr int V3D_BANK_OUTPUT_SIZE = 16;
+
+void kernel(
+    const int input[V3D_BANK_INPUT_SIZE],
+    int output[V3D_BANK_OUTPUT_SIZE]);
+
+#endif
+"""
+
+_OPT_TRANSACTION_HEADER = """#ifndef V3D_KERNEL_H
+#define V3D_KERNEL_H
+
+constexpr int V3D_TRANSACTION_SIZE = 64;
+
+void kernel(
+    const int input[V3D_TRANSACTION_SIZE],
+    int output[V3D_TRANSACTION_SIZE]);
+
+#endif
+"""
+
 
 def _golden_source(family: str) -> str:
     if family == "map":
@@ -643,7 +1346,7 @@ def _golden_source(family: str) -> str:
             + _SYNTH_REGION
             + f"{_END_MARKER}\n"
         )
-    if family == "dual_stream":
+    if family in _ANCHOR_DUAL_STREAM_FAMILIES:
         return (
             '#include "kernel.h"\n\n'
             f"{_BEGIN_MARKER}\n"
@@ -669,7 +1372,68 @@ def _golden_source(family: str) -> str:
             "    v3d_consume(main_stream, side_stream, output);\n"
             "}\n"
         )
-    if family == "opt_map":
+    if family == "stream_count_mismatch":
+        return (
+            '#include "kernel.h"\n\n'
+            f"{_BEGIN_MARKER}\n"
+            + _STREAM_COUNT_REGION
+            + f"{_END_MARKER}\n\n"
+            "static void v3d_count_consume(\n"
+            "    hls::stream<int>& main_stream,\n"
+            "    hls::stream<int>& side_stream,\n"
+            "    int output[V3D_SIZE]) {\n"
+            "#pragma HLS INLINE off\n"
+            "    for (int i = 0; i < V3D_SIZE; ++i) {\n"
+            "#pragma HLS PIPELINE II=1\n"
+            "        output[i] = main_stream.read() + side_stream.read();\n"
+            "    }\n"
+            "}\n\n"
+            "void kernel(const int input[V3D_SIZE], int output[V3D_SIZE]) {\n"
+            "#pragma HLS DATAFLOW\n"
+            '    hls::stream<int> main_stream("main_stream");\n'
+            '    hls::stream<int> side_stream("side_stream");\n'
+            "#pragma HLS STREAM variable=main_stream depth=1\n"
+            "#pragma HLS STREAM variable=side_stream depth=1\n"
+            "    v3d_count_produce(input, main_stream, side_stream);\n"
+            "    v3d_count_consume(main_stream, side_stream, output);\n"
+            "}\n"
+        )
+    if family == "producer_consumer_rate_mismatch":
+        return (
+            '#include "kernel.h"\n\n'
+            f"{_BEGIN_MARKER}\n"
+            + _STREAM_RATE_REGION
+            + f"{_END_MARKER}\n\n"
+            "static void v3d_rate_consume(\n"
+            "    hls::stream<int>& data_stream,\n"
+            "    hls::stream<int>& pace_stream,\n"
+            "    int output[V3D_SIZE]) {\n"
+            "#pragma HLS INLINE off\n"
+            "    for (int i = 0; i < V3D_SIZE; ++i) {\n"
+            "#pragma HLS PIPELINE II=1\n"
+            "        const int value = data_stream.read();\n"
+            "        (void)pace_stream.read();\n"
+            "        output[i] = value * 2 + 1;\n"
+            "    }\n"
+            "}\n\n"
+            "void kernel(const int input[V3D_SIZE], int output[V3D_SIZE]) {\n"
+            "#pragma HLS DATAFLOW\n"
+            '    hls::stream<int> data_stream("data_stream");\n'
+            '    hls::stream<int> pace_stream("pace_stream");\n'
+            "#pragma HLS STREAM variable=data_stream depth=2\n"
+            "#pragma HLS STREAM variable=pace_stream depth=2\n"
+            "    v3d_rate_produce(input, data_stream, pace_stream);\n"
+            "    v3d_rate_consume(data_stream, pace_stream, output);\n"
+            "}\n"
+        )
+    if family == "dependency_cycle":
+        return (
+            '#include "kernel.h"\n\n'
+            f"{_BEGIN_MARKER}\n"
+            + _DEPENDENCY_CYCLE_REGION
+            + f"{_END_MARKER}\n"
+        )
+    if family in _OPT_MAP_FAMILIES:
         return (
             '#include "kernel.h"\n\n'
             "void kernel(const int input[V3D_SIZE], int output[V3D_SIZE]) {\n"
@@ -678,11 +1442,86 @@ def _golden_source(family: str) -> str:
             + f"    {_END_MARKER}\n"
             "}\n"
         )
+    body_families = {
+        "coordinate_projection": (
+            "void kernel(\n"
+            "    const V3DPoint3D input[V3D_POINTS],\n"
+            "    V3DPoint2D output[V3D_POINTS]) {\n",
+            _PROJECTION_REGION,
+        ),
+        "prefix_sum": (
+            "void kernel(\n"
+            "    const int input[V3D_PREFIX_SIZE],\n"
+            "    int output[V3D_PREFIX_SIZE]) {\n",
+            _PREFIX_SUM_REGION,
+        ),
+        "histogram": (
+            "void kernel(\n"
+            "    const unsigned char input[V3D_HIST_INPUT_SIZE],\n"
+            "    unsigned short bins[V3D_HIST_BINS]) {\n",
+            _HISTOGRAM_REGION,
+        ),
+        "vector_add": (
+            "void kernel(\n"
+            "    const int lhs[V3D_VECTOR_SIZE],\n"
+            "    const int rhs[V3D_VECTOR_SIZE],\n"
+            "    int output[V3D_VECTOR_SIZE]) {\n",
+            _VECTOR_ADD_REGION,
+        ),
+        "fir_1d": (
+            "void kernel(\n"
+            "    const int input[V3D_FIR_SIZE],\n"
+            "    int output[V3D_FIR_SIZE]) {\n",
+            _FIR_REGION,
+        ),
+    }
+    if family in body_families:
+        declaration, region = body_families[family]
+        return (
+            '#include "kernel.h"\n\n'
+            + declaration
+            + f"    {_BEGIN_MARKER}\n"
+            + region
+            + f"    {_END_MARKER}\n"
+            "}\n"
+        )
+    whole_function_families = {
+        "matmul_4x4": _MATMUL_REGION,
+        "stencil_2d": _STENCIL_REGION,
+        "dot_reduction": _DOT_REDUCTION_REGION,
+        "serial_reduction": _OPT_SERIAL_REDUCTION_REGION,
+        "missing_dataflow": _OPT_DATAFLOW_REGION,
+        "memory_banking_bottleneck": _OPT_MEMORY_BANKING_REGION,
+        "transaction_latency_high_with_loop_ii_one": _OPT_TRANSACTION_REGION,
+    }
+    if family in whole_function_families:
+        return (
+            '#include "kernel.h"\n\n'
+            f"{_BEGIN_MARKER}\n"
+            + whole_function_families[family]
+            + f"{_END_MARKER}\n"
+        )
     raise V3DCorpusError(f"unknown task family: {family}")
 
 
 def _header(family: str) -> str:
-    return _STRUCTURAL_HEADER if family == "dual_stream" else _COMMON_HEADER
+    headers = {
+        "coordinate_projection": _PROJECTION_HEADER,
+        "prefix_sum": _PREFIX_SUM_HEADER,
+        "histogram": _HISTOGRAM_HEADER,
+        "vector_add": _VECTOR_ADD_HEADER,
+        "fir_1d": _FIR_HEADER,
+        "matmul_4x4": _MATMUL_HEADER,
+        "stencil_2d": _STENCIL_HEADER,
+        "dot_reduction": _DOT_REDUCTION_HEADER,
+        "serial_reduction": _OPT_SERIAL_REDUCTION_HEADER,
+        "missing_dataflow": _OPT_DATAFLOW_HEADER,
+        "memory_banking_bottleneck": _OPT_MEMORY_BANKING_HEADER,
+        "transaction_latency_high_with_loop_ii_one": _OPT_TRANSACTION_HEADER,
+    }
+    if family in headers:
+        return headers[family]
+    return _STRUCTURAL_HEADER if family in _STREAM_FAMILIES else _COMMON_HEADER
 
 
 def _testbench(*, structural: bool, hidden_like: bool) -> str:
@@ -716,6 +1555,343 @@ int main() {{
 """
 
 
+def _family_testbench(family: str, *, hidden_like: bool) -> str:
+    label = "hidden-like" if hidden_like else "public"
+    if family == "coordinate_projection":
+        values = (
+            "{17, -9, 4}, {-6, 31, -2}, {8, 5, 99}, {0, -12, 7}, "
+            "{43, 2, -8}, {-21, -17, 3}, {9, 28, 6}, {3, -4, 11}"
+            if hidden_like
+            else "{2, -3, 9}, {-5, 7, 4}, {11, 13, -8}, {0, 4, 6}, "
+            "{-9, -2, 5}, {8, 1, 3}, {6, -7, 2}, {15, 10, -1}"
+        )
+        return f"""#include "kernel.h"
+
+#include <iostream>
+
+int main() {{
+    const V3DPoint3D input[V3D_POINTS] = {{{values}}};
+    V3DPoint2D output[V3D_POINTS] = {{}};
+    kernel(input, output);
+    for (int i = 0; i < V3D_POINTS; ++i) {{
+        if (output[i].x != input[i].x || output[i].y != input[i].y) {{
+            std::cerr << "{label} projection mismatch at " << i << "\\n";
+            return 1;
+        }}
+    }}
+    return 0;
+}}
+"""
+    if family == "prefix_sum":
+        values = (
+            "-7, 4, 12, -3, 9, 1, -8, 6, 5, -2, 11, -4"
+            if hidden_like
+            else "3, -1, 4, 2, -2, 5, 0, 7, -3, 1, 6, -4"
+        )
+        return f"""#include "kernel.h"
+
+#include <iostream>
+
+int main() {{
+    const int input[V3D_PREFIX_SIZE] = {{{values}}};
+    int output[V3D_PREFIX_SIZE] = {{}};
+    kernel(input, output);
+    int expected = 0;
+    for (int i = 0; i < V3D_PREFIX_SIZE; ++i) {{
+        expected += input[i];
+        if (output[i] != expected) {{
+            std::cerr << "{label} prefix mismatch at " << i << "\\n";
+            return 1;
+        }}
+    }}
+    return 0;
+}}
+"""
+    if family == "histogram":
+        values = (
+            "7, 6, 5, 4, 3, 2, 1, 0, 7, 7, 4, 4, 2, 6, 1, 7"
+            if hidden_like
+            else "0, 7, 1, 7, 2, 6, 3, 5, 4, 7, 0, 2, 4, 6, 7, 1"
+        )
+        return f"""#include "kernel.h"
+
+#include <iostream>
+
+int main() {{
+    const unsigned char input[V3D_HIST_INPUT_SIZE] = {{{values}}};
+    unsigned short bins[V3D_HIST_BINS] = {{}};
+    unsigned short expected[V3D_HIST_BINS] = {{}};
+    for (int i = 0; i < V3D_HIST_INPUT_SIZE; ++i) {{
+        ++expected[input[i]];
+    }}
+    kernel(input, bins);
+    for (int bin = 0; bin < V3D_HIST_BINS; ++bin) {{
+        if (bins[bin] != expected[bin]) {{
+            std::cerr << "{label} histogram mismatch at " << bin << "\\n";
+            return 1;
+        }}
+    }}
+    return 0;
+}}
+"""
+    if family == "vector_add":
+        lhs = (
+            "400, -90, 17, 999, -301, 88, 240, 1, 73, -44, 512, 6, 27, 360, -8, 19"
+            if hidden_like
+            else "250, -20, 100, 1000, -300, 7, 128, 42, 15, -80, 511, 3, 64, 201, -5, 9"
+        )
+        rhs = (
+            "30, 12, -8, 2, 44, 190, 31, -5, 184, 90, -12, 300, -40, 7, 260, -22"
+            if hidden_like
+            else "10, 5, 200, -3, 45, 255, 130, -8, 260, 100, 2, 300, -70, 80, 270, -12"
+        )
+        return f"""#include "kernel.h"
+
+#include <iostream>
+
+int main() {{
+    const int lhs[V3D_VECTOR_SIZE] = {{{lhs}}};
+    const int rhs[V3D_VECTOR_SIZE] = {{{rhs}}};
+    int output[V3D_VECTOR_SIZE] = {{}};
+    kernel(lhs, rhs, output);
+    for (int i = 0; i < V3D_VECTOR_SIZE; ++i) {{
+        const int expected = lhs[i] + rhs[i];
+        if (output[i] != expected) {{
+            std::cerr << "{label} vector-add mismatch at " << i << "\\n";
+            return 1;
+        }}
+    }}
+    return 0;
+}}
+"""
+    if family == "fir_1d":
+        values = (
+            "-4, 9, 1, -7, 5, 3, 12, -2, 8, 6, -5, 10, 2, -1, 7, 4"
+            if hidden_like
+            else "3, 1, -2, 4, 0, 5, -1, 2, 7, -3, 6, 8, -4, 9, 2, -5"
+        )
+        return f"""#include "kernel.h"
+
+#include <iostream>
+
+int main() {{
+    const int input[V3D_FIR_SIZE] = {{{values}}};
+    int output[V3D_FIR_SIZE] = {{}};
+    kernel(input, output);
+    for (int i = 0; i < V3D_FIR_SIZE; ++i) {{
+        int expected = input[i];
+        if (i >= 1) expected += 2 * input[i - 1];
+        if (i >= 2) expected += input[i - 2];
+        if (output[i] != expected) {{
+            std::cerr << "{label} FIR mismatch at " << i << "\\n";
+            return 1;
+        }}
+    }}
+    return 0;
+}}
+"""
+    if family == "matmul_4x4":
+        lhs = (
+            "{2, -1, 4, 3}, {0, 5, -2, 1}, {7, 2, 1, -3}, {4, 0, 6, 2}"
+            if hidden_like
+            else "{1, 2, 3, 4}, {-2, 0, 5, 1}, {3, -1, 2, 6}, {4, 2, 0, -3}"
+        )
+        rhs = (
+            "{1, 3, 0, -2}, {4, -1, 2, 5}, {-3, 6, 1, 0}, {2, 4, -5, 3}"
+            if hidden_like
+            else "{2, -1, 0, 3}, {4, 5, -2, 1}, {1, 0, 6, -4}, {-3, 2, 1, 5}"
+        )
+        return f"""#include "kernel.h"
+
+#include <iostream>
+
+int main() {{
+    const int lhs[V3D_MATMUL_DIM][V3D_MATMUL_DIM] = {{{lhs}}};
+    const int rhs[V3D_MATMUL_DIM][V3D_MATMUL_DIM] = {{{rhs}}};
+    int output[V3D_MATMUL_DIM][V3D_MATMUL_DIM] = {{}};
+    kernel(lhs, rhs, output);
+    for (int row = 0; row < V3D_MATMUL_DIM; ++row) {{
+        for (int col = 0; col < V3D_MATMUL_DIM; ++col) {{
+            int expected = 0;
+            for (int inner = 0; inner < V3D_MATMUL_DIM; ++inner) {{
+                expected += lhs[row][inner] * rhs[inner][col];
+            }}
+            if (output[row][col] != expected) {{
+                std::cerr << "{label} matmul mismatch at "
+                          << row << "," << col << "\\n";
+                return 1;
+            }}
+        }}
+    }}
+    return 0;
+}}
+"""
+    if family == "stencil_2d":
+        rows, cols, row_scale, col_scale, bias = (
+            (4, 6, -5, 3, 11) if hidden_like else (6, 5, 7, -3, 2)
+        )
+        return f"""#include "kernel.h"
+
+#include <iostream>
+
+int main() {{
+    int input[V3D_STENCIL_MAX_ROWS][V3D_STENCIL_MAX_COLS] = {{}};
+    int output[V3D_STENCIL_MAX_ROWS][V3D_STENCIL_MAX_COLS] = {{}};
+    for (int row = 0; row < V3D_STENCIL_MAX_ROWS; ++row) {{
+        for (int col = 0; col < V3D_STENCIL_MAX_COLS; ++col) {{
+            input[row][col] = row * {row_scale} + col * {col_scale} + {bias};
+        }}
+    }}
+    constexpr int rows = {rows};
+    constexpr int cols = {cols};
+    kernel(input, output, rows, cols);
+    for (int row = 0; row < V3D_STENCIL_MAX_ROWS; ++row) {{
+        for (int col = 0; col < V3D_STENCIL_MAX_COLS; ++col) {{
+            int expected = 0;
+            if (row > 0 && row < rows - 1 && col > 0 && col < cols - 1) {{
+                expected = input[row][col]
+                    + input[row - 1][col]
+                    + input[row + 1][col]
+                    + input[row][col - 1]
+                    + input[row][col + 1];
+            }}
+            if (output[row][col] != expected) {{
+                std::cerr << "{label} stencil mismatch at "
+                          << row << "," << col << "\\n";
+                return 1;
+            }}
+        }}
+    }}
+    return 0;
+}}
+"""
+    if family == "dot_reduction":
+        lhs_formula, rhs_formula = (
+            ("(i % 9) - 4", "((i * 5) % 13) - 6")
+            if hidden_like
+            else ("(i % 7) - 3", "((i * 3) % 11) - 5")
+        )
+        return f"""#include "kernel.h"
+
+#include <iostream>
+
+int main() {{
+    int lhs[V3D_DOT_SIZE] = {{}};
+    int rhs[V3D_DOT_SIZE] = {{}};
+    int expected = 0;
+    for (int i = 0; i < V3D_DOT_SIZE; ++i) {{
+        lhs[i] = {lhs_formula};
+        rhs[i] = {rhs_formula};
+        expected += lhs[i] * rhs[i];
+    }}
+    const int actual = kernel(lhs, rhs);
+    if (actual != expected) {{
+        std::cerr << "{label} dot-product mismatch: expected " << expected
+                  << ", got " << actual << "\\n";
+        return 1;
+    }}
+    return 0;
+}}
+"""
+    if family == "serial_reduction":
+        lhs_formula, rhs_formula = (
+            ("(i % 11) - 5", "((i * 7) % 17) - 8")
+            if hidden_like
+            else ("(i % 9) - 4", "((i * 5) % 13) - 6")
+        )
+        return f"""#include "kernel.h"
+
+#include <iostream>
+
+int main() {{
+    int lhs[V3D_REDUCTION_SIZE] = {{}};
+    int rhs[V3D_REDUCTION_SIZE] = {{}};
+    int expected = 0;
+    for (int i = 0; i < V3D_REDUCTION_SIZE; ++i) {{
+        lhs[i] = {lhs_formula};
+        rhs[i] = {rhs_formula};
+        expected += lhs[i] * rhs[i];
+    }}
+    const int actual = kernel(lhs, rhs);
+    if (actual != expected) {{
+        std::cerr << "{label} reduction mismatch: expected " << expected
+                  << ", got " << actual << "\\n";
+        return 1;
+    }}
+    return 0;
+}}
+"""
+    if family == "missing_dataflow":
+        formula = "i * 7 - 19" if hidden_like else "i * 3 - 11"
+        return f"""#include "kernel.h"
+
+#include <iostream>
+
+int main() {{
+    int input[V3D_DATAFLOW_SIZE] = {{}};
+    int output[V3D_DATAFLOW_SIZE] = {{}};
+    for (int i = 0; i < V3D_DATAFLOW_SIZE; ++i) input[i] = {formula};
+    kernel(input, output);
+    for (int i = 0; i < V3D_DATAFLOW_SIZE; ++i) {{
+        const int expected = input[i] * 5 - 3;
+        if (output[i] != expected) {{
+            std::cerr << "{label} dataflow mismatch at " << i << "\\n";
+            return 1;
+        }}
+    }}
+    return 0;
+}}
+"""
+    if family == "memory_banking_bottleneck":
+        formula = "(i * 11) % 37 - 18" if hidden_like else "(i * 7) % 29 - 14"
+        return f"""#include "kernel.h"
+
+#include <iostream>
+
+int main() {{
+    int input[V3D_BANK_INPUT_SIZE] = {{}};
+    int output[V3D_BANK_OUTPUT_SIZE] = {{}};
+    for (int i = 0; i < V3D_BANK_INPUT_SIZE; ++i) input[i] = {formula};
+    kernel(input, output);
+    for (int group = 0; group < V3D_BANK_OUTPUT_SIZE; ++group) {{
+        int expected = 0;
+        for (int lane = 0; lane < 4; ++lane) {{
+            expected += input[group * 4 + lane];
+        }}
+        if (output[group] != expected) {{
+            std::cerr << "{label} banking mismatch at " << group << "\\n";
+            return 1;
+        }}
+    }}
+    return 0;
+}}
+"""
+    if family == "transaction_latency_high_with_loop_ii_one":
+        formula = "i * 13 - 101" if hidden_like else "i * 5 - 47"
+        return f"""#include "kernel.h"
+
+#include <iostream>
+
+int main() {{
+    int input[V3D_TRANSACTION_SIZE] = {{}};
+    int output[V3D_TRANSACTION_SIZE] = {{}};
+    for (int i = 0; i < V3D_TRANSACTION_SIZE; ++i) input[i] = {formula};
+    kernel(input, output);
+    for (int i = 0; i < V3D_TRANSACTION_SIZE; ++i) {{
+        const int expected = input[i] * 3 + 1;
+        if (output[i] != expected) {{
+            std::cerr << "{label} transaction mismatch at " << i << "\\n";
+            return 1;
+        }}
+    }}
+    return 0;
+}}
+"""
+    return _testbench(
+        structural=family in _STREAM_FAMILIES, hidden_like=hidden_like
+    )
+
+
 def _baseline_validation(mode: str, *, requires_cosim: bool) -> dict[str, str]:
     return {
         "REPAIR": {"csim": "FAIL", "synth": "NOT_RUN", "cosim": "NOT_RUN"},
@@ -732,12 +1908,78 @@ def _baseline_validation(mode: str, *, requires_cosim: bool) -> dict[str, str]:
 def _functional_formula(spec: TaskSpec) -> str:
     return (
         "output[i] = input[i] * 2 + 1"
-        if spec.family == "dual_stream"
+        if spec.family in _STREAM_FAMILIES
         else "output[i] = input[i] * 3 + 7"
     )
 
 
 def _public_contract(spec: TaskSpec) -> str:
+    contracts = {
+        "coordinate_projection": (
+            "对每个 0 <= i < V3D_POINTS，输出二维点必须满足 "
+            "output[i].x = input[i].x 且 output[i].y = input[i].y；"
+            "V3D_POINTS 固定为 8，z 坐标不参与结果，合法输入坐标范围为 "
+            "[-1000000, 1000000]。"
+        ),
+        "prefix_sum": (
+            "对每个 0 <= i < V3D_PREFIX_SIZE，output[i] 必须等于 "
+            "input[0] 到 input[i] 的包含当前元素的前缀和；"
+            "V3D_PREFIX_SIZE 固定为 12，合法输入元素范围为 [-1000000, 1000000]。"
+        ),
+        "histogram": (
+            "先清零全部输出 bin，再对每个 0 <= b < V3D_HIST_BINS 令 bins[b] "
+            "等于输入中数值 b 的出现次数；V3D_HIST_INPUT_SIZE 固定为 16，"
+            "V3D_HIST_BINS 固定为 8，合法输入元素范围为 [0, 7]。"
+        ),
+        "vector_add": (
+            "对每个 0 <= i < V3D_VECTOR_SIZE，必须满足 "
+            "output[i] = lhs[i] + rhs[i]；V3D_VECTOR_SIZE 固定为 16，"
+            "两路合法输入元素范围均为 [-1000000, 1000000]。"
+        ),
+        "fir_1d": (
+            "计算因果三抽头一维卷积，系数依次为 [1, 2, 1]，数组左侧按零填充；"
+            "即 output[i] = input[i] + 2*input[i-1] + input[i-2]，"
+            "负下标项取 0。V3D_FIR_SIZE 固定为 16，合法输入元素范围为 "
+            "[-1000000, 1000000]。"
+        ),
+        "matmul_4x4": (
+            "计算两个 4x4 整数矩阵的乘积；对每个 row、col，output[row][col] "
+            "必须等于 lhs[row][k] * rhs[k][col] 在 k=0..3 上的总和。"
+            "合法输入元素范围为 [-10000, 10000]。"
+        ),
+        "stencil_2d": (
+            "rows 和 cols 的合法范围均为 [3, 6]；活动矩形内部元素输出自身及上下左右"
+            "五点之和，活动矩形边界及矩形外的全部输出必须为 0。"
+            "合法输入元素范围为 [-1000000, 1000000]。"
+        ),
+        "dot_reduction": (
+            "返回两路长度为 V3D_DOT_SIZE 的整数向量点积，即 lhs[i] * rhs[i] "
+            "在全部 i 上的总和；V3D_DOT_SIZE 固定为 32，合法输入元素范围为 "
+            "[-10000, 10000]。"
+        ),
+        "serial_reduction": (
+            "返回两路长度为 V3D_REDUCTION_SIZE 的整数向量点积，即 lhs[i] * rhs[i] "
+            "在全部 i 上的总和；V3D_REDUCTION_SIZE 固定为 64，合法输入元素范围为 "
+            "[-10000, 10000]。"
+        ),
+        "missing_dataflow": (
+            "对每个 0 <= i < V3D_DATAFLOW_SIZE，必须满足 "
+            "output[i] = input[i] * 5 - 3；V3D_DATAFLOW_SIZE 固定为 32，"
+            "合法输入元素范围为 [-1000000, 1000000]。"
+        ),
+        "memory_banking_bottleneck": (
+            "把长度 64 的输入按连续四元素分组；对每个 0 <= group < 16，"
+            "output[group] 必须等于 input[4*group] 到 input[4*group+3] 的总和。"
+            "合法输入元素范围为 [-1000000, 1000000]。"
+        ),
+        "transaction_latency_high_with_loop_ii_one": (
+            "对每个 0 <= i < V3D_TRANSACTION_SIZE，必须满足 "
+            "output[i] = input[i] * 3 + 1；V3D_TRANSACTION_SIZE 固定为 64，"
+            "合法输入元素范围为 [-1000000, 1000000]。"
+        ),
+    }
+    if spec.family in contracts:
+        return contracts[spec.family]
     return (
         f"对每个 0 <= i < V3D_SIZE，必须满足 {_functional_formula(spec)}；"
         "V3D_SIZE 固定为 16，合法输入元素范围为 [-1000000, 1000000]。"
@@ -766,6 +2008,71 @@ clock_ns = 5.0
 
 
 def _description(spec: TaskSpec) -> str:
+    interfaces = {
+        "coordinate_projection": (
+            "`kernel(const V3DPoint3D input[8], V3DPoint2D output[8])`",
+            "必须处理全部 8 个点；不得改变点的顺序或读写数组边界之外的数据。",
+        ),
+        "prefix_sum": (
+            "`kernel(const int input[12], int output[12])`",
+            "必须生成包含当前元素的全部 12 个前缀结果。",
+        ),
+        "histogram": (
+            "`kernel(const unsigned char input[16], unsigned short bins[8])`",
+            "每次调用都必须覆盖全部 8 个 bin，不能依赖输出数组的初值。",
+        ),
+        "vector_add": (
+            "`kernel(const int lhs[16], const int rhs[16], int output[16])`",
+            "必须以整数精度处理全部 16 个元素，不得缩窄中间结果。",
+        ),
+        "fir_1d": (
+            "`kernel(const int input[16], int output[16])`",
+            "必须处理全部 16 个输出，并按公开零填充规则处理左边界。",
+        ),
+        "matmul_4x4": (
+            "`kernel(const int lhs[4][4], const int rhs[4][4], int output[4][4])`",
+            "必须写出全部 16 个矩阵元素，矩阵维度固定为 4。",
+        ),
+        "stencil_2d": (
+            "`kernel(const int input[6][6], int output[6][6], int rows, int cols)`",
+            "数组容量固定为 6x6；必须定义活动矩形外以及边界位置的输出。",
+        ),
+        "dot_reduction": (
+            "`int kernel(const int lhs[32], const int rhs[32])`",
+            "必须归约全部 32 对输入元素并返回一个整数结果。",
+        ),
+        "serial_reduction": (
+            "`int kernel(const int lhs[64], const int rhs[64])`",
+            "必须归约全部 64 对输入元素并返回一个整数结果。",
+        ),
+        "missing_dataflow": (
+            "`kernel(const int input[32], int output[32])`",
+            "必须处理并覆盖全部 32 个输出元素。",
+        ),
+        "memory_banking_bottleneck": (
+            "`kernel(const int input[64], int output[16])`",
+            "必须处理全部 16 组输入并覆盖全部输出元素。",
+        ),
+        "transaction_latency_high_with_loop_ii_one": (
+            "`kernel(const int input[64], int output[64])`",
+            "必须处理并覆盖全部 64 个输出元素。",
+        ),
+    }
+    if spec.family in interfaces:
+        signature, constraint = interfaces[spec.family]
+        return f"""# V3-D 公开 kernel 任务
+
+## 功能语义
+
+{_public_contract(spec)}
+
+## 接口与约束
+
+- 顶层函数必须保持为 {signature}。
+- {constraint}
+- 只允许修改 `kernel.cpp`；header、公开 testbench 和任务元数据均为只读。
+- 公开 testbench 只给出示例，提交实现必须满足上述全部合法输入。
+"""
     return f"""# V3-D 公开 kernel 任务
 
 ## 功能语义
@@ -1036,6 +2343,7 @@ def _schema_document(kind: str) -> dict[str, object]:
                         "additionalProperties": False,
                         "required": [
                             "task_id", "path", "mode", "operator", "seed",
+                            "family", "difficulty",
                             "mutation_manifest_sha256", "acceptance_sha256",
                         ],
                         "properties": {
@@ -1044,6 +2352,15 @@ def _schema_document(kind: str) -> dict[str, object]:
                             "mode": {"enum": list(PHASE_MODES)},
                             "operator": {"type": "string", "minLength": 1},
                             "seed": {"type": "integer", "minimum": 0},
+                            "family": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_]*$",
+                            },
+                            "difficulty": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 5,
+                            },
                             "mutation_manifest_sha256": digest,
                             "acceptance_sha256": digest,
                         },
@@ -1178,8 +2495,10 @@ def validate_corpus_manifest(value: Mapping[str, object]) -> dict[str, object]:
     seen: set[str] = set()
     expected_task_fields = {
         "task_id", "path", "mode", "operator", "seed",
+        "family", "difficulty",
         "mutation_manifest_sha256", "acceptance_sha256",
     }
+    specs_by_id = {spec.task_id: spec for spec in TASK_SPECS}
     for task in tasks:
         if not isinstance(task, Mapping) or set(task) != expected_task_fields:
             raise V3DCorpusError("corpus task entry is invalid")
@@ -1194,6 +2513,25 @@ def validate_corpus_manifest(value: Mapping[str, object]) -> dict[str, object]:
         seed = task.get("seed")
         if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
             raise V3DCorpusError("corpus task seed is invalid")
+        family = task.get("family")
+        difficulty = task.get("difficulty")
+        if (
+            not isinstance(family, str)
+            or not family
+            or isinstance(difficulty, bool)
+            or not isinstance(difficulty, int)
+            or not 1 <= difficulty <= 5
+        ):
+            raise V3DCorpusError("corpus task family or difficulty is invalid")
+        spec = specs_by_id.get(str(task_id))
+        if (
+            spec is None
+            or family != spec.family
+            or difficulty != spec.difficulty
+        ):
+            raise V3DCorpusError(
+                "corpus task family or difficulty conflicts with its task spec"
+            )
         seen.add(task_id)
         counts[str(mode)] += 1
     if value.get("mode_counts") != {mode: counts[mode] for mode in PHASE_MODES}:
@@ -1245,11 +2583,11 @@ def render_corpus_files() -> dict[str, bytes]:
                 f"{prefix}/description.md": description.encode("utf-8"),
                 f"{prefix}/kernel.cpp": result.source.encode("utf-8"),
                 f"{prefix}/kernel.h": _header(spec.family).encode("utf-8"),
-                f"{prefix}/kernel_tb.cpp": _testbench(
-                    structural=spec.family == "dual_stream", hidden_like=False
+                f"{prefix}/kernel_tb.cpp": _family_testbench(
+                    spec.family, hidden_like=False
                 ).encode("utf-8"),
-                f"{prefix}/hidden_like/kernel_tb.cpp": _testbench(
-                    structural=spec.family == "dual_stream", hidden_like=True
+                f"{prefix}/hidden_like/kernel_tb.cpp": _family_testbench(
+                    spec.family, hidden_like=True
                 ).encode("utf-8"),
                 f"{prefix}/golden/kernel.cpp": golden.encode("utf-8"),
                 f"{prefix}/mutation_manifest.json": manifest_bytes,
@@ -1263,6 +2601,8 @@ def render_corpus_files() -> dict[str, bytes]:
                 "mode": spec.mode,
                 "operator": spec.operator,
                 "seed": spec.seed,
+                "family": spec.family,
+                "difficulty": spec.difficulty,
                 "mutation_manifest_sha256": _sha256(manifest_bytes),
                 "acceptance_sha256": _sha256(acceptance_bytes),
             }

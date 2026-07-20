@@ -80,6 +80,15 @@
             "pattern": "^[0-9a-f]{64}$",
             "type": "string"
           },
+          "difficulty": {
+            "maximum": 5,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "family": {
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "type": "string"
+          },
           "mode": {
             "enum": [
               "REPAIR",
@@ -115,6 +124,8 @@
           "mode",
           "operator",
           "seed",
+          "family",
+          "difficulty",
           "mutation_manifest_sha256",
           "acceptance_sha256"
         ],

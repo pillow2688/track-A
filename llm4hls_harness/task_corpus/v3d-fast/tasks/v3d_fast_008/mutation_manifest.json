@@ -1,21 +1,21 @@
 {
-  "base_sha256": "5372e6e44b5f2cba348143f0958cddedd455d28a6ac02f8695dab2cef55a52ef",
+  "base_sha256": "6dd63b2a70cd8539eec1e3b491c0f427a677ef1cdf03c790e3eef185fd130d1c",
   "engine_version": "v3d.mutation-engine.v1",
   "expected_failing_gate": "csim",
   "expected_mode": "REPAIR",
-  "mutated_sha256": "0b98738879a37aa08f42ab81dbd305c2316cc56d69f2509fd3a902a753cbbff7",
-  "mutation_summary": "输出索引发生循环错位。",
-  "operator": "repair_rotated_output",
+  "mutated_sha256": "c50ce3c852ecac4b4ecd44baec140c1a2d40d57b1d66451513f0984b8278ced7",
+  "mutation_summary": "FIR 第二抽头在首个有效位置采用错误分支。",
+  "operator": "repair_fir_wrong_branch",
   "operator_version": 1,
   "schema_version": "v3d.mutation-manifest.v1",
   "seed": 108,
   "source_range": {
-    "base_end_line": 7,
-    "base_range_sha256": "6302b119010f1ce3fa60e9bd98c9bbc82455679a904aea7d1fb64a919a93ec40",
-    "base_start_line": 5,
+    "base_end_line": 16,
+    "base_range_sha256": "4d7161c2169730df75beaf82c6388c407e269a85a99c265f4a817c670b0135e5",
+    "base_start_line": 7,
     "file": "kernel.cpp",
-    "mutated_end_line": 6,
-    "mutated_start_line": 4
+    "mutated_end_line": 15,
+    "mutated_start_line": 6
   },
   "task_id": "v3d_fast_008",
   "version": 1
