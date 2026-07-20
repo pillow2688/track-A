@@ -1,0 +1,66 @@
+{
+  "schema_version": "v3d.submission-evidence.v1",
+  "runs_root": "llm4hls_harness/runs",
+  "benchmark_summaries": [
+    "docs/submission/benchmark_snapshots/v3d-benchmark-deterministic-diverse-final-20260720-r02.json"
+  ],
+  "oracle_summary": "docs/submission/oracle_snapshots/v3d-oracle-deterministic-diverse-final-20260720-r02.json",
+  "real_anchor_release": "llm4hls_harness/releases/v3d-corpus-oracle-anchors-2026-07-20.json",
+  "replay_release": "llm4hls_harness/releases/v3d-real-vitis-replay-acceptance-2026-07-20.json",
+  "curated_runs": [
+    {
+      "run_id": "v3b_fast_dotproduct_live_deepseek_retry2",
+      "provider_class": "REAL_LLM",
+      "mode": "OPTIMIZE",
+      "evidence_role": "primary",
+      "note": "Real DeepSeek planner and real Vitis 2025.2; fresh final CSim/Synth/CoSim passed."
+    },
+    {
+      "run_id": "v3c-real-projection-repair-a01-LOCAL_BUDGET_OVERRIDE",
+      "provider_class": "REAL_LLM",
+      "mode": "REPAIR",
+      "evidence_role": "failure",
+      "note": "Real model attempt; Patch policy rejected the proposal. Local 40-credit override, not official 20-credit compliance."
+    },
+    {
+      "run_id": "v3c-real-projection-repair-a02-LOCAL_BUDGET_OVERRIDE",
+      "provider_class": "REAL_LLM",
+      "mode": "REPAIR",
+      "evidence_role": "failure",
+      "note": "Real model attempt; Patch policy rejected the proposal. Local 40-credit override, not official 20-credit compliance."
+    },
+    {
+      "run_id": "v3c-real-projection-repair-a03-LOCAL_BUDGET_OVERRIDE",
+      "provider_class": "REAL_LLM",
+      "mode": "REPAIR",
+      "evidence_role": "failure",
+      "note": "Real model attempt; Patch policy rejected the proposal. Local 40-credit override, not official 20-credit compliance."
+    },
+    {
+      "run_id": "v3d-projection-postfix-replay-r02-NOT_REAL_LLM-LOCAL_BUDGET_OVERRIDE",
+      "provider_class": "SCRIPTED_PATCH_REPLAY",
+      "mode": "REPAIR",
+      "evidence_role": "closure_replay",
+      "note": "Historical model Patch replay after relocation fix; real Vitis fresh closure, but no model call in this run."
+    },
+    {
+      "run_id": "v3d-residual-structural-replay-r04-NOT_REAL_LLM",
+      "provider_class": "SCRIPTED_PATCH_REPLAY",
+      "mode": "STRUCTURAL_FIX",
+      "evidence_role": "closure_replay",
+      "note": "Known structural Patch replay; real Vitis deadlock evidence and fresh closure, but no model call."
+    },
+    {
+      "run_id": "v3d-synth-fix-dynamic-replay-r02-NOT_REAL_LLM",
+      "provider_class": "SCRIPTED_PATCH_REPLAY",
+      "mode": "SYNTH_FIX",
+      "evidence_role": "closure_replay",
+      "note": "Known dynamic-allocation Patch replay; real Vitis synthesis failure evidence and fresh closure, but no model call."
+    }
+  ],
+  "blockers": {
+    "real_llm": "当前 Codex 进程未设置 OPENAI_BASE_URL、OPENAI_API_KEY、LLM4HLS_MODEL；因此本轮无法完成 projection A04、STRUCTURAL_FIX 和 SYNTH_FIX 的新原子真实 LLM+Vitis 成功 run。",
+    "model_matrix": "TODO：配置真实 endpoint/key/model 后，运行 DeepSeek 官方三题各3次及 Qwen 同配置矩阵；当前没有可报告的新矩阵平均值或成功率。",
+    "docker": "当前会话访问 /var/run/docker.sock 被拒绝；新四模式入口已通过宿主专项验收，但必须恢复 daemon 权限后重建镜像才能生成当前源码的新 digest。"
+  }
+}

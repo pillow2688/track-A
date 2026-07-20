@@ -1,0 +1,5713 @@
+{
+  "all_attempt_population": {
+    "acceleration_vs_baseline": {
+      "count": 0,
+      "max": null,
+      "mean": null,
+      "median": null,
+      "min": null,
+      "total": 0.0
+    },
+    "e2e_eligible": 0,
+    "e2e_success_rate": null,
+    "e2e_successes": 0,
+    "e2e_unknown": 28,
+    "failures": {
+      "by_reason": {},
+      "by_stage": {},
+      "count": 0
+    },
+    "final_validation_eligible": 0,
+    "final_validation_success_rate": null,
+    "final_validation_successes": 0,
+    "final_validation_unknown": 28,
+    "fresh_final_eligible": 0,
+    "fresh_final_success_rate": null,
+    "fresh_final_successes": 0,
+    "fresh_final_unknown": 28,
+    "patch": {
+      "candidates": 0,
+      "reasons": {},
+      "rejection_rate": null,
+      "rejections": 0
+    },
+    "router": {
+      "accuracy": null,
+      "correct": 0,
+      "eligible": 0,
+      "unknown": 28
+    },
+    "runs": 28,
+    "usage": {
+      "credits": {
+        "count": 28,
+        "max": 0.0,
+        "mean": 0.0,
+        "median": 0.0,
+        "min": 0.0,
+        "total": 0.0
+      },
+      "model_calls": {
+        "count": 28,
+        "max": 0.0,
+        "mean": 0.0,
+        "median": 0.0,
+        "min": 0.0,
+        "total": 0.0
+      },
+      "tokens": {
+        "count": 28,
+        "max": 0.0,
+        "mean": 0.0,
+        "median": 0.0,
+        "min": 0.0,
+        "total": 0.0
+      },
+      "tool_calls": {},
+      "wall_time_s": {
+        "count": 28,
+        "max": 6.127404049038887e-05,
+        "mean": 3.563694606002953e-05,
+        "median": 3.344257129356265e-05,
+        "min": 2.449704334139824e-05,
+        "total": 0.0009978344896808267
+      }
+    }
+  },
+  "benchmark_fingerprint": "e998136f235940d8c80225a1fbcb8bb173e90c59c8ad23074d6ab42392e78e8d",
+  "by_evidence_class": {
+    "DEMO": {
+      "acceleration_vs_baseline": {
+        "count": 0,
+        "max": null,
+        "mean": null,
+        "median": null,
+        "min": null,
+        "total": 0.0
+      },
+      "e2e_eligible": 0,
+      "e2e_success_rate": null,
+      "e2e_successes": 0,
+      "e2e_unknown": 0,
+      "failures": {
+        "by_reason": {},
+        "by_stage": {},
+        "count": 0
+      },
+      "final_validation_eligible": 0,
+      "final_validation_success_rate": null,
+      "final_validation_successes": 0,
+      "final_validation_unknown": 0,
+      "fresh_final_eligible": 0,
+      "fresh_final_success_rate": null,
+      "fresh_final_successes": 0,
+      "fresh_final_unknown": 0,
+      "patch": {
+        "candidates": 0,
+        "reasons": {},
+        "rejection_rate": null,
+        "rejections": 0
+      },
+      "router": {
+        "accuracy": null,
+        "correct": 0,
+        "eligible": 0,
+        "unknown": 0
+      },
+      "runs": 0,
+      "usage": {
+        "credits": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "median": null,
+          "min": null,
+          "total": 0.0
+        },
+        "model_calls": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "median": null,
+          "min": null,
+          "total": 0.0
+        },
+        "tokens": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "median": null,
+          "min": null,
+          "total": 0.0
+        },
+        "tool_calls": {},
+        "wall_time_s": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "median": null,
+          "min": null,
+          "total": 0.0
+        }
+      }
+    },
+    "DETERMINISTIC": {
+      "acceleration_vs_baseline": {
+        "count": 0,
+        "max": null,
+        "mean": null,
+        "median": null,
+        "min": null,
+        "total": 0.0
+      },
+      "e2e_eligible": 0,
+      "e2e_success_rate": null,
+      "e2e_successes": 0,
+      "e2e_unknown": 28,
+      "failures": {
+        "by_reason": {},
+        "by_stage": {},
+        "count": 0
+      },
+      "final_validation_eligible": 0,
+      "final_validation_success_rate": null,
+      "final_validation_successes": 0,
+      "final_validation_unknown": 28,
+      "fresh_final_eligible": 0,
+      "fresh_final_success_rate": null,
+      "fresh_final_successes": 0,
+      "fresh_final_unknown": 28,
+      "patch": {
+        "candidates": 0,
+        "reasons": {},
+        "rejection_rate": null,
+        "rejections": 0
+      },
+      "router": {
+        "accuracy": null,
+        "correct": 0,
+        "eligible": 0,
+        "unknown": 28
+      },
+      "runs": 28,
+      "usage": {
+        "credits": {
+          "count": 28,
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "total": 0.0
+        },
+        "model_calls": {
+          "count": 28,
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "total": 0.0
+        },
+        "tokens": {
+          "count": 28,
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "total": 0.0
+        },
+        "tool_calls": {},
+        "wall_time_s": {
+          "count": 28,
+          "max": 6.127404049038887e-05,
+          "mean": 3.563694606002953e-05,
+          "median": 3.344257129356265e-05,
+          "min": 2.449704334139824e-05,
+          "total": 0.0009978344896808267
+        }
+      }
+    },
+    "REAL": {
+      "acceleration_vs_baseline": {
+        "count": 0,
+        "max": null,
+        "mean": null,
+        "median": null,
+        "min": null,
+        "total": 0.0
+      },
+      "e2e_eligible": 0,
+      "e2e_success_rate": null,
+      "e2e_successes": 0,
+      "e2e_unknown": 0,
+      "failures": {
+        "by_reason": {},
+        "by_stage": {},
+        "count": 0
+      },
+      "final_validation_eligible": 0,
+      "final_validation_success_rate": null,
+      "final_validation_successes": 0,
+      "final_validation_unknown": 0,
+      "fresh_final_eligible": 0,
+      "fresh_final_success_rate": null,
+      "fresh_final_successes": 0,
+      "fresh_final_unknown": 0,
+      "patch": {
+        "candidates": 0,
+        "reasons": {},
+        "rejection_rate": null,
+        "rejections": 0
+      },
+      "router": {
+        "accuracy": null,
+        "correct": 0,
+        "eligible": 0,
+        "unknown": 0
+      },
+      "runs": 0,
+      "usage": {
+        "credits": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "median": null,
+          "min": null,
+          "total": 0.0
+        },
+        "model_calls": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "median": null,
+          "min": null,
+          "total": 0.0
+        },
+        "tokens": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "median": null,
+          "min": null,
+          "total": 0.0
+        },
+        "tool_calls": {},
+        "wall_time_s": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "median": null,
+          "min": null,
+          "total": 0.0
+        }
+      }
+    }
+  },
+  "by_expected_mode": {
+    "OPTIMIZE": {
+      "acceleration_vs_baseline": {
+        "count": 0,
+        "max": null,
+        "mean": null,
+        "median": null,
+        "min": null,
+        "total": 0.0
+      },
+      "e2e_eligible": 0,
+      "e2e_success_rate": null,
+      "e2e_successes": 0,
+      "e2e_unknown": 8,
+      "failures": {
+        "by_reason": {},
+        "by_stage": {},
+        "count": 0
+      },
+      "final_validation_eligible": 0,
+      "final_validation_success_rate": null,
+      "final_validation_successes": 0,
+      "final_validation_unknown": 8,
+      "fresh_final_eligible": 0,
+      "fresh_final_success_rate": null,
+      "fresh_final_successes": 0,
+      "fresh_final_unknown": 8,
+      "patch": {
+        "candidates": 0,
+        "reasons": {},
+        "rejection_rate": null,
+        "rejections": 0
+      },
+      "router": {
+        "accuracy": null,
+        "correct": 0,
+        "eligible": 0,
+        "unknown": 8
+      },
+      "runs": 8,
+      "usage": {
+        "credits": {
+          "count": 8,
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "total": 0.0
+        },
+        "model_calls": {
+          "count": 8,
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "total": 0.0
+        },
+        "tokens": {
+          "count": 8,
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "total": 0.0
+        },
+        "tool_calls": {},
+        "wall_time_s": {
+          "count": 8,
+          "max": 3.366603050380945e-05,
+          "mean": 3.002527228090912e-05,
+          "median": 3.1631498131901026e-05,
+          "min": 2.449704334139824e-05,
+          "total": 0.00024020217824727297
+        }
+      }
+    },
+    "REPAIR": {
+      "acceleration_vs_baseline": {
+        "count": 0,
+        "max": null,
+        "mean": null,
+        "median": null,
+        "min": null,
+        "total": 0.0
+      },
+      "e2e_eligible": 0,
+      "e2e_success_rate": null,
+      "e2e_successes": 0,
+      "e2e_unknown": 8,
+      "failures": {
+        "by_reason": {},
+        "by_stage": {},
+        "count": 0
+      },
+      "final_validation_eligible": 0,
+      "final_validation_success_rate": null,
+      "final_validation_successes": 0,
+      "final_validation_unknown": 8,
+      "fresh_final_eligible": 0,
+      "fresh_final_success_rate": null,
+      "fresh_final_successes": 0,
+      "fresh_final_unknown": 8,
+      "patch": {
+        "candidates": 0,
+        "reasons": {},
+        "rejection_rate": null,
+        "rejections": 0
+      },
+      "router": {
+        "accuracy": null,
+        "correct": 0,
+        "eligible": 0,
+        "unknown": 8
+      },
+      "runs": 8,
+      "usage": {
+        "credits": {
+          "count": 8,
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "total": 0.0
+        },
+        "model_calls": {
+          "count": 8,
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "total": 0.0
+        },
+        "tokens": {
+          "count": 8,
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "total": 0.0
+        },
+        "tool_calls": {},
+        "wall_time_s": {
+          "count": 8,
+          "max": 6.127404049038887e-05,
+          "mean": 3.963676863349974e-05,
+          "median": 3.510754322633147e-05,
+          "min": 3.0342023819684982e-05,
+          "total": 0.00031709414906799793
+        }
+      }
+    },
+    "STRUCTURAL_FIX": {
+      "acceleration_vs_baseline": {
+        "count": 0,
+        "max": null,
+        "mean": null,
+        "median": null,
+        "min": null,
+        "total": 0.0
+      },
+      "e2e_eligible": 0,
+      "e2e_success_rate": null,
+      "e2e_successes": 0,
+      "e2e_unknown": 6,
+      "failures": {
+        "by_reason": {},
+        "by_stage": {},
+        "count": 0
+      },
+      "final_validation_eligible": 0,
+      "final_validation_success_rate": null,
+      "final_validation_successes": 0,
+      "final_validation_unknown": 6,
+      "fresh_final_eligible": 0,
+      "fresh_final_success_rate": null,
+      "fresh_final_successes": 0,
+      "fresh_final_unknown": 6,
+      "patch": {
+        "candidates": 0,
+        "reasons": {},
+        "rejection_rate": null,
+        "rejections": 0
+      },
+      "router": {
+        "accuracy": null,
+        "correct": 0,
+        "eligible": 0,
+        "unknown": 6
+      },
+      "runs": 6,
+      "usage": {
+        "credits": {
+          "count": 6,
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "total": 0.0
+        },
+        "model_calls": {
+          "count": 6,
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "total": 0.0
+        },
+        "tokens": {
+          "count": 6,
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "total": 0.0
+        },
+        "tool_calls": {},
+        "wall_time_s": {
+          "count": 6,
+          "max": 3.8847094401717186e-05,
+          "mean": 3.374234074726701e-05,
+          "median": 3.3683027140796185e-05,
+          "min": 2.94089550152421e-05,
+          "total": 0.00020245404448360205
+        }
+      }
+    },
+    "SYNTH_FIX": {
+      "acceleration_vs_baseline": {
+        "count": 0,
+        "max": null,
+        "mean": null,
+        "median": null,
+        "min": null,
+        "total": 0.0
+      },
+      "e2e_eligible": 0,
+      "e2e_success_rate": null,
+      "e2e_successes": 0,
+      "e2e_unknown": 6,
+      "failures": {
+        "by_reason": {},
+        "by_stage": {},
+        "count": 0
+      },
+      "final_validation_eligible": 0,
+      "final_validation_success_rate": null,
+      "final_validation_successes": 0,
+      "final_validation_unknown": 6,
+      "fresh_final_eligible": 0,
+      "fresh_final_success_rate": null,
+      "fresh_final_successes": 0,
+      "fresh_final_unknown": 6,
+      "patch": {
+        "candidates": 0,
+        "reasons": {},
+        "rejection_rate": null,
+        "rejections": 0
+      },
+      "router": {
+        "accuracy": null,
+        "correct": 0,
+        "eligible": 0,
+        "unknown": 6
+      },
+      "runs": 6,
+      "usage": {
+        "credits": {
+          "count": 6,
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "total": 0.0
+        },
+        "model_calls": {
+          "count": 6,
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "total": 0.0
+        },
+        "tokens": {
+          "count": 6,
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "total": 0.0
+        },
+        "tool_calls": {},
+        "wall_time_s": {
+          "count": 6,
+          "max": 5.374604370445013e-05,
+          "mean": 3.968068631365895e-05,
+          "median": 3.437051782384515e-05,
+          "min": 3.150803968310356e-05,
+          "total": 0.00023808411788195372
+        }
+      }
+    }
+  },
+  "by_mode": {
+    "OPTIMIZE": {
+      "acceleration_vs_baseline": {
+        "count": 0,
+        "max": null,
+        "mean": null,
+        "median": null,
+        "min": null,
+        "total": 0.0
+      },
+      "e2e_eligible": 0,
+      "e2e_success_rate": null,
+      "e2e_successes": 0,
+      "e2e_unknown": 8,
+      "failures": {
+        "by_reason": {},
+        "by_stage": {},
+        "count": 0
+      },
+      "final_validation_eligible": 0,
+      "final_validation_success_rate": null,
+      "final_validation_successes": 0,
+      "final_validation_unknown": 8,
+      "fresh_final_eligible": 0,
+      "fresh_final_success_rate": null,
+      "fresh_final_successes": 0,
+      "fresh_final_unknown": 8,
+      "patch": {
+        "candidates": 0,
+        "reasons": {},
+        "rejection_rate": null,
+        "rejections": 0
+      },
+      "router": {
+        "accuracy": null,
+        "correct": 0,
+        "eligible": 0,
+        "unknown": 8
+      },
+      "runs": 8,
+      "usage": {
+        "credits": {
+          "count": 8,
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "total": 0.0
+        },
+        "model_calls": {
+          "count": 8,
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "total": 0.0
+        },
+        "tokens": {
+          "count": 8,
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "total": 0.0
+        },
+        "tool_calls": {},
+        "wall_time_s": {
+          "count": 8,
+          "max": 3.366603050380945e-05,
+          "mean": 3.002527228090912e-05,
+          "median": 3.1631498131901026e-05,
+          "min": 2.449704334139824e-05,
+          "total": 0.00024020217824727297
+        }
+      }
+    },
+    "REPAIR": {
+      "acceleration_vs_baseline": {
+        "count": 0,
+        "max": null,
+        "mean": null,
+        "median": null,
+        "min": null,
+        "total": 0.0
+      },
+      "e2e_eligible": 0,
+      "e2e_success_rate": null,
+      "e2e_successes": 0,
+      "e2e_unknown": 8,
+      "failures": {
+        "by_reason": {},
+        "by_stage": {},
+        "count": 0
+      },
+      "final_validation_eligible": 0,
+      "final_validation_success_rate": null,
+      "final_validation_successes": 0,
+      "final_validation_unknown": 8,
+      "fresh_final_eligible": 0,
+      "fresh_final_success_rate": null,
+      "fresh_final_successes": 0,
+      "fresh_final_unknown": 8,
+      "patch": {
+        "candidates": 0,
+        "reasons": {},
+        "rejection_rate": null,
+        "rejections": 0
+      },
+      "router": {
+        "accuracy": null,
+        "correct": 0,
+        "eligible": 0,
+        "unknown": 8
+      },
+      "runs": 8,
+      "usage": {
+        "credits": {
+          "count": 8,
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "total": 0.0
+        },
+        "model_calls": {
+          "count": 8,
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "total": 0.0
+        },
+        "tokens": {
+          "count": 8,
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "total": 0.0
+        },
+        "tool_calls": {},
+        "wall_time_s": {
+          "count": 8,
+          "max": 6.127404049038887e-05,
+          "mean": 3.963676863349974e-05,
+          "median": 3.510754322633147e-05,
+          "min": 3.0342023819684982e-05,
+          "total": 0.00031709414906799793
+        }
+      }
+    },
+    "STRUCTURAL_FIX": {
+      "acceleration_vs_baseline": {
+        "count": 0,
+        "max": null,
+        "mean": null,
+        "median": null,
+        "min": null,
+        "total": 0.0
+      },
+      "e2e_eligible": 0,
+      "e2e_success_rate": null,
+      "e2e_successes": 0,
+      "e2e_unknown": 6,
+      "failures": {
+        "by_reason": {},
+        "by_stage": {},
+        "count": 0
+      },
+      "final_validation_eligible": 0,
+      "final_validation_success_rate": null,
+      "final_validation_successes": 0,
+      "final_validation_unknown": 6,
+      "fresh_final_eligible": 0,
+      "fresh_final_success_rate": null,
+      "fresh_final_successes": 0,
+      "fresh_final_unknown": 6,
+      "patch": {
+        "candidates": 0,
+        "reasons": {},
+        "rejection_rate": null,
+        "rejections": 0
+      },
+      "router": {
+        "accuracy": null,
+        "correct": 0,
+        "eligible": 0,
+        "unknown": 6
+      },
+      "runs": 6,
+      "usage": {
+        "credits": {
+          "count": 6,
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "total": 0.0
+        },
+        "model_calls": {
+          "count": 6,
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "total": 0.0
+        },
+        "tokens": {
+          "count": 6,
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "total": 0.0
+        },
+        "tool_calls": {},
+        "wall_time_s": {
+          "count": 6,
+          "max": 3.8847094401717186e-05,
+          "mean": 3.374234074726701e-05,
+          "median": 3.3683027140796185e-05,
+          "min": 2.94089550152421e-05,
+          "total": 0.00020245404448360205
+        }
+      }
+    },
+    "SYNTH_FIX": {
+      "acceleration_vs_baseline": {
+        "count": 0,
+        "max": null,
+        "mean": null,
+        "median": null,
+        "min": null,
+        "total": 0.0
+      },
+      "e2e_eligible": 0,
+      "e2e_success_rate": null,
+      "e2e_successes": 0,
+      "e2e_unknown": 6,
+      "failures": {
+        "by_reason": {},
+        "by_stage": {},
+        "count": 0
+      },
+      "final_validation_eligible": 0,
+      "final_validation_success_rate": null,
+      "final_validation_successes": 0,
+      "final_validation_unknown": 6,
+      "fresh_final_eligible": 0,
+      "fresh_final_success_rate": null,
+      "fresh_final_successes": 0,
+      "fresh_final_unknown": 6,
+      "patch": {
+        "candidates": 0,
+        "reasons": {},
+        "rejection_rate": null,
+        "rejections": 0
+      },
+      "router": {
+        "accuracy": null,
+        "correct": 0,
+        "eligible": 0,
+        "unknown": 6
+      },
+      "runs": 6,
+      "usage": {
+        "credits": {
+          "count": 6,
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "total": 0.0
+        },
+        "model_calls": {
+          "count": 6,
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "total": 0.0
+        },
+        "tokens": {
+          "count": 6,
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "total": 0.0
+        },
+        "tool_calls": {},
+        "wall_time_s": {
+          "count": 6,
+          "max": 5.374604370445013e-05,
+          "mean": 3.968068631365895e-05,
+          "median": 3.437051782384515e-05,
+          "min": 3.150803968310356e-05,
+          "total": 0.00023808411788195372
+        }
+      }
+    }
+  },
+  "by_model": {
+    "deterministic-fixture": {
+      "acceleration_vs_baseline": {
+        "count": 0,
+        "max": null,
+        "mean": null,
+        "median": null,
+        "min": null,
+        "total": 0.0
+      },
+      "e2e_eligible": 0,
+      "e2e_success_rate": null,
+      "e2e_successes": 0,
+      "e2e_unknown": 28,
+      "failures": {
+        "by_reason": {},
+        "by_stage": {},
+        "count": 0
+      },
+      "final_validation_eligible": 0,
+      "final_validation_success_rate": null,
+      "final_validation_successes": 0,
+      "final_validation_unknown": 28,
+      "fresh_final_eligible": 0,
+      "fresh_final_success_rate": null,
+      "fresh_final_successes": 0,
+      "fresh_final_unknown": 28,
+      "patch": {
+        "candidates": 0,
+        "reasons": {},
+        "rejection_rate": null,
+        "rejections": 0
+      },
+      "router": {
+        "accuracy": null,
+        "correct": 0,
+        "eligible": 0,
+        "unknown": 28
+      },
+      "runs": 28,
+      "usage": {
+        "credits": {
+          "count": 28,
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "total": 0.0
+        },
+        "model_calls": {
+          "count": 28,
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "total": 0.0
+        },
+        "tokens": {
+          "count": 28,
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "total": 0.0
+        },
+        "tool_calls": {},
+        "wall_time_s": {
+          "count": 28,
+          "max": 6.127404049038887e-05,
+          "mean": 3.563694606002953e-05,
+          "median": 3.344257129356265e-05,
+          "min": 2.449704334139824e-05,
+          "total": 0.0009978344896808267
+        }
+      }
+    }
+  },
+  "configuration": {
+    "backend": "deterministic",
+    "difficulty_filters": [],
+    "max_tasks": null,
+    "mode_filters": [],
+    "models": [
+      "deterministic-fixture"
+    ],
+    "repeats": 1,
+    "splits": [
+      "all"
+    ],
+    "task_filters": []
+  },
+  "evidence_policy": {
+    "completion_population": "latest_slot",
+    "demo": "orchestration only; excluded from real headline",
+    "deterministic": "fixture/test only; excluded from real headline",
+    "headline_population": "all_attempts_for_current_plan_fingerprints",
+    "mixed_populations_forbidden": true,
+    "real": "structured Vitis terminal evidence only"
+  },
+  "execution": {
+    "attempt_records": 28,
+    "batch_elapsed_s": 0.030038735014386475,
+    "completed_latest_slots": 28,
+    "latest_slot_completion_rate": 1.0,
+    "latest_slot_records": 28,
+    "max_parallel_runs": 1,
+    "new_runs": 0,
+    "pending_latest_slots": 0,
+    "records": 28,
+    "resumed_runs": 28,
+    "stopped_reason": null,
+    "vitis_serialized": true
+  },
+  "execution_policy_fingerprint": "3b607db82a35011b4a5e4f6b78e6c5b136cfa8cac1ae71106010357a3db72ac4",
+  "generated_at": "2026-07-20T16:22:55.737577+00:00",
+  "implementation_fingerprint": "af686a2cb5d189a62d2ee2bcab0efc849b873a49d3959e3094dcdcd3eb677aee",
+  "latest_slot_population": {
+    "acceleration_vs_baseline": {
+      "count": 0,
+      "max": null,
+      "mean": null,
+      "median": null,
+      "min": null,
+      "total": 0.0
+    },
+    "e2e_eligible": 0,
+    "e2e_success_rate": null,
+    "e2e_successes": 0,
+    "e2e_unknown": 28,
+    "failures": {
+      "by_reason": {},
+      "by_stage": {},
+      "count": 0
+    },
+    "final_validation_eligible": 0,
+    "final_validation_success_rate": null,
+    "final_validation_successes": 0,
+    "final_validation_unknown": 28,
+    "fresh_final_eligible": 0,
+    "fresh_final_success_rate": null,
+    "fresh_final_successes": 0,
+    "fresh_final_unknown": 28,
+    "patch": {
+      "candidates": 0,
+      "reasons": {},
+      "rejection_rate": null,
+      "rejections": 0
+    },
+    "router": {
+      "accuracy": null,
+      "correct": 0,
+      "eligible": 0,
+      "unknown": 28
+    },
+    "runs": 28,
+    "usage": {
+      "credits": {
+        "count": 28,
+        "max": 0.0,
+        "mean": 0.0,
+        "median": 0.0,
+        "min": 0.0,
+        "total": 0.0
+      },
+      "model_calls": {
+        "count": 28,
+        "max": 0.0,
+        "mean": 0.0,
+        "median": 0.0,
+        "min": 0.0,
+        "total": 0.0
+      },
+      "tokens": {
+        "count": 28,
+        "max": 0.0,
+        "mean": 0.0,
+        "median": 0.0,
+        "min": 0.0,
+        "total": 0.0
+      },
+      "tool_calls": {},
+      "wall_time_s": {
+        "count": 28,
+        "max": 6.127404049038887e-05,
+        "mean": 3.563694606002953e-05,
+        "median": 3.344257129356265e-05,
+        "min": 2.449704334139824e-05,
+        "total": 0.0009978344896808267
+      }
+    }
+  },
+  "populations": {
+    "all_attempts": {
+      "by_evidence_class": {
+        "DEMO": {
+          "acceleration_vs_baseline": {
+            "count": 0,
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "total": 0.0
+          },
+          "e2e_eligible": 0,
+          "e2e_success_rate": null,
+          "e2e_successes": 0,
+          "e2e_unknown": 0,
+          "failures": {
+            "by_reason": {},
+            "by_stage": {},
+            "count": 0
+          },
+          "final_validation_eligible": 0,
+          "final_validation_success_rate": null,
+          "final_validation_successes": 0,
+          "final_validation_unknown": 0,
+          "fresh_final_eligible": 0,
+          "fresh_final_success_rate": null,
+          "fresh_final_successes": 0,
+          "fresh_final_unknown": 0,
+          "patch": {
+            "candidates": 0,
+            "reasons": {},
+            "rejection_rate": null,
+            "rejections": 0
+          },
+          "router": {
+            "accuracy": null,
+            "correct": 0,
+            "eligible": 0,
+            "unknown": 0
+          },
+          "runs": 0,
+          "usage": {
+            "credits": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "model_calls": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "tokens": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "tool_calls": {},
+            "wall_time_s": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            }
+          }
+        },
+        "DETERMINISTIC": {
+          "acceleration_vs_baseline": {
+            "count": 0,
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "total": 0.0
+          },
+          "e2e_eligible": 0,
+          "e2e_success_rate": null,
+          "e2e_successes": 0,
+          "e2e_unknown": 28,
+          "failures": {
+            "by_reason": {},
+            "by_stage": {},
+            "count": 0
+          },
+          "final_validation_eligible": 0,
+          "final_validation_success_rate": null,
+          "final_validation_successes": 0,
+          "final_validation_unknown": 28,
+          "fresh_final_eligible": 0,
+          "fresh_final_success_rate": null,
+          "fresh_final_successes": 0,
+          "fresh_final_unknown": 28,
+          "patch": {
+            "candidates": 0,
+            "reasons": {},
+            "rejection_rate": null,
+            "rejections": 0
+          },
+          "router": {
+            "accuracy": null,
+            "correct": 0,
+            "eligible": 0,
+            "unknown": 28
+          },
+          "runs": 28,
+          "usage": {
+            "credits": {
+              "count": 28,
+              "max": 0.0,
+              "mean": 0.0,
+              "median": 0.0,
+              "min": 0.0,
+              "total": 0.0
+            },
+            "model_calls": {
+              "count": 28,
+              "max": 0.0,
+              "mean": 0.0,
+              "median": 0.0,
+              "min": 0.0,
+              "total": 0.0
+            },
+            "tokens": {
+              "count": 28,
+              "max": 0.0,
+              "mean": 0.0,
+              "median": 0.0,
+              "min": 0.0,
+              "total": 0.0
+            },
+            "tool_calls": {},
+            "wall_time_s": {
+              "count": 28,
+              "max": 6.127404049038887e-05,
+              "mean": 3.563694606002953e-05,
+              "median": 3.344257129356265e-05,
+              "min": 2.449704334139824e-05,
+              "total": 0.0009978344896808267
+            }
+          }
+        },
+        "REAL": {
+          "acceleration_vs_baseline": {
+            "count": 0,
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "total": 0.0
+          },
+          "e2e_eligible": 0,
+          "e2e_success_rate": null,
+          "e2e_successes": 0,
+          "e2e_unknown": 0,
+          "failures": {
+            "by_reason": {},
+            "by_stage": {},
+            "count": 0
+          },
+          "final_validation_eligible": 0,
+          "final_validation_success_rate": null,
+          "final_validation_successes": 0,
+          "final_validation_unknown": 0,
+          "fresh_final_eligible": 0,
+          "fresh_final_success_rate": null,
+          "fresh_final_successes": 0,
+          "fresh_final_unknown": 0,
+          "patch": {
+            "candidates": 0,
+            "reasons": {},
+            "rejection_rate": null,
+            "rejections": 0
+          },
+          "router": {
+            "accuracy": null,
+            "correct": 0,
+            "eligible": 0,
+            "unknown": 0
+          },
+          "runs": 0,
+          "usage": {
+            "credits": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "model_calls": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "tokens": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "tool_calls": {},
+            "wall_time_s": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            }
+          }
+        }
+      },
+      "by_expected_mode": {
+        "OPTIMIZE": {
+          "acceleration_vs_baseline": {
+            "count": 0,
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "total": 0.0
+          },
+          "e2e_eligible": 0,
+          "e2e_success_rate": null,
+          "e2e_successes": 0,
+          "e2e_unknown": 8,
+          "failures": {
+            "by_reason": {},
+            "by_stage": {},
+            "count": 0
+          },
+          "final_validation_eligible": 0,
+          "final_validation_success_rate": null,
+          "final_validation_successes": 0,
+          "final_validation_unknown": 8,
+          "fresh_final_eligible": 0,
+          "fresh_final_success_rate": null,
+          "fresh_final_successes": 0,
+          "fresh_final_unknown": 8,
+          "patch": {
+            "candidates": 0,
+            "reasons": {},
+            "rejection_rate": null,
+            "rejections": 0
+          },
+          "router": {
+            "accuracy": null,
+            "correct": 0,
+            "eligible": 0,
+            "unknown": 8
+          },
+          "runs": 8,
+          "usage": {
+            "credits": {
+              "count": 8,
+              "max": 0.0,
+              "mean": 0.0,
+              "median": 0.0,
+              "min": 0.0,
+              "total": 0.0
+            },
+            "model_calls": {
+              "count": 8,
+              "max": 0.0,
+              "mean": 0.0,
+              "median": 0.0,
+              "min": 0.0,
+              "total": 0.0
+            },
+            "tokens": {
+              "count": 8,
+              "max": 0.0,
+              "mean": 0.0,
+              "median": 0.0,
+              "min": 0.0,
+              "total": 0.0
+            },
+            "tool_calls": {},
+            "wall_time_s": {
+              "count": 8,
+              "max": 3.366603050380945e-05,
+              "mean": 3.002527228090912e-05,
+              "median": 3.1631498131901026e-05,
+              "min": 2.449704334139824e-05,
+              "total": 0.00024020217824727297
+            }
+          }
+        },
+        "REPAIR": {
+          "acceleration_vs_baseline": {
+            "count": 0,
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "total": 0.0
+          },
+          "e2e_eligible": 0,
+          "e2e_success_rate": null,
+          "e2e_successes": 0,
+          "e2e_unknown": 8,
+          "failures": {
+            "by_reason": {},
+            "by_stage": {},
+            "count": 0
+          },
+          "final_validation_eligible": 0,
+          "final_validation_success_rate": null,
+          "final_validation_successes": 0,
+          "final_validation_unknown": 8,
+          "fresh_final_eligible": 0,
+          "fresh_final_success_rate": null,
+          "fresh_final_successes": 0,
+          "fresh_final_unknown": 8,
+          "patch": {
+            "candidates": 0,
+            "reasons": {},
+            "rejection_rate": null,
+            "rejections": 0
+          },
+          "router": {
+            "accuracy": null,
+            "correct": 0,
+            "eligible": 0,
+            "unknown": 8
+          },
+          "runs": 8,
+          "usage": {
+            "credits": {
+              "count": 8,
+              "max": 0.0,
+              "mean": 0.0,
+              "median": 0.0,
+              "min": 0.0,
+              "total": 0.0
+            },
+            "model_calls": {
+              "count": 8,
+              "max": 0.0,
+              "mean": 0.0,
+              "median": 0.0,
+              "min": 0.0,
+              "total": 0.0
+            },
+            "tokens": {
+              "count": 8,
+              "max": 0.0,
+              "mean": 0.0,
+              "median": 0.0,
+              "min": 0.0,
+              "total": 0.0
+            },
+            "tool_calls": {},
+            "wall_time_s": {
+              "count": 8,
+              "max": 6.127404049038887e-05,
+              "mean": 3.963676863349974e-05,
+              "median": 3.510754322633147e-05,
+              "min": 3.0342023819684982e-05,
+              "total": 0.00031709414906799793
+            }
+          }
+        },
+        "STRUCTURAL_FIX": {
+          "acceleration_vs_baseline": {
+            "count": 0,
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "total": 0.0
+          },
+          "e2e_eligible": 0,
+          "e2e_success_rate": null,
+          "e2e_successes": 0,
+          "e2e_unknown": 6,
+          "failures": {
+            "by_reason": {},
+            "by_stage": {},
+            "count": 0
+          },
+          "final_validation_eligible": 0,
+          "final_validation_success_rate": null,
+          "final_validation_successes": 0,
+          "final_validation_unknown": 6,
+          "fresh_final_eligible": 0,
+          "fresh_final_success_rate": null,
+          "fresh_final_successes": 0,
+          "fresh_final_unknown": 6,
+          "patch": {
+            "candidates": 0,
+            "reasons": {},
+            "rejection_rate": null,
+            "rejections": 0
+          },
+          "router": {
+            "accuracy": null,
+            "correct": 0,
+            "eligible": 0,
+            "unknown": 6
+          },
+          "runs": 6,
+          "usage": {
+            "credits": {
+              "count": 6,
+              "max": 0.0,
+              "mean": 0.0,
+              "median": 0.0,
+              "min": 0.0,
+              "total": 0.0
+            },
+            "model_calls": {
+              "count": 6,
+              "max": 0.0,
+              "mean": 0.0,
+              "median": 0.0,
+              "min": 0.0,
+              "total": 0.0
+            },
+            "tokens": {
+              "count": 6,
+              "max": 0.0,
+              "mean": 0.0,
+              "median": 0.0,
+              "min": 0.0,
+              "total": 0.0
+            },
+            "tool_calls": {},
+            "wall_time_s": {
+              "count": 6,
+              "max": 3.8847094401717186e-05,
+              "mean": 3.374234074726701e-05,
+              "median": 3.3683027140796185e-05,
+              "min": 2.94089550152421e-05,
+              "total": 0.00020245404448360205
+            }
+          }
+        },
+        "SYNTH_FIX": {
+          "acceleration_vs_baseline": {
+            "count": 0,
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "total": 0.0
+          },
+          "e2e_eligible": 0,
+          "e2e_success_rate": null,
+          "e2e_successes": 0,
+          "e2e_unknown": 6,
+          "failures": {
+            "by_reason": {},
+            "by_stage": {},
+            "count": 0
+          },
+          "final_validation_eligible": 0,
+          "final_validation_success_rate": null,
+          "final_validation_successes": 0,
+          "final_validation_unknown": 6,
+          "fresh_final_eligible": 0,
+          "fresh_final_success_rate": null,
+          "fresh_final_successes": 0,
+          "fresh_final_unknown": 6,
+          "patch": {
+            "candidates": 0,
+            "reasons": {},
+            "rejection_rate": null,
+            "rejections": 0
+          },
+          "router": {
+            "accuracy": null,
+            "correct": 0,
+            "eligible": 0,
+            "unknown": 6
+          },
+          "runs": 6,
+          "usage": {
+            "credits": {
+              "count": 6,
+              "max": 0.0,
+              "mean": 0.0,
+              "median": 0.0,
+              "min": 0.0,
+              "total": 0.0
+            },
+            "model_calls": {
+              "count": 6,
+              "max": 0.0,
+              "mean": 0.0,
+              "median": 0.0,
+              "min": 0.0,
+              "total": 0.0
+            },
+            "tokens": {
+              "count": 6,
+              "max": 0.0,
+              "mean": 0.0,
+              "median": 0.0,
+              "min": 0.0,
+              "total": 0.0
+            },
+            "tool_calls": {},
+            "wall_time_s": {
+              "count": 6,
+              "max": 5.374604370445013e-05,
+              "mean": 3.968068631365895e-05,
+              "median": 3.437051782384515e-05,
+              "min": 3.150803968310356e-05,
+              "total": 0.00023808411788195372
+            }
+          }
+        }
+      },
+      "by_expected_mode_by_evidence": {
+        "DEMO": {
+          "OPTIMIZE": {
+            "acceleration_vs_baseline": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "e2e_eligible": 0,
+            "e2e_success_rate": null,
+            "e2e_successes": 0,
+            "e2e_unknown": 0,
+            "failures": {
+              "by_reason": {},
+              "by_stage": {},
+              "count": 0
+            },
+            "final_validation_eligible": 0,
+            "final_validation_success_rate": null,
+            "final_validation_successes": 0,
+            "final_validation_unknown": 0,
+            "fresh_final_eligible": 0,
+            "fresh_final_success_rate": null,
+            "fresh_final_successes": 0,
+            "fresh_final_unknown": 0,
+            "patch": {
+              "candidates": 0,
+              "reasons": {},
+              "rejection_rate": null,
+              "rejections": 0
+            },
+            "router": {
+              "accuracy": null,
+              "correct": 0,
+              "eligible": 0,
+              "unknown": 0
+            },
+            "runs": 0,
+            "usage": {
+              "credits": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "model_calls": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "tokens": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "tool_calls": {},
+              "wall_time_s": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              }
+            }
+          },
+          "REPAIR": {
+            "acceleration_vs_baseline": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "e2e_eligible": 0,
+            "e2e_success_rate": null,
+            "e2e_successes": 0,
+            "e2e_unknown": 0,
+            "failures": {
+              "by_reason": {},
+              "by_stage": {},
+              "count": 0
+            },
+            "final_validation_eligible": 0,
+            "final_validation_success_rate": null,
+            "final_validation_successes": 0,
+            "final_validation_unknown": 0,
+            "fresh_final_eligible": 0,
+            "fresh_final_success_rate": null,
+            "fresh_final_successes": 0,
+            "fresh_final_unknown": 0,
+            "patch": {
+              "candidates": 0,
+              "reasons": {},
+              "rejection_rate": null,
+              "rejections": 0
+            },
+            "router": {
+              "accuracy": null,
+              "correct": 0,
+              "eligible": 0,
+              "unknown": 0
+            },
+            "runs": 0,
+            "usage": {
+              "credits": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "model_calls": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "tokens": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "tool_calls": {},
+              "wall_time_s": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              }
+            }
+          },
+          "STRUCTURAL_FIX": {
+            "acceleration_vs_baseline": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "e2e_eligible": 0,
+            "e2e_success_rate": null,
+            "e2e_successes": 0,
+            "e2e_unknown": 0,
+            "failures": {
+              "by_reason": {},
+              "by_stage": {},
+              "count": 0
+            },
+            "final_validation_eligible": 0,
+            "final_validation_success_rate": null,
+            "final_validation_successes": 0,
+            "final_validation_unknown": 0,
+            "fresh_final_eligible": 0,
+            "fresh_final_success_rate": null,
+            "fresh_final_successes": 0,
+            "fresh_final_unknown": 0,
+            "patch": {
+              "candidates": 0,
+              "reasons": {},
+              "rejection_rate": null,
+              "rejections": 0
+            },
+            "router": {
+              "accuracy": null,
+              "correct": 0,
+              "eligible": 0,
+              "unknown": 0
+            },
+            "runs": 0,
+            "usage": {
+              "credits": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "model_calls": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "tokens": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "tool_calls": {},
+              "wall_time_s": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              }
+            }
+          },
+          "SYNTH_FIX": {
+            "acceleration_vs_baseline": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "e2e_eligible": 0,
+            "e2e_success_rate": null,
+            "e2e_successes": 0,
+            "e2e_unknown": 0,
+            "failures": {
+              "by_reason": {},
+              "by_stage": {},
+              "count": 0
+            },
+            "final_validation_eligible": 0,
+            "final_validation_success_rate": null,
+            "final_validation_successes": 0,
+            "final_validation_unknown": 0,
+            "fresh_final_eligible": 0,
+            "fresh_final_success_rate": null,
+            "fresh_final_successes": 0,
+            "fresh_final_unknown": 0,
+            "patch": {
+              "candidates": 0,
+              "reasons": {},
+              "rejection_rate": null,
+              "rejections": 0
+            },
+            "router": {
+              "accuracy": null,
+              "correct": 0,
+              "eligible": 0,
+              "unknown": 0
+            },
+            "runs": 0,
+            "usage": {
+              "credits": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "model_calls": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "tokens": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "tool_calls": {},
+              "wall_time_s": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              }
+            }
+          }
+        },
+        "DETERMINISTIC": {
+          "OPTIMIZE": {
+            "acceleration_vs_baseline": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "e2e_eligible": 0,
+            "e2e_success_rate": null,
+            "e2e_successes": 0,
+            "e2e_unknown": 8,
+            "failures": {
+              "by_reason": {},
+              "by_stage": {},
+              "count": 0
+            },
+            "final_validation_eligible": 0,
+            "final_validation_success_rate": null,
+            "final_validation_successes": 0,
+            "final_validation_unknown": 8,
+            "fresh_final_eligible": 0,
+            "fresh_final_success_rate": null,
+            "fresh_final_successes": 0,
+            "fresh_final_unknown": 8,
+            "patch": {
+              "candidates": 0,
+              "reasons": {},
+              "rejection_rate": null,
+              "rejections": 0
+            },
+            "router": {
+              "accuracy": null,
+              "correct": 0,
+              "eligible": 0,
+              "unknown": 8
+            },
+            "runs": 8,
+            "usage": {
+              "credits": {
+                "count": 8,
+                "max": 0.0,
+                "mean": 0.0,
+                "median": 0.0,
+                "min": 0.0,
+                "total": 0.0
+              },
+              "model_calls": {
+                "count": 8,
+                "max": 0.0,
+                "mean": 0.0,
+                "median": 0.0,
+                "min": 0.0,
+                "total": 0.0
+              },
+              "tokens": {
+                "count": 8,
+                "max": 0.0,
+                "mean": 0.0,
+                "median": 0.0,
+                "min": 0.0,
+                "total": 0.0
+              },
+              "tool_calls": {},
+              "wall_time_s": {
+                "count": 8,
+                "max": 3.366603050380945e-05,
+                "mean": 3.002527228090912e-05,
+                "median": 3.1631498131901026e-05,
+                "min": 2.449704334139824e-05,
+                "total": 0.00024020217824727297
+              }
+            }
+          },
+          "REPAIR": {
+            "acceleration_vs_baseline": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "e2e_eligible": 0,
+            "e2e_success_rate": null,
+            "e2e_successes": 0,
+            "e2e_unknown": 8,
+            "failures": {
+              "by_reason": {},
+              "by_stage": {},
+              "count": 0
+            },
+            "final_validation_eligible": 0,
+            "final_validation_success_rate": null,
+            "final_validation_successes": 0,
+            "final_validation_unknown": 8,
+            "fresh_final_eligible": 0,
+            "fresh_final_success_rate": null,
+            "fresh_final_successes": 0,
+            "fresh_final_unknown": 8,
+            "patch": {
+              "candidates": 0,
+              "reasons": {},
+              "rejection_rate": null,
+              "rejections": 0
+            },
+            "router": {
+              "accuracy": null,
+              "correct": 0,
+              "eligible": 0,
+              "unknown": 8
+            },
+            "runs": 8,
+            "usage": {
+              "credits": {
+                "count": 8,
+                "max": 0.0,
+                "mean": 0.0,
+                "median": 0.0,
+                "min": 0.0,
+                "total": 0.0
+              },
+              "model_calls": {
+                "count": 8,
+                "max": 0.0,
+                "mean": 0.0,
+                "median": 0.0,
+                "min": 0.0,
+                "total": 0.0
+              },
+              "tokens": {
+                "count": 8,
+                "max": 0.0,
+                "mean": 0.0,
+                "median": 0.0,
+                "min": 0.0,
+                "total": 0.0
+              },
+              "tool_calls": {},
+              "wall_time_s": {
+                "count": 8,
+                "max": 6.127404049038887e-05,
+                "mean": 3.963676863349974e-05,
+                "median": 3.510754322633147e-05,
+                "min": 3.0342023819684982e-05,
+                "total": 0.00031709414906799793
+              }
+            }
+          },
+          "STRUCTURAL_FIX": {
+            "acceleration_vs_baseline": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "e2e_eligible": 0,
+            "e2e_success_rate": null,
+            "e2e_successes": 0,
+            "e2e_unknown": 6,
+            "failures": {
+              "by_reason": {},
+              "by_stage": {},
+              "count": 0
+            },
+            "final_validation_eligible": 0,
+            "final_validation_success_rate": null,
+            "final_validation_successes": 0,
+            "final_validation_unknown": 6,
+            "fresh_final_eligible": 0,
+            "fresh_final_success_rate": null,
+            "fresh_final_successes": 0,
+            "fresh_final_unknown": 6,
+            "patch": {
+              "candidates": 0,
+              "reasons": {},
+              "rejection_rate": null,
+              "rejections": 0
+            },
+            "router": {
+              "accuracy": null,
+              "correct": 0,
+              "eligible": 0,
+              "unknown": 6
+            },
+            "runs": 6,
+            "usage": {
+              "credits": {
+                "count": 6,
+                "max": 0.0,
+                "mean": 0.0,
+                "median": 0.0,
+                "min": 0.0,
+                "total": 0.0
+              },
+              "model_calls": {
+                "count": 6,
+                "max": 0.0,
+                "mean": 0.0,
+                "median": 0.0,
+                "min": 0.0,
+                "total": 0.0
+              },
+              "tokens": {
+                "count": 6,
+                "max": 0.0,
+                "mean": 0.0,
+                "median": 0.0,
+                "min": 0.0,
+                "total": 0.0
+              },
+              "tool_calls": {},
+              "wall_time_s": {
+                "count": 6,
+                "max": 3.8847094401717186e-05,
+                "mean": 3.374234074726701e-05,
+                "median": 3.3683027140796185e-05,
+                "min": 2.94089550152421e-05,
+                "total": 0.00020245404448360205
+              }
+            }
+          },
+          "SYNTH_FIX": {
+            "acceleration_vs_baseline": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "e2e_eligible": 0,
+            "e2e_success_rate": null,
+            "e2e_successes": 0,
+            "e2e_unknown": 6,
+            "failures": {
+              "by_reason": {},
+              "by_stage": {},
+              "count": 0
+            },
+            "final_validation_eligible": 0,
+            "final_validation_success_rate": null,
+            "final_validation_successes": 0,
+            "final_validation_unknown": 6,
+            "fresh_final_eligible": 0,
+            "fresh_final_success_rate": null,
+            "fresh_final_successes": 0,
+            "fresh_final_unknown": 6,
+            "patch": {
+              "candidates": 0,
+              "reasons": {},
+              "rejection_rate": null,
+              "rejections": 0
+            },
+            "router": {
+              "accuracy": null,
+              "correct": 0,
+              "eligible": 0,
+              "unknown": 6
+            },
+            "runs": 6,
+            "usage": {
+              "credits": {
+                "count": 6,
+                "max": 0.0,
+                "mean": 0.0,
+                "median": 0.0,
+                "min": 0.0,
+                "total": 0.0
+              },
+              "model_calls": {
+                "count": 6,
+                "max": 0.0,
+                "mean": 0.0,
+                "median": 0.0,
+                "min": 0.0,
+                "total": 0.0
+              },
+              "tokens": {
+                "count": 6,
+                "max": 0.0,
+                "mean": 0.0,
+                "median": 0.0,
+                "min": 0.0,
+                "total": 0.0
+              },
+              "tool_calls": {},
+              "wall_time_s": {
+                "count": 6,
+                "max": 5.374604370445013e-05,
+                "mean": 3.968068631365895e-05,
+                "median": 3.437051782384515e-05,
+                "min": 3.150803968310356e-05,
+                "total": 0.00023808411788195372
+              }
+            }
+          }
+        },
+        "REAL": {
+          "OPTIMIZE": {
+            "acceleration_vs_baseline": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "e2e_eligible": 0,
+            "e2e_success_rate": null,
+            "e2e_successes": 0,
+            "e2e_unknown": 0,
+            "failures": {
+              "by_reason": {},
+              "by_stage": {},
+              "count": 0
+            },
+            "final_validation_eligible": 0,
+            "final_validation_success_rate": null,
+            "final_validation_successes": 0,
+            "final_validation_unknown": 0,
+            "fresh_final_eligible": 0,
+            "fresh_final_success_rate": null,
+            "fresh_final_successes": 0,
+            "fresh_final_unknown": 0,
+            "patch": {
+              "candidates": 0,
+              "reasons": {},
+              "rejection_rate": null,
+              "rejections": 0
+            },
+            "router": {
+              "accuracy": null,
+              "correct": 0,
+              "eligible": 0,
+              "unknown": 0
+            },
+            "runs": 0,
+            "usage": {
+              "credits": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "model_calls": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "tokens": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "tool_calls": {},
+              "wall_time_s": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              }
+            }
+          },
+          "REPAIR": {
+            "acceleration_vs_baseline": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "e2e_eligible": 0,
+            "e2e_success_rate": null,
+            "e2e_successes": 0,
+            "e2e_unknown": 0,
+            "failures": {
+              "by_reason": {},
+              "by_stage": {},
+              "count": 0
+            },
+            "final_validation_eligible": 0,
+            "final_validation_success_rate": null,
+            "final_validation_successes": 0,
+            "final_validation_unknown": 0,
+            "fresh_final_eligible": 0,
+            "fresh_final_success_rate": null,
+            "fresh_final_successes": 0,
+            "fresh_final_unknown": 0,
+            "patch": {
+              "candidates": 0,
+              "reasons": {},
+              "rejection_rate": null,
+              "rejections": 0
+            },
+            "router": {
+              "accuracy": null,
+              "correct": 0,
+              "eligible": 0,
+              "unknown": 0
+            },
+            "runs": 0,
+            "usage": {
+              "credits": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "model_calls": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "tokens": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "tool_calls": {},
+              "wall_time_s": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              }
+            }
+          },
+          "STRUCTURAL_FIX": {
+            "acceleration_vs_baseline": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "e2e_eligible": 0,
+            "e2e_success_rate": null,
+            "e2e_successes": 0,
+            "e2e_unknown": 0,
+            "failures": {
+              "by_reason": {},
+              "by_stage": {},
+              "count": 0
+            },
+            "final_validation_eligible": 0,
+            "final_validation_success_rate": null,
+            "final_validation_successes": 0,
+            "final_validation_unknown": 0,
+            "fresh_final_eligible": 0,
+            "fresh_final_success_rate": null,
+            "fresh_final_successes": 0,
+            "fresh_final_unknown": 0,
+            "patch": {
+              "candidates": 0,
+              "reasons": {},
+              "rejection_rate": null,
+              "rejections": 0
+            },
+            "router": {
+              "accuracy": null,
+              "correct": 0,
+              "eligible": 0,
+              "unknown": 0
+            },
+            "runs": 0,
+            "usage": {
+              "credits": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "model_calls": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "tokens": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "tool_calls": {},
+              "wall_time_s": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              }
+            }
+          },
+          "SYNTH_FIX": {
+            "acceleration_vs_baseline": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "e2e_eligible": 0,
+            "e2e_success_rate": null,
+            "e2e_successes": 0,
+            "e2e_unknown": 0,
+            "failures": {
+              "by_reason": {},
+              "by_stage": {},
+              "count": 0
+            },
+            "final_validation_eligible": 0,
+            "final_validation_success_rate": null,
+            "final_validation_successes": 0,
+            "final_validation_unknown": 0,
+            "fresh_final_eligible": 0,
+            "fresh_final_success_rate": null,
+            "fresh_final_successes": 0,
+            "fresh_final_unknown": 0,
+            "patch": {
+              "candidates": 0,
+              "reasons": {},
+              "rejection_rate": null,
+              "rejections": 0
+            },
+            "router": {
+              "accuracy": null,
+              "correct": 0,
+              "eligible": 0,
+              "unknown": 0
+            },
+            "runs": 0,
+            "usage": {
+              "credits": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "model_calls": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "tokens": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "tool_calls": {},
+              "wall_time_s": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              }
+            }
+          }
+        }
+      },
+      "by_model": {
+        "deterministic-fixture": {
+          "acceleration_vs_baseline": {
+            "count": 0,
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "total": 0.0
+          },
+          "e2e_eligible": 0,
+          "e2e_success_rate": null,
+          "e2e_successes": 0,
+          "e2e_unknown": 28,
+          "failures": {
+            "by_reason": {},
+            "by_stage": {},
+            "count": 0
+          },
+          "final_validation_eligible": 0,
+          "final_validation_success_rate": null,
+          "final_validation_successes": 0,
+          "final_validation_unknown": 28,
+          "fresh_final_eligible": 0,
+          "fresh_final_success_rate": null,
+          "fresh_final_successes": 0,
+          "fresh_final_unknown": 28,
+          "patch": {
+            "candidates": 0,
+            "reasons": {},
+            "rejection_rate": null,
+            "rejections": 0
+          },
+          "router": {
+            "accuracy": null,
+            "correct": 0,
+            "eligible": 0,
+            "unknown": 28
+          },
+          "runs": 28,
+          "usage": {
+            "credits": {
+              "count": 28,
+              "max": 0.0,
+              "mean": 0.0,
+              "median": 0.0,
+              "min": 0.0,
+              "total": 0.0
+            },
+            "model_calls": {
+              "count": 28,
+              "max": 0.0,
+              "mean": 0.0,
+              "median": 0.0,
+              "min": 0.0,
+              "total": 0.0
+            },
+            "tokens": {
+              "count": 28,
+              "max": 0.0,
+              "mean": 0.0,
+              "median": 0.0,
+              "min": 0.0,
+              "total": 0.0
+            },
+            "tool_calls": {},
+            "wall_time_s": {
+              "count": 28,
+              "max": 6.127404049038887e-05,
+              "mean": 3.563694606002953e-05,
+              "median": 3.344257129356265e-05,
+              "min": 2.449704334139824e-05,
+              "total": 0.0009978344896808267
+            }
+          }
+        }
+      },
+      "by_model_by_evidence": {
+        "DEMO": {
+          "deterministic-fixture": {
+            "acceleration_vs_baseline": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "e2e_eligible": 0,
+            "e2e_success_rate": null,
+            "e2e_successes": 0,
+            "e2e_unknown": 0,
+            "failures": {
+              "by_reason": {},
+              "by_stage": {},
+              "count": 0
+            },
+            "final_validation_eligible": 0,
+            "final_validation_success_rate": null,
+            "final_validation_successes": 0,
+            "final_validation_unknown": 0,
+            "fresh_final_eligible": 0,
+            "fresh_final_success_rate": null,
+            "fresh_final_successes": 0,
+            "fresh_final_unknown": 0,
+            "patch": {
+              "candidates": 0,
+              "reasons": {},
+              "rejection_rate": null,
+              "rejections": 0
+            },
+            "router": {
+              "accuracy": null,
+              "correct": 0,
+              "eligible": 0,
+              "unknown": 0
+            },
+            "runs": 0,
+            "usage": {
+              "credits": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "model_calls": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "tokens": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "tool_calls": {},
+              "wall_time_s": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              }
+            }
+          }
+        },
+        "DETERMINISTIC": {
+          "deterministic-fixture": {
+            "acceleration_vs_baseline": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "e2e_eligible": 0,
+            "e2e_success_rate": null,
+            "e2e_successes": 0,
+            "e2e_unknown": 28,
+            "failures": {
+              "by_reason": {},
+              "by_stage": {},
+              "count": 0
+            },
+            "final_validation_eligible": 0,
+            "final_validation_success_rate": null,
+            "final_validation_successes": 0,
+            "final_validation_unknown": 28,
+            "fresh_final_eligible": 0,
+            "fresh_final_success_rate": null,
+            "fresh_final_successes": 0,
+            "fresh_final_unknown": 28,
+            "patch": {
+              "candidates": 0,
+              "reasons": {},
+              "rejection_rate": null,
+              "rejections": 0
+            },
+            "router": {
+              "accuracy": null,
+              "correct": 0,
+              "eligible": 0,
+              "unknown": 28
+            },
+            "runs": 28,
+            "usage": {
+              "credits": {
+                "count": 28,
+                "max": 0.0,
+                "mean": 0.0,
+                "median": 0.0,
+                "min": 0.0,
+                "total": 0.0
+              },
+              "model_calls": {
+                "count": 28,
+                "max": 0.0,
+                "mean": 0.0,
+                "median": 0.0,
+                "min": 0.0,
+                "total": 0.0
+              },
+              "tokens": {
+                "count": 28,
+                "max": 0.0,
+                "mean": 0.0,
+                "median": 0.0,
+                "min": 0.0,
+                "total": 0.0
+              },
+              "tool_calls": {},
+              "wall_time_s": {
+                "count": 28,
+                "max": 6.127404049038887e-05,
+                "mean": 3.563694606002953e-05,
+                "median": 3.344257129356265e-05,
+                "min": 2.449704334139824e-05,
+                "total": 0.0009978344896808267
+              }
+            }
+          }
+        },
+        "REAL": {
+          "deterministic-fixture": {
+            "acceleration_vs_baseline": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "e2e_eligible": 0,
+            "e2e_success_rate": null,
+            "e2e_successes": 0,
+            "e2e_unknown": 0,
+            "failures": {
+              "by_reason": {},
+              "by_stage": {},
+              "count": 0
+            },
+            "final_validation_eligible": 0,
+            "final_validation_success_rate": null,
+            "final_validation_successes": 0,
+            "final_validation_unknown": 0,
+            "fresh_final_eligible": 0,
+            "fresh_final_success_rate": null,
+            "fresh_final_successes": 0,
+            "fresh_final_unknown": 0,
+            "patch": {
+              "candidates": 0,
+              "reasons": {},
+              "rejection_rate": null,
+              "rejections": 0
+            },
+            "router": {
+              "accuracy": null,
+              "correct": 0,
+              "eligible": 0,
+              "unknown": 0
+            },
+            "runs": 0,
+            "usage": {
+              "credits": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "model_calls": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "tokens": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "tool_calls": {},
+              "wall_time_s": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              }
+            }
+          }
+        }
+      },
+      "by_routed_mode": {
+        "OPTIMIZE": {
+          "acceleration_vs_baseline": {
+            "count": 0,
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "total": 0.0
+          },
+          "e2e_eligible": 0,
+          "e2e_success_rate": null,
+          "e2e_successes": 0,
+          "e2e_unknown": 0,
+          "failures": {
+            "by_reason": {},
+            "by_stage": {},
+            "count": 0
+          },
+          "final_validation_eligible": 0,
+          "final_validation_success_rate": null,
+          "final_validation_successes": 0,
+          "final_validation_unknown": 0,
+          "fresh_final_eligible": 0,
+          "fresh_final_success_rate": null,
+          "fresh_final_successes": 0,
+          "fresh_final_unknown": 0,
+          "patch": {
+            "candidates": 0,
+            "reasons": {},
+            "rejection_rate": null,
+            "rejections": 0
+          },
+          "router": {
+            "accuracy": null,
+            "correct": 0,
+            "eligible": 0,
+            "unknown": 0
+          },
+          "runs": 0,
+          "usage": {
+            "credits": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "model_calls": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "tokens": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "tool_calls": {},
+            "wall_time_s": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            }
+          }
+        },
+        "REPAIR": {
+          "acceleration_vs_baseline": {
+            "count": 0,
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "total": 0.0
+          },
+          "e2e_eligible": 0,
+          "e2e_success_rate": null,
+          "e2e_successes": 0,
+          "e2e_unknown": 0,
+          "failures": {
+            "by_reason": {},
+            "by_stage": {},
+            "count": 0
+          },
+          "final_validation_eligible": 0,
+          "final_validation_success_rate": null,
+          "final_validation_successes": 0,
+          "final_validation_unknown": 0,
+          "fresh_final_eligible": 0,
+          "fresh_final_success_rate": null,
+          "fresh_final_successes": 0,
+          "fresh_final_unknown": 0,
+          "patch": {
+            "candidates": 0,
+            "reasons": {},
+            "rejection_rate": null,
+            "rejections": 0
+          },
+          "router": {
+            "accuracy": null,
+            "correct": 0,
+            "eligible": 0,
+            "unknown": 0
+          },
+          "runs": 0,
+          "usage": {
+            "credits": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "model_calls": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "tokens": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "tool_calls": {},
+            "wall_time_s": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            }
+          }
+        },
+        "STRUCTURAL_FIX": {
+          "acceleration_vs_baseline": {
+            "count": 0,
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "total": 0.0
+          },
+          "e2e_eligible": 0,
+          "e2e_success_rate": null,
+          "e2e_successes": 0,
+          "e2e_unknown": 0,
+          "failures": {
+            "by_reason": {},
+            "by_stage": {},
+            "count": 0
+          },
+          "final_validation_eligible": 0,
+          "final_validation_success_rate": null,
+          "final_validation_successes": 0,
+          "final_validation_unknown": 0,
+          "fresh_final_eligible": 0,
+          "fresh_final_success_rate": null,
+          "fresh_final_successes": 0,
+          "fresh_final_unknown": 0,
+          "patch": {
+            "candidates": 0,
+            "reasons": {},
+            "rejection_rate": null,
+            "rejections": 0
+          },
+          "router": {
+            "accuracy": null,
+            "correct": 0,
+            "eligible": 0,
+            "unknown": 0
+          },
+          "runs": 0,
+          "usage": {
+            "credits": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "model_calls": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "tokens": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "tool_calls": {},
+            "wall_time_s": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            }
+          }
+        },
+        "SYNTH_FIX": {
+          "acceleration_vs_baseline": {
+            "count": 0,
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "total": 0.0
+          },
+          "e2e_eligible": 0,
+          "e2e_success_rate": null,
+          "e2e_successes": 0,
+          "e2e_unknown": 0,
+          "failures": {
+            "by_reason": {},
+            "by_stage": {},
+            "count": 0
+          },
+          "final_validation_eligible": 0,
+          "final_validation_success_rate": null,
+          "final_validation_successes": 0,
+          "final_validation_unknown": 0,
+          "fresh_final_eligible": 0,
+          "fresh_final_success_rate": null,
+          "fresh_final_successes": 0,
+          "fresh_final_unknown": 0,
+          "patch": {
+            "candidates": 0,
+            "reasons": {},
+            "rejection_rate": null,
+            "rejections": 0
+          },
+          "router": {
+            "accuracy": null,
+            "correct": 0,
+            "eligible": 0,
+            "unknown": 0
+          },
+          "runs": 0,
+          "usage": {
+            "credits": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "model_calls": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "tokens": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "tool_calls": {},
+            "wall_time_s": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            }
+          }
+        }
+      },
+      "definition": "Every durable attempt whose run_fingerprint belongs to the current plan; retries do not erase failures.",
+      "overall_all_evidence": {
+        "acceleration_vs_baseline": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "median": null,
+          "min": null,
+          "total": 0.0
+        },
+        "e2e_eligible": 0,
+        "e2e_success_rate": null,
+        "e2e_successes": 0,
+        "e2e_unknown": 28,
+        "failures": {
+          "by_reason": {},
+          "by_stage": {},
+          "count": 0
+        },
+        "final_validation_eligible": 0,
+        "final_validation_success_rate": null,
+        "final_validation_successes": 0,
+        "final_validation_unknown": 28,
+        "fresh_final_eligible": 0,
+        "fresh_final_success_rate": null,
+        "fresh_final_successes": 0,
+        "fresh_final_unknown": 28,
+        "patch": {
+          "candidates": 0,
+          "reasons": {},
+          "rejection_rate": null,
+          "rejections": 0
+        },
+        "router": {
+          "accuracy": null,
+          "correct": 0,
+          "eligible": 0,
+          "unknown": 28
+        },
+        "runs": 28,
+        "usage": {
+          "credits": {
+            "count": 28,
+            "max": 0.0,
+            "mean": 0.0,
+            "median": 0.0,
+            "min": 0.0,
+            "total": 0.0
+          },
+          "model_calls": {
+            "count": 28,
+            "max": 0.0,
+            "mean": 0.0,
+            "median": 0.0,
+            "min": 0.0,
+            "total": 0.0
+          },
+          "tokens": {
+            "count": 28,
+            "max": 0.0,
+            "mean": 0.0,
+            "median": 0.0,
+            "min": 0.0,
+            "total": 0.0
+          },
+          "tool_calls": {},
+          "wall_time_s": {
+            "count": 28,
+            "max": 6.127404049038887e-05,
+            "mean": 3.563694606002953e-05,
+            "median": 3.344257129356265e-05,
+            "min": 2.449704334139824e-05,
+            "total": 0.0009978344896808267
+          }
+        }
+      },
+      "real_evidence_headline": {
+        "acceleration_vs_baseline": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "median": null,
+          "min": null,
+          "total": 0.0
+        },
+        "e2e_eligible": 0,
+        "e2e_success_rate": null,
+        "e2e_successes": 0,
+        "e2e_unknown": 0,
+        "failures": {
+          "by_reason": {},
+          "by_stage": {},
+          "count": 0
+        },
+        "final_validation_eligible": 0,
+        "final_validation_success_rate": null,
+        "final_validation_successes": 0,
+        "final_validation_unknown": 0,
+        "fresh_final_eligible": 0,
+        "fresh_final_success_rate": null,
+        "fresh_final_successes": 0,
+        "fresh_final_unknown": 0,
+        "patch": {
+          "candidates": 0,
+          "reasons": {},
+          "rejection_rate": null,
+          "rejections": 0
+        },
+        "router": {
+          "accuracy": null,
+          "correct": 0,
+          "eligible": 0,
+          "unknown": 0
+        },
+        "runs": 0,
+        "usage": {
+          "credits": {
+            "count": 0,
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "total": 0.0
+          },
+          "model_calls": {
+            "count": 0,
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "total": 0.0
+          },
+          "tokens": {
+            "count": 0,
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "total": 0.0
+          },
+          "tool_calls": {},
+          "wall_time_s": {
+            "count": 0,
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "total": 0.0
+          }
+        }
+      },
+      "records": 28,
+      "run_ids": [
+        "v3d_fast_001--deterministic-fixture--r001--536b787b9546",
+        "v3d_fast_002--deterministic-fixture--r001--0be65f907abb",
+        "v3d_fast_003--deterministic-fixture--r001--8b2c0c461614",
+        "v3d_fast_004--deterministic-fixture--r001--63b6ff7fd882",
+        "v3d_fast_005--deterministic-fixture--r001--24be10c31c43",
+        "v3d_fast_006--deterministic-fixture--r001--fe4593045564",
+        "v3d_fast_007--deterministic-fixture--r001--c0bcdb92e40e",
+        "v3d_fast_008--deterministic-fixture--r001--078c848e4801",
+        "v3d_fast_009--deterministic-fixture--r001--972b0022c133",
+        "v3d_fast_010--deterministic-fixture--r001--9620eb871ba9",
+        "v3d_fast_011--deterministic-fixture--r001--45d40956ef7a",
+        "v3d_fast_012--deterministic-fixture--r001--10c055a22442",
+        "v3d_fast_013--deterministic-fixture--r001--76963890cc33",
+        "v3d_fast_014--deterministic-fixture--r001--efd3cb1c69da",
+        "v3d_fast_015--deterministic-fixture--r001--5ca412f12eda",
+        "v3d_fast_016--deterministic-fixture--r001--56bb631faebc",
+        "v3d_fast_017--deterministic-fixture--r001--4661b2d8bb4d",
+        "v3d_fast_018--deterministic-fixture--r001--3952ae303b27",
+        "v3d_fast_019--deterministic-fixture--r001--7dd2a223f293",
+        "v3d_fast_020--deterministic-fixture--r001--3b8127ab1a2c",
+        "v3d_fast_021--deterministic-fixture--r001--5d3c4af0b81e",
+        "v3d_fast_022--deterministic-fixture--r001--50c6a978d22d",
+        "v3d_fast_023--deterministic-fixture--r001--849eb504ca6b",
+        "v3d_fast_024--deterministic-fixture--r001--8a72e7da30f2",
+        "v3d_fast_025--deterministic-fixture--r001--48ea7d45d5bb",
+        "v3d_fast_026--deterministic-fixture--r001--562bfec55e1c",
+        "v3d_fast_027--deterministic-fixture--r001--f152825ca465",
+        "v3d_fast_028--deterministic-fixture--r001--58716d855228"
+      ]
+    },
+    "latest_slots": {
+      "by_evidence_class": {
+        "DEMO": {
+          "acceleration_vs_baseline": {
+            "count": 0,
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "total": 0.0
+          },
+          "e2e_eligible": 0,
+          "e2e_success_rate": null,
+          "e2e_successes": 0,
+          "e2e_unknown": 0,
+          "failures": {
+            "by_reason": {},
+            "by_stage": {},
+            "count": 0
+          },
+          "final_validation_eligible": 0,
+          "final_validation_success_rate": null,
+          "final_validation_successes": 0,
+          "final_validation_unknown": 0,
+          "fresh_final_eligible": 0,
+          "fresh_final_success_rate": null,
+          "fresh_final_successes": 0,
+          "fresh_final_unknown": 0,
+          "patch": {
+            "candidates": 0,
+            "reasons": {},
+            "rejection_rate": null,
+            "rejections": 0
+          },
+          "router": {
+            "accuracy": null,
+            "correct": 0,
+            "eligible": 0,
+            "unknown": 0
+          },
+          "runs": 0,
+          "usage": {
+            "credits": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "model_calls": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "tokens": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "tool_calls": {},
+            "wall_time_s": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            }
+          }
+        },
+        "DETERMINISTIC": {
+          "acceleration_vs_baseline": {
+            "count": 0,
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "total": 0.0
+          },
+          "e2e_eligible": 0,
+          "e2e_success_rate": null,
+          "e2e_successes": 0,
+          "e2e_unknown": 28,
+          "failures": {
+            "by_reason": {},
+            "by_stage": {},
+            "count": 0
+          },
+          "final_validation_eligible": 0,
+          "final_validation_success_rate": null,
+          "final_validation_successes": 0,
+          "final_validation_unknown": 28,
+          "fresh_final_eligible": 0,
+          "fresh_final_success_rate": null,
+          "fresh_final_successes": 0,
+          "fresh_final_unknown": 28,
+          "patch": {
+            "candidates": 0,
+            "reasons": {},
+            "rejection_rate": null,
+            "rejections": 0
+          },
+          "router": {
+            "accuracy": null,
+            "correct": 0,
+            "eligible": 0,
+            "unknown": 28
+          },
+          "runs": 28,
+          "usage": {
+            "credits": {
+              "count": 28,
+              "max": 0.0,
+              "mean": 0.0,
+              "median": 0.0,
+              "min": 0.0,
+              "total": 0.0
+            },
+            "model_calls": {
+              "count": 28,
+              "max": 0.0,
+              "mean": 0.0,
+              "median": 0.0,
+              "min": 0.0,
+              "total": 0.0
+            },
+            "tokens": {
+              "count": 28,
+              "max": 0.0,
+              "mean": 0.0,
+              "median": 0.0,
+              "min": 0.0,
+              "total": 0.0
+            },
+            "tool_calls": {},
+            "wall_time_s": {
+              "count": 28,
+              "max": 6.127404049038887e-05,
+              "mean": 3.563694606002953e-05,
+              "median": 3.344257129356265e-05,
+              "min": 2.449704334139824e-05,
+              "total": 0.0009978344896808267
+            }
+          }
+        },
+        "REAL": {
+          "acceleration_vs_baseline": {
+            "count": 0,
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "total": 0.0
+          },
+          "e2e_eligible": 0,
+          "e2e_success_rate": null,
+          "e2e_successes": 0,
+          "e2e_unknown": 0,
+          "failures": {
+            "by_reason": {},
+            "by_stage": {},
+            "count": 0
+          },
+          "final_validation_eligible": 0,
+          "final_validation_success_rate": null,
+          "final_validation_successes": 0,
+          "final_validation_unknown": 0,
+          "fresh_final_eligible": 0,
+          "fresh_final_success_rate": null,
+          "fresh_final_successes": 0,
+          "fresh_final_unknown": 0,
+          "patch": {
+            "candidates": 0,
+            "reasons": {},
+            "rejection_rate": null,
+            "rejections": 0
+          },
+          "router": {
+            "accuracy": null,
+            "correct": 0,
+            "eligible": 0,
+            "unknown": 0
+          },
+          "runs": 0,
+          "usage": {
+            "credits": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "model_calls": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "tokens": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "tool_calls": {},
+            "wall_time_s": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            }
+          }
+        }
+      },
+      "by_expected_mode": {
+        "OPTIMIZE": {
+          "acceleration_vs_baseline": {
+            "count": 0,
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "total": 0.0
+          },
+          "e2e_eligible": 0,
+          "e2e_success_rate": null,
+          "e2e_successes": 0,
+          "e2e_unknown": 8,
+          "failures": {
+            "by_reason": {},
+            "by_stage": {},
+            "count": 0
+          },
+          "final_validation_eligible": 0,
+          "final_validation_success_rate": null,
+          "final_validation_successes": 0,
+          "final_validation_unknown": 8,
+          "fresh_final_eligible": 0,
+          "fresh_final_success_rate": null,
+          "fresh_final_successes": 0,
+          "fresh_final_unknown": 8,
+          "patch": {
+            "candidates": 0,
+            "reasons": {},
+            "rejection_rate": null,
+            "rejections": 0
+          },
+          "router": {
+            "accuracy": null,
+            "correct": 0,
+            "eligible": 0,
+            "unknown": 8
+          },
+          "runs": 8,
+          "usage": {
+            "credits": {
+              "count": 8,
+              "max": 0.0,
+              "mean": 0.0,
+              "median": 0.0,
+              "min": 0.0,
+              "total": 0.0
+            },
+            "model_calls": {
+              "count": 8,
+              "max": 0.0,
+              "mean": 0.0,
+              "median": 0.0,
+              "min": 0.0,
+              "total": 0.0
+            },
+            "tokens": {
+              "count": 8,
+              "max": 0.0,
+              "mean": 0.0,
+              "median": 0.0,
+              "min": 0.0,
+              "total": 0.0
+            },
+            "tool_calls": {},
+            "wall_time_s": {
+              "count": 8,
+              "max": 3.366603050380945e-05,
+              "mean": 3.002527228090912e-05,
+              "median": 3.1631498131901026e-05,
+              "min": 2.449704334139824e-05,
+              "total": 0.00024020217824727297
+            }
+          }
+        },
+        "REPAIR": {
+          "acceleration_vs_baseline": {
+            "count": 0,
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "total": 0.0
+          },
+          "e2e_eligible": 0,
+          "e2e_success_rate": null,
+          "e2e_successes": 0,
+          "e2e_unknown": 8,
+          "failures": {
+            "by_reason": {},
+            "by_stage": {},
+            "count": 0
+          },
+          "final_validation_eligible": 0,
+          "final_validation_success_rate": null,
+          "final_validation_successes": 0,
+          "final_validation_unknown": 8,
+          "fresh_final_eligible": 0,
+          "fresh_final_success_rate": null,
+          "fresh_final_successes": 0,
+          "fresh_final_unknown": 8,
+          "patch": {
+            "candidates": 0,
+            "reasons": {},
+            "rejection_rate": null,
+            "rejections": 0
+          },
+          "router": {
+            "accuracy": null,
+            "correct": 0,
+            "eligible": 0,
+            "unknown": 8
+          },
+          "runs": 8,
+          "usage": {
+            "credits": {
+              "count": 8,
+              "max": 0.0,
+              "mean": 0.0,
+              "median": 0.0,
+              "min": 0.0,
+              "total": 0.0
+            },
+            "model_calls": {
+              "count": 8,
+              "max": 0.0,
+              "mean": 0.0,
+              "median": 0.0,
+              "min": 0.0,
+              "total": 0.0
+            },
+            "tokens": {
+              "count": 8,
+              "max": 0.0,
+              "mean": 0.0,
+              "median": 0.0,
+              "min": 0.0,
+              "total": 0.0
+            },
+            "tool_calls": {},
+            "wall_time_s": {
+              "count": 8,
+              "max": 6.127404049038887e-05,
+              "mean": 3.963676863349974e-05,
+              "median": 3.510754322633147e-05,
+              "min": 3.0342023819684982e-05,
+              "total": 0.00031709414906799793
+            }
+          }
+        },
+        "STRUCTURAL_FIX": {
+          "acceleration_vs_baseline": {
+            "count": 0,
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "total": 0.0
+          },
+          "e2e_eligible": 0,
+          "e2e_success_rate": null,
+          "e2e_successes": 0,
+          "e2e_unknown": 6,
+          "failures": {
+            "by_reason": {},
+            "by_stage": {},
+            "count": 0
+          },
+          "final_validation_eligible": 0,
+          "final_validation_success_rate": null,
+          "final_validation_successes": 0,
+          "final_validation_unknown": 6,
+          "fresh_final_eligible": 0,
+          "fresh_final_success_rate": null,
+          "fresh_final_successes": 0,
+          "fresh_final_unknown": 6,
+          "patch": {
+            "candidates": 0,
+            "reasons": {},
+            "rejection_rate": null,
+            "rejections": 0
+          },
+          "router": {
+            "accuracy": null,
+            "correct": 0,
+            "eligible": 0,
+            "unknown": 6
+          },
+          "runs": 6,
+          "usage": {
+            "credits": {
+              "count": 6,
+              "max": 0.0,
+              "mean": 0.0,
+              "median": 0.0,
+              "min": 0.0,
+              "total": 0.0
+            },
+            "model_calls": {
+              "count": 6,
+              "max": 0.0,
+              "mean": 0.0,
+              "median": 0.0,
+              "min": 0.0,
+              "total": 0.0
+            },
+            "tokens": {
+              "count": 6,
+              "max": 0.0,
+              "mean": 0.0,
+              "median": 0.0,
+              "min": 0.0,
+              "total": 0.0
+            },
+            "tool_calls": {},
+            "wall_time_s": {
+              "count": 6,
+              "max": 3.8847094401717186e-05,
+              "mean": 3.374234074726701e-05,
+              "median": 3.3683027140796185e-05,
+              "min": 2.94089550152421e-05,
+              "total": 0.00020245404448360205
+            }
+          }
+        },
+        "SYNTH_FIX": {
+          "acceleration_vs_baseline": {
+            "count": 0,
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "total": 0.0
+          },
+          "e2e_eligible": 0,
+          "e2e_success_rate": null,
+          "e2e_successes": 0,
+          "e2e_unknown": 6,
+          "failures": {
+            "by_reason": {},
+            "by_stage": {},
+            "count": 0
+          },
+          "final_validation_eligible": 0,
+          "final_validation_success_rate": null,
+          "final_validation_successes": 0,
+          "final_validation_unknown": 6,
+          "fresh_final_eligible": 0,
+          "fresh_final_success_rate": null,
+          "fresh_final_successes": 0,
+          "fresh_final_unknown": 6,
+          "patch": {
+            "candidates": 0,
+            "reasons": {},
+            "rejection_rate": null,
+            "rejections": 0
+          },
+          "router": {
+            "accuracy": null,
+            "correct": 0,
+            "eligible": 0,
+            "unknown": 6
+          },
+          "runs": 6,
+          "usage": {
+            "credits": {
+              "count": 6,
+              "max": 0.0,
+              "mean": 0.0,
+              "median": 0.0,
+              "min": 0.0,
+              "total": 0.0
+            },
+            "model_calls": {
+              "count": 6,
+              "max": 0.0,
+              "mean": 0.0,
+              "median": 0.0,
+              "min": 0.0,
+              "total": 0.0
+            },
+            "tokens": {
+              "count": 6,
+              "max": 0.0,
+              "mean": 0.0,
+              "median": 0.0,
+              "min": 0.0,
+              "total": 0.0
+            },
+            "tool_calls": {},
+            "wall_time_s": {
+              "count": 6,
+              "max": 5.374604370445013e-05,
+              "mean": 3.968068631365895e-05,
+              "median": 3.437051782384515e-05,
+              "min": 3.150803968310356e-05,
+              "total": 0.00023808411788195372
+            }
+          }
+        }
+      },
+      "by_expected_mode_by_evidence": {
+        "DEMO": {
+          "OPTIMIZE": {
+            "acceleration_vs_baseline": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "e2e_eligible": 0,
+            "e2e_success_rate": null,
+            "e2e_successes": 0,
+            "e2e_unknown": 0,
+            "failures": {
+              "by_reason": {},
+              "by_stage": {},
+              "count": 0
+            },
+            "final_validation_eligible": 0,
+            "final_validation_success_rate": null,
+            "final_validation_successes": 0,
+            "final_validation_unknown": 0,
+            "fresh_final_eligible": 0,
+            "fresh_final_success_rate": null,
+            "fresh_final_successes": 0,
+            "fresh_final_unknown": 0,
+            "patch": {
+              "candidates": 0,
+              "reasons": {},
+              "rejection_rate": null,
+              "rejections": 0
+            },
+            "router": {
+              "accuracy": null,
+              "correct": 0,
+              "eligible": 0,
+              "unknown": 0
+            },
+            "runs": 0,
+            "usage": {
+              "credits": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "model_calls": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "tokens": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "tool_calls": {},
+              "wall_time_s": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              }
+            }
+          },
+          "REPAIR": {
+            "acceleration_vs_baseline": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "e2e_eligible": 0,
+            "e2e_success_rate": null,
+            "e2e_successes": 0,
+            "e2e_unknown": 0,
+            "failures": {
+              "by_reason": {},
+              "by_stage": {},
+              "count": 0
+            },
+            "final_validation_eligible": 0,
+            "final_validation_success_rate": null,
+            "final_validation_successes": 0,
+            "final_validation_unknown": 0,
+            "fresh_final_eligible": 0,
+            "fresh_final_success_rate": null,
+            "fresh_final_successes": 0,
+            "fresh_final_unknown": 0,
+            "patch": {
+              "candidates": 0,
+              "reasons": {},
+              "rejection_rate": null,
+              "rejections": 0
+            },
+            "router": {
+              "accuracy": null,
+              "correct": 0,
+              "eligible": 0,
+              "unknown": 0
+            },
+            "runs": 0,
+            "usage": {
+              "credits": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "model_calls": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "tokens": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "tool_calls": {},
+              "wall_time_s": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              }
+            }
+          },
+          "STRUCTURAL_FIX": {
+            "acceleration_vs_baseline": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "e2e_eligible": 0,
+            "e2e_success_rate": null,
+            "e2e_successes": 0,
+            "e2e_unknown": 0,
+            "failures": {
+              "by_reason": {},
+              "by_stage": {},
+              "count": 0
+            },
+            "final_validation_eligible": 0,
+            "final_validation_success_rate": null,
+            "final_validation_successes": 0,
+            "final_validation_unknown": 0,
+            "fresh_final_eligible": 0,
+            "fresh_final_success_rate": null,
+            "fresh_final_successes": 0,
+            "fresh_final_unknown": 0,
+            "patch": {
+              "candidates": 0,
+              "reasons": {},
+              "rejection_rate": null,
+              "rejections": 0
+            },
+            "router": {
+              "accuracy": null,
+              "correct": 0,
+              "eligible": 0,
+              "unknown": 0
+            },
+            "runs": 0,
+            "usage": {
+              "credits": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "model_calls": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "tokens": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "tool_calls": {},
+              "wall_time_s": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              }
+            }
+          },
+          "SYNTH_FIX": {
+            "acceleration_vs_baseline": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "e2e_eligible": 0,
+            "e2e_success_rate": null,
+            "e2e_successes": 0,
+            "e2e_unknown": 0,
+            "failures": {
+              "by_reason": {},
+              "by_stage": {},
+              "count": 0
+            },
+            "final_validation_eligible": 0,
+            "final_validation_success_rate": null,
+            "final_validation_successes": 0,
+            "final_validation_unknown": 0,
+            "fresh_final_eligible": 0,
+            "fresh_final_success_rate": null,
+            "fresh_final_successes": 0,
+            "fresh_final_unknown": 0,
+            "patch": {
+              "candidates": 0,
+              "reasons": {},
+              "rejection_rate": null,
+              "rejections": 0
+            },
+            "router": {
+              "accuracy": null,
+              "correct": 0,
+              "eligible": 0,
+              "unknown": 0
+            },
+            "runs": 0,
+            "usage": {
+              "credits": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "model_calls": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "tokens": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "tool_calls": {},
+              "wall_time_s": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              }
+            }
+          }
+        },
+        "DETERMINISTIC": {
+          "OPTIMIZE": {
+            "acceleration_vs_baseline": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "e2e_eligible": 0,
+            "e2e_success_rate": null,
+            "e2e_successes": 0,
+            "e2e_unknown": 8,
+            "failures": {
+              "by_reason": {},
+              "by_stage": {},
+              "count": 0
+            },
+            "final_validation_eligible": 0,
+            "final_validation_success_rate": null,
+            "final_validation_successes": 0,
+            "final_validation_unknown": 8,
+            "fresh_final_eligible": 0,
+            "fresh_final_success_rate": null,
+            "fresh_final_successes": 0,
+            "fresh_final_unknown": 8,
+            "patch": {
+              "candidates": 0,
+              "reasons": {},
+              "rejection_rate": null,
+              "rejections": 0
+            },
+            "router": {
+              "accuracy": null,
+              "correct": 0,
+              "eligible": 0,
+              "unknown": 8
+            },
+            "runs": 8,
+            "usage": {
+              "credits": {
+                "count": 8,
+                "max": 0.0,
+                "mean": 0.0,
+                "median": 0.0,
+                "min": 0.0,
+                "total": 0.0
+              },
+              "model_calls": {
+                "count": 8,
+                "max": 0.0,
+                "mean": 0.0,
+                "median": 0.0,
+                "min": 0.0,
+                "total": 0.0
+              },
+              "tokens": {
+                "count": 8,
+                "max": 0.0,
+                "mean": 0.0,
+                "median": 0.0,
+                "min": 0.0,
+                "total": 0.0
+              },
+              "tool_calls": {},
+              "wall_time_s": {
+                "count": 8,
+                "max": 3.366603050380945e-05,
+                "mean": 3.002527228090912e-05,
+                "median": 3.1631498131901026e-05,
+                "min": 2.449704334139824e-05,
+                "total": 0.00024020217824727297
+              }
+            }
+          },
+          "REPAIR": {
+            "acceleration_vs_baseline": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "e2e_eligible": 0,
+            "e2e_success_rate": null,
+            "e2e_successes": 0,
+            "e2e_unknown": 8,
+            "failures": {
+              "by_reason": {},
+              "by_stage": {},
+              "count": 0
+            },
+            "final_validation_eligible": 0,
+            "final_validation_success_rate": null,
+            "final_validation_successes": 0,
+            "final_validation_unknown": 8,
+            "fresh_final_eligible": 0,
+            "fresh_final_success_rate": null,
+            "fresh_final_successes": 0,
+            "fresh_final_unknown": 8,
+            "patch": {
+              "candidates": 0,
+              "reasons": {},
+              "rejection_rate": null,
+              "rejections": 0
+            },
+            "router": {
+              "accuracy": null,
+              "correct": 0,
+              "eligible": 0,
+              "unknown": 8
+            },
+            "runs": 8,
+            "usage": {
+              "credits": {
+                "count": 8,
+                "max": 0.0,
+                "mean": 0.0,
+                "median": 0.0,
+                "min": 0.0,
+                "total": 0.0
+              },
+              "model_calls": {
+                "count": 8,
+                "max": 0.0,
+                "mean": 0.0,
+                "median": 0.0,
+                "min": 0.0,
+                "total": 0.0
+              },
+              "tokens": {
+                "count": 8,
+                "max": 0.0,
+                "mean": 0.0,
+                "median": 0.0,
+                "min": 0.0,
+                "total": 0.0
+              },
+              "tool_calls": {},
+              "wall_time_s": {
+                "count": 8,
+                "max": 6.127404049038887e-05,
+                "mean": 3.963676863349974e-05,
+                "median": 3.510754322633147e-05,
+                "min": 3.0342023819684982e-05,
+                "total": 0.00031709414906799793
+              }
+            }
+          },
+          "STRUCTURAL_FIX": {
+            "acceleration_vs_baseline": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "e2e_eligible": 0,
+            "e2e_success_rate": null,
+            "e2e_successes": 0,
+            "e2e_unknown": 6,
+            "failures": {
+              "by_reason": {},
+              "by_stage": {},
+              "count": 0
+            },
+            "final_validation_eligible": 0,
+            "final_validation_success_rate": null,
+            "final_validation_successes": 0,
+            "final_validation_unknown": 6,
+            "fresh_final_eligible": 0,
+            "fresh_final_success_rate": null,
+            "fresh_final_successes": 0,
+            "fresh_final_unknown": 6,
+            "patch": {
+              "candidates": 0,
+              "reasons": {},
+              "rejection_rate": null,
+              "rejections": 0
+            },
+            "router": {
+              "accuracy": null,
+              "correct": 0,
+              "eligible": 0,
+              "unknown": 6
+            },
+            "runs": 6,
+            "usage": {
+              "credits": {
+                "count": 6,
+                "max": 0.0,
+                "mean": 0.0,
+                "median": 0.0,
+                "min": 0.0,
+                "total": 0.0
+              },
+              "model_calls": {
+                "count": 6,
+                "max": 0.0,
+                "mean": 0.0,
+                "median": 0.0,
+                "min": 0.0,
+                "total": 0.0
+              },
+              "tokens": {
+                "count": 6,
+                "max": 0.0,
+                "mean": 0.0,
+                "median": 0.0,
+                "min": 0.0,
+                "total": 0.0
+              },
+              "tool_calls": {},
+              "wall_time_s": {
+                "count": 6,
+                "max": 3.8847094401717186e-05,
+                "mean": 3.374234074726701e-05,
+                "median": 3.3683027140796185e-05,
+                "min": 2.94089550152421e-05,
+                "total": 0.00020245404448360205
+              }
+            }
+          },
+          "SYNTH_FIX": {
+            "acceleration_vs_baseline": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "e2e_eligible": 0,
+            "e2e_success_rate": null,
+            "e2e_successes": 0,
+            "e2e_unknown": 6,
+            "failures": {
+              "by_reason": {},
+              "by_stage": {},
+              "count": 0
+            },
+            "final_validation_eligible": 0,
+            "final_validation_success_rate": null,
+            "final_validation_successes": 0,
+            "final_validation_unknown": 6,
+            "fresh_final_eligible": 0,
+            "fresh_final_success_rate": null,
+            "fresh_final_successes": 0,
+            "fresh_final_unknown": 6,
+            "patch": {
+              "candidates": 0,
+              "reasons": {},
+              "rejection_rate": null,
+              "rejections": 0
+            },
+            "router": {
+              "accuracy": null,
+              "correct": 0,
+              "eligible": 0,
+              "unknown": 6
+            },
+            "runs": 6,
+            "usage": {
+              "credits": {
+                "count": 6,
+                "max": 0.0,
+                "mean": 0.0,
+                "median": 0.0,
+                "min": 0.0,
+                "total": 0.0
+              },
+              "model_calls": {
+                "count": 6,
+                "max": 0.0,
+                "mean": 0.0,
+                "median": 0.0,
+                "min": 0.0,
+                "total": 0.0
+              },
+              "tokens": {
+                "count": 6,
+                "max": 0.0,
+                "mean": 0.0,
+                "median": 0.0,
+                "min": 0.0,
+                "total": 0.0
+              },
+              "tool_calls": {},
+              "wall_time_s": {
+                "count": 6,
+                "max": 5.374604370445013e-05,
+                "mean": 3.968068631365895e-05,
+                "median": 3.437051782384515e-05,
+                "min": 3.150803968310356e-05,
+                "total": 0.00023808411788195372
+              }
+            }
+          }
+        },
+        "REAL": {
+          "OPTIMIZE": {
+            "acceleration_vs_baseline": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "e2e_eligible": 0,
+            "e2e_success_rate": null,
+            "e2e_successes": 0,
+            "e2e_unknown": 0,
+            "failures": {
+              "by_reason": {},
+              "by_stage": {},
+              "count": 0
+            },
+            "final_validation_eligible": 0,
+            "final_validation_success_rate": null,
+            "final_validation_successes": 0,
+            "final_validation_unknown": 0,
+            "fresh_final_eligible": 0,
+            "fresh_final_success_rate": null,
+            "fresh_final_successes": 0,
+            "fresh_final_unknown": 0,
+            "patch": {
+              "candidates": 0,
+              "reasons": {},
+              "rejection_rate": null,
+              "rejections": 0
+            },
+            "router": {
+              "accuracy": null,
+              "correct": 0,
+              "eligible": 0,
+              "unknown": 0
+            },
+            "runs": 0,
+            "usage": {
+              "credits": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "model_calls": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "tokens": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "tool_calls": {},
+              "wall_time_s": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              }
+            }
+          },
+          "REPAIR": {
+            "acceleration_vs_baseline": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "e2e_eligible": 0,
+            "e2e_success_rate": null,
+            "e2e_successes": 0,
+            "e2e_unknown": 0,
+            "failures": {
+              "by_reason": {},
+              "by_stage": {},
+              "count": 0
+            },
+            "final_validation_eligible": 0,
+            "final_validation_success_rate": null,
+            "final_validation_successes": 0,
+            "final_validation_unknown": 0,
+            "fresh_final_eligible": 0,
+            "fresh_final_success_rate": null,
+            "fresh_final_successes": 0,
+            "fresh_final_unknown": 0,
+            "patch": {
+              "candidates": 0,
+              "reasons": {},
+              "rejection_rate": null,
+              "rejections": 0
+            },
+            "router": {
+              "accuracy": null,
+              "correct": 0,
+              "eligible": 0,
+              "unknown": 0
+            },
+            "runs": 0,
+            "usage": {
+              "credits": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "model_calls": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "tokens": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "tool_calls": {},
+              "wall_time_s": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              }
+            }
+          },
+          "STRUCTURAL_FIX": {
+            "acceleration_vs_baseline": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "e2e_eligible": 0,
+            "e2e_success_rate": null,
+            "e2e_successes": 0,
+            "e2e_unknown": 0,
+            "failures": {
+              "by_reason": {},
+              "by_stage": {},
+              "count": 0
+            },
+            "final_validation_eligible": 0,
+            "final_validation_success_rate": null,
+            "final_validation_successes": 0,
+            "final_validation_unknown": 0,
+            "fresh_final_eligible": 0,
+            "fresh_final_success_rate": null,
+            "fresh_final_successes": 0,
+            "fresh_final_unknown": 0,
+            "patch": {
+              "candidates": 0,
+              "reasons": {},
+              "rejection_rate": null,
+              "rejections": 0
+            },
+            "router": {
+              "accuracy": null,
+              "correct": 0,
+              "eligible": 0,
+              "unknown": 0
+            },
+            "runs": 0,
+            "usage": {
+              "credits": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "model_calls": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "tokens": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "tool_calls": {},
+              "wall_time_s": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              }
+            }
+          },
+          "SYNTH_FIX": {
+            "acceleration_vs_baseline": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "e2e_eligible": 0,
+            "e2e_success_rate": null,
+            "e2e_successes": 0,
+            "e2e_unknown": 0,
+            "failures": {
+              "by_reason": {},
+              "by_stage": {},
+              "count": 0
+            },
+            "final_validation_eligible": 0,
+            "final_validation_success_rate": null,
+            "final_validation_successes": 0,
+            "final_validation_unknown": 0,
+            "fresh_final_eligible": 0,
+            "fresh_final_success_rate": null,
+            "fresh_final_successes": 0,
+            "fresh_final_unknown": 0,
+            "patch": {
+              "candidates": 0,
+              "reasons": {},
+              "rejection_rate": null,
+              "rejections": 0
+            },
+            "router": {
+              "accuracy": null,
+              "correct": 0,
+              "eligible": 0,
+              "unknown": 0
+            },
+            "runs": 0,
+            "usage": {
+              "credits": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "model_calls": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "tokens": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "tool_calls": {},
+              "wall_time_s": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              }
+            }
+          }
+        }
+      },
+      "by_model": {
+        "deterministic-fixture": {
+          "acceleration_vs_baseline": {
+            "count": 0,
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "total": 0.0
+          },
+          "e2e_eligible": 0,
+          "e2e_success_rate": null,
+          "e2e_successes": 0,
+          "e2e_unknown": 28,
+          "failures": {
+            "by_reason": {},
+            "by_stage": {},
+            "count": 0
+          },
+          "final_validation_eligible": 0,
+          "final_validation_success_rate": null,
+          "final_validation_successes": 0,
+          "final_validation_unknown": 28,
+          "fresh_final_eligible": 0,
+          "fresh_final_success_rate": null,
+          "fresh_final_successes": 0,
+          "fresh_final_unknown": 28,
+          "patch": {
+            "candidates": 0,
+            "reasons": {},
+            "rejection_rate": null,
+            "rejections": 0
+          },
+          "router": {
+            "accuracy": null,
+            "correct": 0,
+            "eligible": 0,
+            "unknown": 28
+          },
+          "runs": 28,
+          "usage": {
+            "credits": {
+              "count": 28,
+              "max": 0.0,
+              "mean": 0.0,
+              "median": 0.0,
+              "min": 0.0,
+              "total": 0.0
+            },
+            "model_calls": {
+              "count": 28,
+              "max": 0.0,
+              "mean": 0.0,
+              "median": 0.0,
+              "min": 0.0,
+              "total": 0.0
+            },
+            "tokens": {
+              "count": 28,
+              "max": 0.0,
+              "mean": 0.0,
+              "median": 0.0,
+              "min": 0.0,
+              "total": 0.0
+            },
+            "tool_calls": {},
+            "wall_time_s": {
+              "count": 28,
+              "max": 6.127404049038887e-05,
+              "mean": 3.563694606002953e-05,
+              "median": 3.344257129356265e-05,
+              "min": 2.449704334139824e-05,
+              "total": 0.0009978344896808267
+            }
+          }
+        }
+      },
+      "by_model_by_evidence": {
+        "DEMO": {
+          "deterministic-fixture": {
+            "acceleration_vs_baseline": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "e2e_eligible": 0,
+            "e2e_success_rate": null,
+            "e2e_successes": 0,
+            "e2e_unknown": 0,
+            "failures": {
+              "by_reason": {},
+              "by_stage": {},
+              "count": 0
+            },
+            "final_validation_eligible": 0,
+            "final_validation_success_rate": null,
+            "final_validation_successes": 0,
+            "final_validation_unknown": 0,
+            "fresh_final_eligible": 0,
+            "fresh_final_success_rate": null,
+            "fresh_final_successes": 0,
+            "fresh_final_unknown": 0,
+            "patch": {
+              "candidates": 0,
+              "reasons": {},
+              "rejection_rate": null,
+              "rejections": 0
+            },
+            "router": {
+              "accuracy": null,
+              "correct": 0,
+              "eligible": 0,
+              "unknown": 0
+            },
+            "runs": 0,
+            "usage": {
+              "credits": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "model_calls": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "tokens": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "tool_calls": {},
+              "wall_time_s": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              }
+            }
+          }
+        },
+        "DETERMINISTIC": {
+          "deterministic-fixture": {
+            "acceleration_vs_baseline": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "e2e_eligible": 0,
+            "e2e_success_rate": null,
+            "e2e_successes": 0,
+            "e2e_unknown": 28,
+            "failures": {
+              "by_reason": {},
+              "by_stage": {},
+              "count": 0
+            },
+            "final_validation_eligible": 0,
+            "final_validation_success_rate": null,
+            "final_validation_successes": 0,
+            "final_validation_unknown": 28,
+            "fresh_final_eligible": 0,
+            "fresh_final_success_rate": null,
+            "fresh_final_successes": 0,
+            "fresh_final_unknown": 28,
+            "patch": {
+              "candidates": 0,
+              "reasons": {},
+              "rejection_rate": null,
+              "rejections": 0
+            },
+            "router": {
+              "accuracy": null,
+              "correct": 0,
+              "eligible": 0,
+              "unknown": 28
+            },
+            "runs": 28,
+            "usage": {
+              "credits": {
+                "count": 28,
+                "max": 0.0,
+                "mean": 0.0,
+                "median": 0.0,
+                "min": 0.0,
+                "total": 0.0
+              },
+              "model_calls": {
+                "count": 28,
+                "max": 0.0,
+                "mean": 0.0,
+                "median": 0.0,
+                "min": 0.0,
+                "total": 0.0
+              },
+              "tokens": {
+                "count": 28,
+                "max": 0.0,
+                "mean": 0.0,
+                "median": 0.0,
+                "min": 0.0,
+                "total": 0.0
+              },
+              "tool_calls": {},
+              "wall_time_s": {
+                "count": 28,
+                "max": 6.127404049038887e-05,
+                "mean": 3.563694606002953e-05,
+                "median": 3.344257129356265e-05,
+                "min": 2.449704334139824e-05,
+                "total": 0.0009978344896808267
+              }
+            }
+          }
+        },
+        "REAL": {
+          "deterministic-fixture": {
+            "acceleration_vs_baseline": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "e2e_eligible": 0,
+            "e2e_success_rate": null,
+            "e2e_successes": 0,
+            "e2e_unknown": 0,
+            "failures": {
+              "by_reason": {},
+              "by_stage": {},
+              "count": 0
+            },
+            "final_validation_eligible": 0,
+            "final_validation_success_rate": null,
+            "final_validation_successes": 0,
+            "final_validation_unknown": 0,
+            "fresh_final_eligible": 0,
+            "fresh_final_success_rate": null,
+            "fresh_final_successes": 0,
+            "fresh_final_unknown": 0,
+            "patch": {
+              "candidates": 0,
+              "reasons": {},
+              "rejection_rate": null,
+              "rejections": 0
+            },
+            "router": {
+              "accuracy": null,
+              "correct": 0,
+              "eligible": 0,
+              "unknown": 0
+            },
+            "runs": 0,
+            "usage": {
+              "credits": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "model_calls": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "tokens": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              },
+              "tool_calls": {},
+              "wall_time_s": {
+                "count": 0,
+                "max": null,
+                "mean": null,
+                "median": null,
+                "min": null,
+                "total": 0.0
+              }
+            }
+          }
+        }
+      },
+      "by_routed_mode": {
+        "OPTIMIZE": {
+          "acceleration_vs_baseline": {
+            "count": 0,
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "total": 0.0
+          },
+          "e2e_eligible": 0,
+          "e2e_success_rate": null,
+          "e2e_successes": 0,
+          "e2e_unknown": 0,
+          "failures": {
+            "by_reason": {},
+            "by_stage": {},
+            "count": 0
+          },
+          "final_validation_eligible": 0,
+          "final_validation_success_rate": null,
+          "final_validation_successes": 0,
+          "final_validation_unknown": 0,
+          "fresh_final_eligible": 0,
+          "fresh_final_success_rate": null,
+          "fresh_final_successes": 0,
+          "fresh_final_unknown": 0,
+          "patch": {
+            "candidates": 0,
+            "reasons": {},
+            "rejection_rate": null,
+            "rejections": 0
+          },
+          "router": {
+            "accuracy": null,
+            "correct": 0,
+            "eligible": 0,
+            "unknown": 0
+          },
+          "runs": 0,
+          "usage": {
+            "credits": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "model_calls": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "tokens": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "tool_calls": {},
+            "wall_time_s": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            }
+          }
+        },
+        "REPAIR": {
+          "acceleration_vs_baseline": {
+            "count": 0,
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "total": 0.0
+          },
+          "e2e_eligible": 0,
+          "e2e_success_rate": null,
+          "e2e_successes": 0,
+          "e2e_unknown": 0,
+          "failures": {
+            "by_reason": {},
+            "by_stage": {},
+            "count": 0
+          },
+          "final_validation_eligible": 0,
+          "final_validation_success_rate": null,
+          "final_validation_successes": 0,
+          "final_validation_unknown": 0,
+          "fresh_final_eligible": 0,
+          "fresh_final_success_rate": null,
+          "fresh_final_successes": 0,
+          "fresh_final_unknown": 0,
+          "patch": {
+            "candidates": 0,
+            "reasons": {},
+            "rejection_rate": null,
+            "rejections": 0
+          },
+          "router": {
+            "accuracy": null,
+            "correct": 0,
+            "eligible": 0,
+            "unknown": 0
+          },
+          "runs": 0,
+          "usage": {
+            "credits": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "model_calls": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "tokens": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "tool_calls": {},
+            "wall_time_s": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            }
+          }
+        },
+        "STRUCTURAL_FIX": {
+          "acceleration_vs_baseline": {
+            "count": 0,
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "total": 0.0
+          },
+          "e2e_eligible": 0,
+          "e2e_success_rate": null,
+          "e2e_successes": 0,
+          "e2e_unknown": 0,
+          "failures": {
+            "by_reason": {},
+            "by_stage": {},
+            "count": 0
+          },
+          "final_validation_eligible": 0,
+          "final_validation_success_rate": null,
+          "final_validation_successes": 0,
+          "final_validation_unknown": 0,
+          "fresh_final_eligible": 0,
+          "fresh_final_success_rate": null,
+          "fresh_final_successes": 0,
+          "fresh_final_unknown": 0,
+          "patch": {
+            "candidates": 0,
+            "reasons": {},
+            "rejection_rate": null,
+            "rejections": 0
+          },
+          "router": {
+            "accuracy": null,
+            "correct": 0,
+            "eligible": 0,
+            "unknown": 0
+          },
+          "runs": 0,
+          "usage": {
+            "credits": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "model_calls": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "tokens": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "tool_calls": {},
+            "wall_time_s": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            }
+          }
+        },
+        "SYNTH_FIX": {
+          "acceleration_vs_baseline": {
+            "count": 0,
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "total": 0.0
+          },
+          "e2e_eligible": 0,
+          "e2e_success_rate": null,
+          "e2e_successes": 0,
+          "e2e_unknown": 0,
+          "failures": {
+            "by_reason": {},
+            "by_stage": {},
+            "count": 0
+          },
+          "final_validation_eligible": 0,
+          "final_validation_success_rate": null,
+          "final_validation_successes": 0,
+          "final_validation_unknown": 0,
+          "fresh_final_eligible": 0,
+          "fresh_final_success_rate": null,
+          "fresh_final_successes": 0,
+          "fresh_final_unknown": 0,
+          "patch": {
+            "candidates": 0,
+            "reasons": {},
+            "rejection_rate": null,
+            "rejections": 0
+          },
+          "router": {
+            "accuracy": null,
+            "correct": 0,
+            "eligible": 0,
+            "unknown": 0
+          },
+          "runs": 0,
+          "usage": {
+            "credits": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "model_calls": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "tokens": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            },
+            "tool_calls": {},
+            "wall_time_s": {
+              "count": 0,
+              "max": null,
+              "mean": null,
+              "median": null,
+              "min": null,
+              "total": 0.0
+            }
+          }
+        }
+      },
+      "definition": "The latest validated record for each completed current-plan slot; used only for resume completion.",
+      "overall_all_evidence": {
+        "acceleration_vs_baseline": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "median": null,
+          "min": null,
+          "total": 0.0
+        },
+        "e2e_eligible": 0,
+        "e2e_success_rate": null,
+        "e2e_successes": 0,
+        "e2e_unknown": 28,
+        "failures": {
+          "by_reason": {},
+          "by_stage": {},
+          "count": 0
+        },
+        "final_validation_eligible": 0,
+        "final_validation_success_rate": null,
+        "final_validation_successes": 0,
+        "final_validation_unknown": 28,
+        "fresh_final_eligible": 0,
+        "fresh_final_success_rate": null,
+        "fresh_final_successes": 0,
+        "fresh_final_unknown": 28,
+        "patch": {
+          "candidates": 0,
+          "reasons": {},
+          "rejection_rate": null,
+          "rejections": 0
+        },
+        "router": {
+          "accuracy": null,
+          "correct": 0,
+          "eligible": 0,
+          "unknown": 28
+        },
+        "runs": 28,
+        "usage": {
+          "credits": {
+            "count": 28,
+            "max": 0.0,
+            "mean": 0.0,
+            "median": 0.0,
+            "min": 0.0,
+            "total": 0.0
+          },
+          "model_calls": {
+            "count": 28,
+            "max": 0.0,
+            "mean": 0.0,
+            "median": 0.0,
+            "min": 0.0,
+            "total": 0.0
+          },
+          "tokens": {
+            "count": 28,
+            "max": 0.0,
+            "mean": 0.0,
+            "median": 0.0,
+            "min": 0.0,
+            "total": 0.0
+          },
+          "tool_calls": {},
+          "wall_time_s": {
+            "count": 28,
+            "max": 6.127404049038887e-05,
+            "mean": 3.563694606002953e-05,
+            "median": 3.344257129356265e-05,
+            "min": 2.449704334139824e-05,
+            "total": 0.0009978344896808267
+          }
+        }
+      },
+      "real_evidence_headline": {
+        "acceleration_vs_baseline": {
+          "count": 0,
+          "max": null,
+          "mean": null,
+          "median": null,
+          "min": null,
+          "total": 0.0
+        },
+        "e2e_eligible": 0,
+        "e2e_success_rate": null,
+        "e2e_successes": 0,
+        "e2e_unknown": 0,
+        "failures": {
+          "by_reason": {},
+          "by_stage": {},
+          "count": 0
+        },
+        "final_validation_eligible": 0,
+        "final_validation_success_rate": null,
+        "final_validation_successes": 0,
+        "final_validation_unknown": 0,
+        "fresh_final_eligible": 0,
+        "fresh_final_success_rate": null,
+        "fresh_final_successes": 0,
+        "fresh_final_unknown": 0,
+        "patch": {
+          "candidates": 0,
+          "reasons": {},
+          "rejection_rate": null,
+          "rejections": 0
+        },
+        "router": {
+          "accuracy": null,
+          "correct": 0,
+          "eligible": 0,
+          "unknown": 0
+        },
+        "runs": 0,
+        "usage": {
+          "credits": {
+            "count": 0,
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "total": 0.0
+          },
+          "model_calls": {
+            "count": 0,
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "total": 0.0
+          },
+          "tokens": {
+            "count": 0,
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "total": 0.0
+          },
+          "tool_calls": {},
+          "wall_time_s": {
+            "count": 0,
+            "max": null,
+            "mean": null,
+            "median": null,
+            "min": null,
+            "total": 0.0
+          }
+        }
+      },
+      "records": 28,
+      "run_ids": [
+        "v3d_fast_001--deterministic-fixture--r001--536b787b9546",
+        "v3d_fast_002--deterministic-fixture--r001--0be65f907abb",
+        "v3d_fast_003--deterministic-fixture--r001--8b2c0c461614",
+        "v3d_fast_004--deterministic-fixture--r001--63b6ff7fd882",
+        "v3d_fast_005--deterministic-fixture--r001--24be10c31c43",
+        "v3d_fast_006--deterministic-fixture--r001--fe4593045564",
+        "v3d_fast_007--deterministic-fixture--r001--c0bcdb92e40e",
+        "v3d_fast_008--deterministic-fixture--r001--078c848e4801",
+        "v3d_fast_009--deterministic-fixture--r001--972b0022c133",
+        "v3d_fast_010--deterministic-fixture--r001--9620eb871ba9",
+        "v3d_fast_011--deterministic-fixture--r001--45d40956ef7a",
+        "v3d_fast_012--deterministic-fixture--r001--10c055a22442",
+        "v3d_fast_013--deterministic-fixture--r001--76963890cc33",
+        "v3d_fast_014--deterministic-fixture--r001--efd3cb1c69da",
+        "v3d_fast_015--deterministic-fixture--r001--5ca412f12eda",
+        "v3d_fast_016--deterministic-fixture--r001--56bb631faebc",
+        "v3d_fast_017--deterministic-fixture--r001--4661b2d8bb4d",
+        "v3d_fast_018--deterministic-fixture--r001--3952ae303b27",
+        "v3d_fast_019--deterministic-fixture--r001--7dd2a223f293",
+        "v3d_fast_020--deterministic-fixture--r001--3b8127ab1a2c",
+        "v3d_fast_021--deterministic-fixture--r001--5d3c4af0b81e",
+        "v3d_fast_022--deterministic-fixture--r001--50c6a978d22d",
+        "v3d_fast_023--deterministic-fixture--r001--849eb504ca6b",
+        "v3d_fast_024--deterministic-fixture--r001--8a72e7da30f2",
+        "v3d_fast_025--deterministic-fixture--r001--48ea7d45d5bb",
+        "v3d_fast_026--deterministic-fixture--r001--562bfec55e1c",
+        "v3d_fast_027--deterministic-fixture--r001--f152825ca465",
+        "v3d_fast_028--deterministic-fixture--r001--58716d855228"
+      ]
+    }
+  },
+  "real_evidence_headline": {
+    "acceleration_vs_baseline": {
+      "count": 0,
+      "max": null,
+      "mean": null,
+      "median": null,
+      "min": null,
+      "total": 0.0
+    },
+    "e2e_eligible": 0,
+    "e2e_success_rate": null,
+    "e2e_successes": 0,
+    "e2e_unknown": 0,
+    "failures": {
+      "by_reason": {},
+      "by_stage": {},
+      "count": 0
+    },
+    "final_validation_eligible": 0,
+    "final_validation_success_rate": null,
+    "final_validation_successes": 0,
+    "final_validation_unknown": 0,
+    "fresh_final_eligible": 0,
+    "fresh_final_success_rate": null,
+    "fresh_final_successes": 0,
+    "fresh_final_unknown": 0,
+    "patch": {
+      "candidates": 0,
+      "reasons": {},
+      "rejection_rate": null,
+      "rejections": 0
+    },
+    "router": {
+      "accuracy": null,
+      "correct": 0,
+      "eligible": 0,
+      "unknown": 0
+    },
+    "runs": 0,
+    "usage": {
+      "credits": {
+        "count": 0,
+        "max": null,
+        "mean": null,
+        "median": null,
+        "min": null,
+        "total": 0.0
+      },
+      "model_calls": {
+        "count": 0,
+        "max": null,
+        "mean": null,
+        "median": null,
+        "min": null,
+        "total": 0.0
+      },
+      "tokens": {
+        "count": 0,
+        "max": null,
+        "mean": null,
+        "median": null,
+        "min": null,
+        "total": 0.0
+      },
+      "tool_calls": {},
+      "wall_time_s": {
+        "count": 0,
+        "max": null,
+        "mean": null,
+        "median": null,
+        "min": null,
+        "total": 0.0
+      }
+    }
+  },
+  "run_ids": [
+    "v3d_fast_001--deterministic-fixture--r001--536b787b9546",
+    "v3d_fast_002--deterministic-fixture--r001--0be65f907abb",
+    "v3d_fast_003--deterministic-fixture--r001--8b2c0c461614",
+    "v3d_fast_004--deterministic-fixture--r001--63b6ff7fd882",
+    "v3d_fast_005--deterministic-fixture--r001--24be10c31c43",
+    "v3d_fast_006--deterministic-fixture--r001--fe4593045564",
+    "v3d_fast_007--deterministic-fixture--r001--c0bcdb92e40e",
+    "v3d_fast_008--deterministic-fixture--r001--078c848e4801",
+    "v3d_fast_009--deterministic-fixture--r001--972b0022c133",
+    "v3d_fast_010--deterministic-fixture--r001--9620eb871ba9",
+    "v3d_fast_011--deterministic-fixture--r001--45d40956ef7a",
+    "v3d_fast_012--deterministic-fixture--r001--10c055a22442",
+    "v3d_fast_013--deterministic-fixture--r001--76963890cc33",
+    "v3d_fast_014--deterministic-fixture--r001--efd3cb1c69da",
+    "v3d_fast_015--deterministic-fixture--r001--5ca412f12eda",
+    "v3d_fast_016--deterministic-fixture--r001--56bb631faebc",
+    "v3d_fast_017--deterministic-fixture--r001--4661b2d8bb4d",
+    "v3d_fast_018--deterministic-fixture--r001--3952ae303b27",
+    "v3d_fast_019--deterministic-fixture--r001--7dd2a223f293",
+    "v3d_fast_020--deterministic-fixture--r001--3b8127ab1a2c",
+    "v3d_fast_021--deterministic-fixture--r001--5d3c4af0b81e",
+    "v3d_fast_022--deterministic-fixture--r001--50c6a978d22d",
+    "v3d_fast_023--deterministic-fixture--r001--849eb504ca6b",
+    "v3d_fast_024--deterministic-fixture--r001--8a72e7da30f2",
+    "v3d_fast_025--deterministic-fixture--r001--48ea7d45d5bb",
+    "v3d_fast_026--deterministic-fixture--r001--562bfec55e1c",
+    "v3d_fast_027--deterministic-fixture--r001--f152825ca465",
+    "v3d_fast_028--deterministic-fixture--r001--58716d855228"
+  ],
+  "schema_version": "v3d.submission-benchmark-snapshot.v1",
+  "selection": {
+    "descriptors_found": 28,
+    "models_selected": [
+      "deterministic-fixture"
+    ],
+    "planned_runs": 28,
+    "task_ids": [
+      "v3d_fast_001",
+      "v3d_fast_002",
+      "v3d_fast_003",
+      "v3d_fast_004",
+      "v3d_fast_005",
+      "v3d_fast_006",
+      "v3d_fast_007",
+      "v3d_fast_008",
+      "v3d_fast_009",
+      "v3d_fast_010",
+      "v3d_fast_011",
+      "v3d_fast_012",
+      "v3d_fast_013",
+      "v3d_fast_014",
+      "v3d_fast_015",
+      "v3d_fast_016",
+      "v3d_fast_017",
+      "v3d_fast_018",
+      "v3d_fast_019",
+      "v3d_fast_020",
+      "v3d_fast_021",
+      "v3d_fast_022",
+      "v3d_fast_023",
+      "v3d_fast_024",
+      "v3d_fast_025",
+      "v3d_fast_026",
+      "v3d_fast_027",
+      "v3d_fast_028"
+    ],
+    "tasks_selected": 28
+  },
+  "source_sha256": "69a62da46cd61f7c7592a5586387add82fdfd9a37c5ba4043f649b9b6edb08b2"
+}

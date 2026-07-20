@@ -1,0 +1,43 @@
+{
+  "schema_version": "v3d.submission-staging-spec.v1",
+  "status": "NOT_FINAL",
+  "max_file_bytes": 5242880,
+  "include": [
+    "llm4hls_harness/llm4hls_agent",
+    "llm4hls_harness/submission_tools",
+    "llm4hls_harness/examples",
+    "llm4hls_harness/task_corpus/official",
+    "llm4hls_harness/task_corpus/v3d-fast",
+    "llm4hls_harness/tests",
+    "llm4hls_harness/scripts",
+    "llm4hls_harness/releases/v3d-corpus-oracle-anchors-2026-07-20.json",
+    "llm4hls_harness/releases/v3d-corpus-oracle-anchors-2026-07-20.md",
+    "llm4hls_harness/releases/v3d-real-vitis-replay-acceptance-2026-07-20.json",
+    "llm4hls_harness/releases/v3d-real-vitis-replay-acceptance-2026-07-20.md",
+    "llm4hls_harness/pyproject.toml",
+    "llm4hls_harness/requirements-v3.lock",
+    "llm4hls_harness/Dockerfile",
+    "llm4hls_harness/.dockerignore",
+    "llm4hls_harness/.env.example",
+    "llm4hls_harness/README.md",
+    "llm4hls_harness/README_CN.md",
+    "docs/submission"
+  ],
+  "exclude": [
+    "**/__pycache__/**",
+    "**/*.pyc",
+    "**/.cache/**",
+    "**/runs/**",
+    "**/checkpoints/**",
+    "**/*.sqlite",
+    "**/golden/**",
+    "**/hidden_like/**",
+    "**/reference/**",
+    "**/answer/**",
+    "**/mutation_manifest.json",
+    "**/acceptance.json",
+    "**/*.tmp",
+    "**/*.swp",
+    "**/*~"
+  ]
+}

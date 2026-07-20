@@ -1,0 +1,45 @@
+{
+  "backend": {
+    "disclaimer": "fixture evidence only; never a real Vitis anchor",
+    "evidence_class": "deterministic",
+    "fingerprint": "5da14446ce97be758c3d4f737867a092dea9beb00f98a54704b2f4594a430ce2",
+    "name": "deterministic",
+    "real_anchor_authorized": false
+  },
+  "corpus": {
+    "manifest_sha256": "9e374fa49e4c68315080ab93ba2f395deea5ae682dd145b791e1db52c2198691",
+    "schema_version": "v3d.fast-corpus.v1",
+    "selected_tasks": 28
+  },
+  "counts": {
+    "accepted": 28,
+    "fixture_acceptances": 28,
+    "pending": 0,
+    "real_vitis_anchors": 0,
+    "rejected": 0
+  },
+  "execution": {
+    "attempted_this_run": 0,
+    "elapsed_seconds": 0.031590858940035105,
+    "resumed_tasks": 28,
+    "serial": true,
+    "state_counts": {
+      "ACCEPTED": 28,
+      "PENDING": 0,
+      "REJECTED": 0,
+      "RUNNING": 0
+    },
+    "stopped_reason": null
+  },
+  "generated_at": "2026-07-20T16:17:39.261568+00:00",
+  "oracle_pass": true,
+  "real_anchor": {
+    "authorized": false,
+    "count": 0,
+    "task_ids": []
+  },
+  "runner_version": "v3d.corpus-oracle-runner.v2",
+  "schema_version": "v3d.submission-oracle-snapshot.v1",
+  "source_sha256": "962a60b0824781efdc0d19cb4be11ba7a6c57937b75e01e3b01c9e1beb5a863e",
+  "status": "COMPLETE"
+}

@@ -25,6 +25,7 @@ __pycache__/
 
 # HLS and experiment outputs
 runs/
+/build/
 *.log
 *.jou
 *.str
