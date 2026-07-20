@@ -1,0 +1,36 @@
+{
+  "baseline_validation": {
+    "cosim": "NOT_RUN",
+    "csim": "PASS",
+    "synth": "FAIL"
+  },
+  "evidence_level": "DETERMINISTIC_FIXTURE_NOT_REAL_VITIS",
+  "expected_failing_gate": "synth",
+  "expected_mode": "SYNTH_FIX",
+  "golden_kernel_sha256": "44f55304720ac529fb50308484dfac68c4e9a8451252200fe211e9a92b3022e4",
+  "golden_validation": {
+    "cosim": "PASS",
+    "csim": "PASS",
+    "synth": "PASS"
+  },
+  "mutated_kernel_sha256": "4b784f27ca9cef2a420adf05f5520995fdef20aeb2bfef09c326e21f1852f281",
+  "planner_input_policy": {
+    "allowed_paths": [
+      "task.toml",
+      "description.md",
+      "kernel.cpp",
+      "kernel.h",
+      "kernel_tb.cpp"
+    ],
+    "forbidden_components": [
+      "answer",
+      "golden",
+      "hidden",
+      "hidden_like",
+      "reference"
+    ]
+  },
+  "requires_cosim": false,
+  "schema_version": "v3d.acceptance.v1",
+  "task_id": "v3d_fast_011"
+}

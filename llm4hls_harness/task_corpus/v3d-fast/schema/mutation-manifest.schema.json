@@ -1,0 +1,112 @@
+{
+  "$id": "https://llm4hls.local/schema/v3d-mutation-manifest-v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "base_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "engine_version": {
+      "const": "v3d.mutation-engine.v1"
+    },
+    "expected_failing_gate": {
+      "enum": [
+        "csim",
+        "synth",
+        "cosim",
+        "ppa"
+      ]
+    },
+    "expected_mode": {
+      "enum": [
+        "REPAIR",
+        "SYNTH_FIX",
+        "STRUCTURAL_FIX",
+        "OPTIMIZE"
+      ]
+    },
+    "mutated_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "mutation_summary": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "operator": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "operator_version": {
+      "const": 1
+    },
+    "schema_version": {
+      "const": "v3d.mutation-manifest.v1"
+    },
+    "seed": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "source_range": {
+      "additionalProperties": false,
+      "properties": {
+        "base_end_line": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "base_range_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "base_start_line": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "file": {
+          "const": "kernel.cpp"
+        },
+        "mutated_end_line": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "mutated_start_line": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "file",
+        "base_start_line",
+        "base_end_line",
+        "mutated_start_line",
+        "mutated_end_line",
+        "base_range_sha256"
+      ],
+      "type": "object"
+    },
+    "task_id": {
+      "pattern": "^v3d_fast_[0-9]{3}$",
+      "type": "string"
+    },
+    "version": {
+      "const": 1
+    }
+  },
+  "required": [
+    "schema_version",
+    "version",
+    "engine_version",
+    "task_id",
+    "base_sha256",
+    "mutated_sha256",
+    "operator",
+    "operator_version",
+    "seed",
+    "source_range",
+    "expected_mode",
+    "expected_failing_gate",
+    "mutation_summary"
+  ],
+  "type": "object"
+}

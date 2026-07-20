@@ -1,0 +1,22 @@
+{
+  "base_sha256": "ae4d8f58b07cc79f60dbfbe41ad0ca73d466bfd4f9f469c0650bc039d4c7b364",
+  "engine_version": "v3d.mutation-engine.v1",
+  "expected_failing_gate": "ppa",
+  "expected_mode": "OPTIMIZE",
+  "mutated_sha256": "e29e48bf8fd0c342f7c6318a6cd0cc114bff81dbb55efcdc18eeec6506cafdec",
+  "mutation_summary": "功能正确，但请求的流水间隔仍有收紧空间。",
+  "operator": "opt_pipeline_ii_2",
+  "operator_version": 1,
+  "schema_version": "v3d.mutation-manifest.v1",
+  "seed": 402,
+  "source_range": {
+    "base_end_line": 12,
+    "base_range_sha256": "39d5cc5cb47bbcf02fd077dff227d1c962dd8b02b622ef0123b450673376a2a3",
+    "base_start_line": 5,
+    "file": "kernel.cpp",
+    "mutated_end_line": 11,
+    "mutated_start_line": 4
+  },
+  "task_id": "v3d_fast_022",
+  "version": 1
+}

@@ -34,6 +34,9 @@ OPENAI_V3_FAST_REQUEST_SCHEMA = "v3b.openai-fast-experiment-request.v1"
 OPENAI_V3_TASK_AWARE_REQUEST_SCHEMA = "v3c.openai-task-aware-request.v1"
 OPENAI_V3_ADAPTER_VERSION = "openai-v2-compat-planner-adapter-v1"
 TASK_AWARE_MODES = frozenset({"REPAIR", "SYNTH_FIX", "STRUCTURAL_FIX"})
+_FORBIDDEN_PLANNER_PATH_COMPONENTS = frozenset(
+    {"answer", "golden", "hidden", "hidden_like", "reference"}
+)
 
 
 class V3OpenAIPlannerError(RuntimeError):
@@ -114,6 +117,25 @@ def _json_copy(value: object) -> object:
     return json.loads(canonical_json(value).decode("utf-8"))
 
 
+def _public_planner_path(value: object, name: str) -> str:
+    """Validate a public-only path before it can influence a Planner request."""
+
+    path_text = _text(value, name)
+    relative = Path(path_text)
+    if (
+        relative.is_absolute()
+        or ".." in relative.parts
+        or any(
+            part.casefold() in _FORBIDDEN_PLANNER_PATH_COMPONENTS
+            for part in relative.parts
+        )
+    ):
+        raise V3OpenAIPlannerError(
+            f"Planner input {name} enters a forbidden path"
+        )
+    return path_text
+
+
 def _resolve_binding(
     run_root: Path,
     value: object,
@@ -131,8 +153,17 @@ def _resolve_binding(
     reference = _text(reference, f"{name}.ref")
     digest = _text(digest, f"{name}.sha256")
     relative = Path(reference)
-    if relative.is_absolute() or ".." in relative.parts:
-        raise V3OpenAIPlannerError(f"Planner input {name} escapes the run")
+    if (
+        relative.is_absolute()
+        or ".." in relative.parts
+        or any(
+            part.casefold() in _FORBIDDEN_PLANNER_PATH_COMPONENTS
+            for part in relative.parts
+        )
+    ):
+        raise V3OpenAIPlannerError(
+            f"Planner input {name} escapes the run or enters a forbidden path"
+        )
     cursor = run_root
     for part in relative.parts:
         cursor = cursor / part
@@ -471,10 +502,10 @@ class OpenAICompatibleV3PlannerAdapter:
             raise ValueError("final_reserve_credits must be non-negative")
         self.final_reserve_credits = int(final_reserve_credits)
         self.fast_experiment = bool(fast_experiment)
-        self.read_only_headers = {
-            str(name): str(content)
-            for name, content in (read_only_headers or {}).items()
-        }
+        self.read_only_headers = {}
+        for name, content in (read_only_headers or {}).items():
+            public_name = _public_planner_path(name, "read_only_headers")
+            self.read_only_headers[public_name] = str(content)
         inferred = getattr(getattr(provider, "config", None), "max_output_tokens", None)
         selected_max = inferred if max_output_tokens is None else max_output_tokens
         if (
@@ -525,6 +556,10 @@ class OpenAICompatibleV3PlannerAdapter:
     ) -> PreparedPlannerCall:
         value = validate_planner_input(planner_input)
         task = _mapping(value.get("task"), "task")
+        for path_field in ("kernel_file", "public_tb"):
+            path_value = task.get(path_field)
+            if path_value is not None:
+                _public_planner_path(path_value, f"task.{path_field}")
         round_state = _mapping(value.get("round"), "round")
         incumbent = _mapping(value.get("incumbent"), "incumbent")
         baseline = _mapping(value.get("baseline"), "baseline")

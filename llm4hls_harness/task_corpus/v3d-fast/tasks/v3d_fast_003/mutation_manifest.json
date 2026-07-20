@@ -1,0 +1,22 @@
+{
+  "base_sha256": "5372e6e44b5f2cba348143f0958cddedd455d28a6ac02f8695dab2cef55a52ef",
+  "engine_version": "v3d.mutation-engine.v1",
+  "expected_failing_gate": "csim",
+  "expected_mode": "REPAIR",
+  "mutated_sha256": "cb372e9e80b015dd0ff2fcf84954779f371ba05d707f66c6d57cc7db53fb353a",
+  "mutation_summary": "逐元素偏置方向错误。",
+  "operator": "repair_bias_sign",
+  "operator_version": 1,
+  "schema_version": "v3d.mutation-manifest.v1",
+  "seed": 103,
+  "source_range": {
+    "base_end_line": 7,
+    "base_range_sha256": "6302b119010f1ce3fa60e9bd98c9bbc82455679a904aea7d1fb64a919a93ec40",
+    "base_start_line": 5,
+    "file": "kernel.cpp",
+    "mutated_end_line": 6,
+    "mutated_start_line": 4
+  },
+  "task_id": "v3d_fast_003",
+  "version": 1
+}

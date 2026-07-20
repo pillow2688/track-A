@@ -1,0 +1,14 @@
+task_id = "v3d_fast_010"
+task_type = "generate"
+difficulty = 3
+top = "kernel"
+kernel_file = "kernel.cpp"
+header_files = ["kernel.h"]
+public_tb = "kernel_tb.cpp"
+budget = 60
+requires_cosim = false
+initial_condition = "对每个 0 <= i < V3D_SIZE，必须满足 output[i] = input[i] * 3 + 7；V3D_SIZE 固定为 16，合法输入元素范围为 [-1000000, 1000000]。"
+
+[target]
+part = "xcu55c-fsvh2892-2L-e"
+clock_ns = 5.0

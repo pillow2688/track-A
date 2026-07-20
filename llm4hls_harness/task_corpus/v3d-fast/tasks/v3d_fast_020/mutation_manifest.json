@@ -1,0 +1,22 @@
+{
+  "base_sha256": "c01d2757e1ba01b2e3751d12c97788b95c41c83e8169c07f66abfbd2495582da",
+  "engine_version": "v3d.mutation-engine.v1",
+  "expected_failing_gate": "cosim",
+  "expected_mode": "STRUCTURAL_FIX",
+  "mutated_sha256": "0c8fa3fdbb38b22223754b3acb25f45b5585bf1335f77b77efb754cfb3bb7ae5",
+  "mutation_summary": "旁路流按四元素分块领先主流，超过 FIFO 深度。",
+  "operator": "struct_side_chunk_4",
+  "operator_version": 1,
+  "schema_version": "v3d.mutation-manifest.v1",
+  "seed": 306,
+  "source_range": {
+    "base_end_line": 14,
+    "base_range_sha256": "5f8045f120b6f94e66c521c7946419225c83bc4060952d97cb238dfe1c057b60",
+    "base_start_line": 4,
+    "file": "kernel.cpp",
+    "mutated_end_line": 17,
+    "mutated_start_line": 3
+  },
+  "task_id": "v3d_fast_020",
+  "version": 1
+}

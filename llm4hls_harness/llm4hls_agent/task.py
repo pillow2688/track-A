@@ -17,7 +17,13 @@ class TaskPackageError(ValueError):
     """Raised when a public task package violates the supported contract."""
 
 
-_FORBIDDEN_DIRECTORIES = {"hidden", "reference"}
+_FORBIDDEN_DIRECTORIES = {
+    "answer",
+    "golden",
+    "hidden",
+    "hidden_like",
+    "reference",
+}
 _SAFE_PUBLIC_PATH = re.compile(r"\A[A-Za-z0-9_./+-]+\Z")
 _SAFE_C_IDENTIFIER = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*\Z")
 _SAFE_TCL_ATOM = re.compile(r"\A[A-Za-z0-9_.+-]+\Z")
@@ -106,8 +112,9 @@ def current_public_file_hashes(task: PublicTask) -> Mapping[str, str]:
 def load_public_task(task_dir: str | Path) -> PublicTask:
     """Load only task metadata, baseline, headers, description, and public TB.
 
-    The implementation deliberately never probes or reads ``hidden/`` or
-    ``reference/``. Those inputs belong exclusively to external grading.
+    The implementation deliberately never probes or reads ``answer/``,
+    ``golden/``, ``hidden/``, ``hidden_like/``, or ``reference/``. Those inputs
+    belong only to external grading or offline corpus validation.
     """
 
     supplied_root = Path(task_dir)

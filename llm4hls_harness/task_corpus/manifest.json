@@ -28,8 +28,24 @@
       ]
     },
     {
-      "id": "project_examples",
+      "id": "v3d_fast_corpus",
       "priority": 1,
+      "path": "v3d-fast/tasks",
+      "scope": "28 deterministic development tasks for V3-C phase routing and fast Planner regression",
+      "contains_hidden_or_reference_files": false,
+      "contains_offline_hidden_like_and_golden": true,
+      "runtime_visibility": "task.toml public inputs only; answer/golden/hidden/hidden_like/reference are forbidden from Task Loader and Planner paths",
+      "corpus_manifest": "v3d-fast/corpus_manifest.json",
+      "mode_counts": {
+        "REPAIR": 8,
+        "SYNTH_FIX": 6,
+        "STRUCTURAL_FIX": 6,
+        "OPTIMIZE": 8
+      }
+    },
+    {
+      "id": "project_examples",
+      "priority": 2,
       "path": "../examples",
       "scope": "locally maintained harness fixtures",
       "contains_hidden_or_reference_files": false

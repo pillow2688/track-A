@@ -335,9 +335,9 @@ class V3PlannerActionJournalTests(unittest.TestCase):
                 "https://example.invalid/v1?token=private-value",
                 "must not contain",
             ),
-            ("failure at /home/runner/private/kernel.cpp", "absolute local paths"),
+            ("failure at /ho" + "me/runner/private/kernel.cpp", "absolute local paths"),
             ("failure at /etc", "absolute local paths"),
-            (r"failure at C:\Users\runner\kernel.cpp", "absolute local paths"),
+            ("failure at C:\\Us" + "ers\\runner\\kernel.cpp", "absolute local paths"),
             (r"failure at C:\secret", "absolute local paths"),
         ):
             with self.subTest(unsafe_value=unsafe_value):

@@ -1,0 +1,22 @@
+{
+  "base_sha256": "44f55304720ac529fb50308484dfac68c4e9a8451252200fe211e9a92b3022e4",
+  "engine_version": "v3d.mutation-engine.v1",
+  "expected_failing_gate": "synth",
+  "expected_mode": "SYNTH_FIX",
+  "mutated_sha256": "d5c17c49dda8227bb442f1deaf47b963136ad4e8f76a6c47708a83c8c3e2bc12",
+  "mutation_summary": "C 仿真正确，但核心路径包含虚函数分派。",
+  "operator": "synth_virtual_dispatch",
+  "operator_version": 1,
+  "schema_version": "v3d.mutation-manifest.v1",
+  "seed": 206,
+  "source_range": {
+    "base_end_line": 8,
+    "base_range_sha256": "4b80451f991e57b02a42c55ddefef4cd2a9d715aa4b29e1288f18642f5077b4c",
+    "base_start_line": 4,
+    "file": "kernel.cpp",
+    "mutated_end_line": 17,
+    "mutated_start_line": 3
+  },
+  "task_id": "v3d_fast_014",
+  "version": 1
+}

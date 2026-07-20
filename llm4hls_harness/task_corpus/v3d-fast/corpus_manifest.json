@@ -1,0 +1,282 @@
+{
+  "generator_version": "v3d.fast-corpus-generator.v1",
+  "mode_counts": {
+    "OPTIMIZE": 8,
+    "REPAIR": 8,
+    "STRUCTURAL_FIX": 6,
+    "SYNTH_FIX": 6
+  },
+  "mutation_engine_version": "v3d.mutation-engine.v1",
+  "planner_input_policy": {
+    "allowed_paths": [
+      "task.toml",
+      "description.md",
+      "kernel.cpp",
+      "kernel.h",
+      "kernel_tb.cpp"
+    ],
+    "forbidden_components": [
+      "answer",
+      "golden",
+      "hidden",
+      "hidden_like",
+      "reference"
+    ]
+  },
+  "schema_version": "v3d.fast-corpus.v1",
+  "task_count": 28,
+  "tasks": [
+    {
+      "acceptance_sha256": "d51d351c1a02bf592449ac47227aac5cdd491de913da6735aeea6f3da6d5e21c",
+      "mode": "REPAIR",
+      "mutation_manifest_sha256": "d29af3562c2c10d235acfda57df41cf99329f7584d43d1e80fa4bef8f34aabe8",
+      "operator": "repair_off_by_one",
+      "path": "tasks/v3d_fast_001",
+      "seed": 101,
+      "task_id": "v3d_fast_001"
+    },
+    {
+      "acceptance_sha256": "6f62af2cb0274db85919b7641ccf94e13e85b7e824a76456e99f81323bf430a1",
+      "mode": "REPAIR",
+      "mutation_manifest_sha256": "5ac74ac6b0c54a60b5143144800b287d27ab50862959c91800a5fab62d90decf",
+      "operator": "repair_wrong_multiplier",
+      "path": "tasks/v3d_fast_002",
+      "seed": 102,
+      "task_id": "v3d_fast_002"
+    },
+    {
+      "acceptance_sha256": "c4df2c1580ad9a26b67a9db4e8afc1a63764922171785d066acc552ea5ff92a9",
+      "mode": "REPAIR",
+      "mutation_manifest_sha256": "ea4bf78d371e3d74c67f548531efd076f60497fcc627af09017a505a227b25db",
+      "operator": "repair_bias_sign",
+      "path": "tasks/v3d_fast_003",
+      "seed": 103,
+      "task_id": "v3d_fast_003"
+    },
+    {
+      "acceptance_sha256": "c6090f9596f5f88cc9d1a90c3714e9b9156001ce69009277595d6646e1dfae72",
+      "mode": "REPAIR",
+      "mutation_manifest_sha256": "9be302a8c50cfd844f214fffd9901f66e4556eeca25d667e662de9a5f4694e91",
+      "operator": "repair_shifted_index",
+      "path": "tasks/v3d_fast_004",
+      "seed": 104,
+      "task_id": "v3d_fast_004"
+    },
+    {
+      "acceptance_sha256": "03e359c49ca51ce53f5880b22efd71e94f76fdd47d6a8143672e2fe41f18542a",
+      "mode": "REPAIR",
+      "mutation_manifest_sha256": "d2ad46b421c4813c5f8cda75317e18b9b32c2411f8d9336930e5b80506a00aac",
+      "operator": "repair_running_sum",
+      "path": "tasks/v3d_fast_005",
+      "seed": 105,
+      "task_id": "v3d_fast_005"
+    },
+    {
+      "acceptance_sha256": "cb5f68cb18c33ee8ad37deec333ef51a8a92f32d013812fa2d4ef942e54d0ed0",
+      "mode": "REPAIR",
+      "mutation_manifest_sha256": "92604e96bd74fd6458ea9243e501de983b6f1b8c5c6d00a2059cec14469d7de8",
+      "operator": "repair_clamp_negative",
+      "path": "tasks/v3d_fast_006",
+      "seed": 106,
+      "task_id": "v3d_fast_006"
+    },
+    {
+      "acceptance_sha256": "6885115e3d5cca99953fd0f78d397e8b454ecc76b757ca609d52ce76abd9815f",
+      "mode": "REPAIR",
+      "mutation_manifest_sha256": "58bf3d9a1d67beb3a86d1f9ab5babdd826e0edc531852a0b22d80befd39a387b",
+      "operator": "repair_branch_inversion",
+      "path": "tasks/v3d_fast_007",
+      "seed": 107,
+      "task_id": "v3d_fast_007"
+    },
+    {
+      "acceptance_sha256": "d0c32ed71b1c90c44944d247acce9a690844f7ce379255aea148d80eed2b44f5",
+      "mode": "REPAIR",
+      "mutation_manifest_sha256": "7f34a0f00d5b5c9029fe8da8e4e692b2e7f75bd9eeeca43514f257840de0cf4c",
+      "operator": "repair_rotated_output",
+      "path": "tasks/v3d_fast_008",
+      "seed": 108,
+      "task_id": "v3d_fast_008"
+    },
+    {
+      "acceptance_sha256": "b3cd2b071d75e50fe5ca423646b9513fec4cfee80bb24d0e226bf9de030bd3b7",
+      "mode": "SYNTH_FIX",
+      "mutation_manifest_sha256": "85383c0c76ff055bcd7b72881841937e2f76f4ce35daa648f582b30c7c72e0e6",
+      "operator": "synth_dynamic_allocation",
+      "path": "tasks/v3d_fast_009",
+      "seed": 201,
+      "task_id": "v3d_fast_009"
+    },
+    {
+      "acceptance_sha256": "7bde423b3e87c108372c79dd24686854d1c58073f916ca115497a54d7247ab88",
+      "mode": "SYNTH_FIX",
+      "mutation_manifest_sha256": "78bebbe1d90daf08ca2774fe161b4704e9e6a2d4ba955026976616aef72530b2",
+      "operator": "synth_recursion",
+      "path": "tasks/v3d_fast_010",
+      "seed": 202,
+      "task_id": "v3d_fast_010"
+    },
+    {
+      "acceptance_sha256": "ecdd57bb3aa16d1001b2925e3e6ab4bc72d95ce8da4953c1590e032bf72e6a3f",
+      "mode": "SYNTH_FIX",
+      "mutation_manifest_sha256": "72d811f4bb37d788ed3e6aedcafc06906a721ade283c54d8f0f3b4c36400a917",
+      "operator": "synth_function_pointer",
+      "path": "tasks/v3d_fast_011",
+      "seed": 203,
+      "task_id": "v3d_fast_011"
+    },
+    {
+      "acceptance_sha256": "fbf15ce4539922acc13eb146c81c06ce9e2142f03a346b348a727d87120fb1e5",
+      "mode": "SYNTH_FIX",
+      "mutation_manifest_sha256": "db8ae40713e33d8ea40e33ec8493eefe6ba9cf7ecd902f67a4f4b5e68c4b8852",
+      "operator": "synth_std_vector",
+      "path": "tasks/v3d_fast_012",
+      "seed": 204,
+      "task_id": "v3d_fast_012"
+    },
+    {
+      "acceptance_sha256": "a342c3d34de549ba9d9bdd54e3a7d361c2d72c398a6cfd11dd1e1fc942f6f49a",
+      "mode": "SYNTH_FIX",
+      "mutation_manifest_sha256": "01908e9a0387e918af63591e784a95a38cb1de5e29422e60b74678b3be9cc600",
+      "operator": "synth_exception",
+      "path": "tasks/v3d_fast_013",
+      "seed": 205,
+      "task_id": "v3d_fast_013"
+    },
+    {
+      "acceptance_sha256": "e495dbbcd51226d44cddef9fe35c2ce16ec9701acf58df00bd9486056739a469",
+      "mode": "SYNTH_FIX",
+      "mutation_manifest_sha256": "88568cd33ec77b0c6580c3521569d58a7f5ce5be30d74781ab22bc80e3c45d67",
+      "operator": "synth_virtual_dispatch",
+      "path": "tasks/v3d_fast_014",
+      "seed": 206,
+      "task_id": "v3d_fast_014"
+    },
+    {
+      "acceptance_sha256": "0e0c4dc38fff804b328bd9e662252a5558f438ee073a19ea148bd25af56c421e",
+      "mode": "STRUCTURAL_FIX",
+      "mutation_manifest_sha256": "6a1255c90e486fc7f15e03ef0383d838756c50e4ef85f645d5b6a0f875f13e99",
+      "operator": "struct_main_burst",
+      "path": "tasks/v3d_fast_015",
+      "seed": 301,
+      "task_id": "v3d_fast_015"
+    },
+    {
+      "acceptance_sha256": "ad998945ee3f2798e2e253f3a23ca854259baad7d5b782e07a348f28da9fcbdf",
+      "mode": "STRUCTURAL_FIX",
+      "mutation_manifest_sha256": "6b5c1a5b296a3fa269ea5012aaf72b1cdffc1d9935e8c22e8603a344ac5225a2",
+      "operator": "struct_side_burst",
+      "path": "tasks/v3d_fast_016",
+      "seed": 302,
+      "task_id": "v3d_fast_016"
+    },
+    {
+      "acceptance_sha256": "3a96e2c56cddf70aacd88f4516204e8644c9355d0ebbffd565835da4f47873c3",
+      "mode": "STRUCTURAL_FIX",
+      "mutation_manifest_sha256": "17f229a93c5f00a81f3e93f337914a4378ed99f2b0f46b9e8d2da4ab308add19",
+      "operator": "struct_main_chunk_3",
+      "path": "tasks/v3d_fast_017",
+      "seed": 303,
+      "task_id": "v3d_fast_017"
+    },
+    {
+      "acceptance_sha256": "ee784ffedad945cc587114d82a55a6e8760fc4e8a67922d28581b5e98d86d384",
+      "mode": "STRUCTURAL_FIX",
+      "mutation_manifest_sha256": "274470c76c8034cd90cac73dda989de40d3861857cf3a234f8c1e883096d4ee3",
+      "operator": "struct_side_chunk_3",
+      "path": "tasks/v3d_fast_018",
+      "seed": 304,
+      "task_id": "v3d_fast_018"
+    },
+    {
+      "acceptance_sha256": "2498c49eb250f50d3d3434b25f6d391ffbdfd8b9c36b9fb86f0e9ceb49a88d0c",
+      "mode": "STRUCTURAL_FIX",
+      "mutation_manifest_sha256": "e1189337f11c2d55bedbc5b80328aec104313c566d582e780ed6ed82d7781c36",
+      "operator": "struct_main_chunk_4",
+      "path": "tasks/v3d_fast_019",
+      "seed": 305,
+      "task_id": "v3d_fast_019"
+    },
+    {
+      "acceptance_sha256": "feffc9588dfebe00bf956da34f3495f0d2f76cff61b85564aabfe4ab891efe9b",
+      "mode": "STRUCTURAL_FIX",
+      "mutation_manifest_sha256": "93b4ac8f0021167c9cacf488299c0df3c193bf5aed0acc0983406cc0ca111ed3",
+      "operator": "struct_side_chunk_4",
+      "path": "tasks/v3d_fast_020",
+      "seed": 306,
+      "task_id": "v3d_fast_020"
+    },
+    {
+      "acceptance_sha256": "b19ddff14ddf07affc2d702c9aace5496f2af074377637ba2174ae6cd97a0849",
+      "mode": "OPTIMIZE",
+      "mutation_manifest_sha256": "ca195efb46560e14f1ae57b64c2e0f4e2624d26ac12284458da7f1e940d505e2",
+      "operator": "opt_remove_pipeline",
+      "path": "tasks/v3d_fast_021",
+      "seed": 401,
+      "task_id": "v3d_fast_021"
+    },
+    {
+      "acceptance_sha256": "c9aa041295deba822d704c97e6ba30e575cd66e49989f5b7dd0a7f77fb74367e",
+      "mode": "OPTIMIZE",
+      "mutation_manifest_sha256": "7f4a4208975dde38102ef6203f74487f11e8a5ae5a08c3694949978368b64080",
+      "operator": "opt_pipeline_ii_2",
+      "path": "tasks/v3d_fast_022",
+      "seed": 402,
+      "task_id": "v3d_fast_022"
+    },
+    {
+      "acceptance_sha256": "6b9f505f14d353390621b0bcec81ba3bd2c1848537cfdce36740243ae21cfefa",
+      "mode": "OPTIMIZE",
+      "mutation_manifest_sha256": "2c51a53f136b3593ec31ee6eb1c542331f95ce1f5ce73ba039b0813c72d8baee",
+      "operator": "opt_pipeline_ii_4",
+      "path": "tasks/v3d_fast_023",
+      "seed": 403,
+      "task_id": "v3d_fast_023"
+    },
+    {
+      "acceptance_sha256": "6a15ce7a675db4f323808e411af6a7777dd5f0e7423610a5c93ddb9468e9f7bc",
+      "mode": "OPTIMIZE",
+      "mutation_manifest_sha256": "af35313f13e520be2da87d669ba9a88d82b6927ea2417fa07a8b020cfe42832b",
+      "operator": "opt_pipeline_ii_8",
+      "path": "tasks/v3d_fast_024",
+      "seed": 404,
+      "task_id": "v3d_fast_024"
+    },
+    {
+      "acceptance_sha256": "c9f06f9a76297fae6eab84ffd6937414f81f1afa8044d9b4d9cc845bdbe73b8f",
+      "mode": "OPTIMIZE",
+      "mutation_manifest_sha256": "b1cab5d98a865e0533cb9398c5527d597b6ab2f226b1ea5a7404a519f557cf90",
+      "operator": "opt_remove_unroll",
+      "path": "tasks/v3d_fast_025",
+      "seed": 405,
+      "task_id": "v3d_fast_025"
+    },
+    {
+      "acceptance_sha256": "ba363220d524edc5cf403e113f88774d00f5c654559511874931a82f508b1c6e",
+      "mode": "OPTIMIZE",
+      "mutation_manifest_sha256": "ef398493f9e7691e016c0d02e2d623a1502d5a98d52b0b77542c50c118ab77dc",
+      "operator": "opt_unroll_factor_2",
+      "path": "tasks/v3d_fast_026",
+      "seed": 406,
+      "task_id": "v3d_fast_026"
+    },
+    {
+      "acceptance_sha256": "526b9348fe3b4fc7454fead36e04854aff06816db25d31623f99c8a3a3713411",
+      "mode": "OPTIMIZE",
+      "mutation_manifest_sha256": "fae4e9259fe66d025baef5ef8a95d591d4ec0129c9cc4fea249172ba9d36cc23",
+      "operator": "opt_remove_partition",
+      "path": "tasks/v3d_fast_027",
+      "seed": 407,
+      "task_id": "v3d_fast_027"
+    },
+    {
+      "acceptance_sha256": "b41b645d25a659a333c158a2e89299eb15d61f11ca4e11c6639265421520f1e1",
+      "mode": "OPTIMIZE",
+      "mutation_manifest_sha256": "e1ed97435dc353f175ebab020339f38e650a73f10d5930d9bc40f66e3e8bfcbc",
+      "operator": "opt_serial_two_pass",
+      "path": "tasks/v3d_fast_028",
+      "seed": 408,
+      "task_id": "v3d_fast_028"
+    }
+  ]
+}

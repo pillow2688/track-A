@@ -1,0 +1,137 @@
+{
+  "$id": "https://llm4hls.local/schema/v3d-fast-corpus-v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "generator_version": {
+      "const": "v3d.fast-corpus-generator.v1"
+    },
+    "mode_counts": {
+      "additionalProperties": false,
+      "properties": {
+        "OPTIMIZE": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "REPAIR": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "STRUCTURAL_FIX": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "SYNTH_FIX": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "REPAIR",
+        "SYNTH_FIX",
+        "STRUCTURAL_FIX",
+        "OPTIMIZE"
+      ],
+      "type": "object"
+    },
+    "mutation_engine_version": {
+      "const": "v3d.mutation-engine.v1"
+    },
+    "planner_input_policy": {
+      "additionalProperties": false,
+      "properties": {
+        "allowed_paths": {
+          "const": [
+            "task.toml",
+            "description.md",
+            "kernel.cpp",
+            "kernel.h",
+            "kernel_tb.cpp"
+          ]
+        },
+        "forbidden_components": {
+          "const": [
+            "answer",
+            "golden",
+            "hidden",
+            "hidden_like",
+            "reference"
+          ]
+        }
+      },
+      "required": [
+        "allowed_paths",
+        "forbidden_components"
+      ],
+      "type": "object"
+    },
+    "schema_version": {
+      "const": "v3d.fast-corpus.v1"
+    },
+    "task_count": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "tasks": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "acceptance_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "REPAIR",
+              "SYNTH_FIX",
+              "STRUCTURAL_FIX",
+              "OPTIMIZE"
+            ]
+          },
+          "mutation_manifest_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "operator": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "path": {
+            "pattern": "^tasks/[A-Za-z0-9_+-]+$",
+            "type": "string"
+          },
+          "seed": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "task_id": {
+            "pattern": "^v3d_fast_[0-9]{3}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "path",
+          "mode",
+          "operator",
+          "seed",
+          "mutation_manifest_sha256",
+          "acceptance_sha256"
+        ],
+        "type": "object"
+      },
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "generator_version",
+    "mutation_engine_version",
+    "task_count",
+    "mode_counts",
+    "planner_input_policy",
+    "tasks"
+  ],
+  "type": "object"
+}

@@ -1,0 +1,22 @@
+{
+  "base_sha256": "ae4d8f58b07cc79f60dbfbe41ad0ca73d466bfd4f9f469c0650bc039d4c7b364",
+  "engine_version": "v3d.mutation-engine.v1",
+  "expected_failing_gate": "ppa",
+  "expected_mode": "OPTIMIZE",
+  "mutated_sha256": "3b8fd92c95c0abe127e345a70713cb1f70ca63e3c92268c6a576d0173b409b9d",
+  "mutation_summary": "功能正确，但可融合的数据路径被串行拆成两遍。",
+  "operator": "opt_serial_two_pass",
+  "operator_version": 1,
+  "schema_version": "v3d.mutation-manifest.v1",
+  "seed": 408,
+  "source_range": {
+    "base_end_line": 12,
+    "base_range_sha256": "39d5cc5cb47bbcf02fd077dff227d1c962dd8b02b622ef0123b450673376a2a3",
+    "base_start_line": 5,
+    "file": "kernel.cpp",
+    "mutated_end_line": 12,
+    "mutated_start_line": 4
+  },
+  "task_id": "v3d_fast_028",
+  "version": 1
+}

@@ -96,7 +96,14 @@ class PublicTaskLoaderTests(unittest.TestCase):
                 task.headers["changed.h"] = b""  # type: ignore[index]
 
     def test_rejects_task_paths_that_escape_or_enter_forbidden_directories(self) -> None:
-        for kernel_file in ("../outside.cpp", "hidden/kernel.cpp", "reference/kernel.cpp"):
+        for kernel_file in (
+            "../outside.cpp",
+            "answer/kernel.cpp",
+            "golden/kernel.cpp",
+            "hidden/kernel.cpp",
+            "hidden_like/kernel.cpp",
+            "reference/kernel.cpp",
+        ):
             with self.subTest(kernel_file=kernel_file):
                 with tempfile.TemporaryDirectory() as tmp:
                     root = Path(tmp)

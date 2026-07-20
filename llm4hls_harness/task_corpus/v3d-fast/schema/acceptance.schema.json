@@ -1,0 +1,215 @@
+{
+  "$id": "https://llm4hls.local/schema/v3d-acceptance-v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "expected_mode": {
+            "const": "STRUCTURAL_FIX"
+          }
+        },
+        "required": [
+          "expected_mode"
+        ]
+      },
+      "then": {
+        "properties": {
+          "requires_cosim": {
+            "const": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "expected_mode": {
+            "enum": [
+              "REPAIR",
+              "SYNTH_FIX"
+            ]
+          }
+        },
+        "required": [
+          "expected_mode"
+        ]
+      },
+      "then": {
+        "properties": {
+          "requires_cosim": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "expected_mode": {
+            "const": "OPTIMIZE"
+          },
+          "requires_cosim": {
+            "const": true
+          }
+        },
+        "required": [
+          "expected_mode",
+          "requires_cosim"
+        ]
+      },
+      "then": {
+        "properties": {
+          "baseline_validation": {
+            "properties": {
+              "cosim": {
+                "const": "PASS"
+              }
+            }
+          },
+          "golden_validation": {
+            "properties": {
+              "cosim": {
+                "const": "PASS"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "baseline_validation": {
+      "additionalProperties": false,
+      "properties": {
+        "cosim": {
+          "enum": [
+            "PASS",
+            "FAIL",
+            "NOT_RUN"
+          ]
+        },
+        "csim": {
+          "enum": [
+            "PASS",
+            "FAIL",
+            "NOT_RUN"
+          ]
+        },
+        "synth": {
+          "enum": [
+            "PASS",
+            "FAIL",
+            "NOT_RUN"
+          ]
+        }
+      },
+      "required": [
+        "csim",
+        "synth",
+        "cosim"
+      ],
+      "type": "object"
+    },
+    "evidence_level": {
+      "const": "DETERMINISTIC_FIXTURE_NOT_REAL_VITIS"
+    },
+    "expected_failing_gate": {
+      "enum": [
+        "csim",
+        "synth",
+        "cosim",
+        "ppa"
+      ]
+    },
+    "expected_mode": {
+      "enum": [
+        "REPAIR",
+        "SYNTH_FIX",
+        "STRUCTURAL_FIX",
+        "OPTIMIZE"
+      ]
+    },
+    "golden_kernel_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "golden_validation": {
+      "additionalProperties": false,
+      "properties": {
+        "cosim": {
+          "const": "PASS"
+        },
+        "csim": {
+          "const": "PASS"
+        },
+        "synth": {
+          "const": "PASS"
+        }
+      },
+      "required": [
+        "csim",
+        "synth",
+        "cosim"
+      ],
+      "type": "object"
+    },
+    "mutated_kernel_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "planner_input_policy": {
+      "additionalProperties": false,
+      "properties": {
+        "allowed_paths": {
+          "const": [
+            "task.toml",
+            "description.md",
+            "kernel.cpp",
+            "kernel.h",
+            "kernel_tb.cpp"
+          ]
+        },
+        "forbidden_components": {
+          "const": [
+            "answer",
+            "golden",
+            "hidden",
+            "hidden_like",
+            "reference"
+          ]
+        }
+      },
+      "required": [
+        "allowed_paths",
+        "forbidden_components"
+      ],
+      "type": "object"
+    },
+    "requires_cosim": {
+      "type": "boolean"
+    },
+    "schema_version": {
+      "const": "v3d.acceptance.v1"
+    },
+    "task_id": {
+      "pattern": "^v3d_fast_[0-9]{3}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "task_id",
+    "expected_mode",
+    "expected_failing_gate",
+    "requires_cosim",
+    "baseline_validation",
+    "golden_validation",
+    "golden_kernel_sha256",
+    "mutated_kernel_sha256",
+    "planner_input_policy",
+    "evidence_level"
+  ],
+  "type": "object"
+}

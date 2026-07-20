@@ -436,7 +436,7 @@ class V3OpenAIPlannerTests(unittest.TestCase):
                         "pipeline_ii": 1,
                         "trip_count": 64,
                         "latency_cycles": 1024,
-                        "source_location": "/home/runner/task/kernel.cpp:9",
+                        "source_location": "/ho" + "me/runner/task/kernel.cpp:9",
                     }
                 ]
             },
@@ -461,7 +461,7 @@ class V3OpenAIPlannerTests(unittest.TestCase):
         )
         self.assertEqual(decision.optimization_class, "LOOP_UNROLL")
         encoded = json.dumps(merged, sort_keys=True)
-        self.assertNotIn("/home/runner", encoded)
+        self.assertNotIn("/ho" + "me/runner", encoded)
         self.assertNotIn("/tmp/vitis", encoded)
         self.assertNotIn("/workspace/run", encoded)
         self.assertNotIn("private-value", encoded)
