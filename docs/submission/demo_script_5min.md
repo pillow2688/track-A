@@ -1,6 +1,6 @@
 # 5 分钟 Demo 讲稿草案
 
-> 自动生成于 2026-07-20T17:00:19+00:00，事实来源：`evidence_manifest.json` 指定的 run JSON。
+> 自动生成于 2026-07-20T17:29:13+00:00，事实来源：`evidence_manifest.json` 指定的 run JSON。
 > 不读取 hidden/golden，不把脚本 Patch replay 计作真实 LLM。`TODO` 表示缺少实验，绝非 0。
 
 ## 0:00–0:40 问题与限制

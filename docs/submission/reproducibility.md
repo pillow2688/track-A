@@ -1,6 +1,6 @@
 # V3-D 可复现性说明
 
-> 自动生成于 2026-07-20T17:00:19+00:00，事实来源：`evidence_manifest.json` 指定的 run JSON。
+> 自动生成于 2026-07-20T17:29:13+00:00，事实来源：`evidence_manifest.json` 指定的 run JSON。
 > 不读取 hidden/golden，不把脚本 Patch replay 计作真实 LLM。`TODO` 表示缺少实验，绝非 0。
 
 ## 证据分级
@@ -21,6 +21,8 @@
 - `v3d-synth-fix-dynamic-replay-r02-NOT_REAL_LLM`：SCRIPTED_PATCH_REPLAY / REAL_VITIS_VALIDATED
 
 Replay release 的证据边界：`llm4hls_harness/releases/v3d-real-vitis-replay-acceptance-2026-07-20.json`：Vitis=REAL_VITIS_VALIDATED；successful replay planner=NOT_REAL_LLM；atomic real LLM acceptance=False。
+
+Fail-closed Vitis probe 后的 anchor 重跑：`llm4hls_harness/releases/v3d-vitis-probed-anchor-rerun-2026-07-21.json`：A01=8 accepted/4 rejected；A02 retry=0 accepted/4 rejected；status=PARTIAL_XSIM_BLOCKED。失败来自重复的 XSIM CoSim 启动异常；该结果不是 LLM 成绩。
 
 ## 生成报告
 

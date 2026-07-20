@@ -641,6 +641,7 @@ def _reproducibility(
     manifest_name: str,
     blockers: dict[str, str],
     replay_release: tuple[str, dict[str, Any]] | None,
+    vitis_probe_rerun: tuple[str, dict[str, Any]] | None,
 ) -> str:
     run_ids = "\n".join(f"- `{item.run_id}`：{item.provider_class} / {item.evidence_level}" for item in records)
     replay_boundary = "TODO：缺少 replay release。"
@@ -651,6 +652,21 @@ def _reproducibility(
             f"`{source}`：Vitis={boundary.get('vitis', 'UNKNOWN')}；"
             f"successful replay planner={boundary.get('planner_in_successful_replays', 'UNKNOWN')}；"
             f"atomic real LLM acceptance={boundary.get('atomic_real_llm_acceptance', False)}。"
+        )
+    probe_summary = "TODO：缺少 fail-closed Vitis probe 后的 anchor 重跑。"
+    if vitis_probe_rerun is not None:
+        source, payload = vitis_probe_rerun
+        attempts = payload.get("attempts", [])
+        first = attempts[0] if isinstance(attempts, list) and attempts else {}
+        second = attempts[1] if isinstance(attempts, list) and len(attempts) > 1 else {}
+        conclusion = payload.get("conclusion", {})
+        probe_summary = (
+            f"`{source}`：A01={first.get('accepted', 0)} accepted/"
+            f"{first.get('rejected', 0)} rejected；"
+            f"A02 retry={second.get('accepted', 0)} accepted/"
+            f"{second.get('rejected', 0)} rejected；"
+            f"status={conclusion.get('overall_status', 'UNKNOWN')}。"
+            "失败来自重复的 XSIM CoSim 启动异常；该结果不是 LLM 成绩。"
         )
     return f"""# V3-D 可复现性说明
 
@@ -667,6 +683,8 @@ def _reproducibility(
 {run_ids}
 
 Replay release 的证据边界：{replay_boundary}
+
+Fail-closed Vitis probe 后的 anchor 重跑：{probe_summary}
 
 ## 生成报告
 
@@ -904,6 +922,7 @@ def generate_submission_docs(*, repo_root: Path, manifest_path: Path, output_dir
     oracle = optional_json("oracle_summary")
     anchors = optional_json("real_anchor_release")
     replay_release = optional_json("replay_release")
+    vitis_probe_rerun = optional_json("vitis_probe_rerun_release")
     blockers = manifest.get("blockers", {})
     if not isinstance(blockers, dict):
         blockers = {}
@@ -911,7 +930,13 @@ def generate_submission_docs(*, repo_root: Path, manifest_path: Path, output_dir
     documents = {
         "experiment_tables.md": _experiment_tables(records, manifest_path.name, blockers, benchmarks, oracle, anchors),
         "failure_analysis.md": _failure_analysis(records, manifest_path.name, anchors),
-        "reproducibility.md": _reproducibility(records, manifest_path.name, blockers, replay_release),
+        "reproducibility.md": _reproducibility(
+            records,
+            manifest_path.name,
+            blockers,
+            replay_release,
+            vitis_probe_rerun,
+        ),
         "demo_script_5min.md": _demo_script(records, manifest_path.name),
         "submission_checklist.md": _checklist(records, manifest_path.name, blockers, oracle, anchors),
     }

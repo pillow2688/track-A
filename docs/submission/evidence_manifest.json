@@ -6,6 +6,7 @@
   ],
   "oracle_summary": "docs/submission/oracle_snapshots/v3d-oracle-deterministic-diverse-final-20260720-r02.json",
   "real_anchor_release": "llm4hls_harness/releases/v3d-corpus-oracle-anchors-2026-07-20.json",
+  "vitis_probe_rerun_release": "llm4hls_harness/releases/v3d-vitis-probed-anchor-rerun-2026-07-21.json",
   "replay_release": "llm4hls_harness/releases/v3d-real-vitis-replay-acceptance-2026-07-20.json",
   "curated_runs": [
     {

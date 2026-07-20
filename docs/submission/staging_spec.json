@@ -13,6 +13,8 @@
     "llm4hls_harness/releases/v3d-corpus-oracle-anchors-2026-07-20.json",
     "llm4hls_harness/releases/v3d-corpus-oracle-anchors-2026-07-20.md",
     "llm4hls_harness/releases/v3d-real-vitis-anchor-receipts-2026-07-20",
+    "llm4hls_harness/releases/v3d-vitis-probed-anchor-rerun-2026-07-21.json",
+    "llm4hls_harness/releases/v3d-vitis-probed-anchor-rerun-2026-07-21.md",
     "llm4hls_harness/releases/v3d-real-vitis-replay-acceptance-2026-07-20.json",
     "llm4hls_harness/releases/v3d-real-vitis-replay-acceptance-2026-07-20.md",
     "llm4hls_harness/pyproject.toml",

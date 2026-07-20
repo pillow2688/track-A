@@ -555,6 +555,19 @@ class SubmissionReportingTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
+            probe_rerun = repo / "probe-rerun.json"
+            probe_rerun.write_text(
+                json.dumps(
+                    {
+                        "attempts": [
+                            {"accepted": 8, "rejected": 4},
+                            {"accepted": 0, "rejected": 4},
+                        ],
+                        "conclusion": {"overall_status": "PARTIAL_XSIM_BLOCKED"},
+                    }
+                ),
+                encoding="utf-8",
+            )
             manifest = repo / "evidence.json"
             manifest.write_text(
                 json.dumps(
@@ -564,6 +577,7 @@ class SubmissionReportingTests(unittest.TestCase):
                         "oracle_summary": "oracle.json",
                         "real_anchor_release": "anchors.json",
                         "replay_release": "replay.json",
+                        "vitis_probe_rerun_release": "probe-rerun.json",
                     }
                 ),
                 encoding="utf-8",
@@ -577,6 +591,9 @@ class SubmissionReportingTests(unittest.TestCase):
             self.assertIn("missing golden Synth", failure)
             reproducibility = (output / "reproducibility.md").read_text(encoding="utf-8")
             self.assertIn("successful replay planner=NOT_REAL_LLM", reproducibility)
+            self.assertIn("A01=8 accepted/4 rejected", reproducibility)
+            self.assertIn("A02 retry=0 accepted/4 rejected", reproducibility)
+            self.assertIn("PARTIAL_XSIM_BLOCKED", reproducibility)
             checklist = (output / "submission_checklist.md").read_text(encoding="utf-8")
             self.assertIn("[x] deterministic Oracle 28 accepted", checklist)
 

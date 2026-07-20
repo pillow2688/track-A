@@ -1,0 +1,103 @@
+{
+  "schema_version": "v3d.vitis-probed-anchor-rerun.v1",
+  "date_local": "2026-07-21",
+  "evidence_class": "REAL_VITIS_2025_2_NO_LLM",
+  "evidence_boundary": {
+    "agent_or_llm_evaluation": false,
+    "hidden_grader": false,
+    "raw_runs_committed": false,
+    "purpose": "Re-run selected corpus baseline/golden gates after fail-closed Vitis toolchain probing was implemented."
+  },
+  "toolchain_probe": {
+    "backend_contract": "vitis-corpus-oracle:v4",
+    "backend_fingerprint": "b84f5ebdb7e1f50cfa3c159f3f8d3bbe76a5cbf22c4dcca0c7c3375ae5b3489c",
+    "detected_version": "2025.2",
+    "executable_sha256": "4d1bf95564e127673e3fde65bdaa7f93dc35220d15af85c794d148517fd91fb3",
+    "version_summary": "****** vitis-run v2025.2 (64-bit) | **** SW Build 6295257 on 2025-11-13-01:29:13"
+  },
+  "corpus": {
+    "manifest_sha256": "9e374fa49e4c68315080ab93ba2f395deea5ae682dd145b791e1db52c2198691",
+    "selected_tasks": 12
+  },
+  "attempts": [
+    {
+      "run_id": "v3d-oracle-vitis-probed-anchors-a01",
+      "source_summary_sha256": "c3df4d8d762eb51d2cbcf8c684d196cbe55dad6df39d96deec05e893077043aa",
+      "snapshot_ref": "docs/submission/oracle_snapshots/v3d-oracle-vitis-probed-anchors-a01.json",
+      "attempted": 12,
+      "accepted": 8,
+      "rejected": 4,
+      "wall_time_seconds": 498.94427982496563,
+      "accepted_task_ids": [
+        "v3d_fast_001",
+        "v3d_fast_002",
+        "v3d_fast_003",
+        "v3d_fast_009",
+        "v3d_fast_010",
+        "v3d_fast_011",
+        "v3d_fast_021",
+        "v3d_fast_022"
+      ]
+    },
+    {
+      "run_id": "v3d-oracle-vitis-probed-anchors-a02",
+      "source_summary_sha256": "19ed904f6917a4d0e705e5c1632fda61bc8d6eba642e80d465d4b24bdfb35a9a",
+      "snapshot_ref": "docs/submission/oracle_snapshots/v3d-oracle-vitis-probed-anchors-a02.json",
+      "attempted": 4,
+      "accepted": 0,
+      "rejected": 4,
+      "wall_time_seconds": 314.96327343501616,
+      "selected_task_ids": [
+        "v3d_fast_015",
+        "v3d_fast_016",
+        "v3d_fast_017",
+        "v3d_fast_028"
+      ]
+    }
+  ],
+  "repeated_failures": [
+    {
+      "task_id": "v3d_fast_015",
+      "mode": "STRUCTURAL_FIX",
+      "reason": "GOLDEN_COSIM_STATUS_MISMATCH",
+      "observed_twice": true,
+      "failure_signature": "XSIM_UNEXPECTED_EXCEPTION_EVALUATING_TCL_COMMAND",
+      "a01_record_sha256": "c79e8ae2c94c5fe91cef6caa1bc5291eceaf01548a074633d80f0784ca268aaa",
+      "a02_record_sha256": "49371626a8b8cd8495f15e0b6299f22576b0544d1abc40b027cb26d5ed0dfac1"
+    },
+    {
+      "task_id": "v3d_fast_016",
+      "mode": "STRUCTURAL_FIX",
+      "reason": "GOLDEN_COSIM_STATUS_MISMATCH",
+      "observed_twice": true,
+      "failure_signature": "XSIM_UNEXPECTED_EXCEPTION_EVALUATING_TCL_COMMAND",
+      "a01_record_sha256": "18ddb83ea00b3bd9d406ed2ca34a155b5965311e329e5647be4bde8af4a1c6f2",
+      "a02_record_sha256": "9be26d40188607e2712065572b31b9695e02425f7aafc5685ec36a2edcaf103e"
+    },
+    {
+      "task_id": "v3d_fast_017",
+      "mode": "STRUCTURAL_FIX",
+      "reason": "GOLDEN_COSIM_STATUS_MISMATCH",
+      "observed_twice": true,
+      "failure_signature": "XSIM_UNEXPECTED_EXCEPTION_EVALUATING_TCL_COMMAND",
+      "a01_record_sha256": "32316c6e8797bb3bf1e84f7eef31833ff74edcd56a56441b2421cc1bde619bbc",
+      "a02_record_sha256": "6d2526347a3e374b0039985c88395579a29113021cfef22448e5f50b58fa5298"
+    },
+    {
+      "task_id": "v3d_fast_028",
+      "mode": "OPTIMIZE",
+      "reason": "BASELINE_AND_GOLDEN_COSIM_STATUS_MISMATCH",
+      "observed_twice": true,
+      "failure_signature": "XSIM_UNEXPECTED_EXCEPTION_EVALUATING_TCL_COMMAND",
+      "a01_record_sha256": "5bc16d9584e05f51e9ef224671ab2bb1111d4ac370e6d480f46ddecfedf994f8",
+      "a02_record_sha256": "7a688f6787bebaf7ec97bbf616b8d1b11045f73e5cf157230c131f205ff6a664"
+    }
+  ],
+  "conclusion": {
+    "new_probe_real_vitis_anchors": 8,
+    "new_probe_failed_tasks": 4,
+    "failure_scope": "CoSim/XSIM startup; CSim and Synth passed for the affected baseline/golden packages.",
+    "historical_receipts_remain_separate": true,
+    "overall_status": "PARTIAL_XSIM_BLOCKED"
+  }
+}
