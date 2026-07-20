@@ -1,4 +1,4 @@
-# LLM4HLS Agent — Internal Milestones V0–V2
+# LLM4HLS Agent — Internal Milestones V0–V3-A0
 
 English | [简体中文](README_CN.md)
 
@@ -12,9 +12,10 @@ unified diff, an isolated candidate, real validation, promotion, and safe
 rollback. The repair proposal may come from an OpenAI-compatible API or a
 static patch fixture. V2 adds a durable Candidate tree, deterministic
 verification/constraint/PPA/cost comparison, one optimization class per round,
-best-candidate preservation, final revalidation, and safety rejection. V3
-LangGraph orchestration, hidden grading, and reference-solution use are not
-included.
+best-candidate preservation, final revalidation, and safety rejection. V3-A0
+now includes an independent one-Candidate LangGraph vertical prototype;
+autonomous multi-round planning, full recovery transactions, hidden grading,
+and reference-solution use are not included.
 
 `runs/v1-deepseek-final` is historical evidence that DeepSeek repaired
 `FUNCTIONAL_MISMATCH`, but it predates strict candidate/action binding and the
@@ -23,11 +24,64 @@ V1 is complete only after `FUNCTIONAL_MISMATCH`, `COMPILE_ERROR`, and
 `SYNTHESIS_ERROR` all have real DeepSeek/Vitis evidence and the independent
 `PATCH_INVALID` safety case passes the deterministic acceptance evaluator.
 
-The runtime is self-contained and uses only Python 3.11+ standard-library
-modules. It never imports the reference harness. The task loader reads only
+The V0–V2 runtime is self-contained and uses only Python 3.11+ standard-library
+modules; V3-A0 dependencies are isolated in the `.[v3]` optional extra. It
+never imports the reference harness. The task loader reads only
 `task.toml`, `description.md` when present, the configured kernel, configured
 headers, and the configured public testbench. Paths entering `hidden/` or
 `reference/` are rejected.
+
+## V3-A0 LangGraph prototype
+
+V3-A0 leaves the existing `run`, `repair`, and `optimize` (V2) commands
+unchanged. Its independent command splits baseline CSim/Synth/CoSim, a scripted
+Planner, Candidate materialization, Candidate CSim/Synth, the CoSim value gate,
+promotion/rejection, final CSim/Synth/CoSim, and reporting into checkpointed
+action nodes.
+
+The strict happy path costs `25 + 25 + 25 = 75` credits: one complete baseline
+closure, one complete Candidate closure, and one fresh final closure. If a
+Candidate round cannot preserve the final 25-credit reserve, the prototype
+skips that round and finalizes the verified baseline instead.
+
+```bash
+cd /home/ying/CompetitionTrackA/track-A
+python3 -m venv .venv
+.venv/bin/python -m pip install -e 'llm4hls_harness[v3]'
+
+# Graph, routing, ledger, Candidate, and report data-flow smoke only
+.venv/bin/llm4hls-v3-prototype \
+  --task-dir llm4hls_harness/examples/u55c_v2_optimize_task \
+  --patch-file llm4hls_harness/examples/u55c_v3_prototype.diff \
+  --run-dir runs/v3a0-prototype-demo --backend demo
+```
+
+For a real Vitis run, enter the local development Distrobox first (if it has
+been created on this machine), then invoke the same CLI with explicit inputs:
+
+```bash
+distrobox enter vitis-2025-2
+cd /home/ying/CompetitionTrackA/track-A
+.venv/bin/llm4hls-v3-prototype \
+  --task-dir llm4hls_harness/examples/u55c_v2_optimize_task \
+  --patch-file llm4hls_harness/examples/u55c_v3_prototype.diff \
+  --run-dir runs/v3a0-prototype-vitis --backend vitis \
+  --vitis-root /home/ying/CompetitionTrackA/vitis/AMD/2025.2/Vitis
+```
+
+The `demo` backend is always labelled `ORCHESTRATION_SMOKE_ONLY`; it is not HLS
+or model-quality evidence. Before starting the Graph, the `vitis` backend
+requires `<vitis-root>/settings64.sh`, then invokes the real tools. A completed
+real closure is labelled `REAL_VITIS_VALIDATED`; a started but failed one is
+labelled `REAL_VITIS_ATTEMPT_FAILED`. The
+`vitis-2025-2` Distrobox is only the current local development environment; it
+is not the final competition Docker deliverable. Building and validating that
+submission Docker image belongs to V4 and is not complete yet. Durable
+outputs are `v3_prototype_result.json`, the node-by-node `v3_team_report.md`,
+and `graph_checkpoints.sqlite`. The result JSON is committed last; terminal
+re-entry can rebuild a missing generated Markdown report without rerunning any
+HLS tool. This prototype executes one scripted Patch;
+autonomous multi-round LLM planning is the next step.
 
 ## V1 OpenAI-compatible repair
 

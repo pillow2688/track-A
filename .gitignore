@@ -21,6 +21,7 @@ venv/
 env/
 __pycache__/
 *.py[cod]
+*.egg-info/
 
 # HLS and experiment outputs
 runs/

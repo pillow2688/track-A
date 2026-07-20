@@ -5,12 +5,19 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "llm4hls-agent"
 version = "0.1.0"
-description = "Budget-audited V0-V2 repair and optimization harness for FPT 2026 Track A"
+description = "Budget-audited V0-V3 repair and optimization harness for FPT 2026 Track A"
 requires-python = ">=3.11"
 dependencies = []
 
+[project.optional-dependencies]
+v3 = [
+  "langgraph==1.2.9",
+  "langgraph-checkpoint-sqlite==3.1.0",
+]
+
 [project.scripts]
 llm4hls-v0 = "llm4hls_agent.cli:main_entry"
+llm4hls-v3-prototype = "llm4hls_agent.v3_prototype_cli:main_entry"
 
 [tool.setuptools.packages.find]
 include = ["llm4hls_agent*"]
