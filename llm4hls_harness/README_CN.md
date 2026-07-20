@@ -1,10 +1,14 @@
-# LLM4HLS Agent — 内部里程碑 V0–V3-A1
+# LLM4HLS Agent — 内部里程碑 V0–V3-C
 
 [English](README.md) | 简体中文
 
+> 当前代码已经推进到 V3-C。新人和团队复盘请先阅读
+> [《当前系统说明与团队月度进展（2026-07-20）》](../doc/docs/2026-07-20-current-system-and-team-progress.md)。
+> 本 README 的 V0–V3-A1 内容保留用于历史命令和兼容说明，不再代表最新阶段总览。
+
 V0 至 V4 是本项目的内部工程里程碑，不是比赛官方阶段。比赛提供的示例名为 **Reference Agent & Evaluation Harness**。两者的范围、接口和实现差异见[中文对比文档](../doc/materials/02_harness/2026-07-14-official-reference-vs-internal-v0.md)。
 
-V0 提供不可变、受预算审计的 `csim -> synth -> cosim` baseline。V1 增加确定性失败诊断、紧凑修复上下文、一次受限 unified diff、隔离候选、真实验证、晋级与安全回滚。修复建议可以来自 OpenAI-compatible API，也可以来自静态补丁测试夹具。V2 增加持久 Candidate 树、确定性验证/约束/PPA/成本比较、每轮一种优化类、best 保留、最终复验和安全拒绝。V3-A1 目前包含独立的确定性多轮 LangGraph、版本化 Planner 输入/输出/action 契约、循环级综合证据、完整 Planner 溯源日志和哈希封存的终态包。Candidate 被拒绝后可继续下一条 scripted 提议，晋升/拒绝/final 选择仍可恢复。自主 LLM Planner 和隐藏评分尚未包含。
+V0 提供不可变、受预算审计的 `csim -> synth -> cosim` baseline。V1 增加确定性失败诊断、紧凑修复上下文、受限 unified diff、隔离 Candidate、真实验证和安全回滚。V2 增加持久 Candidate 树、PPA/成本比较、多轮 best 保留、CoSim gate 和最终复验。V3-A 将这些步骤拆成可 checkpoint 的 LangGraph 动作；V3-B 接入真实 OpenAI-compatible Planner 和 fast-experiment 多轮优化；V3-C 再加入纯 Python PhaseRouter，使同一个 Planner 能按 `REPAIR`、`SYNTH_FIX`、`STRUCTURAL_FIX`、`OPTIMIZE` 四种模式工作。当前代码状态、真实结果和后续计划以顶部链接的团队月报为准。
 
 `runs/v1-deepseek-final` 是 DeepSeek 曾成功修复 `FUNCTIONAL_MISMATCH` 的历史证据，但它早于严格 Candidate/action 绑定和 Artifact Manifest，必须重新生成，不能代表 V1 完成。只有 `FUNCTIONAL_MISMATCH`、`COMPILE_ERROR`、`SYNTHESIS_ERROR` 都具备真实 DeepSeek/Vitis 证据，并且独立的 `PATCH_INVALID` 安全负例通过确定性验收器，才可宣布 V1 完成。
 
@@ -315,7 +319,7 @@ artifact_manifest.json         排序后的路径、大小、SHA-256、producer/
 ## 快速测试
 
 ```bash
-python3 -m unittest discover -s tests -v
+PYTHONPATH=. python3 -m unittest discover -s tests -t . -v
 ```
 
 快速测试使用确定性的 fake process/tool backend，不需要 Vitis。真实 Vitis 证据必须使用前述命令单独生成。

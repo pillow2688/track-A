@@ -4,12 +4,13 @@
 
 ## Start Here
 
-新队友先读这四份：
+新队友先读这五份：
 
-1. [Track A 比赛总览](docs/track-a-competition-overview.md)
-2. [Track A 0 基础入门手册](docs/track-a-zero-foundation-guide.md)
-3. [文档入口](docs/README.md)
-4. [资料库目录规则](materials/README.md)
+1. [当前系统说明与团队月度进展（2026-07-20）](docs/2026-07-20-current-system-and-team-progress.md)
+2. [Track A 比赛总览](docs/track-a-competition-overview.md)
+3. [Track A 0 基础入门手册](docs/track-a-zero-foundation-guide.md)
+4. [文档入口](docs/README.md)
+5. [资料库目录规则](materials/README.md)
 
 然后按主题继续读：
 
@@ -37,6 +38,7 @@ runs/       HLS/agent 运行输出
 
 ## Current Key Materials
 
+- [当前系统说明与团队月度进展（2026-07-20）](docs/2026-07-20-current-system-and-team-progress.md)
 - [Track A 比赛总览](docs/track-a-competition-overview.md)
 - [Track A 0 基础入门手册](docs/track-a-zero-foundation-guide.md)
 - [官方规则快照](materials/01_official/2026-07-10-track-a-official-summary.md)
