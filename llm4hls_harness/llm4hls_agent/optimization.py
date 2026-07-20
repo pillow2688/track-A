@@ -71,6 +71,15 @@ _HLS_RULES = {
 }
 
 
+def optimization_hls_rules(optimization_class: str) -> tuple[str, ...]:
+    """Return the bounded rule set for one supported optimization class."""
+
+    try:
+        return tuple(_HLS_RULES[optimization_class])
+    except KeyError as exc:
+        raise ValueError("unsupported optimization class") from exc
+
+
 @dataclass(frozen=True)
 class OptimizationDecision:
     optimization_class: str | None

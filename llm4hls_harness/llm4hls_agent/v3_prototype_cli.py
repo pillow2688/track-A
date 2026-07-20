@@ -1,4 +1,4 @@
-"""Independent CLI for the V3-A0 vertical prototype."""
+"""Independent CLI for the scripted or live V3 vertical prototype."""
 
 from __future__ import annotations
 
@@ -19,7 +19,8 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="llm4hls-v3-prototype",
         description=(
-            "Run the isolated deterministic multi-round V3-A0 LangGraph. "
+            "Run the isolated multi-round V3-B0 LangGraph in scripted or live "
+            "OpenAI-compatible Planner mode. "
             "The default demo backend proves orchestration only; use --backend vitis "
             "for real HLS evidence."
         ),
@@ -29,13 +30,21 @@ def _parser() -> argparse.ArgumentParser:
         required=True,
         help="Path to the public task package.",
     )
-    parser.add_argument(
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument(
         "--patch-file",
-        required=True,
         action="append",
         help=(
             "Path to a scripted unified diff. Repeat this option to exercise "
             "multiple optimization rounds in order."
+        ),
+    )
+    mode.add_argument(
+        "--live-openai",
+        action="store_true",
+        help=(
+            "Use the non-replayable OpenAI-compatible V3 Planner adapter. "
+            "OPENAI_BASE_URL and OPENAI_API_KEY must be set."
         ),
     )
     parser.add_argument("--run-dir", required=True)
@@ -61,6 +70,49 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--synth-timeout", type=float, default=1800.0)
     parser.add_argument("--cosim-timeout", type=float, default=1800.0)
     parser.add_argument("--minimum-frequency-mhz", type=float, default=100.0)
+    parser.add_argument(
+        "--model",
+        default=os.environ.get("LLM4HLS_MODEL", "deepseek-v4-pro"),
+        help="OpenAI-compatible model name used by --live-openai.",
+    )
+    parser.add_argument(
+        "--token-budget",
+        type=int,
+        help=(
+            "Total LLM token budget. The legacy scripted default remains 4096; "
+            "the live default is 32768."
+        ),
+    )
+    parser.add_argument(
+        "--llm-timeout",
+        type=float,
+        default=120.0,
+        help="OpenAI-compatible request timeout in seconds.",
+    )
+    parser.add_argument(
+        "--llm-max-output-tokens",
+        type=int,
+        default=1000,
+        help="Maximum output tokens reserved for each live Planner call.",
+    )
+    parser.add_argument(
+        "--llm-temperature",
+        type=float,
+        default=0.0,
+        help="OpenAI-compatible sampling temperature.",
+    )
+    parser.add_argument(
+        "--max-planner-rounds",
+        type=int,
+        default=1,
+        help="Maximum number of non-replayable live Planner calls.",
+    )
+    parser.add_argument(
+        "--final-reserve-credits",
+        type=int,
+        default=25,
+        help="Credits the live Planner must leave for final CSim/Synth/CoSim.",
+    )
     parser.add_argument(
         "--max-no-improvement-rounds",
         type=int,
@@ -119,28 +171,64 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         task = load_public_task(args.task_dir)
-        proposals = tuple(
-            PatchProposal(
-                patch=Path(patch_file).read_text(encoding="utf-8"),
-                provider="scripted-v3a0-prototype",
-                model="operator-supplied-patch-v1",
-                hypothesis=(
-                    "Evaluate the operator-supplied scripted prototype patch."
-                    if len(args.patch_file) == 1
-                    else f"Evaluate operator-supplied scripted patch {index}."
-                ),
-                change_class="scripted",
-                expected_effect=(
-                    "Measure the supplied patch against the verified baseline."
-                    if len(args.patch_file) == 1
-                    else "Measure the supplied patch against the current verified incumbent."
-                ),
-                risk="operator-supplied: full validation remains mandatory",
-                required_validation=("csim", "synth", "cosim"),
+        planner = None
+        if args.live_openai:
+            base_url = os.environ.get("OPENAI_BASE_URL", "").strip()
+            api_key = os.environ.get("OPENAI_API_KEY", "")
+            if not base_url:
+                raise ValueError("OPENAI_BASE_URL is required with --live-openai")
+            if not api_key:
+                raise ValueError("OPENAI_API_KEY is required with --live-openai")
+            from .openai_provider import (
+                OpenAICompatibleConfig,
+                OpenAICompatibleOptimizationProvider,
             )
-            for index, patch_file in enumerate(args.patch_file, 1)
-        )
-        validation_call_limit = len(proposals) + (
+            from .v3_openai_planner import OpenAICompatibleV3PlannerAdapter
+
+            provider = OpenAICompatibleOptimizationProvider(
+                OpenAICompatibleConfig(
+                    base_url=base_url,
+                    api_key=api_key,
+                    model=str(args.model),
+                    timeout_seconds=args.llm_timeout,
+                    max_output_tokens=args.llm_max_output_tokens,
+                    temperature=args.llm_temperature,
+                )
+            )
+            planner = OpenAICompatibleV3PlannerAdapter(
+                Path(args.run_dir).resolve(),
+                provider,
+                final_reserve_credits=args.final_reserve_credits,
+                max_output_tokens=args.llm_max_output_tokens,
+            )
+            proposals: tuple[PatchProposal, ...] = ()
+            planned_rounds = args.max_planner_rounds
+            token_limit = 32768 if args.token_budget is None else args.token_budget
+        else:
+            proposals = tuple(
+                PatchProposal(
+                    patch=Path(patch_file).read_text(encoding="utf-8"),
+                    provider="scripted-v3a0-prototype",
+                    model="operator-supplied-patch-v1",
+                    hypothesis=(
+                        "Evaluate the operator-supplied scripted prototype patch."
+                        if len(args.patch_file) == 1
+                        else f"Evaluate operator-supplied scripted patch {index}."
+                    ),
+                    change_class="scripted",
+                    expected_effect=(
+                        "Measure the supplied patch against the verified baseline."
+                        if len(args.patch_file) == 1
+                        else "Measure the supplied patch against the current verified incumbent."
+                    ),
+                    risk="operator-supplied: full validation remains mandatory",
+                    required_validation=("csim", "synth", "cosim"),
+                )
+                for index, patch_file in enumerate(args.patch_file, 1)
+            )
+            planned_rounds = len(proposals)
+            token_limit = 4096 if args.token_budget is None else args.token_budget
+        validation_call_limit = planned_rounds + (
             3 if args.enable_final_fallback else 2
         )
         config = RunConfig(
@@ -166,24 +254,37 @@ def main(argv: list[str] | None = None) -> int:
                     "csim": validation_call_limit,
                     "synth": validation_call_limit,
                     "cosim": validation_call_limit,
-                    "llm": len(proposals),
+                    "llm": planned_rounds,
                 },
-                token_limit=4096,
+                token_limit=token_limit,
                 runtime_limit_seconds=args.runtime_limit,
             ),
             minimum_frequency_mhz=args.minimum_frequency_mhz,
         )
         backend = DeterministicPrototypeBackend() if args.backend == "demo" else None
-        result = run_v3_prototype(
-            task,
-            args.run_dir,
-            config,
-            proposals,
-            backend=backend,
-            thread_id=args.thread_id,
-            max_no_improvement_rounds=args.max_no_improvement_rounds,
-            max_final_attempts=2 if args.enable_final_fallback else 1,
-        )
+        if planner is None:
+            result = run_v3_prototype(
+                task,
+                args.run_dir,
+                config,
+                proposals,
+                backend=backend,
+                thread_id=args.thread_id,
+                max_no_improvement_rounds=args.max_no_improvement_rounds,
+                max_final_attempts=2 if args.enable_final_fallback else 1,
+            )
+        else:
+            result = run_v3_prototype(
+                task,
+                args.run_dir,
+                config,
+                backend=backend,
+                planner=planner,
+                max_planner_rounds=args.max_planner_rounds,
+                thread_id=args.thread_id,
+                max_no_improvement_rounds=args.max_no_improvement_rounds,
+                max_final_attempts=2 if args.enable_final_fallback else 1,
+            )
     except Exception as exc:
         _print_error(type(exc).__name__, str(exc))
         return 3

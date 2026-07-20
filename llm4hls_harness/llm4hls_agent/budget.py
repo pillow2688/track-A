@@ -284,12 +284,21 @@ class BudgetLedger:
             kind = str(started["kind"])
             if kind not in tool_used:
                 raise BudgetLedgerError(f"ledger contains unknown tool: {kind}")
+            expected_cost = int(self.config.costs[kind])
+            if started.get("estimated_cost") != expected_cost:
+                raise BudgetLedgerError(
+                    f"ledger STARTED cost does not match config for {kind}"
+                )
             if terminal is None:
-                pending_credits += int(started["estimated_cost"])
+                pending_credits += expected_cost
                 pending_tokens += int(started.get("estimated_tokens", 0))
                 tool_pending[kind] += 1
             else:
-                credits_used += int(terminal["actual_cost"])
+                if terminal.get("actual_cost") != expected_cost:
+                    raise BudgetLedgerError(
+                        f"ledger terminal cost does not match config for {kind}"
+                    )
+                credits_used += expected_cost
                 tool_used[kind] += 1
                 tokens_used += int(terminal.get("tokens_used", 0))
                 input_tokens_used += int(terminal.get("input_tokens", 0))
@@ -478,6 +487,44 @@ class BudgetLedger:
                     "output_tokens": 0,
                     "cached_input_tokens": 0,
                     "reason": "STARTED action had no durable result",
+                }
+            )
+
+    def mark_ambiguous_conservative(
+        self,
+        action_id: str,
+        *,
+        reason: str = "non-replayable action has no durable result",
+    ) -> None:
+        """Close an ambiguous action while conservatively charging its reserve.
+
+        This is intended for external model calls for which dispatch may have
+        happened but neither a durable response nor exact usage exists.  The
+        reserved token upper bound remains consumed, and the intentionally
+        absent input/output token fields make ``token_usage_complete`` false.
+        Existing ``mark_ambiguous`` behavior is preserved for V0--V2 callers.
+        """
+
+        if not isinstance(reason, str) or not reason.strip():
+            raise BudgetLedgerError("ambiguous action reason must not be empty")
+        with self._exclusive():
+            self._repair_torn_tail_unlocked()
+            events = self._read_events_unlocked()
+            action_events = self._actions_from(events).get(action_id, [])
+            if not action_events or action_events[-1].get("state") != "STARTED":
+                raise BudgetLedgerError(f"action is not pending: {action_id}")
+            started = action_events[-1]
+            reserved_tokens = int(started.get("estimated_tokens", 0))
+            self._append_unlocked(
+                {
+                    "state": "AMBIGUOUS",
+                    "timestamp": _utc_now(),
+                    "action_id": action_id,
+                    "kind": started["kind"],
+                    "actual_cost": int(started["estimated_cost"]),
+                    "tokens_used": reserved_tokens,
+                    "reason": reason.strip(),
+                    "token_accounting": "CONSERVATIVE_RESERVATION",
                 }
             )
 

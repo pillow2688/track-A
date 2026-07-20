@@ -152,6 +152,17 @@ class OpenAICompatibleProviderTests(unittest.TestCase):
             "https://api.deepseek.com/chat/completions",
         )
 
+    def test_base_url_rejects_userinfo_query_and_fragment_secrets(self) -> None:
+        for base_url in (
+            "https://user:password@llm.example/v1",
+            "https://llm.example/v1?api_key=secret",
+            "https://llm.example/v1#access-token",
+        ):
+            with self.subTest(base_url=base_url), self.assertRaisesRegex(
+                ValueError, "userinfo, query, or fragment"
+            ):
+                self.config(base_url=base_url)
+
     def test_deepseek_v4_disables_thinking_for_bounded_json_patch(self) -> None:
         captured: dict[str, object] = {}
 

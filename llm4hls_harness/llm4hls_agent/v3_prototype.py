@@ -60,6 +60,14 @@ from .v3_planner import (
     stable_validation,
     validate_planner_input,
 )
+from .v3_planner_action import (
+    LIVE_PLANNER_ACTION_SCHEMA,
+    LIVE_PLANNER_OUTCOME_SCHEMA,
+    LivePlanner,
+    PlannerActionJournal,
+    PlannerActionResult,
+    PreparedPlannerCall,
+)
 from .vitis import VitisBackend
 from .workflow import (
     RunConfig,
@@ -101,6 +109,14 @@ class V3PrototypeState(TypedDict, total=False):
     planner_input_sha256: str
     planner_output_ref: str
     planner_output_sha256: str
+    live_planner_action_id: str
+    live_planner_request_ref: str
+    live_planner_request_sha256: str
+    live_planner_output_ref: str
+    live_planner_output_sha256: str
+    live_planner_started_ref: str
+    live_planner_completed_ref: str
+    planner_selection_metrics_digest: str
     baseline_metrics_ref: str
     best_metrics_ref: str
     candidate_metrics_ref: str
@@ -152,12 +168,22 @@ class _Runtime:
     thread_id: str
     max_no_improvement_rounds: int
     max_final_attempts: int
+    live_planner: LivePlanner | None = None
+    max_planner_rounds: int = 1
 
     @property
     def proposal(self) -> PatchProposal:
         """Legacy single-proposal view used by old run identities."""
 
         return self.proposals[0]
+
+    @property
+    def planner_mode(self) -> str:
+        return (
+            "live_non_replayable_adapter"
+            if self.live_planner is not None
+            else "scripted_deterministic_adapter"
+        )
 
 
 def _utc_now() -> str:
@@ -207,28 +233,39 @@ def _checkpoint_schema_snapshot() -> dict[str, object]:
 
 def _run_config_snapshot(runtime: _Runtime) -> dict[str, object]:
     value = runtime.config.to_dict()
-    value.update(
-        {
-            "workflow": WORKFLOW_NAME,
-            "prototype": True,
-            "state_schema_version": STATE_SCHEMA_VERSION,
-            "thread_id": runtime.thread_id,
-            "backend_fingerprint": _backend_fingerprint(runtime.backend),
-            "proposal_sha256": _sha256_json(runtime.proposal.to_dict()),
-            "scoring": runtime.scoring.to_dict(),
-            "patch_limits": {
-                "max_changed_lines": runtime.patch_limits.max_changed_lines,
-                "max_hunks": runtime.patch_limits.max_hunks,
-                "allow_full_file_replacement": (
-                    runtime.patch_limits.allow_full_file_replacement
-                ),
-            },
-        }
-    )
+    identity: dict[str, object] = {
+        "workflow": WORKFLOW_NAME,
+        "prototype": True,
+        "state_schema_version": STATE_SCHEMA_VERSION,
+        "thread_id": runtime.thread_id,
+        "backend_fingerprint": _backend_fingerprint(runtime.backend),
+        "scoring": runtime.scoring.to_dict(),
+        "patch_limits": {
+            "max_changed_lines": runtime.patch_limits.max_changed_lines,
+            "max_hunks": runtime.patch_limits.max_hunks,
+            "allow_full_file_replacement": (
+                runtime.patch_limits.allow_full_file_replacement
+            ),
+        },
+    }
+    if runtime.live_planner is None:
+        identity["proposal_sha256"] = _sha256_json(runtime.proposal.to_dict())
+    else:
+        identity.update(
+            {
+                "live_planner_fingerprint": runtime.live_planner.fingerprint(),
+                "live_planner_replay_policy": runtime.live_planner.replay_policy,
+                "planner_mode": runtime.planner_mode,
+                "max_planner_rounds": runtime.max_planner_rounds,
+                "live_planner_action_schema": LIVE_PLANNER_ACTION_SCHEMA,
+                "live_planner_outcome_schema": LIVE_PLANNER_OUTCOME_SCHEMA,
+            }
+        )
+    value.update(identity)
     # Preserve the exact legacy identity for the already-published one-patch
     # prototype runs.  Multi-round runs add an explicit planner policy and the
     # complete ordered proposal digest list.
-    if len(runtime.proposals) > 1:
+    if runtime.live_planner is None and len(runtime.proposals) > 1:
         value["proposal_sha256_list"] = [
             _sha256_json(proposal.to_dict()) for proposal in runtime.proposals
         ]
@@ -470,6 +507,67 @@ def _proposal_for_candidate(
     return proposal
 
 
+def _validate_live_planner_candidate_binding(
+    runtime: _Runtime,
+    registry: Mapping[str, object],
+    candidate: Mapping[str, object],
+    proposal: PatchProposal,
+) -> None:
+    live_action_id = candidate.get("live_planner_action_id")
+    if live_action_id is None:
+        return
+    if not isinstance(live_action_id, str) or not live_action_id:
+        raise RuntimeError("live Planner Candidate action binding is invalid")
+    if runtime.live_planner is None:
+        raise RuntimeError(
+            "live Planner Candidate requires its original Planner adapter"
+        )
+    input_ref = candidate.get("planner_input_ref")
+    input_sha256 = candidate.get("planner_input_sha256")
+    parent_id = candidate.get("parent_id")
+    candidates = registry.get("candidates")
+    parent = (
+        candidates.get(parent_id)
+        if isinstance(candidates, Mapping) and isinstance(parent_id, str)
+        else None
+    )
+    if (
+        not isinstance(input_ref, str)
+        or not isinstance(input_sha256, str)
+        or not isinstance(parent_id, str)
+        or not isinstance(parent, Mapping)
+        or not isinstance(parent.get("code_hash"), str)
+    ):
+        raise RuntimeError("live Planner Candidate provenance is incomplete")
+    planner_input = _read_json_object(_safe_run_ref(runtime, input_ref))
+    result = PlannerActionJournal(
+        runtime.run_root,
+        BudgetLedger(
+            runtime.run_root / "budget_ledger.jsonl", runtime.config.budget
+        ),
+    ).execute_or_recover(
+        runtime.live_planner,
+        planner_input,
+        input_ref=input_ref,
+        input_sha256=input_sha256,
+        candidate_id=parent_id,
+        code_hash=str(parent["code_hash"]),
+    )
+    expected = {
+        "live_planner_action_id": result.action_id,
+        "live_planner_request_ref": result.request_ref,
+        "live_planner_request_sha256": result.request_sha256,
+        "live_planner_output_ref": result.output_ref,
+        "live_planner_output_sha256": result.output_sha256,
+        "live_planner_started_ref": result.started_ref,
+        "live_planner_completed_ref": result.completed_ref,
+    }
+    if any(candidate.get(key) != value for key, value in expected.items()):
+        raise RuntimeError("live Planner Candidate artifact binding mismatch")
+    if proposal_payload(result.proposal) != proposal_payload(proposal):
+        raise RuntimeError("live Planner outcome diverges from Candidate proposal")
+
+
 def _proposal_snapshot(
     runtime: _Runtime,
     *,
@@ -477,13 +575,23 @@ def _proposal_snapshot(
     parent_candidate_id: str = "candidate_000",
     round_index: int = 1,
 ) -> dict[str, object]:
+    if proposal is None and runtime.live_planner is not None:
+        raise RuntimeError("live Planner projection requires a durable proposal")
     selected = proposal or runtime.proposal
     value = selected.to_dict()
     value["required_validation"] = list(selected.required_validation)
     return value | {
         "parent_candidate_id": parent_candidate_id,
-        "planner_mode": "scripted_prototype",
-        **({"round_index": round_index} if len(runtime.proposals) > 1 else {}),
+        "planner_mode": (
+            runtime.planner_mode
+            if runtime.live_planner is not None
+            else "scripted_prototype"
+        ),
+        **(
+            {"round_index": round_index}
+            if runtime.max_planner_rounds > 1 or len(runtime.proposals) > 1
+            else {}
+        ),
     }
 
 
@@ -577,6 +685,10 @@ def _build_round_planner_input(
                     "round_index": candidate.get("round_index"),
                     "parent_id": candidate.get("parent_id"),
                     "status": candidate.get("status"),
+                    "change_class": candidate.get("change_class"),
+                    "selection_metrics_digest": candidate.get(
+                        "selection_metrics_digest"
+                    ),
                     "patch_sha256": candidate.get("patch_sha256"),
                     "metrics": _artifact_binding(
                         runtime, candidate.get("metrics_ref")
@@ -611,6 +723,10 @@ def _build_round_planner_input(
                 "round_index": rejected_round,
                 "parent_id": rejection.get("parent_candidate_id"),
                 "reason": rejection.get("reason"),
+                "change_class": rejection.get("change_class"),
+                "selection_metrics_digest": rejection.get(
+                    "selection_metrics_digest"
+                ),
                 "planner_action_id": rejection.get("planner_action_id"),
                 "planner_output": _artifact_binding(
                     runtime, rejection.get("planner_output_ref")
@@ -659,6 +775,22 @@ def _build_round_planner_input(
             "tokens_remaining": budget_snapshot.get("tokens_remaining"),
         },
     )
+
+
+def _planner_recovery_projection(
+    value: Mapping[str, object],
+) -> dict[str, object]:
+    """Compare stable round facts while allowing metering counters to advance."""
+
+    validated = validate_planner_input(value)
+    budget = validated.get("budget")
+    if not isinstance(budget, Mapping):
+        raise RuntimeError("Planner recovery budget is invalid")
+    validated["budget"] = {
+        "credit_limit": budget.get("credit_limit"),
+        "token_limit": budget.get("token_limit"),
+    }
+    return validated
 
 
 def _write_synth_evidence(
@@ -1499,6 +1631,7 @@ def _budget_affordability(
     *,
     required_calls: Mapping[str, int],
     policy: str,
+    required_tokens: int = 0,
 ) -> dict[str, object]:
     snapshot = BudgetLedger(
         runtime.run_root / "budget_ledger.jsonl", runtime.config.budget
@@ -1524,12 +1657,24 @@ def _budget_affordability(
             blockers.append(f"{kind}_calls:{available}<{count}")
     if float(snapshot["runtime_remaining_seconds"]) <= 0:
         blockers.append("runtime_exhausted")
+    if (
+        isinstance(required_tokens, bool)
+        or not isinstance(required_tokens, int)
+        or required_tokens < 0
+    ):
+        raise ValueError("required_tokens must be a non-negative integer")
+    if int(snapshot["tokens_remaining"]) < required_tokens:
+        blockers.append(
+            f"tokens:{snapshot['tokens_remaining']}<{required_tokens}"
+        )
     return {
         "policy": policy,
         "allowed": not blockers,
         "required_calls": dict(required_calls),
         "required_credits": required_credits,
         "credits_remaining": remaining,
+        "required_tokens": required_tokens,
+        "tokens_remaining": snapshot["tokens_remaining"],
         "blockers": blockers,
     }
 
@@ -1771,6 +1916,9 @@ def _candidate_source(
         raise RuntimeError(
             f"Candidate Patch diverges from Planner output: {candidate_id}"
         )
+    _validate_live_planner_candidate_binding(
+        runtime, registry, record, proposal
+    )
     metadata_ref = f"candidates/{candidate_id}/candidate.json"
     immutable_metadata = _read_json_object(_safe_run_ref(runtime, metadata_ref))
     mutable_fields = {"status", "validation", "metrics_ref", "credits_used"}
@@ -2289,7 +2437,12 @@ def _evaluate_round_budget(
 ) -> V3PrototypeState:
     round_index = int(state.get("round_index", 1))
     no_improvement = int(state.get("no_improvement_rounds", 0))
-    if round_index > len(runtime.proposals):
+    planner_round_limit = (
+        runtime.max_planner_rounds
+        if runtime.live_planner is not None
+        else len(runtime.proposals)
+    )
+    if round_index > planner_round_limit:
         gate: dict[str, object] = {
             "policy": "scripted_proposals",
             "allowed": False,
@@ -2314,10 +2467,22 @@ def _evaluate_round_budget(
         required = {
             kind: count * 2 for kind, count in _FULL_CLOSURE_CALLS.items()
         }
+        required_tokens = 0
+        if runtime.live_planner is not None:
+            prepared = runtime.live_planner.prepare(
+                _build_round_planner_input(runtime, state)
+            )
+            if not isinstance(prepared, PreparedPlannerCall):
+                raise RuntimeError(
+                    "live Planner prepare() returned an invalid request"
+                )
+            required["llm"] = 1
+            required_tokens = prepared.estimated_tokens
         gate = _budget_affordability(
             runtime,
             required_calls=required,
             policy="candidate_exploration_plus_final_closure",
+            required_tokens=required_tokens,
         )
         reason = (
             "ROUND_BUDGET_AVAILABLE"
@@ -2352,26 +2517,128 @@ def _evaluate_round_budget(
 
 def _plan_candidate(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeState:
     round_index = int(state.get("round_index", 1))
-    planner = ScriptedPlanner(runtime.proposals)
-    planner_input = _build_round_planner_input(runtime, state)
     input_ref = f"planner/inputs/round_{round_index:03d}.json"
+    input_path = runtime.run_root / input_ref
+    current_input = _build_round_planner_input(runtime, state)
+    if input_path.exists() and runtime.live_planner is not None:
+        planner_input = _read_json_object(_safe_run_ref(runtime, input_ref))
+        try:
+            validate_planner_input(planner_input)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(
+                f"durable live Planner input is invalid: {exc}"
+            ) from exc
+        bindings: list[Mapping[str, object]] = []
+        for started_path in sorted(
+            (runtime.run_root / "control" / "live_planner_actions").glob(
+                "*.started.json"
+            )
+        ):
+            started_ref = str(
+                started_path.relative_to(runtime.run_root)
+            ).replace("\\", "/")
+            started = _read_json_object(_safe_run_ref(runtime, started_ref))
+            request = started.get("request")
+            if isinstance(request, Mapping) and request.get("input_ref") == input_ref:
+                bindings.append(request)
+        if not bindings:
+            if planner_input != current_input:
+                raise RuntimeError(
+                    "unbound live Planner input diverges from current state"
+                )
+        else:
+            if (
+                len(bindings) != 1
+                or bindings[0].get("input_sha256")
+                != canonical_sha256(planner_input)
+            ):
+                raise RuntimeError("live Planner input action binding mismatch")
+            if _planner_recovery_projection(
+                planner_input
+            ) != _planner_recovery_projection(current_input):
+                raise RuntimeError(
+                    "bound live Planner input diverges from current stable state"
+                )
+    else:
+        planner_input = current_input
     input_sha256 = canonical_sha256(planner_input)
-    _write_once_or_verify(runtime.run_root / input_ref, planner_input)
+    _write_once_or_verify(input_path, planner_input)
+    live_result: PlannerActionResult | None = None
+    selection_metrics_digest: str | None = None
+    if runtime.live_planner is not None:
+        registry = CandidateManager(runtime.run_root, runtime.task).load_registry()
+        candidates = registry.get("candidates")
+        incumbent = (
+            candidates.get(state["best_candidate_id"])
+            if isinstance(candidates, Mapping)
+            else None
+        )
+        if not isinstance(incumbent, Mapping) or not isinstance(
+            incumbent.get("code_hash"), str
+        ):
+            raise RuntimeError("live Planner incumbent code binding is missing")
+        budget = BudgetLedger(
+            runtime.run_root / "budget_ledger.jsonl", runtime.config.budget
+        )
+        live_result = PlannerActionJournal(
+            runtime.run_root, budget
+        ).execute_or_recover(
+            runtime.live_planner,
+            planner_input,
+            input_ref=input_ref,
+            input_sha256=input_sha256,
+            candidate_id=state["best_candidate_id"],
+            code_hash=str(incumbent["code_hash"]),
+        )
+        proposal = live_result.proposal
+        request_audit = _read_json_object(
+            _safe_run_ref(runtime, live_result.request_ref)
+        )
+        if canonical_sha256(request_audit) != live_result.request_sha256:
+            raise RuntimeError("live Planner request audit hash mismatch")
+        adapter_request = request_audit.get("request")
+        selection = (
+            adapter_request.get("selection")
+            if isinstance(adapter_request, Mapping)
+            else None
+        )
+        raw_metrics_digest = (
+            selection.get("metrics_digest")
+            if isinstance(selection, Mapping)
+            else None
+        )
+        if raw_metrics_digest is not None:
+            if (
+                not isinstance(raw_metrics_digest, str)
+                or re.fullmatch(r"[0-9a-f]{64}", raw_metrics_digest) is None
+            ):
+                raise RuntimeError(
+                    "live Planner selection metrics digest is invalid"
+                )
+            selection_metrics_digest = raw_metrics_digest
+        planner_fingerprint = (
+            "live-planner-durable-projection-v1:" + live_result.action_id
+        )
+        replay_policy = "DURABLE_RESULT"
+    else:
+        planner = ScriptedPlanner(runtime.proposals)
+        proposal = planner.plan(planner_input)
+        planner_fingerprint = planner.fingerprint()
+        replay_policy = planner.replay_policy
     request = planner_action_request(
-        planner_fingerprint=planner.fingerprint(),
+        planner_fingerprint=planner_fingerprint,
         planner_input_ref=input_ref,
         planner_input_sha256=input_sha256,
-        replay_policy=planner.replay_policy,
+        replay_policy=replay_policy,
     )
     action_id = planner_action_id(request)
     action_root = runtime.run_root / "control" / "planner_actions"
     started = request | {"action_id": action_id, "status": "STARTED"}
     _write_once_or_verify(action_root / f"{action_id}.started.json", started)
 
-    # ScriptedPlanner is deterministic, so a STARTED action without an output
-    # is safe to replay.  The future LLM Planner must supply an idempotency key
-    # or fail closed at this boundary instead.
-    proposal = planner.plan(planner_input)
+    # The scripted path is deterministic.  The live path projects only a
+    # previously persisted, Ledger-bound outcome and never repeats the remote
+    # provider call at this compatibility boundary.
     output = build_planner_output(
         action_id=action_id,
         input_sha256=input_sha256,
@@ -2429,7 +2696,11 @@ def _plan_candidate(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeSt
         node="plan_candidate",
         phase="OPTIMIZE",
         candidate_id=state["best_candidate_id"],
-        action="scripted_planner_proposal",
+        action=(
+            "live_planner_proposal"
+            if live_result is not None
+            else "scripted_planner_proposal"
+        ),
         why=durable_proposal.hypothesis or "Apply the configured prototype Patch.",
         outcome="PROPOSAL_READY",
         result_ref=output_ref,
@@ -2441,9 +2712,43 @@ def _plan_candidate(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeSt
             "planner_output_ref": output_ref,
             "planner_output_sha256": output_sha256,
             "legacy_projection_ref": proposal_ref,
+            "proposal_decision": {
+                "provider": durable_proposal.provider,
+                "model": durable_proposal.model,
+                "change_class": durable_proposal.change_class,
+                "hypothesis": durable_proposal.hypothesis,
+                "expected_effect": durable_proposal.expected_effect,
+                "risk": durable_proposal.risk,
+                "required_validation": list(
+                    durable_proposal.required_validation
+                ),
+                "patch_sha256": hashlib.sha256(
+                    durable_proposal.patch.encode("utf-8")
+                ).hexdigest(),
+                "input_tokens": durable_proposal.input_tokens,
+                "output_tokens": durable_proposal.output_tokens,
+                "cached_input_tokens": durable_proposal.cached_input_tokens,
+                "request_id": durable_proposal.request_id,
+                "duration_seconds": durable_proposal.duration_seconds,
+                "selection_metrics_digest": selection_metrics_digest,
+            },
+            **(
+                {
+                    "live_planner_action_id": live_result.action_id,
+                    "live_planner_request_ref": live_result.request_ref,
+                    "live_planner_request_sha256": live_result.request_sha256,
+                    "live_planner_output_ref": live_result.output_ref,
+                    "live_planner_output_sha256": live_result.output_sha256,
+                    "live_planner_started_ref": live_result.started_ref,
+                    "live_planner_completed_ref": live_result.completed_ref,
+                    "live_planner_cached": live_result.cached,
+                }
+                if live_result is not None
+                else {}
+            ),
         },
     )
-    return {
+    update: V3PrototypeState = {
         "phase": "OPTIMIZE",
         "planner_ref": proposal_ref,
         "planner_action_id": action_id,
@@ -2451,8 +2756,22 @@ def _plan_candidate(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeSt
         "planner_input_sha256": input_sha256,
         "planner_output_ref": output_ref,
         "planner_output_sha256": output_sha256,
+        "planner_selection_metrics_digest": selection_metrics_digest or "",
         "node_events": [event],
     }
+    if live_result is not None:
+        update.update(
+            {
+                "live_planner_action_id": live_result.action_id,
+                "live_planner_request_ref": live_result.request_ref,
+                "live_planner_request_sha256": live_result.request_sha256,
+                "live_planner_output_ref": live_result.output_ref,
+                "live_planner_output_sha256": live_result.output_sha256,
+                "live_planner_started_ref": live_result.started_ref,
+                "live_planner_completed_ref": live_result.completed_ref,
+            }
+        )
+    return update
 
 
 def _materialize_candidate(
@@ -2552,12 +2871,41 @@ def _materialize_candidate(
             "round_index": round_index,
             "provider": proposal.provider,
             "model": proposal.model,
+            "change_class": proposal.change_class,
+            "selection_metrics_digest": state.get(
+                "planner_selection_metrics_digest"
+            ),
             "hypothesis": proposal.hypothesis,
             "expected_effect": proposal.expected_effect,
             "risk": proposal.risk,
             "required_validation": list(proposal.required_validation),
             "input_tokens": proposal.input_tokens,
             "output_tokens": proposal.output_tokens,
+            **(
+                {
+                    "live_planner_action_id": state["live_planner_action_id"],
+                    "live_planner_request_ref": state[
+                        "live_planner_request_ref"
+                    ],
+                    "live_planner_request_sha256": state[
+                        "live_planner_request_sha256"
+                    ],
+                    "live_planner_output_ref": state[
+                        "live_planner_output_ref"
+                    ],
+                    "live_planner_output_sha256": state[
+                        "live_planner_output_sha256"
+                    ],
+                    "live_planner_started_ref": state[
+                        "live_planner_started_ref"
+                    ],
+                    "live_planner_completed_ref": state[
+                        "live_planner_completed_ref"
+                    ],
+                }
+                if runtime.live_planner is not None
+                else {}
+            ),
         },
     )
     event = _event(
@@ -2604,6 +2952,10 @@ def _record_rejected_proposal(
         "planner_input_sha256": state.get("planner_input_sha256"),
         "planner_output_ref": state.get("planner_output_ref"),
         "planner_output_sha256": state.get("planner_output_sha256"),
+        "change_class": _current_proposal(runtime, state).change_class,
+        "selection_metrics_digest": state.get(
+            "planner_selection_metrics_digest"
+        ),
         "reason": reason,
     }
     _write_once_or_verify(runtime.run_root / rejection_ref, record)
@@ -3496,12 +3848,37 @@ def _render_team_report(
         a1_lines = [
             "## Planner 与综合证据链",
             "",
+            "- Planner mode: `"
+            + str(planner_contract.get("mode", "-"))
+            + "`",
             "- Planner contract: `"
             + str(planner_contract.get("action_schema", "-"))
             + "`",
             f"- Last Planner action: `{result.get('planner_action_id') or '-'}`",
             f"- Planner input: `{result.get('planner_input_ref') or '-'}`",
             f"- Planner output: `{result.get('planner_output_ref') or '-'}`",
+            *(
+                [
+                    "- Live Planner action: `"
+                    + str(result.get("live_planner_action_id") or "-")
+                    + "`",
+                    "- Live Planner fingerprint: `"
+                    + str(planner_contract.get("live_planner_fingerprint") or "-")
+                    + "`",
+                    "- Live replay policy: `"
+                    + str(planner_contract.get("live_replay_policy") or "-")
+                    + "`",
+                    "- Live provider request audit: `"
+                    + str(result.get("live_planner_request_ref") or "-")
+                    + "`",
+                    "- Live provider outcome: `"
+                    + str(result.get("live_planner_output_ref") or "-")
+                    + "`",
+                ]
+                if planner_contract.get("mode")
+                == "live_non_replayable_adapter"
+                else []
+            ),
             "- Baseline synth evidence: `"
             + str(result.get("baseline_synth_evidence_ref") or "-")
             + "`",
@@ -3518,9 +3895,15 @@ def _render_team_report(
     return "\n".join(
         [
             (
-                "# V3-A1 原型团队复盘报告"
+                "# V3-B0 Live Planner 原型团队复盘报告"
                 if isinstance(planner_contract, Mapping)
-                else "# V3-A0 原型团队复盘报告"
+                and planner_contract.get("mode")
+                == "live_non_replayable_adapter"
+                else (
+                    "# V3-A1 原型团队复盘报告"
+                    if isinstance(planner_contract, Mapping)
+                    else "# V3-A0 原型团队复盘报告"
+                )
             ),
             "",
             f"- Task: `{runtime.task.id}`",
@@ -3634,7 +4017,19 @@ def _write_report(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeStat
             "input_schema": PLANNER_INPUT_SCHEMA,
             "output_schema": PLANNER_OUTPUT_SCHEMA,
             "action_schema": PLANNER_ACTION_SCHEMA,
-            "mode": "scripted_deterministic_adapter",
+            "mode": runtime.planner_mode,
+            **(
+                {
+                    "live_action_schema": LIVE_PLANNER_ACTION_SCHEMA,
+                    "live_outcome_schema": LIVE_PLANNER_OUTCOME_SCHEMA,
+                    "live_planner_fingerprint": (
+                        runtime.live_planner.fingerprint()
+                    ),
+                    "live_replay_policy": runtime.live_planner.replay_policy,
+                }
+                if runtime.live_planner is not None
+                else {}
+            ),
         },
         "planner_action_id": state.get("planner_action_id"),
         "planner_input_ref": state.get("planner_input_ref"),
@@ -3675,7 +4070,11 @@ def _write_report(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeStat
         "budget": budget,
         "node_events": node_events,
         "prototype_limits": [
-            "versioned deterministic Planner boundary; no autonomous LLM planner yet",
+            (
+                "live Planner is transactionally bounded; native multi-strategy planning is not enabled"
+                if runtime.live_planner is not None
+                else "versioned deterministic Planner boundary; no autonomous LLM planner yet"
+            ),
             "loop-level synth evidence is explicit; unavailable evidence is never fabricated",
             "Candidate decisions use recoverable compare-and-set operation journals",
             "final fallback is best-effort and runs only when one fresh closure remains affordable",
@@ -3695,6 +4094,32 @@ def _write_report(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeStat
             "result": "v3_prototype_result.json",
         },
     }
+    if runtime.live_planner is not None:
+        result.update(
+            {
+                "live_planner_action_id": state.get(
+                    "live_planner_action_id"
+                ),
+                "live_planner_request_ref": state.get(
+                    "live_planner_request_ref"
+                ),
+                "live_planner_request_sha256": state.get(
+                    "live_planner_request_sha256"
+                ),
+                "live_planner_output_ref": state.get(
+                    "live_planner_output_ref"
+                ),
+                "live_planner_output_sha256": state.get(
+                    "live_planner_output_sha256"
+                ),
+                "live_planner_started_ref": state.get(
+                    "live_planner_started_ref"
+                ),
+                "live_planner_completed_ref": state.get(
+                    "live_planner_completed_ref"
+                ),
+            }
+        )
     _atomic_text(
         runtime.run_root / "v3_team_report.md",
         _render_team_report(runtime, result),
@@ -3880,9 +4305,11 @@ def run_v3_prototype(
     task: PublicTask,
     run_dir: str | Path,
     config: RunConfig,
-    proposal: PatchProposal | Sequence[PatchProposal],
+    proposal: PatchProposal | Sequence[PatchProposal] | None = None,
     *,
     backend: ToolBackend | None = None,
+    planner: LivePlanner | None = None,
+    max_planner_rounds: int = 1,
     scoring_config: ScoringConfig | None = None,
     patch_limits: PatchLimits | None = None,
     thread_id: str = "v3a0-prototype",
@@ -3893,6 +4320,8 @@ def run_v3_prototype(
 
     A single ``PatchProposal`` preserves the published prototype behavior.
     Passing an ordered sequence enables deterministic multi-round hardening.
+    The optional live ``planner`` uses a separately charged, non-replayable
+    transaction boundary and is mutually exclusive with scripted proposals.
     """
 
     if not thread_id.strip():
@@ -3901,13 +4330,26 @@ def run_v3_prototype(
         raise ValueError("max_no_improvement_rounds must be positive")
     if max_final_attempts <= 0:
         raise ValueError("max_final_attempts must be positive")
-    proposals = (
-        (proposal,)
-        if isinstance(proposal, PatchProposal)
-        else tuple(proposal)
-    )
-    if not proposals or not all(isinstance(item, PatchProposal) for item in proposals):
-        raise ValueError("at least one valid PatchProposal is required")
+    if max_planner_rounds <= 0:
+        raise ValueError("max_planner_rounds must be positive")
+    if planner is not None and proposal is not None:
+        raise ValueError("live planner and scripted proposals are mutually exclusive")
+    if planner is None:
+        proposals = (
+            (proposal,)
+            if isinstance(proposal, PatchProposal)
+            else tuple(proposal or ())
+        )
+        if not proposals or not all(
+            isinstance(item, PatchProposal) for item in proposals
+        ):
+            raise ValueError("at least one valid PatchProposal is required")
+    else:
+        proposals = ()
+        if planner.replay_policy != "NON_REPLAYABLE":
+            raise ValueError("live planner must declare NON_REPLAYABLE")
+        if "llm" not in config.budget.costs:
+            raise ValueError("live planner requires an llm budget entry")
     root = Path(run_dir).resolve()
     root.mkdir(parents=True, exist_ok=True)
     scoring = scoring_config or load_scoring_config(
@@ -3924,6 +4366,8 @@ def run_v3_prototype(
         thread_id=thread_id,
         max_no_improvement_rounds=max_no_improvement_rounds,
         max_final_attempts=max_final_attempts,
+        live_planner=planner,
+        max_planner_rounds=max_planner_rounds,
     )
     checkpoint_path = root / "graph_checkpoints.sqlite"
     graph_schema_path = root / "v3_graph_schema.json"
@@ -3964,7 +4408,16 @@ def run_v3_prototype(
             graph = build_v3_prototype_graph(runtime, checkpointer)
             graph_config = {
                 "configurable": {"thread_id": thread_id},
-                "recursion_limit": max(64, 16 * len(proposals) + 32),
+                "recursion_limit": max(
+                    64,
+                    16
+                    * (
+                        max_planner_rounds
+                        if planner is not None
+                        else len(proposals)
+                    )
+                    + 32,
+                ),
             }
             snapshot = graph.get_state(graph_config)
             missing_identity = [

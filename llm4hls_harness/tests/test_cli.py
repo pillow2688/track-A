@@ -2,16 +2,19 @@ from __future__ import annotations
 
 import io
 import json
+import sys
 import tempfile
+import types
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 try:
     from llm4hls_agent.cli import main
     from llm4hls_agent.tools import BackendResult
     from llm4hls_agent.v2_team_report import V2TeamReportError
+    from llm4hls_agent.v3_prototype_cli import main as v3_prototype_main
 except ModuleNotFoundError:
     def main(*_args: object, **_kwargs: object) -> int:
         raise AssertionError("V0 CLI is not implemented")
@@ -21,6 +24,9 @@ except ModuleNotFoundError:
 
     class V2TeamReportError(RuntimeError):
         pass
+
+    def v3_prototype_main(*_args: object, **_kwargs: object) -> int:
+        raise AssertionError("V3 prototype CLI is not implemented")
 
 
 def make_task(root: Path) -> None:
@@ -410,6 +416,201 @@ class CliTests(unittest.TestCase):
             self.assertEqual(summary["manifest_ref"], "artifact_manifest.json")
             self.assertTrue((root / "run" / "experimental_report.md").is_file())
             self.assertTrue((root / "run" / "artifact_manifest.json").is_file())
+
+
+class V3PrototypeCliTests(unittest.TestCase):
+    @staticmethod
+    def _done_result() -> dict[str, object]:
+        return {
+            "workflow": "V3_A1_VERTICAL_PROTOTYPE",
+            "task_id": "cli_fixture",
+            "status": "DONE",
+            "stop_reason": "NO_IMPROVEMENT_LIMIT",
+            "exploration_stop_reason": "NO_IMPROVEMENT_LIMIT",
+            "rounds_completed": 1,
+            "best_candidate_id": "candidate_001",
+            "final_candidate_id": "candidate_001",
+            "budget": {"credits_used": 30},
+        }
+
+    def test_scripted_mode_preserves_legacy_budget_and_call_shape(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task_dir = root / "task"
+            task_dir.mkdir()
+            make_task(task_dir)
+            patch_file = root / "candidate.diff"
+            patch_file.write_text("fixture patch", encoding="utf-8")
+            run_dir = root / "run"
+            stdout = io.StringIO()
+            backend = object()
+            run = Mock(return_value=self._done_result())
+            backend_class = Mock(return_value=backend)
+            prototype_module = types.ModuleType("llm4hls_agent.v3_prototype")
+            prototype_module.DeterministicPrototypeBackend = backend_class
+            prototype_module.run_v3_prototype = run
+
+            with patch.dict(
+                sys.modules,
+                {"llm4hls_agent.v3_prototype": prototype_module},
+            ), redirect_stdout(stdout):
+                return_code = v3_prototype_main(
+                    [
+                        "--task-dir",
+                        str(task_dir),
+                        "--patch-file",
+                        str(patch_file),
+                        "--run-dir",
+                        str(run_dir),
+                    ]
+                )
+
+        self.assertEqual(return_code, 0)
+        summary = json.loads(stdout.getvalue())
+        self.assertEqual(summary["status"], "DONE")
+        task, called_run_dir, config, proposals = run.call_args.args
+        self.assertEqual(task.id, "cli_fixture")
+        self.assertEqual(called_run_dir, str(run_dir))
+        self.assertEqual(len(proposals), 1)
+        self.assertEqual(proposals[0].patch, "fixture patch")
+        self.assertEqual(proposals[0].provider, "scripted-v3a0-prototype")
+        self.assertEqual(config.budget.token_limit, 4096)
+        self.assertEqual(config.budget.tool_limits["llm"], 1)
+        self.assertEqual(config.budget.tool_limits["csim"], 3)
+        self.assertIs(run.call_args.kwargs["backend"], backend)
+        self.assertNotIn("planner", run.call_args.kwargs)
+        self.assertNotIn("max_planner_rounds", run.call_args.kwargs)
+
+    def test_live_openai_mode_builds_provider_adapter_and_planner_call(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task_dir = root / "task"
+            task_dir.mkdir()
+            make_task(task_dir)
+            run_dir = root / "run"
+            stdout = io.StringIO()
+            provider = object()
+            planner = object()
+            backend = object()
+            run = Mock(return_value=self._done_result())
+            backend_class = Mock(return_value=backend)
+            prototype_module = types.ModuleType("llm4hls_agent.v3_prototype")
+            prototype_module.DeterministicPrototypeBackend = backend_class
+            prototype_module.run_v3_prototype = run
+
+            with patch.dict(
+                "os.environ",
+                {
+                    "OPENAI_BASE_URL": "https://llm.example/v1",
+                    "OPENAI_API_KEY": "secret-live-test-key",
+                },
+                clear=False,
+            ), patch(
+                "llm4hls_agent.openai_provider.OpenAICompatibleOptimizationProvider",
+                return_value=provider,
+            ) as provider_class, patch(
+                "llm4hls_agent.v3_openai_planner.OpenAICompatibleV3PlannerAdapter",
+                return_value=planner,
+            ) as adapter_class, patch.dict(
+                sys.modules,
+                {"llm4hls_agent.v3_prototype": prototype_module},
+            ), redirect_stdout(stdout):
+                return_code = v3_prototype_main(
+                    [
+                        "--task-dir",
+                        str(task_dir),
+                        "--live-openai",
+                        "--run-dir",
+                        str(run_dir),
+                        "--model",
+                        "fixture-live-model",
+                        "--token-budget",
+                        "12000",
+                        "--llm-max-output-tokens",
+                        "512",
+                        "--llm-timeout",
+                        "15",
+                        "--llm-temperature",
+                        "0.2",
+                        "--max-planner-rounds",
+                        "3",
+                    ]
+                )
+
+        self.assertEqual(return_code, 0)
+        self.assertEqual(json.loads(stdout.getvalue())["status"], "DONE")
+        provider_config = provider_class.call_args.args[0]
+        self.assertEqual(provider_config.base_url, "https://llm.example/v1")
+        self.assertEqual(provider_config.api_key, "secret-live-test-key")
+        self.assertEqual(provider_config.model, "fixture-live-model")
+        self.assertEqual(provider_config.max_output_tokens, 512)
+        self.assertEqual(provider_config.timeout_seconds, 15.0)
+        self.assertEqual(provider_config.temperature, 0.2)
+        adapter_class.assert_called_once_with(
+            run_dir.resolve(),
+            provider,
+            final_reserve_credits=25,
+            max_output_tokens=512,
+        )
+        task, called_run_dir, config = run.call_args.args
+        self.assertEqual(task.id, "cli_fixture")
+        self.assertEqual(called_run_dir, str(run_dir))
+        self.assertEqual(config.budget.token_limit, 12000)
+        self.assertEqual(config.budget.tool_limits["llm"], 3)
+        self.assertEqual(config.budget.tool_limits["csim"], 5)
+        self.assertIs(run.call_args.kwargs["backend"], backend)
+        self.assertIs(run.call_args.kwargs["planner"], planner)
+        self.assertEqual(run.call_args.kwargs["max_planner_rounds"], 3)
+
+    def test_live_openai_mode_requires_endpoint_environment(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task_dir = root / "task"
+            task_dir.mkdir()
+            make_task(task_dir)
+            stderr = io.StringIO()
+            run = Mock()
+            prototype_module = types.ModuleType("llm4hls_agent.v3_prototype")
+            prototype_module.DeterministicPrototypeBackend = Mock()
+            prototype_module.run_v3_prototype = run
+
+            with patch.dict("os.environ", {}, clear=True), patch.dict(
+                sys.modules,
+                {"llm4hls_agent.v3_prototype": prototype_module},
+            ), redirect_stderr(stderr):
+                return_code = v3_prototype_main(
+                    [
+                        "--task-dir",
+                        str(task_dir),
+                        "--live-openai",
+                        "--run-dir",
+                        str(root / "run"),
+                    ]
+                )
+
+        error = json.loads(stderr.getvalue())
+        self.assertEqual(return_code, 3)
+        self.assertEqual(error["error_type"], "ValueError")
+        self.assertIn("OPENAI_BASE_URL", error["detail"])
+        run.assert_not_called()
+
+    def test_scripted_and_live_modes_are_mutually_exclusive(self) -> None:
+        stderr = io.StringIO()
+        with self.assertRaises(SystemExit) as raised, redirect_stderr(stderr):
+            v3_prototype_main(
+                [
+                    "--task-dir",
+                    "task",
+                    "--patch-file",
+                    "candidate.diff",
+                    "--live-openai",
+                    "--run-dir",
+                    "run",
+                ]
+            )
+
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("not allowed with argument", stderr.getvalue())
 
 
 if __name__ == "__main__":

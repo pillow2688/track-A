@@ -6,6 +6,7 @@ import json
 import math
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from typing import Callable, Mapping
@@ -30,6 +31,17 @@ class OpenAICompatibleConfig:
         base = self.base_url.rstrip("/")
         if not base.startswith(("https://", "http://")):
             raise ValueError("OpenAI-compatible base URL must use http or https")
+        parsed = urllib.parse.urlsplit(base)
+        if (
+            not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError(
+                "OpenAI-compatible base URL must not contain userinfo, query, or fragment"
+            )
         if not self.api_key:
             raise ValueError("OPENAI_API_KEY is required for the API repair provider")
         if not self.model:
