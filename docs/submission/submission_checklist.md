@@ -1,6 +1,6 @@
 # 提交前 Checklist（非最终规则）
 
-> 自动生成于 2026-07-20T16:31:43+00:00，事实来源：`evidence_manifest.json` 指定的 run JSON。
+> 自动生成于 2026-07-20T16:43:58+00:00，事实来源：`evidence_manifest.json` 指定的 run JSON。
 > 不读取 hidden/golden，不把脚本 Patch replay 计作真实 LLM。`TODO` 表示缺少实验，绝非 0。
 
 > 本清单和 staging 都是内部候选，不代表官方最终提交格式已确认。

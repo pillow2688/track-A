@@ -1,6 +1,6 @@
 # V3-D 可复现性说明
 
-> 自动生成于 2026-07-20T16:31:43+00:00，事实来源：`evidence_manifest.json` 指定的 run JSON。
+> 自动生成于 2026-07-20T16:43:58+00:00，事实来源：`evidence_manifest.json` 指定的 run JSON。
 > 不读取 hidden/golden，不把脚本 Patch replay 计作真实 LLM。`TODO` 表示缺少实验，绝非 0。
 
 ## 证据分级

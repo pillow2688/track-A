@@ -1,6 +1,6 @@
 # V3-D 实验表（事实快照）
 
-> 自动生成于 2026-07-20T16:31:43+00:00，事实来源：`evidence_manifest.json` 指定的 run JSON。
+> 自动生成于 2026-07-20T16:43:58+00:00，事实来源：`evidence_manifest.json` 指定的 run JSON。
 > 不读取 hidden/golden，不把脚本 Patch replay 计作真实 LLM。`TODO` 表示缺少实验，绝非 0。
 
 ## 当前能力矩阵
@@ -81,20 +81,20 @@
 
 | Summary | Fingerprint | Tasks | Records | Real runs | Real E2E rate | Real fresh-final rate |
 | --- | --- | --- | --- | --- | --- | --- |
-| docs/submission/benchmark_snapshots/v3d-benchmark-deterministic-diverse-final-20260720-r02.json | e998136f235940d8 | 28 | 28 | 0 | — | — |
+| docs/submission/benchmark_snapshots/v3d-benchmark-deterministic-diverse-final-20260720-r03.json | bdcd3a67692721f7 | 28 | 28 | 0 | — | — |
 
 | Summary | Mode | Runs | Success | Success rate | Failure stages |
 | --- | --- | --- | --- | --- | --- |
-| docs/submission/benchmark_snapshots/v3d-benchmark-deterministic-diverse-final-20260720-r02.json | OPTIMIZE | 8 | 0 | — | {} |
-| docs/submission/benchmark_snapshots/v3d-benchmark-deterministic-diverse-final-20260720-r02.json | REPAIR | 8 | 0 | — | {} |
-| docs/submission/benchmark_snapshots/v3d-benchmark-deterministic-diverse-final-20260720-r02.json | STRUCTURAL_FIX | 6 | 0 | — | {} |
-| docs/submission/benchmark_snapshots/v3d-benchmark-deterministic-diverse-final-20260720-r02.json | SYNTH_FIX | 6 | 0 | — | {} |
+| docs/submission/benchmark_snapshots/v3d-benchmark-deterministic-diverse-final-20260720-r03.json | OPTIMIZE | 8 | 0 | — | {} |
+| docs/submission/benchmark_snapshots/v3d-benchmark-deterministic-diverse-final-20260720-r03.json | REPAIR | 8 | 0 | — | {} |
+| docs/submission/benchmark_snapshots/v3d-benchmark-deterministic-diverse-final-20260720-r03.json | STRUCTURAL_FIX | 6 | 0 | — | {} |
+| docs/submission/benchmark_snapshots/v3d-benchmark-deterministic-diverse-final-20260720-r03.json | SYNTH_FIX | 6 | 0 | — | {} |
 
 ### Deterministic full-corpus 明细（只验证编排）
 
 | Summary | Runs | Router | E2E | Fresh final | C/S/Co/L | Optimize N | Optimize accel mean | Resumed |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| docs/submission/benchmark_snapshots/v3d-benchmark-deterministic-diverse-final-20260720-r02.json | 28 | — | — | — | 0/0/0/0 | 0 | — | 28 |
+| docs/submission/benchmark_snapshots/v3d-benchmark-deterministic-diverse-final-20260720-r03.json | 28 | — | — | — | 0/0/0/0 | 0 | — | 28 |
 
 ## Corpus Oracle 与真实 Vitis anchors
 

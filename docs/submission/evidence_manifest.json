@@ -2,7 +2,7 @@
   "schema_version": "v3d.submission-evidence.v1",
   "runs_root": "llm4hls_harness/runs",
   "benchmark_summaries": [
-    "docs/submission/benchmark_snapshots/v3d-benchmark-deterministic-diverse-final-20260720-r02.json"
+    "docs/submission/benchmark_snapshots/v3d-benchmark-deterministic-diverse-final-20260720-r03.json"
   ],
   "oracle_summary": "docs/submission/oracle_snapshots/v3d-oracle-deterministic-diverse-final-20260720-r02.json",
   "real_anchor_release": "llm4hls_harness/releases/v3d-corpus-oracle-anchors-2026-07-20.json",
