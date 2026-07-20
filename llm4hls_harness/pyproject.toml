@@ -18,6 +18,7 @@ v3 = [
 [project.scripts]
 llm4hls-v0 = "llm4hls_agent.cli:main_entry"
 llm4hls-v3-prototype = "llm4hls_agent.v3_prototype_cli:main_entry"
+llm4hls-v3d-oracle = "llm4hls_agent.v3d_oracle_validator:main_entry"
 
 [tool.setuptools.packages.find]
 include = ["llm4hls_agent*"]

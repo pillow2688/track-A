@@ -1,0 +1,99 @@
+{
+  "schema_version": "v3d.corpus-oracle-anchor-release.v2",
+  "date": "2026-07-20",
+  "evidence_boundary": {
+    "agent_or_llm_evaluation": false,
+    "deterministic_oracle": "FIXTURE_ONLY_NOT_REAL_VITIS",
+    "real_anchor_runs": "REAL_VITIS_2025_2_NO_LLM",
+    "claim": "Oracle validates baseline/golden task gates; it does not prove that an Agent repaired the task."
+  },
+  "corpus": {
+    "commit": "807579b",
+    "manifest_sha256": "9e374fa49e4c68315080ab93ba2f395deea5ae682dd145b791e1db52c2198691",
+    "tasks": 28,
+    "modes": {
+      "REPAIR": 8,
+      "SYNTH_FIX": 6,
+      "STRUCTURAL_FIX": 6,
+      "OPTIMIZE": 8
+    },
+    "difficulty": {
+      "1": 3,
+      "2": 12,
+      "3": 7,
+      "4": 6
+    }
+  },
+  "deterministic_oracle": {
+    "run_id": "v3d-oracle-deterministic-diverse-final-20260720-r02",
+    "manifest_sha256": "9e374fa49e4c68315080ab93ba2f395deea5ae682dd145b791e1db52c2198691",
+    "accepted": 28,
+    "rejected": 0,
+    "pending": 0,
+    "checks_passed": 134,
+    "checks_total": 134,
+    "resume_reused": 28,
+    "real_vitis_anchors": 0
+  },
+  "real_vitis_anchor_evidence": {
+    "toolchain": "Vitis 2025.2",
+    "serial": true,
+    "final_corpus_task_fingerprint_matches": 12,
+    "final_corpus_tasks_compared": 12,
+    "valid_unique_anchors": 12,
+    "valid_by_mode": {
+      "REPAIR": 3,
+      "SYNTH_FIX": 3,
+      "STRUCTURAL_FIX": 3,
+      "OPTIMIZE": 3
+    },
+    "checks_passed": 59,
+    "checks_total": 59,
+    "attempts_across_runs": 14,
+    "execution_elapsed_seconds": 561.6037524800049,
+    "runs": [
+      {
+        "run_id": "v3d-oracle-vitis-opaque-anchors-a01",
+        "accepted": 10,
+        "rejected": 2,
+        "attempted": 12,
+        "elapsed_seconds": 507.40116953500547,
+        "historical_manifest_sha256": "b18fceee082da79fe0e0ac92d69c2814423dca7dc470b4162650bbfa5086601a"
+      },
+      {
+        "run_id": "v3d-oracle-vitis-opaque-anchors-a02",
+        "accepted": 2,
+        "rejected": 0,
+        "attempted": 2,
+        "elapsed_seconds": 54.20258294499945,
+        "historical_manifest_sha256": "e669a269906b612606fe5b064ecfbee315fb30f110ec0fbb3877ea2135e70e69"
+      }
+    ]
+  },
+  "valid_real_vitis_anchors": [
+    {"task_id":"v3d_fast_001","mode":"REPAIR","operator":"repair_off_by_one","run_id":"v3d-oracle-vitis-opaque-anchors-a01","task_fingerprint":"682b34b828ac47ffbd0bb09c44a88a0622539cce4f25e52bbe1380760ff58f38","checks":3,"wall_time_seconds":16.18313721497543},
+    {"task_id":"v3d_fast_002","mode":"REPAIR","operator":"repair_wrong_multiplier","run_id":"v3d-oracle-vitis-opaque-anchors-a01","task_fingerprint":"20223cc933e0457fac6bb6e3aeebf7f4bf540a13ae3aef49670808854643c655","checks":3,"wall_time_seconds":16.369031678070314},
+    {"task_id":"v3d_fast_003","mode":"REPAIR","operator":"repair_bias_sign","run_id":"v3d-oracle-vitis-opaque-anchors-a01","task_fingerprint":"ca55ecc2c6175839f40edd9044f9ae1c5cb915415708671f5bd35aaf353b50f1","checks":3,"wall_time_seconds":16.431463859975338},
+    {"task_id":"v3d_fast_009","mode":"SYNTH_FIX","operator":"synth_dynamic_allocation","run_id":"v3d-oracle-vitis-opaque-anchors-a01","task_fingerprint":"059dbd67ad204c4d045ed2ed339cd50d968c63f1744a7108e3ef4767d41b21a2","checks":4,"wall_time_seconds":25.75827110710088},
+    {"task_id":"v3d_fast_010","mode":"SYNTH_FIX","operator":"synth_recursion","run_id":"v3d-oracle-vitis-opaque-anchors-a01","task_fingerprint":"42d1b68e6d46048c8b02ea455951c2ebda5dca6a5d3b1237c95cdd0d277f52b1","checks":4,"wall_time_seconds":25.728846129961312},
+    {"task_id":"v3d_fast_011","mode":"SYNTH_FIX","operator":"synth_std_function","run_id":"v3d-oracle-vitis-opaque-anchors-a02","task_fingerprint":"854f36a0b02e6675ea923148a5d1252155a6f9100e305375aaa65e8f30c7d55c","checks":4,"wall_time_seconds":27.513762205955572},
+    {"task_id":"v3d_fast_015","mode":"STRUCTURAL_FIX","operator":"struct_main_burst","run_id":"v3d-oracle-vitis-opaque-anchors-a01","task_fingerprint":"32474d5880100b2064340e70fafb0d573cf8320bc48a9be0a6094aa9fbca74ae","checks":6,"wall_time_seconds":82.18975501402747},
+    {"task_id":"v3d_fast_016","mode":"STRUCTURAL_FIX","operator":"struct_side_burst","run_id":"v3d-oracle-vitis-opaque-anchors-a01","task_fingerprint":"a2db5364bbbb154952af2ca7d373751c1ed0dabead7b43ea08976129a0776982","checks":6,"wall_time_seconds":81.81125091796275},
+    {"task_id":"v3d_fast_017","mode":"STRUCTURAL_FIX","operator":"struct_main_chunk_3","run_id":"v3d-oracle-vitis-opaque-anchors-a01","task_fingerprint":"62c42ac01a7eaa9ad7161d09b169b858da20ac514a8b0b35069941f84e263a86","checks":6,"wall_time_seconds":81.40728686389048},
+    {"task_id":"v3d_fast_021","mode":"OPTIMIZE","operator":"opt_serial_loop","run_id":"v3d-oracle-vitis-opaque-anchors-a02","task_fingerprint":"f748e4220c90f4b38ee1bad277168ce808dc4d0886ac3e2f5db6ee5db2f6a56c","checks":6,"wall_time_seconds":26.654946938040666,"baseline_latency_cycles":18,"golden_latency_cycles":6,"acceleration":3.0},
+    {"task_id":"v3d_fast_022","mode":"OPTIMIZE","operator":"opt_pipeline_ii_2","run_id":"v3d-oracle-vitis-opaque-anchors-a01","task_fingerprint":"de0354f09a5cc6930a202bba4656d10d53384c0bed7dccc09460cbf743c03ab3","checks":6,"wall_time_seconds":26.701275387895294,"baseline_latency_cycles":9,"golden_latency_cycles":6,"acceleration":1.5},
+    {"task_id":"v3d_fast_028","mode":"OPTIMIZE","operator":"opt_serial_two_pass","run_id":"v3d-oracle-vitis-opaque-anchors-a01","task_fingerprint":"832e00e33e9569a33f21244eae72b4fef0ed591a396e7f1487799c1548f439d9","checks":8,"wall_time_seconds":80.35142409300897,"baseline_latency_cycles":39,"golden_latency_cycles":6,"acceleration":6.5}
+  ],
+  "historical_rejections_preserved": [
+    {
+      "task_id": "v3d_fast_011",
+      "run_id": "v3d-oracle-vitis-opaque-anchors-a01",
+      "reason": "The former function-pointer mutation synthesized successfully; A02 replaced it with an actual unsupported indirect std::function call."
+    },
+    {
+      "task_id": "v3d_fast_021",
+      "run_id": "v3d-oracle-vitis-opaque-anchors-a01",
+      "reason": "The former baseline retained enough pragmas to match golden latency; A02 replaced it with a genuinely serial baseline."
+    }
+  ]
+}
