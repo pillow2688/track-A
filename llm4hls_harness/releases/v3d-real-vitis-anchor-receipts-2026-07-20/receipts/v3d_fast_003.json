@@ -1,0 +1,186 @@
+{
+  "artifact_binding": {
+    "count": 14,
+    "set_sha256": "b23680dd1a90c3c22a5328be391a3bc04e4942ab11295efd660fe602ebfb3a27"
+  },
+  "backend": {
+    "fingerprint": "2e10c5a732112e4e1eb47ea3884c4831666c6f0abfbca8461da3257ad8396163",
+    "name": "vitis",
+    "real_anchor_authorized": true,
+    "serial": true,
+    "toolchain": "Vitis 2025.2"
+  },
+  "content_sha256": "bf66e5a2a3805439285c0f5e13f6adc47f4617187e1be7affa42d2fbdd5ae9ae",
+  "evidence_boundary": {
+    "agent_or_llm_evaluation": false,
+    "claim": "Real Vitis baseline/golden Oracle gate evidence only; not an LLM or Agent repair/optimization result.",
+    "evidence_class": "REAL_VITIS_2025_2_NO_LLM",
+    "raw_artifacts_committed": false
+  },
+  "result": {
+    "checks": [
+      {
+        "actual": "FAIL",
+        "expected": "FAIL",
+        "gate": "csim",
+        "matches": true,
+        "subject": "baseline"
+      },
+      {
+        "actual": "PASS",
+        "expected": "PASS",
+        "gate": "csim",
+        "matches": true,
+        "subject": "golden"
+      },
+      {
+        "actual": "PASS",
+        "expected": "PASS",
+        "gate": "synth",
+        "matches": true,
+        "subject": "golden"
+      }
+    ],
+    "expected": {
+      "baseline": {
+        "cosim": "NOT_RUN",
+        "csim": "FAIL",
+        "ppa": "NOT_RUN",
+        "synth": "NOT_RUN"
+      },
+      "golden": {
+        "cosim": "NOT_RUN",
+        "csim": "PASS",
+        "ppa": "NOT_RUN",
+        "synth": "PASS"
+      }
+    },
+    "gate_scope": [
+      "csim",
+      "synth"
+    ],
+    "observations": {
+      "baseline": {
+        "cosim": {
+          "artifact_hashes": {},
+          "elapsed_seconds": null,
+          "phase": "not_run",
+          "return_code": null,
+          "status": "NOT_RUN"
+        },
+        "csim": {
+          "artifact_hashes": {
+            "csim_stderr": "2ee96d9c52f08e37178c2dcc408c98b0ab192b709ed8a25cf08475335765d681",
+            "csim_stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "tcl": "61da5050135d5d6049cfe7f3162a6151557dd1b4fff448ab6ac7f127ecffba93",
+            "vitis_stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "vitis_stdout": "1e1e319e2f037775138698be7b25ef649b1e10d1e399f6e17aadaa499c0dfee1"
+          },
+          "elapsed_seconds": 3.316476844949648,
+          "phase": "runtime_fail",
+          "return_code": 1,
+          "status": "FAIL"
+        },
+        "ppa": {
+          "artifact_hashes": {},
+          "elapsed_seconds": null,
+          "phase": "not_run",
+          "return_code": null,
+          "status": "NOT_RUN"
+        },
+        "synth": {
+          "artifact_hashes": {},
+          "elapsed_seconds": null,
+          "phase": "not_run",
+          "return_code": null,
+          "status": "NOT_RUN"
+        }
+      },
+      "golden": {
+        "cosim": {
+          "artifact_hashes": {},
+          "elapsed_seconds": null,
+          "phase": "not_run",
+          "return_code": null,
+          "status": "NOT_RUN"
+        },
+        "csim": {
+          "artifact_hashes": {
+            "csim_stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "csim_stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "tcl": "61da5050135d5d6049cfe7f3162a6151557dd1b4fff448ab6ac7f127ecffba93",
+            "vitis_stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "vitis_stdout": "762d192013cba51bd287a215bf20d30c84130456ebef4c791546871e74a868a0"
+          },
+          "elapsed_seconds": 3.2337408759631217,
+          "phase": "pass",
+          "return_code": 0,
+          "status": "PASS"
+        },
+        "ppa": {
+          "artifact_hashes": {},
+          "elapsed_seconds": null,
+          "phase": "not_run",
+          "return_code": null,
+          "status": "NOT_RUN"
+        },
+        "synth": {
+          "artifact_hashes": {
+            "csynth_xml": "a3d7cab3e87051630d2eae7a6610cca8bad4691dfce5b8514f6e84588ec3931d",
+            "tcl": "be0b1cc80076422d342729e32347ee30a9498a80e238e65aa3a10f59a5c9ce59",
+            "vitis_stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "vitis_stdout": "4df688db1f9a57e6ecd1527e2bf399a2837b6362cbf6e614749528dd4e32dad3"
+          },
+          "elapsed_seconds": 9.873747305944562,
+          "metrics": {
+            "estimated_clock_period_ns": 1.482,
+            "interval": {
+              "max": 16,
+              "min": 16
+            },
+            "latency": {
+              "average": 18,
+              "best": 18,
+              "worst": 18
+            },
+            "resources": {
+              "BRAM_18K": 0,
+              "DSP": 0,
+              "FF": 12,
+              "LUT": 128,
+              "URAM": 0
+            },
+            "utilization_percent": {
+              "BRAM_18K": 0.0,
+              "DSP": 0.0,
+              "FF": 0.0,
+              "LUT": 0.01,
+              "URAM": 0.0
+            }
+          },
+          "phase": "pass",
+          "return_code": 0,
+          "status": "PASS"
+        }
+      }
+    },
+    "real_anchor": true,
+    "status": "ACCEPTED",
+    "wall_time_seconds": 16.431463859975338
+  },
+  "schema_version": "v3d.real-vitis-anchor-receipt.v1",
+  "source": {
+    "record_ref": "runs/v3d_fast_003/attempt_0001/oracle_result.json",
+    "record_schema_version": "v3d.oracle-task.v1",
+    "run_id": "v3d-oracle-vitis-opaque-anchors-a01",
+    "source_record_sha256": "bd450ee9b9145bb6ad01c21d756e43b426daa7d04faf7b485cd66b7962a5e14c",
+    "source_summary_sha256": "1a9139c0768ca5eadc4580651da105c470af76107bd036fcaec287fdf5257807"
+  },
+  "task": {
+    "mode": "REPAIR",
+    "operator": "repair_bias_sign",
+    "seed": 103,
+    "task_fingerprint": "ca55ecc2c6175839f40edd9044f9ae1c5cb915415708671f5bd35aaf353b50f1",
+    "task_id": "v3d_fast_003"
+  }
+}

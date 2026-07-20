@@ -19,6 +19,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -916,6 +917,7 @@ class VitisOracleBackend:
             "cosim": float(cosim_timeout_seconds),
         }
         self.toolchain_id = str(toolchain_id)
+        self.toolchain_probe: Mapping[str, object] | None = None
         self.monotonic = monotonic
         self.uses_default_runner = runner is None
         self.evidence_class = (
@@ -927,10 +929,14 @@ class VitisOracleBackend:
             REAL_VITIS_ANCHOR_AUTHORITY if self.uses_default_runner else None
         )
         if self.uses_default_runner:
-            self._probe_real_toolchain()
+            self.toolchain_probe = self._probe_real_toolchain()
+            # A caller-supplied label is not evidence.  Bind all subsequent
+            # ToolConfig records to the version actually reported by the
+            # executable that was probed instead.
+            self.toolchain_id = str(self.toolchain_probe["toolchain_id"])
         self.backend = VitisBackend(runner=runner)  # type: ignore[arg-type]
 
-    def _probe_real_toolchain(self) -> None:
+    def _probe_real_toolchain(self) -> Mapping[str, object]:
         root = Path(self.vitis_root)
         settings = root / "settings64.sh"
         executable = root / "bin" / "vitis-run"
@@ -942,16 +948,82 @@ class VitisOracleBackend:
             raise OracleConfigurationError(
                 f"Vitis executable is missing or not executable: {executable}"
             )
+        resolved_executable = executable.resolve()
+        try:
+            completed = subprocess.run(
+                [str(resolved_executable), "--version"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=30.0,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise OracleConfigurationError(
+                f"Vitis version probe failed: {type(exc).__name__}"
+            ) from exc
+        combined_output = "\n".join(
+            part for part in (completed.stdout, completed.stderr) if part
+        )
+        if completed.returncode != 0:
+            raise OracleConfigurationError(
+                "Vitis version probe failed with return code "
+                f"{completed.returncode}"
+            )
+        version_match = re.search(
+            r"(?i)\bvitis-run\s+v?(?P<version>\d{4}\.\d+(?:\.\d+)?)\b",
+            combined_output,
+        )
+        if version_match is None:
+            raise OracleConfigurationError(
+                "Vitis version probe did not report a vitis-run version"
+            )
+        detected_version = version_match.group("version")
+        if detected_version != "2025.2":
+            raise OracleConfigurationError(
+                "Vitis version probe reported unsupported version "
+                f"{detected_version}; expected 2025.2"
+            )
+        normalized_lines = [
+            " ".join(line.strip().split())
+            for line in combined_output.splitlines()
+            if line.strip()
+        ]
+        version_lines = [
+            line
+            for line in normalized_lines
+            if "vitis-run" in line.casefold() or "sw build" in line.casefold()
+        ]
+        version_summary = " | ".join(version_lines[:2])
+        if not version_summary:
+            # The regex above guarantees a version-bearing line, but retain a
+            # fail-closed guard if output normalization ever changes.
+            raise OracleConfigurationError(
+                "Vitis version probe produced no stable version summary"
+            )
+        try:
+            executable_sha256 = _sha256(resolved_executable.read_bytes())
+        except OSError as exc:
+            raise OracleConfigurationError(
+                f"Vitis executable cannot be hashed: {resolved_executable}"
+            ) from exc
+        return {
+            "executable_path": str(resolved_executable),
+            "executable_sha256": executable_sha256,
+            "detected_version": detected_version,
+            "version_summary": version_summary,
+            "toolchain_id": f"Vitis {detected_version}",
+        }
 
     def fingerprint(self) -> str:
         return _sha256(
             _canonical_json(
                 {
-                    "backend": "vitis-corpus-oracle:v3",
+                    "backend": "vitis-corpus-oracle:v4",
                     "raw_backend": self.backend.fingerprint(),
                     "vitis_root": self.vitis_root,
                     "timeouts": self.timeouts,
                     "toolchain_id": self.toolchain_id,
+                    "toolchain_probe": self.toolchain_probe,
                     "evidence_class": self.evidence_class.value,
                     "runner_mode": (
                         "default_subprocess"

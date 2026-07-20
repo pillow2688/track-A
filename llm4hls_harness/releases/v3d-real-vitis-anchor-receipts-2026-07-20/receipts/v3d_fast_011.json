@@ -1,0 +1,197 @@
+{
+  "artifact_binding": {
+    "count": 17,
+    "set_sha256": "568de1bdd7d2f578e5fb8763ac68e571226c646d49bf95ea915293e5c40688b1"
+  },
+  "backend": {
+    "fingerprint": "2e10c5a732112e4e1eb47ea3884c4831666c6f0abfbca8461da3257ad8396163",
+    "name": "vitis",
+    "real_anchor_authorized": true,
+    "serial": true,
+    "toolchain": "Vitis 2025.2"
+  },
+  "content_sha256": "9deefc17085f82c70f228b056cbc4348273bb53bf7672b4a62d45883cc9ab28f",
+  "evidence_boundary": {
+    "agent_or_llm_evaluation": false,
+    "claim": "Real Vitis baseline/golden Oracle gate evidence only; not an LLM or Agent repair/optimization result.",
+    "evidence_class": "REAL_VITIS_2025_2_NO_LLM",
+    "raw_artifacts_committed": false
+  },
+  "result": {
+    "checks": [
+      {
+        "actual": "PASS",
+        "expected": "PASS",
+        "gate": "csim",
+        "matches": true,
+        "subject": "baseline"
+      },
+      {
+        "actual": "FAIL",
+        "expected": "FAIL",
+        "gate": "synth",
+        "matches": true,
+        "subject": "baseline"
+      },
+      {
+        "actual": "PASS",
+        "expected": "PASS",
+        "gate": "csim",
+        "matches": true,
+        "subject": "golden"
+      },
+      {
+        "actual": "PASS",
+        "expected": "PASS",
+        "gate": "synth",
+        "matches": true,
+        "subject": "golden"
+      }
+    ],
+    "expected": {
+      "baseline": {
+        "cosim": "NOT_RUN",
+        "csim": "PASS",
+        "ppa": "NOT_RUN",
+        "synth": "FAIL"
+      },
+      "golden": {
+        "cosim": "NOT_RUN",
+        "csim": "PASS",
+        "ppa": "NOT_RUN",
+        "synth": "PASS"
+      }
+    },
+    "gate_scope": [
+      "csim",
+      "synth"
+    ],
+    "observations": {
+      "baseline": {
+        "cosim": {
+          "artifact_hashes": {},
+          "elapsed_seconds": null,
+          "phase": "not_run",
+          "return_code": null,
+          "status": "NOT_RUN"
+        },
+        "csim": {
+          "artifact_hashes": {
+            "csim_stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "csim_stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "tcl": "61da5050135d5d6049cfe7f3162a6151557dd1b4fff448ab6ac7f127ecffba93",
+            "vitis_stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "vitis_stdout": "9ee2496fba92db41b3695e88e8b054fa263b1d3858c793771412a59b98b8958f"
+          },
+          "elapsed_seconds": 3.3217738879611716,
+          "phase": "pass",
+          "return_code": 0,
+          "status": "PASS"
+        },
+        "ppa": {
+          "artifact_hashes": {},
+          "elapsed_seconds": null,
+          "phase": "not_run",
+          "return_code": null,
+          "status": "NOT_RUN"
+        },
+        "synth": {
+          "artifact_hashes": {
+            "tcl": "be0b1cc80076422d342729e32347ee30a9498a80e238e65aa3a10f59a5c9ce59",
+            "vitis_stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "vitis_stdout": "034b021fa938a6feee562d782b106f5cd46080159ce9a0a5bd2ed9805d6ff573"
+          },
+          "elapsed_seconds": 10.967540984973311,
+          "phase": "synth_error",
+          "return_code": 1,
+          "status": "FAIL"
+        }
+      },
+      "golden": {
+        "cosim": {
+          "artifact_hashes": {},
+          "elapsed_seconds": null,
+          "phase": "not_run",
+          "return_code": null,
+          "status": "NOT_RUN"
+        },
+        "csim": {
+          "artifact_hashes": {
+            "csim_stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "csim_stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "tcl": "61da5050135d5d6049cfe7f3162a6151557dd1b4fff448ab6ac7f127ecffba93",
+            "vitis_stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "vitis_stdout": "f06c0998aef334393b81d9a04bb3ab7414e145e9f0c5236de9af35d2b620bb72"
+          },
+          "elapsed_seconds": 3.2901615099981427,
+          "phase": "pass",
+          "return_code": 0,
+          "status": "PASS"
+        },
+        "ppa": {
+          "artifact_hashes": {},
+          "elapsed_seconds": null,
+          "phase": "not_run",
+          "return_code": null,
+          "status": "NOT_RUN"
+        },
+        "synth": {
+          "artifact_hashes": {
+            "csynth_xml": "a3d7cab3e87051630d2eae7a6610cca8bad4691dfce5b8514f6e84588ec3931d",
+            "tcl": "be0b1cc80076422d342729e32347ee30a9498a80e238e65aa3a10f59a5c9ce59",
+            "vitis_stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "vitis_stdout": "526d5fe143107f760f194f9e259c1774f347fdd1ce5e724bdc71802f26573870"
+          },
+          "elapsed_seconds": 9.927277081995271,
+          "metrics": {
+            "estimated_clock_period_ns": 1.482,
+            "interval": {
+              "max": 16,
+              "min": 16
+            },
+            "latency": {
+              "average": 18,
+              "best": 18,
+              "worst": 18
+            },
+            "resources": {
+              "BRAM_18K": 0,
+              "DSP": 0,
+              "FF": 12,
+              "LUT": 128,
+              "URAM": 0
+            },
+            "utilization_percent": {
+              "BRAM_18K": 0.0,
+              "DSP": 0.0,
+              "FF": 0.0,
+              "LUT": 0.01,
+              "URAM": 0.0
+            }
+          },
+          "phase": "pass",
+          "return_code": 0,
+          "status": "PASS"
+        }
+      }
+    },
+    "real_anchor": true,
+    "status": "ACCEPTED",
+    "wall_time_seconds": 27.513762205955572
+  },
+  "schema_version": "v3d.real-vitis-anchor-receipt.v1",
+  "source": {
+    "record_ref": "runs/v3d_fast_011/attempt_0001/oracle_result.json",
+    "record_schema_version": "v3d.oracle-task.v1",
+    "run_id": "v3d-oracle-vitis-opaque-anchors-a02",
+    "source_record_sha256": "12a909fef037d5bcf1680649ad969c3d18bdf9be45de4571e803ad37d129513f",
+    "source_summary_sha256": "5f505b60145314895164d73b348eed2360e723aac9502940d72ad82798c45039"
+  },
+  "task": {
+    "mode": "SYNTH_FIX",
+    "operator": "synth_std_function",
+    "seed": 203,
+    "task_fingerprint": "854f36a0b02e6675ea923148a5d1252155a6f9100e305375aaa65e8f30c7d55c",
+    "task_id": "v3d_fast_011"
+  }
+}

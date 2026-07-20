@@ -1,0 +1,258 @@
+{
+  "artifact_binding": {
+    "count": 27,
+    "set_sha256": "28627747f2401e48b3560e2c1fc8e45d7fbd39508f663f1f68ae32ae170c3975"
+  },
+  "backend": {
+    "fingerprint": "2e10c5a732112e4e1eb47ea3884c4831666c6f0abfbca8461da3257ad8396163",
+    "name": "vitis",
+    "real_anchor_authorized": true,
+    "serial": true,
+    "toolchain": "Vitis 2025.2"
+  },
+  "content_sha256": "cdad1041dc712a49f9b1bbd5b4c37699d3dca94aa409e97d6422406ec7007c9b",
+  "evidence_boundary": {
+    "agent_or_llm_evaluation": false,
+    "claim": "Real Vitis baseline/golden Oracle gate evidence only; not an LLM or Agent repair/optimization result.",
+    "evidence_class": "REAL_VITIS_2025_2_NO_LLM",
+    "raw_artifacts_committed": false
+  },
+  "result": {
+    "checks": [
+      {
+        "actual": "PASS",
+        "expected": "PASS",
+        "gate": "csim",
+        "matches": true,
+        "subject": "baseline"
+      },
+      {
+        "actual": "PASS",
+        "expected": "PASS",
+        "gate": "synth",
+        "matches": true,
+        "subject": "baseline"
+      },
+      {
+        "actual": "FAIL",
+        "expected": "FAIL",
+        "gate": "cosim",
+        "matches": true,
+        "subject": "baseline"
+      },
+      {
+        "actual": "PASS",
+        "expected": "PASS",
+        "gate": "csim",
+        "matches": true,
+        "subject": "golden"
+      },
+      {
+        "actual": "PASS",
+        "expected": "PASS",
+        "gate": "synth",
+        "matches": true,
+        "subject": "golden"
+      },
+      {
+        "actual": "PASS",
+        "expected": "PASS",
+        "gate": "cosim",
+        "matches": true,
+        "subject": "golden"
+      }
+    ],
+    "expected": {
+      "baseline": {
+        "cosim": "FAIL",
+        "csim": "PASS",
+        "ppa": "NOT_RUN",
+        "synth": "PASS"
+      },
+      "golden": {
+        "cosim": "PASS",
+        "csim": "PASS",
+        "ppa": "NOT_RUN",
+        "synth": "PASS"
+      }
+    },
+    "gate_scope": [
+      "csim",
+      "synth",
+      "cosim"
+    ],
+    "observations": {
+      "baseline": {
+        "cosim": {
+          "artifact_hashes": {
+            "csynth_xml": "d91c58b413b90d468e0d0256cdd670a754e5f96a0eaec00252d3a41ae1ce95cf",
+            "tcl": "542fb4fb6e966af4404870107e4ba9797b8bb29ff800af06cad717dec37c107b",
+            "vitis_stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "vitis_stdout": "5b0cdbeb1f1a422070686860742bf32cbf072db5f1a8b793b5172305087fe183"
+          },
+          "elapsed_seconds": 27.34355419909116,
+          "phase": "cosim_fail",
+          "return_code": 1,
+          "status": "FAIL"
+        },
+        "csim": {
+          "artifact_hashes": {
+            "csim_stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "csim_stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "tcl": "61da5050135d5d6049cfe7f3162a6151557dd1b4fff448ab6ac7f127ecffba93",
+            "vitis_stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "vitis_stdout": "086f3aaf49c67e79fb622a245d56e826a57d68cec4977d01677c2265a7cd398b"
+          },
+          "elapsed_seconds": 3.4912363360635936,
+          "phase": "pass",
+          "return_code": 0,
+          "status": "PASS"
+        },
+        "ppa": {
+          "artifact_hashes": {},
+          "elapsed_seconds": null,
+          "phase": "not_run",
+          "return_code": null,
+          "status": "NOT_RUN"
+        },
+        "synth": {
+          "artifact_hashes": {
+            "csynth_xml": "0efc99087e7106070aa9b8fb86ef2ff23717de1a4728df482c0bcd99457d0073",
+            "tcl": "be0b1cc80076422d342729e32347ee30a9498a80e238e65aa3a10f59a5c9ce59",
+            "vitis_stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "vitis_stdout": "81a04c69a85c4a238e7d776963c1135e8e2387a6cf9e3028624bedb15cfee456"
+          },
+          "elapsed_seconds": 10.811637990060262,
+          "metrics": {
+            "estimated_clock_period_ns": 2.278,
+            "interval": {
+              "max": 40,
+              "min": 40
+            },
+            "latency": {
+              "average": 39,
+              "best": 39,
+              "worst": 39
+            },
+            "resources": {
+              "BRAM_18K": 0,
+              "DSP": 0,
+              "FF": 166,
+              "LUT": 453,
+              "URAM": 0
+            },
+            "utilization_percent": {
+              "BRAM_18K": 0.0,
+              "DSP": 0.0,
+              "FF": 0.006,
+              "LUT": 0.035,
+              "URAM": 0.0
+            }
+          },
+          "phase": "pass",
+          "return_code": 0,
+          "status": "PASS"
+        }
+      },
+      "golden": {
+        "cosim": {
+          "artifact_hashes": {
+            "cosim_report": "4be2599bf5d47350bbccd328f0eea069b215a0226afea5dbfe8e54c561ed6fe7",
+            "csynth_xml": "ca075ed368f1f9c4f835107f41f7ea2c8bf9a4eb5e1dd14dc159e7b4fb42c970",
+            "tcl": "542fb4fb6e966af4404870107e4ba9797b8bb29ff800af06cad717dec37c107b",
+            "vitis_stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "vitis_stdout": "1c425df647d0cbad60eea335ffd785071f3e4201d90f1d44c2898d8ab0fcc5f1"
+          },
+          "cosim_metrics": {
+            "latency": {
+              "average": 32,
+              "max": 32,
+              "min": 32
+            },
+            "status": "Pass"
+          },
+          "elapsed_seconds": 27.201668793102726,
+          "phase": "pass",
+          "return_code": 0,
+          "status": "PASS"
+        },
+        "csim": {
+          "artifact_hashes": {
+            "csim_stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "csim_stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "tcl": "61da5050135d5d6049cfe7f3162a6151557dd1b4fff448ab6ac7f127ecffba93",
+            "vitis_stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "vitis_stdout": "f94ad45007534e1c9bc08c59f6d9876dbb77a336969d0351b29826c74d2b7fd0"
+          },
+          "elapsed_seconds": 3.2268726269248873,
+          "phase": "pass",
+          "return_code": 0,
+          "status": "PASS"
+        },
+        "ppa": {
+          "artifact_hashes": {},
+          "elapsed_seconds": null,
+          "phase": "not_run",
+          "return_code": null,
+          "status": "NOT_RUN"
+        },
+        "synth": {
+          "artifact_hashes": {
+            "csynth_xml": "7974628de85a59a963121799bd67d93d47b9444f912ecc0cf95cf6861a3cd4c6",
+            "tcl": "be0b1cc80076422d342729e32347ee30a9498a80e238e65aa3a10f59a5c9ce59",
+            "vitis_stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "vitis_stdout": "a702746828dd59ab62d727a715b9a220982fb6f7465fb906cc0f1970b55223a5"
+          },
+          "elapsed_seconds": 10.099464435013942,
+          "metrics": {
+            "estimated_clock_period_ns": 2.278,
+            "interval": {
+              "max": 16,
+              "min": 16
+            },
+            "latency": {
+              "average": 19,
+              "best": 19,
+              "worst": 19
+            },
+            "resources": {
+              "BRAM_18K": 0,
+              "DSP": 0,
+              "FF": 151,
+              "LUT": 326,
+              "URAM": 0
+            },
+            "utilization_percent": {
+              "BRAM_18K": 0.0,
+              "DSP": 0.0,
+              "FF": 0.006,
+              "LUT": 0.025,
+              "URAM": 0.0
+            }
+          },
+          "phase": "pass",
+          "return_code": 0,
+          "status": "PASS"
+        }
+      }
+    },
+    "real_anchor": true,
+    "status": "ACCEPTED",
+    "wall_time_seconds": 82.18975501402747
+  },
+  "schema_version": "v3d.real-vitis-anchor-receipt.v1",
+  "source": {
+    "record_ref": "runs/v3d_fast_015/attempt_0001/oracle_result.json",
+    "record_schema_version": "v3d.oracle-task.v1",
+    "run_id": "v3d-oracle-vitis-opaque-anchors-a01",
+    "source_record_sha256": "c2d4c43c82deb663776e3376e15cc8c93bba65e3735e8a6176075064c99ed4d0",
+    "source_summary_sha256": "1a9139c0768ca5eadc4580651da105c470af76107bd036fcaec287fdf5257807"
+  },
+  "task": {
+    "mode": "STRUCTURAL_FIX",
+    "operator": "struct_main_burst",
+    "seed": 301,
+    "task_fingerprint": "32474d5880100b2064340e70fafb0d573cf8320bc48a9be0a6094aa9fbca74ae",
+    "task_id": "v3d_fast_015"
+  }
+}

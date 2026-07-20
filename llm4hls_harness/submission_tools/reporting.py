@@ -409,6 +409,14 @@ def _oracle_tables(
             f" Release `{source}` 记录 deterministic checks={deterministic_checks}，"
             f"accepted/rejected={deterministic_accepted}/{deterministic_rejected}。"
         )
+        receipt_bundle = payload.get("receipt_bundle", {})
+        if isinstance(receipt_bundle, dict) and receipt_bundle:
+            oracle_summary += (
+                " 可提交 receipt bundle 绑定 "
+                f"{receipt_bundle.get('receipts', 0)} 题、"
+                f"{receipt_bundle.get('artifact_hashes', 0)} 个 artifact hashes；"
+                "它是 REAL_VITIS_NO_LLM 证据，不是 Agent 成绩。"
+            )
         for item in payload.get("valid_real_vitis_anchors", []):
             if not isinstance(item, dict):
                 continue
@@ -682,6 +690,30 @@ python -m submission_tools.cli snapshot-oracle \\
   --output "$PROJECT_ROOT/docs/submission/oracle_snapshots/my-oracle.json"
 ```
 
+## 从零运行确定性 Corpus 与 Batch
+
+下面两条命令会创建全新的输出目录；它们只验证数据集门控和批量编排，
+不会被报告成真实 LLM 或真实 Vitis 成绩：
+
+```bash
+cd "$PROJECT_ROOT"
+PYTHONPATH=llm4hls_harness .venv/bin/python \\
+  -m llm4hls_agent.v3d_oracle_validator \\
+  --corpus llm4hls_harness/task_corpus/v3d-fast \\
+  --output-dir /tmp/v3d-oracle-deterministic-fresh \\
+  --backend deterministic
+
+PYTHONPATH=llm4hls_harness .venv/bin/python \\
+  -m llm4hls_agent.v3_batch_benchmark \\
+  --corpus llm4hls_harness/task_corpus/v3d-fast \\
+  --output-dir /tmp/v3d-benchmark-deterministic-fresh \\
+  --models deterministic-fixture-v1 \\
+  --backend deterministic
+```
+
+在相同命令末尾增加 `--resume` 可验证断点复用；不要把 `/tmp` 的原始
+run 目录直接放入提交包，应先使用上面的 snapshot 命令脱敏。
+
 ## 快速回归与真实环境检查
 
 ```bash
@@ -696,20 +728,18 @@ LLM4HLS_VITIS_HLS_ROOT="$VITIS_ROOT" scripts/v3d-reproduce.sh real-preflight
 ## 生成并检查非最终 staging
 
 ```bash
-cd "$PROJECT_ROOT/llm4hls_harness"
-SOURCE_REVISION="$(git -C "$PROJECT_ROOT" rev-parse HEAD)" \\
-SOURCE_TREE_STATE="CLEAN_AFTER_MANUAL_GIT_CHECK" \\
-python -m submission_tools.cli stage \\
+cd "$PROJECT_ROOT"
+PYTHONPATH=llm4hls_harness .venv/bin/python -m submission_tools.cli stage \\
   --source-root "$PROJECT_ROOT" \\
   --output-root "$PROJECT_ROOT/build/submission-staging-NOT-FINAL" \\
   --spec "$PROJECT_ROOT/docs/submission/staging_spec.json"
 
-python -m submission_tools.cli scan \\
+PYTHONPATH=llm4hls_harness .venv/bin/python -m submission_tools.cli scan \\
   --root "$PROJECT_ROOT/build/submission-staging-NOT-FINAL"
 ```
 
 Planner 输入可以独立专项检查：`python -m submission_tools.cli scan --root "$RUN_DIR/planner/inputs"`。
-只有确认 `git status` 干净后才能把 `SOURCE_TREE_STATE` 设为 `CLEAN_AFTER_MANUAL_GIT_CHECK`；否则省略该变量，manifest 会标为 `DIRTY_OR_UNVERIFIED`。每个 staging 文件仍有独立 SHA-256。
+staging 工具直接读取当前 Git HEAD 和工作树状态；环境变量不能把脏工作树伪装成 clean。每个 staging 文件仍有独立 SHA-256。
 
 ## 当前外部阻塞
 
@@ -782,7 +812,18 @@ def _checklist(
     anchors: tuple[str, dict[str, Any]] | None,
 ) -> str:
     oracle_counts = oracle[1].get("counts", {}) if oracle else {}
-    anchor_count = len(anchors[1].get("valid_real_vitis_anchors", [])) if anchors else 0
+    anchor_items = anchors[1].get("valid_real_vitis_anchors", []) if anchors else []
+    anchor_modes = {
+        str(item.get("mode"))
+        for item in anchor_items
+        if isinstance(item, dict) and item.get("mode")
+    }
+    anchor_modes_complete = anchor_modes == {
+        "REPAIR",
+        "SYNTH_FIX",
+        "STRUCTURAL_FIX",
+        "OPTIMIZE",
+    }
     dot = next(
         (
             item
@@ -819,7 +860,7 @@ def _checklist(
 - [ ] DeepSeek 三次重复及 Qwen 相同配置矩阵：{blockers.get("model_matrix", "TODO")}
 - [ ] strict / fast 和两项消融已运行；缺失处保持 TODO。
 - [{'x' if oracle_counts.get('accepted') == 28 and oracle_counts.get('rejected') == 0 else ' '}] deterministic Oracle 28 accepted / 0 rejected（fixture only）。
-- [{'x' if anchor_count == 4 else ' '}] 四种 mode 各有 1 个有效真实 Vitis corpus anchor；不等同于真实 LLM Agent 成功。
+- [{'x' if anchor_modes_complete else ' '}] 四种 mode 均有有效真实 Vitis corpus anchor；不等同于真实 LLM Agent 成功。
 
 ## 脱敏与打包
 

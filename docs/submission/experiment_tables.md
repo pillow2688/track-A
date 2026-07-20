@@ -1,6 +1,6 @@
 # V3-D 实验表（事实快照）
 
-> 自动生成于 2026-07-20T16:43:58+00:00，事实来源：`evidence_manifest.json` 指定的 run JSON。
+> 自动生成于 2026-07-20T17:00:19+00:00，事实来源：`evidence_manifest.json` 指定的 run JSON。
 > 不读取 hidden/golden，不把脚本 Patch replay 计作真实 LLM。`TODO` 表示缺少实验，绝非 0。
 
 ## 当前能力矩阵
@@ -98,7 +98,7 @@
 
 ## Corpus Oracle 与真实 Vitis anchors
 
-`docs/submission/oracle_snapshots/v3d-oracle-deterministic-diverse-final-20260720-r02.json`：accepted=28，rejected=0，pending=0，real anchors=0，resume=28；backend=deterministic（fixture only）。 Release `llm4hls_harness/releases/v3d-corpus-oracle-anchors-2026-07-20.json` 记录 deterministic checks=134，accepted/rejected=28/0。
+`docs/submission/oracle_snapshots/v3d-oracle-deterministic-diverse-final-20260720-r02.json`：accepted=28，rejected=0，pending=0，real anchors=0，resume=28；backend=deterministic（fixture only）。 Release `llm4hls_harness/releases/v3d-corpus-oracle-anchors-2026-07-20.json` 记录 deterministic checks=134，accepted/rejected=28/0。 可提交 receipt bundle 绑定 12 题、238 个 artifact hashes；它是 REAL_VITIS_NO_LLM 证据，不是 Agent 成绩。
 
 | Mode | Task | Run ID | Status | Checks | Baseline | Golden | Acceleration | Wall (s) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |

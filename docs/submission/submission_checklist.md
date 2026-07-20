@@ -1,6 +1,6 @@
 # 提交前 Checklist（非最终规则）
 
-> 自动生成于 2026-07-20T16:43:58+00:00，事实来源：`evidence_manifest.json` 指定的 run JSON。
+> 自动生成于 2026-07-20T17:00:19+00:00，事实来源：`evidence_manifest.json` 指定的 run JSON。
 > 不读取 hidden/golden，不把脚本 Patch replay 计作真实 LLM。`TODO` 表示缺少实验，绝非 0。
 
 > 本清单和 staging 都是内部候选，不代表官方最终提交格式已确认。
@@ -22,7 +22,7 @@
 - [ ] DeepSeek 三次重复及 Qwen 相同配置矩阵：TODO：配置真实 endpoint/key/model 后，运行 DeepSeek 官方三题各3次及 Qwen 同配置矩阵；当前没有可报告的新矩阵平均值或成功率。
 - [ ] strict / fast 和两项消融已运行；缺失处保持 TODO。
 - [x] deterministic Oracle 28 accepted / 0 rejected（fixture only）。
-- [ ] 四种 mode 各有 1 个有效真实 Vitis corpus anchor；不等同于真实 LLM Agent 成功。
+- [x] 四种 mode 均有有效真实 Vitis corpus anchor；不等同于真实 LLM Agent 成功。
 
 ## 脱敏与打包
 

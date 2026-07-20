@@ -1,0 +1,208 @@
+{
+  "backend": {
+    "fingerprint": "2e10c5a732112e4e1eb47ea3884c4831666c6f0abfbca8461da3257ad8396163",
+    "name": "vitis",
+    "toolchain": "Vitis 2025.2"
+  },
+  "corpus": {
+    "manifest_ref": "corpus_manifest.json",
+    "manifest_sha256": "9e374fa49e4c68315080ab93ba2f395deea5ae682dd145b791e1db52c2198691"
+  },
+  "counts": {
+    "artifact_hashes": 238,
+    "by_mode": {
+      "OPTIMIZE": 3,
+      "REPAIR": 3,
+      "STRUCTURAL_FIX": 3,
+      "SYNTH_FIX": 3
+    },
+    "checks": 59,
+    "receipts": 12
+  },
+  "evidence_boundary": {
+    "agent_or_llm_evaluation": false,
+    "clean_clone_scope": "Verifies receipt integrity and current task-tree binding; raw artifact re-hashing requires the retained ignored runs.",
+    "evidence_class": "REAL_VITIS_2025_2_NO_LLM",
+    "raw_artifacts_committed": false
+  },
+  "extractor_version": "v3d.anchor-receipt-extractor.v1",
+  "receipt_cut_at": "2026-07-20T15:30:50.598156+00:00",
+  "receipt_set_sha256": "8711e7e799f8b4c138425971a1a8776b14056b6bfc98da49340c5e661aeddea0",
+  "receipts": [
+    {
+      "artifact_hash_count": 14,
+      "artifact_hash_set_sha256": "7b1c998be0228e1341dfc75f472c2c4227ae225198acd7e37deec2d4737fd866",
+      "checks": 3,
+      "content_sha256": "dac39905aea08215d646728c716622eaf8f7b73836df3c687f5cf427a1d5c560",
+      "mode": "REPAIR",
+      "path": "receipts/v3d_fast_001.json",
+      "receipt_sha256": "e43ca866616213c1e006c5be85c15fdd3ff5627e3d7fcbddb4d1e8e642bcde0e",
+      "run_id": "v3d-oracle-vitis-opaque-anchors-a01",
+      "source_record_sha256": "2caaf1e5c6f58b25bbfa7caa52aeef753153ec08d07abdd272275a3ca939b149",
+      "task_fingerprint": "682b34b828ac47ffbd0bb09c44a88a0622539cce4f25e52bbe1380760ff58f38",
+      "task_id": "v3d_fast_001"
+    },
+    {
+      "artifact_hash_count": 14,
+      "artifact_hash_set_sha256": "560f0f079c22c64368ae4dc03f1127df6f64c4a6d7c9abe5db623ec935906ccb",
+      "checks": 3,
+      "content_sha256": "2af8dffe2064fae46e7157d231dc758ac1e8c11edb399ea02e53eb6eb8fc5528",
+      "mode": "REPAIR",
+      "path": "receipts/v3d_fast_002.json",
+      "receipt_sha256": "18f6958659ae2d8c191bbb7ee6d3ad483d5a05e6009b42a11e7871d0aab68ca0",
+      "run_id": "v3d-oracle-vitis-opaque-anchors-a01",
+      "source_record_sha256": "7e1319e921db4ec2a081044a964ed971426292bfbfdcb9a8103d64a90a48cb50",
+      "task_fingerprint": "20223cc933e0457fac6bb6e3aeebf7f4bf540a13ae3aef49670808854643c655",
+      "task_id": "v3d_fast_002"
+    },
+    {
+      "artifact_hash_count": 14,
+      "artifact_hash_set_sha256": "b23680dd1a90c3c22a5328be391a3bc04e4942ab11295efd660fe602ebfb3a27",
+      "checks": 3,
+      "content_sha256": "bf66e5a2a3805439285c0f5e13f6adc47f4617187e1be7affa42d2fbdd5ae9ae",
+      "mode": "REPAIR",
+      "path": "receipts/v3d_fast_003.json",
+      "receipt_sha256": "7ed2e0240e6207b089a1a6a7015f5d411a188574ee8225c6aeb30c14710312a2",
+      "run_id": "v3d-oracle-vitis-opaque-anchors-a01",
+      "source_record_sha256": "bd450ee9b9145bb6ad01c21d756e43b426daa7d04faf7b485cd66b7962a5e14c",
+      "task_fingerprint": "ca55ecc2c6175839f40edd9044f9ae1c5cb915415708671f5bd35aaf353b50f1",
+      "task_id": "v3d_fast_003"
+    },
+    {
+      "artifact_hash_count": 17,
+      "artifact_hash_set_sha256": "3efc167d01f4f4895971e1845c3a8cf6035d3785d0fc6a82c89a9d03410262de",
+      "checks": 4,
+      "content_sha256": "5be58373cb611b065e0568c8cae8f05ef16e2adf66aac837f0f3353a41f76667",
+      "mode": "SYNTH_FIX",
+      "path": "receipts/v3d_fast_009.json",
+      "receipt_sha256": "7ca144b95fe7c3e92e793b6ba0048544907ecf403467850dad670880c6b42e38",
+      "run_id": "v3d-oracle-vitis-opaque-anchors-a01",
+      "source_record_sha256": "71bfbb55ef6216db3e22ed4a70c34e0a97885f12ff382554551c5a6cdffd6c04",
+      "task_fingerprint": "059dbd67ad204c4d045ed2ed339cd50d968c63f1744a7108e3ef4767d41b21a2",
+      "task_id": "v3d_fast_009"
+    },
+    {
+      "artifact_hash_count": 17,
+      "artifact_hash_set_sha256": "f3f653ce145f1b855dc61492032dff4ba0d1908b45bc4a4e182d48a466a7a3dd",
+      "checks": 4,
+      "content_sha256": "6adaa2e06b47661bcc42e7947e8ca40b080870bafb719244c826f24b15d4507d",
+      "mode": "SYNTH_FIX",
+      "path": "receipts/v3d_fast_010.json",
+      "receipt_sha256": "5374be6ebff519865f97ed52474eac21f1e5fbd6c2dab5b7907f9869243d5158",
+      "run_id": "v3d-oracle-vitis-opaque-anchors-a01",
+      "source_record_sha256": "51be01016373f3ae118ae5dcf423ad7709c7133dab523c35cb94414e7baed469",
+      "task_fingerprint": "42d1b68e6d46048c8b02ea455951c2ebda5dca6a5d3b1237c95cdd0d277f52b1",
+      "task_id": "v3d_fast_010"
+    },
+    {
+      "artifact_hash_count": 17,
+      "artifact_hash_set_sha256": "568de1bdd7d2f578e5fb8763ac68e571226c646d49bf95ea915293e5c40688b1",
+      "checks": 4,
+      "content_sha256": "9deefc17085f82c70f228b056cbc4348273bb53bf7672b4a62d45883cc9ab28f",
+      "mode": "SYNTH_FIX",
+      "path": "receipts/v3d_fast_011.json",
+      "receipt_sha256": "d27708527886d34b9c3b6c59348c8d1b15b1a14fe2fbf90bdf2653236d31d14c",
+      "run_id": "v3d-oracle-vitis-opaque-anchors-a02",
+      "source_record_sha256": "12a909fef037d5bcf1680649ad969c3d18bdf9be45de4571e803ad37d129513f",
+      "task_fingerprint": "854f36a0b02e6675ea923148a5d1252155a6f9100e305375aaa65e8f30c7d55c",
+      "task_id": "v3d_fast_011"
+    },
+    {
+      "artifact_hash_count": 27,
+      "artifact_hash_set_sha256": "28627747f2401e48b3560e2c1fc8e45d7fbd39508f663f1f68ae32ae170c3975",
+      "checks": 6,
+      "content_sha256": "cdad1041dc712a49f9b1bbd5b4c37699d3dca94aa409e97d6422406ec7007c9b",
+      "mode": "STRUCTURAL_FIX",
+      "path": "receipts/v3d_fast_015.json",
+      "receipt_sha256": "84255e1345ee66ab23bf0d18785725bf9dc00a6f0f8d27e8d6d2af5f9c04e22c",
+      "run_id": "v3d-oracle-vitis-opaque-anchors-a01",
+      "source_record_sha256": "c2d4c43c82deb663776e3376e15cc8c93bba65e3735e8a6176075064c99ed4d0",
+      "task_fingerprint": "32474d5880100b2064340e70fafb0d573cf8320bc48a9be0a6094aa9fbca74ae",
+      "task_id": "v3d_fast_015"
+    },
+    {
+      "artifact_hash_count": 27,
+      "artifact_hash_set_sha256": "267eeca7fe5d95036a81c8e8938b28d3b5cb353fec99b8dfcd61db8a45dfb2ef",
+      "checks": 6,
+      "content_sha256": "4ba3ba8e981484f882fb69ca09f2f22356965c0ec2d23574e93b69f8bd6ef152",
+      "mode": "STRUCTURAL_FIX",
+      "path": "receipts/v3d_fast_016.json",
+      "receipt_sha256": "2b76b7ca2744ba59257b609b7cdb044156422907d4a70832feecd7d33863cea3",
+      "run_id": "v3d-oracle-vitis-opaque-anchors-a01",
+      "source_record_sha256": "1b71c5315bbc573d44f224e6168bbe0a1dc51cd39c963dcb2bdd764d59194051",
+      "task_fingerprint": "a2db5364bbbb154952af2ca7d373751c1ed0dabead7b43ea08976129a0776982",
+      "task_id": "v3d_fast_016"
+    },
+    {
+      "artifact_hash_count": 27,
+      "artifact_hash_set_sha256": "77dbde933c8975c47846efa120c6f052ef5f2f652e6bb91e2aa9cb4a1992c466",
+      "checks": 6,
+      "content_sha256": "d97358e155bdc7782d05e4b8ef9815293def51bf8a8e6a9af0b7fe92105d752c",
+      "mode": "STRUCTURAL_FIX",
+      "path": "receipts/v3d_fast_017.json",
+      "receipt_sha256": "836fe700c9bd9b0063f3beb0d4fa573bc5f9d7c025cf461a1a90978f09b99388",
+      "run_id": "v3d-oracle-vitis-opaque-anchors-a01",
+      "source_record_sha256": "b79470c8e4bc15f66243273bee72696c789afd84a80be04ed0a8a1cd98b73d1e",
+      "task_fingerprint": "62c42ac01a7eaa9ad7161d09b169b858da20ac514a8b0b35069941f84e263a86",
+      "task_id": "v3d_fast_017"
+    },
+    {
+      "artifact_hash_count": 18,
+      "artifact_hash_set_sha256": "e9aaa20a04a95201629da9a55ac0205050798506b7bb83cf109d7c5c875516a4",
+      "checks": 6,
+      "content_sha256": "f80607c40b15ff1cf1ab54dcd47089707d4e3815419a76f531ccf5dd5ddcfca8",
+      "mode": "OPTIMIZE",
+      "path": "receipts/v3d_fast_021.json",
+      "receipt_sha256": "6138d6a42fe05e1af43e2c55967269f4494acd6ce372e6910f33cdb01a8be64c",
+      "run_id": "v3d-oracle-vitis-opaque-anchors-a02",
+      "source_record_sha256": "6bda94610476e442e1e5afbc090a686d930f9f52950ec30a09229677e5b1dbb9",
+      "task_fingerprint": "f748e4220c90f4b38ee1bad277168ce808dc4d0886ac3e2f5db6ee5db2f6a56c",
+      "task_id": "v3d_fast_021"
+    },
+    {
+      "artifact_hash_count": 18,
+      "artifact_hash_set_sha256": "d669910585038b809a6600dd489c76b2a88c57d5674dd6ce5e4fe7feef799e2c",
+      "checks": 6,
+      "content_sha256": "84fc110ac816fa1923117074f71035cc9cd7ef08858b2a4397d80b02878e0c15",
+      "mode": "OPTIMIZE",
+      "path": "receipts/v3d_fast_022.json",
+      "receipt_sha256": "78f36384243ea48c5d38975864fa641bbb6a8f2e5e6fa0ec61b297b6605e3829",
+      "run_id": "v3d-oracle-vitis-opaque-anchors-a01",
+      "source_record_sha256": "1bef3298a24b42e5ebd9ee82b9a9b78342a1fd52530166f9a555ccb355c96bf5",
+      "task_fingerprint": "de0354f09a5cc6930a202bba4656d10d53384c0bed7dccc09460cbf743c03ab3",
+      "task_id": "v3d_fast_022"
+    },
+    {
+      "artifact_hash_count": 28,
+      "artifact_hash_set_sha256": "75a6b489f4cd9c7c6281e530016ea690b0ff6fe59a0969bc100b154fd5ed2187",
+      "checks": 8,
+      "content_sha256": "74765c888bb0bf45ccf91a99a34fa362ae4dbffbeb6f57cec9afc361a8305fa7",
+      "mode": "OPTIMIZE",
+      "path": "receipts/v3d_fast_028.json",
+      "receipt_sha256": "ac66a101ed191484d04dc7daf37adb90c08785e0a6076ee5c43d408c668ade5b",
+      "run_id": "v3d-oracle-vitis-opaque-anchors-a01",
+      "source_record_sha256": "8996db2c0e533a17207ffc1e790d6671336160598a7f6159783e56e39e6ff355",
+      "task_fingerprint": "832e00e33e9569a33f21244eae72b4fef0ed591a396e7f1487799c1548f439d9",
+      "task_id": "v3d_fast_028"
+    }
+  ],
+  "schema_version": "v3d.real-vitis-anchor-receipt-manifest.v1",
+  "source_runs": [
+    {
+      "accepted": 10,
+      "attempted": 12,
+      "historical_manifest_sha256": "b18fceee082da79fe0e0ac92d69c2814423dca7dc470b4162650bbfa5086601a",
+      "rejected": 2,
+      "run_id": "v3d-oracle-vitis-opaque-anchors-a01",
+      "summary_sha256": "1a9139c0768ca5eadc4580651da105c470af76107bd036fcaec287fdf5257807"
+    },
+    {
+      "accepted": 2,
+      "attempted": 2,
+      "historical_manifest_sha256": "e669a269906b612606fe5b064ecfbee315fb30f110ec0fbb3877ea2135e70e69",
+      "rejected": 0,
+      "run_id": "v3d-oracle-vitis-opaque-anchors-a02",
+      "summary_sha256": "5f505b60145314895164d73b348eed2360e723aac9502940d72ad82798c45039"
+    }
+  ]
+}

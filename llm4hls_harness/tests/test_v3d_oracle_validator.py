@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import tempfile
@@ -518,7 +519,7 @@ class V3DOracleValidatorTests(unittest.TestCase):
                 record["observations"]["golden"]["synth"]["artifact_hashes"]
             )
 
-    def test_default_vitis_runner_requires_settings_and_executable(self) -> None:
+    def test_default_vitis_runner_probes_and_binds_real_toolchain(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "vitis"
             root.mkdir()
@@ -542,7 +543,12 @@ class V3DOracleValidatorTests(unittest.TestCase):
 
             executable = root / "bin" / "vitis-run"
             executable.parent.mkdir()
-            executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            executable.write_text(
+                "#!/bin/sh\n"
+                "printf '%s\\n' '****** vitis-run v2025.2 (64-bit)'\n"
+                "printf '%s\\n' '  **** SW Build 6295257'\n",
+                encoding="utf-8",
+            )
             executable.chmod(0o755)
             backend = VitisOracleBackend(**arguments)
             self.assertEqual(backend.evidence_class, EvidenceClass.REAL_VITIS)
@@ -551,6 +557,68 @@ class V3DOracleValidatorTests(unittest.TestCase):
                 "VITIS_STRUCTURED_CORPUS_ORACLE_V1",
             )
             self.assertTrue(backend.uses_default_runner)
+            self.assertEqual(backend.toolchain_id, "Vitis 2025.2")
+            self.assertEqual(
+                backend.toolchain_probe,
+                {
+                    "executable_path": str(executable.resolve()),
+                    "executable_sha256": hashlib.sha256(
+                        executable.read_bytes()
+                    ).hexdigest(),
+                    "detected_version": "2025.2",
+                    "version_summary": (
+                        "****** vitis-run v2025.2 (64-bit) | "
+                        "**** SW Build 6295257"
+                    ),
+                    "toolchain_id": "Vitis 2025.2",
+                },
+            )
+
+            spoofed_arguments = {**arguments, "toolchain_id": "Vitis 2099.9"}
+            spoofed_backend = VitisOracleBackend(**spoofed_arguments)
+            self.assertEqual(spoofed_backend.toolchain_id, "Vitis 2025.2")
+            self.assertEqual(spoofed_backend.fingerprint(), backend.fingerprint())
+
+            executable.write_text(
+                executable.read_text(encoding="utf-8") + "# changed binary bytes\n",
+                encoding="utf-8",
+            )
+            executable.chmod(0o755)
+            changed_executable_backend = VitisOracleBackend(**arguments)
+            self.assertNotEqual(
+                changed_executable_backend.fingerprint(), backend.fingerprint()
+            )
+
+    def test_default_vitis_runner_rejects_unverified_version(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "vitis"
+            (root / "bin").mkdir(parents=True)
+            (root / "settings64.sh").write_text("# fixture\n", encoding="utf-8")
+            executable = root / "bin" / "vitis-run"
+            executable.write_text(
+                "#!/bin/sh\nprintf '%s\\n' 'vitis-run v2024.2'\n",
+                encoding="utf-8",
+            )
+            executable.chmod(0o755)
+            arguments = {
+                "vitis_root": str(root),
+                "csim_timeout_seconds": 60,
+                "synth_timeout_seconds": 60,
+                "cosim_timeout_seconds": 60,
+                "toolchain_id": "Vitis 2025.2",
+            }
+            with self.assertRaisesRegex(
+                OracleConfigurationError,
+                r"unsupported version 2024\.2; expected 2025\.2",
+            ):
+                VitisOracleBackend(**arguments)
+
+            executable.write_text("#!/bin/sh\nexit 9\n", encoding="utf-8")
+            executable.chmod(0o755)
+            with self.assertRaisesRegex(
+                OracleConfigurationError, "failed with return code 9"
+            ):
+                VitisOracleBackend(**arguments)
 
     def test_custom_real_backend_string_cannot_authorize_anchor(self) -> None:
         task_id = self.manifest["tasks"][0]["task_id"]

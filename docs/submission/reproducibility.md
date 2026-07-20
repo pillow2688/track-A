@@ -1,6 +1,6 @@
 # V3-D 可复现性说明
 
-> 自动生成于 2026-07-20T16:43:58+00:00，事实来源：`evidence_manifest.json` 指定的 run JSON。
+> 自动生成于 2026-07-20T17:00:19+00:00，事实来源：`evidence_manifest.json` 指定的 run JSON。
 > 不读取 hidden/golden，不把脚本 Patch replay 计作真实 LLM。`TODO` 表示缺少实验，绝非 0。
 
 ## 证据分级
@@ -44,6 +44,30 @@ python -m submission_tools.cli snapshot-oracle \
   --output "$PROJECT_ROOT/docs/submission/oracle_snapshots/my-oracle.json"
 ```
 
+## 从零运行确定性 Corpus 与 Batch
+
+下面两条命令会创建全新的输出目录；它们只验证数据集门控和批量编排，
+不会被报告成真实 LLM 或真实 Vitis 成绩：
+
+```bash
+cd "$PROJECT_ROOT"
+PYTHONPATH=llm4hls_harness .venv/bin/python \
+  -m llm4hls_agent.v3d_oracle_validator \
+  --corpus llm4hls_harness/task_corpus/v3d-fast \
+  --output-dir /tmp/v3d-oracle-deterministic-fresh \
+  --backend deterministic
+
+PYTHONPATH=llm4hls_harness .venv/bin/python \
+  -m llm4hls_agent.v3_batch_benchmark \
+  --corpus llm4hls_harness/task_corpus/v3d-fast \
+  --output-dir /tmp/v3d-benchmark-deterministic-fresh \
+  --models deterministic-fixture-v1 \
+  --backend deterministic
+```
+
+在相同命令末尾增加 `--resume` 可验证断点复用；不要把 `/tmp` 的原始
+run 目录直接放入提交包，应先使用上面的 snapshot 命令脱敏。
+
 ## 快速回归与真实环境检查
 
 ```bash
@@ -58,20 +82,18 @@ LLM4HLS_VITIS_HLS_ROOT="$VITIS_ROOT" scripts/v3d-reproduce.sh real-preflight
 ## 生成并检查非最终 staging
 
 ```bash
-cd "$PROJECT_ROOT/llm4hls_harness"
-SOURCE_REVISION="$(git -C "$PROJECT_ROOT" rev-parse HEAD)" \
-SOURCE_TREE_STATE="CLEAN_AFTER_MANUAL_GIT_CHECK" \
-python -m submission_tools.cli stage \
+cd "$PROJECT_ROOT"
+PYTHONPATH=llm4hls_harness .venv/bin/python -m submission_tools.cli stage \
   --source-root "$PROJECT_ROOT" \
   --output-root "$PROJECT_ROOT/build/submission-staging-NOT-FINAL" \
   --spec "$PROJECT_ROOT/docs/submission/staging_spec.json"
 
-python -m submission_tools.cli scan \
+PYTHONPATH=llm4hls_harness .venv/bin/python -m submission_tools.cli scan \
   --root "$PROJECT_ROOT/build/submission-staging-NOT-FINAL"
 ```
 
 Planner 输入可以独立专项检查：`python -m submission_tools.cli scan --root "$RUN_DIR/planner/inputs"`。
-只有确认 `git status` 干净后才能把 `SOURCE_TREE_STATE` 设为 `CLEAN_AFTER_MANUAL_GIT_CHECK`；否则省略该变量，manifest 会标为 `DIRTY_OR_UNVERIFIED`。每个 staging 文件仍有独立 SHA-256。
+staging 工具直接读取当前 Git HEAD 和工作树状态；环境变量不能把脏工作树伪装成 clean。每个 staging 文件仍有独立 SHA-256。
 
 ## 当前外部阻塞
 

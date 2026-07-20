@@ -37,3 +37,18 @@ A01 原始结果是 10 accepted / 2 rejected，没有删除：
 2. `v3d_fast_021`：旧 baseline 仍保留足够并行 pragma，baseline/golden 都是 6 cycles。A02 改成真正串行 baseline 后得到 18→6 cycles，6/6 checks PASS。
 
 失败 run 与 A02 修复 run 都保留在本地 `runs/`；release JSON 保留每个有效 anchor 的 task fingerprint、门链数和 wall time，不将 deterministic、真实 Vitis Oracle 与 LLM Agent 实验混算。
+
+## 可提交 provenance receipts
+
+原始 A01/A02 Vitis 工作目录包含大量生成物、本机绝对路径和日志，因此仍由 `runs/` 忽略。可提交目录
+`v3d-real-vitis-anchor-receipts-2026-07-20/` 为 12 个有效 anchor 保存脱敏 receipt：每题绑定当前 task tree fingerprint、真实 Vitis backend fingerprint、原始 `oracle_result.json` SHA-256、全部门链 checks，以及提取时逐个从原始文件复核过的关键 artifact SHA-256。Receipt 明确标记为 `REAL_VITIS_2025_2_NO_LLM`，不能当成 Agent 或 LLM 成功。
+
+clean clone 可执行以下命令 fail-closed 校验 receipt 文件、release 绑定和当前 task tree；它不声称在缺少原始 ignored run 时重新计算 Vitis artifact 内容：
+
+```bash
+cd llm4hls_harness
+python -m llm4hls_agent.v3d_anchor_receipts verify \
+  --corpus task_corpus/v3d-fast \
+  --receipts releases/v3d-real-vitis-anchor-receipts-2026-07-20 \
+  --release releases/v3d-corpus-oracle-anchors-2026-07-20.json
+```
