@@ -103,6 +103,17 @@ class PrototypeBackend:
         return BackendResult(True, "pass", 0, 0.01)
 
 
+class VersionedPrototypeBackend(PrototypeBackend):
+    """Same deterministic semantics with a configurable implementation ID."""
+
+    def __init__(self, fingerprint: str) -> None:
+        super().__init__()
+        self._fingerprint = fingerprint
+
+    def fingerprint(self) -> str:
+        return self._fingerprint
+
+
 def prototype_proposal() -> PatchProposal:
     return PatchProposal(
         patch=(
@@ -231,6 +242,612 @@ def prototype_config(task, *, credit_limit: int = 80) -> RunConfig:
 
 @unittest.skipIf(run_v3_prototype is None, "V3 optional dependencies are not installed")
 class V3PrototypeTests(unittest.TestCase):
+    def test_a1_happy_path_seals_planner_and_synth_evidence_contracts(self) -> None:
+        project = Path(__file__).resolve().parents[1]
+        task = load_public_task(project / "examples" / "u55c_v2_optimize_task")
+        backend = PrototypeBackend()
+
+        with tempfile.TemporaryDirectory() as directory:
+            run_root = Path(directory) / "v3-a1-contracts"
+            result = run_v3_prototype(
+                task,
+                run_root,
+                prototype_config(task),
+                prototype_proposal(),
+                backend=backend,
+                thread_id="prototype-a1-contracts-test",
+            )
+
+            self.assertEqual(result["status"], "DONE")
+            action_id = result["planner_action_id"]
+            input_ref = result["planner_input_ref"]
+            output_ref = result["planner_output_ref"]
+            self.assertIsInstance(action_id, str)
+            self.assertIsInstance(input_ref, str)
+            self.assertIsInstance(output_ref, str)
+
+            input_value = json.loads(
+                (run_root / input_ref).read_text(encoding="utf-8")
+            )
+            output_value = json.loads(
+                (run_root / output_ref).read_text(encoding="utf-8")
+            )
+            self.assertEqual(input_value["schema_version"], "v3a.planner-input.v1")
+            self.assertEqual(output_value["schema_version"], "v3a.planner-output.v1")
+            self.assertEqual(output_value["action_id"], action_id)
+            self.assertEqual(
+                output_value["input_sha256"], result["planner_input_sha256"]
+            )
+            self.assertEqual(
+                result["planner_input_sha256"],
+                v3_prototype_module.canonical_sha256(input_value),
+            )
+            self.assertEqual(
+                result["planner_output_sha256"],
+                v3_prototype_module.canonical_sha256(output_value),
+            )
+
+            journal_root = run_root / "control" / "planner_actions"
+            started_ref = f"control/planner_actions/{action_id}.started.json"
+            completed_ref = f"control/planner_actions/{action_id}.completed.json"
+            started = json.loads(
+                (journal_root / f"{action_id}.started.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            completed = json.loads(
+                (journal_root / f"{action_id}.completed.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(started["status"], "STARTED")
+            self.assertEqual(completed["status"], "COMPLETED")
+            self.assertEqual(started["input_ref"], input_ref)
+            self.assertEqual(completed["result_ref"], output_ref)
+            self.assertEqual(
+                completed["result_sha256"], result["planner_output_sha256"]
+            )
+
+            evidence_refs = {
+                "candidate_000": result["baseline_synth_evidence_ref"],
+                "candidate_001": result["candidate_synth_evidence_ref"],
+                "final_candidate_001": result["final_synth_evidence_ref"],
+            }
+            self.assertEqual(len(set(evidence_refs.values())), 3)
+            for expected_candidate_id, reference in evidence_refs.items():
+                evidence = json.loads(
+                    (run_root / reference).read_text(encoding="utf-8")
+                )
+                self.assertEqual(
+                    evidence["schema_version"], "v3a.synth-evidence.v1"
+                )
+                self.assertEqual(
+                    evidence["candidate_id"],
+                    expected_candidate_id.removeprefix("final_"),
+                )
+                self.assertEqual(
+                    evidence["completeness"]["loop_evidence"], "UNAVAILABLE"
+                )
+
+            registry = json.loads(
+                (run_root / "candidate_registry.json").read_text(encoding="utf-8")
+            )
+            candidate = registry["candidates"]["candidate_001"]
+            immutable_metadata = json.loads(
+                (run_root / "candidates" / "candidate_001" / "candidate.json")
+                .read_text(encoding="utf-8")
+            )
+            planner_bindings = (
+                "planner_action_id",
+                "planner_input_ref",
+                "planner_input_sha256",
+                "planner_output_ref",
+                "planner_output_sha256",
+            )
+            for name in planner_bindings:
+                self.assertEqual(candidate[name], result[name])
+                self.assertEqual(immutable_metadata[name], result[name])
+
+            manifest = json.loads(
+                (run_root / "control" / "package_manifest.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            manifest_paths = {item["path"] for item in manifest["artifacts"]}
+            self.assertTrue(
+                {
+                    input_ref,
+                    output_ref,
+                    started_ref,
+                    completed_ref,
+                    *evidence_refs.values(),
+                }.issubset(manifest_paths)
+            )
+
+    def test_a1_round_two_planner_input_uses_promoted_incumbent_evidence(
+        self,
+    ) -> None:
+        project = Path(__file__).resolve().parents[1]
+        task = load_public_task(project / "examples" / "u55c_v2_optimize_task")
+        backend = PrototypeBackend()
+
+        with tempfile.TemporaryDirectory() as directory:
+            run_root = Path(directory) / "v3-a1-round-two-input"
+            result = run_v3_prototype(
+                task,
+                run_root,
+                prototype_config(task, credit_limit=100),
+                (prototype_proposal(), regression_after_promotion_proposal()),
+                backend=backend,
+                thread_id="prototype-a1-round-two-input-test",
+            )
+            registry = json.loads(
+                (run_root / "candidate_registry.json").read_text(encoding="utf-8")
+            )
+            round_two = json.loads(
+                (run_root / "planner" / "inputs" / "round_002.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+
+        self.assertEqual(result["status"], "DONE")
+        self.assertEqual(result["rounds_completed"], 2)
+        self.assertEqual(round_two["round"]["parent_candidate_id"], "candidate_001")
+        self.assertEqual(round_two["incumbent"]["candidate_id"], "candidate_001")
+        promoted = registry["candidates"]["candidate_001"]
+        self.assertEqual(
+            round_two["incumbent"]["synth_evidence"],
+            {
+                "ref": promoted["synth_evidence_ref"],
+                "sha256": promoted["synth_evidence_sha256"],
+            },
+        )
+        self.assertEqual(round_two["baseline"]["candidate_id"], "candidate_000")
+        self.assertNotEqual(
+            round_two["incumbent"]["synth_evidence"],
+            round_two["baseline"]["synth_evidence"],
+        )
+        self.assertEqual(
+            registry["candidates"]["candidate_002"]["parent_id"], "candidate_001"
+        )
+
+    def test_a1_tampered_planner_output_fails_closed_before_materialization(
+        self,
+    ) -> None:
+        project = Path(__file__).resolve().parents[1]
+        task = load_public_task(project / "examples" / "u55c_v2_optimize_task")
+        backend = PrototypeBackend()
+        self.assertIsNotNone(v3_prototype_module)
+
+        with tempfile.TemporaryDirectory() as directory:
+            run_root = Path(directory) / "v3-a1-planner-output-tamper"
+            with patch.object(
+                v3_prototype_module,
+                "_materialize_candidate",
+                side_effect=RuntimeError("injected before materialization"),
+            ):
+                with self.assertRaisesRegex(
+                    RuntimeError, "injected before materialization"
+                ):
+                    run_v3_prototype(
+                        task,
+                        run_root,
+                        prototype_config(task),
+                        prototype_proposal(),
+                        backend=backend,
+                        thread_id="prototype-a1-planner-output-tamper-test",
+                    )
+
+            calls_before_resume = list(backend.calls)
+            registry_before_resume = json.loads(
+                (run_root / "candidate_registry.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                set(registry_before_resume["candidates"]), {"candidate_000"}
+            )
+            self.assertEqual(
+                [kind for kind, _optimized, _work in calls_before_resume],
+                ["csim", "synth", "cosim"],
+            )
+
+            output_paths = list((run_root / "planner" / "outputs").glob("*.json"))
+            self.assertEqual(len(output_paths), 1)
+            output = json.loads(output_paths[0].read_text(encoding="utf-8"))
+            output["proposal"]["hypothesis"] = "tampered after durable planning"
+            output_paths[0].write_text(json.dumps(output), encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                RuntimeError, "Planner output artifact hash mismatch"
+            ):
+                run_v3_prototype(
+                    task,
+                    run_root,
+                    prototype_config(task),
+                    prototype_proposal(),
+                    backend=backend,
+                    thread_id="prototype-a1-planner-output-tamper-test",
+                )
+
+            registry_after_resume = json.loads(
+                (run_root / "candidate_registry.json").read_text(encoding="utf-8")
+            )
+
+        self.assertEqual(backend.calls, calls_before_resume)
+        self.assertEqual(registry_after_resume, registry_before_resume)
+
+    def test_a1_tampered_planner_input_fails_closed_before_materialization(
+        self,
+    ) -> None:
+        project = Path(__file__).resolve().parents[1]
+        task = load_public_task(project / "examples" / "u55c_v2_optimize_task")
+        backend = PrototypeBackend()
+        self.assertIsNotNone(v3_prototype_module)
+
+        with tempfile.TemporaryDirectory() as directory:
+            run_root = Path(directory) / "v3-a1-planner-input-tamper"
+            with patch.object(
+                v3_prototype_module,
+                "_materialize_candidate",
+                side_effect=RuntimeError("injected before materialization"),
+            ):
+                with self.assertRaisesRegex(
+                    RuntimeError, "injected before materialization"
+                ):
+                    run_v3_prototype(
+                        task,
+                        run_root,
+                        prototype_config(task),
+                        prototype_proposal(),
+                        backend=backend,
+                        thread_id="prototype-a1-planner-input-tamper-test",
+                    )
+
+            calls_before_resume = list(backend.calls)
+            registry_before_resume = json.loads(
+                (run_root / "candidate_registry.json").read_text(encoding="utf-8")
+            )
+            candidate_root = run_root / "candidates"
+            candidate_dirs_before_resume = (
+                sorted(path.name for path in candidate_root.iterdir() if path.is_dir())
+                if candidate_root.is_dir()
+                else []
+            )
+            self.assertEqual(
+                set(registry_before_resume["candidates"]), {"candidate_000"}
+            )
+
+            input_paths = list((run_root / "planner" / "inputs").glob("*.json"))
+            self.assertEqual(len(input_paths), 1)
+            planner_input = json.loads(input_paths[0].read_text(encoding="utf-8"))
+            planner_input["round"]["round_index"] = 999
+            input_paths[0].write_text(json.dumps(planner_input), encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                RuntimeError, "Planner input artifact hash mismatch"
+            ):
+                run_v3_prototype(
+                    task,
+                    run_root,
+                    prototype_config(task),
+                    prototype_proposal(),
+                    backend=backend,
+                    thread_id="prototype-a1-planner-input-tamper-test",
+                )
+
+            registry_after_resume = json.loads(
+                (run_root / "candidate_registry.json").read_text(encoding="utf-8")
+            )
+            candidate_dirs_after_resume = (
+                sorted(path.name for path in candidate_root.iterdir() if path.is_dir())
+                if candidate_root.is_dir()
+                else []
+            )
+
+        self.assertEqual(backend.calls, calls_before_resume)
+        self.assertEqual(registry_after_resume, registry_before_resume)
+        self.assertEqual(candidate_dirs_after_resume, candidate_dirs_before_resume)
+
+    def test_a1_missing_planner_journal_fails_closed_before_materialization(
+        self,
+    ) -> None:
+        project = Path(__file__).resolve().parents[1]
+        task = load_public_task(project / "examples" / "u55c_v2_optimize_task")
+        self.assertIsNotNone(v3_prototype_module)
+
+        for journal_status in ("started", "completed"):
+            with self.subTest(journal_status=journal_status):
+                backend = PrototypeBackend()
+                with tempfile.TemporaryDirectory() as directory:
+                    run_root = Path(directory) / f"v3-a1-missing-{journal_status}"
+                    with patch.object(
+                        v3_prototype_module,
+                        "_materialize_candidate",
+                        side_effect=RuntimeError("injected before materialization"),
+                    ):
+                        with self.assertRaisesRegex(
+                            RuntimeError, "injected before materialization"
+                        ):
+                            run_v3_prototype(
+                                task,
+                                run_root,
+                                prototype_config(task),
+                                prototype_proposal(),
+                                backend=backend,
+                                thread_id=(
+                                    "prototype-a1-missing-planner-"
+                                    f"{journal_status}-test"
+                                ),
+                            )
+
+                    calls_before_resume = list(backend.calls)
+                    registry_before_resume = json.loads(
+                        (run_root / "candidate_registry.json").read_text(
+                            encoding="utf-8"
+                        )
+                    )
+                    candidate_root = run_root / "candidates"
+                    candidate_dirs_before_resume = (
+                        sorted(
+                            path.name
+                            for path in candidate_root.iterdir()
+                            if path.is_dir()
+                        )
+                        if candidate_root.is_dir()
+                        else []
+                    )
+                    output_paths = list(
+                        (run_root / "planner" / "outputs").glob("*.json")
+                    )
+                    self.assertEqual(len(output_paths), 1)
+                    action_id = output_paths[0].stem
+                    journal_path = (
+                        run_root
+                        / "control"
+                        / "planner_actions"
+                        / f"{action_id}.{journal_status}.json"
+                    )
+                    self.assertTrue(journal_path.is_file())
+                    journal_path.unlink()
+
+                    with self.assertRaisesRegex(
+                        RuntimeError, "artifact reference is missing"
+                    ):
+                        run_v3_prototype(
+                            task,
+                            run_root,
+                            prototype_config(task),
+                            prototype_proposal(),
+                            backend=backend,
+                            thread_id=(
+                                "prototype-a1-missing-planner-"
+                                f"{journal_status}-test"
+                            ),
+                        )
+
+                    registry_after_resume = json.loads(
+                        (run_root / "candidate_registry.json").read_text(
+                            encoding="utf-8"
+                        )
+                    )
+                    candidate_dirs_after_resume = (
+                        sorted(
+                            path.name
+                            for path in candidate_root.iterdir()
+                            if path.is_dir()
+                        )
+                        if candidate_root.is_dir()
+                        else []
+                    )
+
+                self.assertEqual(backend.calls, calls_before_resume)
+                self.assertEqual(registry_after_resume, registry_before_resume)
+                self.assertEqual(
+                    candidate_dirs_after_resume, candidate_dirs_before_resume
+                )
+
+    def test_a1_planner_started_without_output_replays_deterministically(
+        self,
+    ) -> None:
+        project = Path(__file__).resolve().parents[1]
+        task = load_public_task(project / "examples" / "u55c_v2_optimize_task")
+        backend = PrototypeBackend()
+        self.assertIsNotNone(v3_prototype_module)
+        original_write = v3_prototype_module._write_once_or_verify
+        interrupted = False
+
+        def interrupt_after_started(path, value):
+            nonlocal interrupted
+            result = original_write(path, value)
+            target = Path(path)
+            if (
+                target.parent.name == "planner_actions"
+                and target.name.endswith(".started.json")
+                and not interrupted
+            ):
+                interrupted = True
+                raise RuntimeError("injected after Planner STARTED")
+            return result
+
+        with tempfile.TemporaryDirectory() as directory:
+            run_root = Path(directory) / "v3-a1-started-replay"
+            with patch.object(
+                v3_prototype_module,
+                "_write_once_or_verify",
+                side_effect=interrupt_after_started,
+            ):
+                with self.assertRaisesRegex(
+                    RuntimeError, "injected after Planner STARTED"
+                ):
+                    run_v3_prototype(
+                        task,
+                        run_root,
+                        prototype_config(task),
+                        prototype_proposal(),
+                        backend=backend,
+                        thread_id="prototype-a1-started-replay-test",
+                    )
+
+            calls_before_resume = list(backend.calls)
+            started_before = list(
+                (run_root / "control" / "planner_actions").glob(
+                    "*.started.json"
+                )
+            )
+            self.assertEqual(len(started_before), 1)
+            self.assertEqual(
+                list((run_root / "planner" / "outputs").glob("*.json")), []
+            )
+            self.assertEqual(
+                list(
+                    (run_root / "control" / "planner_actions").glob(
+                        "*.completed.json"
+                    )
+                ),
+                [],
+            )
+            self.assertEqual(
+                [kind for kind, _optimized, _work in calls_before_resume],
+                ["csim", "synth", "cosim"],
+            )
+
+            result = run_v3_prototype(
+                task,
+                run_root,
+                prototype_config(task),
+                prototype_proposal(),
+                backend=backend,
+                thread_id="prototype-a1-started-replay-test",
+            )
+
+            action_id = result["planner_action_id"]
+            self.assertTrue(
+                (
+                    run_root
+                    / "control"
+                    / "planner_actions"
+                    / f"{action_id}.started.json"
+                ).is_file()
+            )
+            self.assertTrue((run_root / result["planner_output_ref"]).is_file())
+            self.assertTrue(
+                (
+                    run_root
+                    / "control"
+                    / "planner_actions"
+                    / f"{action_id}.completed.json"
+                ).is_file()
+            )
+
+        self.assertEqual(result["status"], "DONE")
+        self.assertEqual(result["budget"]["credits_used"], 75)
+        self.assertEqual(
+            [kind for kind, _optimized, _work in backend.calls],
+            [
+                "csim",
+                "synth",
+                "cosim",
+                "csim",
+                "synth",
+                "cosim",
+                "csim",
+                "synth",
+                "cosim",
+            ],
+        )
+
+    def test_a1_planner_output_without_completed_journal_is_reconciled(
+        self,
+    ) -> None:
+        project = Path(__file__).resolve().parents[1]
+        task = load_public_task(project / "examples" / "u55c_v2_optimize_task")
+        backend = PrototypeBackend()
+        self.assertIsNotNone(v3_prototype_module)
+        original_write = v3_prototype_module._write_once_or_verify
+        interrupted = False
+
+        def interrupt_after_output(path, value):
+            nonlocal interrupted
+            result = original_write(path, value)
+            target = Path(path)
+            if (
+                target.parent.name == "outputs"
+                and target.parent.parent.name == "planner"
+                and not interrupted
+            ):
+                interrupted = True
+                raise RuntimeError("injected after Planner output")
+            return result
+
+        with tempfile.TemporaryDirectory() as directory:
+            run_root = Path(directory) / "v3-a1-output-reconcile"
+            with patch.object(
+                v3_prototype_module,
+                "_write_once_or_verify",
+                side_effect=interrupt_after_output,
+            ):
+                with self.assertRaisesRegex(
+                    RuntimeError, "injected after Planner output"
+                ):
+                    run_v3_prototype(
+                        task,
+                        run_root,
+                        prototype_config(task),
+                        prototype_proposal(),
+                        backend=backend,
+                        thread_id="prototype-a1-output-reconcile-test",
+                    )
+
+            calls_before_resume = list(backend.calls)
+            output_before = list(
+                (run_root / "planner" / "outputs").glob("*.json")
+            )
+            self.assertEqual(len(output_before), 1)
+            output_bytes = output_before[0].read_bytes()
+            journal_root = run_root / "control" / "planner_actions"
+            self.assertEqual(len(list(journal_root.glob("*.started.json"))), 1)
+            self.assertEqual(list(journal_root.glob("*.completed.json")), [])
+            self.assertEqual(
+                [kind for kind, _optimized, _work in calls_before_resume],
+                ["csim", "synth", "cosim"],
+            )
+
+            result = run_v3_prototype(
+                task,
+                run_root,
+                prototype_config(task),
+                prototype_proposal(),
+                backend=backend,
+                thread_id="prototype-a1-output-reconcile-test",
+            )
+
+            output_after = list(
+                (run_root / "planner" / "outputs").glob("*.json")
+            )
+            self.assertEqual(len(output_after), 1)
+            self.assertEqual(output_after[0].read_bytes(), output_bytes)
+            action_id = result["planner_action_id"]
+            self.assertTrue(
+                (journal_root / f"{action_id}.completed.json").is_file()
+            )
+            self.assertEqual(len(list(journal_root.glob("*.completed.json"))), 1)
+
+        self.assertEqual(result["status"], "DONE")
+        self.assertEqual(result["budget"]["credits_used"], 75)
+        self.assertEqual(
+            [kind for kind, _optimized, _work in backend.calls],
+            [
+                "csim",
+                "synth",
+                "cosim",
+                "csim",
+                "synth",
+                "cosim",
+                "csim",
+                "synth",
+                "cosim",
+            ],
+        )
+
     def test_action_graph_runs_baseline_candidate_gate_and_final_closure(self) -> None:
         project = Path(__file__).resolve().parents[1]
         task = load_public_task(project / "examples" / "u55c_v2_optimize_task")
@@ -860,7 +1477,7 @@ class V3PrototypeTests(unittest.TestCase):
             registry_path.write_text(json.dumps(registry), encoding="utf-8")
 
             with self.assertRaisesRegex(
-                RuntimeError, "package artifact mismatch"
+                RuntimeError, "Candidate decision chain does not bind the Registry"
             ):
                 run_v3_prototype(
                     task,
@@ -933,6 +1550,39 @@ class V3PrototypeTests(unittest.TestCase):
                     backend=backend,
                     thread_id="prototype-trace-tamper-test",
                 )
+
+    def test_terminal_package_rejects_symlinked_planner_artifact(self) -> None:
+        project = Path(__file__).resolve().parents[1]
+        task = load_public_task(project / "examples" / "u55c_v2_optimize_task")
+        backend = PrototypeBackend()
+
+        with tempfile.TemporaryDirectory() as directory:
+            run_root = Path(directory) / "v3-planner-symlink"
+            result = run_v3_prototype(
+                task,
+                run_root,
+                prototype_config(task),
+                prototype_proposal(),
+                backend=backend,
+                thread_id="prototype-planner-symlink-test",
+            )
+            calls_before_resume = list(backend.calls)
+            planner_input = run_root / str(result["planner_input_ref"])
+            backup = planner_input.with_suffix(".original.json")
+            planner_input.rename(backup)
+            planner_input.symlink_to(backup.name)
+
+            with self.assertRaisesRegex(RuntimeError, "symbolic link"):
+                run_v3_prototype(
+                    task,
+                    run_root,
+                    prototype_config(task),
+                    prototype_proposal(),
+                    backend=backend,
+                    thread_id="prototype-planner-symlink-test",
+                )
+
+        self.assertEqual(backend.calls, calls_before_resume)
 
     def test_final_cosim_failure_is_a_structured_terminal_report(self) -> None:
         project = Path(__file__).resolve().parents[1]
@@ -1031,6 +1681,64 @@ class V3PrototypeTests(unittest.TestCase):
             self.assertEqual(
                 (run_root / "v3_team_report.md").read_text(encoding="utf-8"),
                 report_after_first,
+            )
+
+    def test_completed_terminal_is_readable_after_backend_fingerprint_upgrade(
+        self,
+    ) -> None:
+        project = Path(__file__).resolve().parents[1]
+        task = load_public_task(project / "examples" / "u55c_v2_optimize_task")
+        historical_backend = VersionedPrototypeBackend(
+            "v3-prototype-test-backend-v1"
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            run_root = Path(directory) / "v3-backend-fingerprint-upgrade"
+            first = run_v3_prototype(
+                task,
+                run_root,
+                prototype_config(task),
+                prototype_proposal(),
+                backend=historical_backend,
+                thread_id="prototype-backend-fingerprint-upgrade-test",
+            )
+            calls_after_first = list(historical_backend.calls)
+            credits_after_first = first["budget"]["credits_used"]
+            ledger_after_first = (run_root / "budget_ledger.jsonl").read_bytes()
+            report_after_first = (run_root / "v3_team_report.md").read_bytes()
+            result_after_first = (run_root / "v3_prototype_result.json").read_bytes()
+
+            upgraded_backend = VersionedPrototypeBackend(
+                "v3-prototype-test-backend-v2"
+            )
+            second = run_v3_prototype(
+                task,
+                run_root,
+                prototype_config(task),
+                prototype_proposal(),
+                backend=upgraded_backend,
+                thread_id="prototype-backend-fingerprint-upgrade-test",
+            )
+
+            self.assertEqual(second, first)
+            self.assertEqual(
+                second["backend"]["fingerprint"],
+                "v3-prototype-test-backend-v1",
+            )
+            self.assertEqual(second["budget"]["credits_used"], credits_after_first)
+            self.assertEqual(historical_backend.calls, calls_after_first)
+            self.assertEqual(upgraded_backend.calls, [])
+            self.assertEqual(
+                (run_root / "budget_ledger.jsonl").read_bytes(),
+                ledger_after_first,
+            )
+            self.assertEqual(
+                (run_root / "v3_team_report.md").read_bytes(),
+                report_after_first,
+            )
+            self.assertEqual(
+                (run_root / "v3_prototype_result.json").read_bytes(),
+                result_after_first,
             )
 
     def test_incomplete_checkpoint_resumes_from_failed_graph_node(self) -> None:
@@ -1237,6 +1945,480 @@ class V3PrototypeTests(unittest.TestCase):
         )
         self.assertEqual(result["budget"]["credits_used"], 0)
         self.assertEqual(backend.calls, [])
+
+    def test_tampered_materialized_source_fails_closed_before_candidate_csim(
+        self,
+    ) -> None:
+        project = Path(__file__).resolve().parents[1]
+        task = load_public_task(project / "examples" / "u55c_v2_optimize_task")
+        backend = PrototypeBackend()
+        self.assertIsNotNone(v3_prototype_module)
+        original_event = v3_prototype_module._event
+        interrupted = False
+
+        def interrupt_after_materialization(*args, **kwargs):
+            nonlocal interrupted
+            if kwargs.get("node") == "materialize_candidate" and not interrupted:
+                interrupted = True
+                raise RuntimeError("injected post-materialization interruption")
+            return original_event(*args, **kwargs)
+
+        with tempfile.TemporaryDirectory() as directory:
+            run_root = Path(directory) / "v3-materialized-source-tamper"
+            with patch.object(
+                v3_prototype_module,
+                "_event",
+                side_effect=interrupt_after_materialization,
+            ):
+                with self.assertRaisesRegex(
+                    RuntimeError, "injected post-materialization interruption"
+                ):
+                    run_v3_prototype(
+                        task,
+                        run_root,
+                        prototype_config(task),
+                        prototype_proposal(),
+                        backend=backend,
+                        thread_id="prototype-materialized-source-tamper-test",
+                    )
+
+            calls_before_resume = list(backend.calls)
+            registry_path = run_root / "candidate_registry.json"
+            registry_before_resume = json.loads(
+                registry_path.read_text(encoding="utf-8")
+            )
+            candidate = registry_before_resume["candidates"]["candidate_001"]
+            source_path = run_root / str(candidate["source_ref"])
+            source_path.chmod(0o600)
+            source_path.write_bytes(source_path.read_bytes() + b"\n// tampered\n")
+
+            with self.assertRaises(RuntimeError):
+                run_v3_prototype(
+                    task,
+                    run_root,
+                    prototype_config(task),
+                    prototype_proposal(),
+                    backend=backend,
+                    thread_id="prototype-materialized-source-tamper-test",
+                )
+
+            registry_after_resume = json.loads(
+                registry_path.read_text(encoding="utf-8")
+            )
+
+        self.assertEqual(
+            [kind for kind, _optimized, _work in calls_before_resume],
+            ["csim", "synth", "cosim"],
+        )
+        self.assertEqual(backend.calls, calls_before_resume)
+        self.assertEqual(registry_after_resume, registry_before_resume)
+
+    def test_round_two_legacy_projection_tamper_cannot_rebind_completed_journal(
+        self,
+    ) -> None:
+        project = Path(__file__).resolve().parents[1]
+        task = load_public_task(project / "examples" / "u55c_v2_optimize_task")
+        backend = PrototypeBackend()
+        self.assertIsNotNone(v3_prototype_module)
+        original_materialize = v3_prototype_module._materialize_candidate
+
+        def interrupt_round_two_materialization(runtime, state):
+            if int(state.get("round_index", 1)) == 2:
+                raise RuntimeError("injected before round-two materialization")
+            return original_materialize(runtime, state)
+
+        with tempfile.TemporaryDirectory() as directory:
+            run_root = Path(directory) / "v3-round-two-legacy-tamper"
+            with patch.object(
+                v3_prototype_module,
+                "_materialize_candidate",
+                side_effect=interrupt_round_two_materialization,
+            ):
+                with self.assertRaisesRegex(
+                    RuntimeError, "injected before round-two materialization"
+                ):
+                    run_v3_prototype(
+                        task,
+                        run_root,
+                        prototype_config(task, credit_limit=100),
+                        (
+                            prototype_proposal(),
+                            regression_after_promotion_proposal(),
+                        ),
+                        backend=backend,
+                        thread_id="prototype-round-two-legacy-tamper-test",
+                    )
+
+            calls_before_resume = list(backend.calls)
+            registry_path = run_root / "candidate_registry.json"
+            registry_before_resume = json.loads(
+                registry_path.read_text(encoding="utf-8")
+            )
+            legacy_path = run_root / "planner" / "proposal_002.json"
+            legacy = json.loads(legacy_path.read_text(encoding="utf-8"))
+            legacy["parent_candidate_id"] = "candidate_000"
+            legacy["round_index"] = 999
+            legacy_path.write_text(json.dumps(legacy), encoding="utf-8")
+
+            completed_paths = list(
+                (run_root / "control" / "planner_actions").glob(
+                    "*.completed.json"
+                )
+            )
+            round_two_completed = None
+            for completed_path in completed_paths:
+                completed = json.loads(completed_path.read_text(encoding="utf-8"))
+                if completed.get("legacy_projection_ref") == (
+                    "planner/proposal_002.json"
+                ):
+                    round_two_completed = completed_path
+                    completed["legacy_projection_sha256"] = (
+                        v3_prototype_module.canonical_sha256(legacy)
+                    )
+                    completed_path.write_text(
+                        json.dumps(completed), encoding="utf-8"
+                    )
+                    break
+            self.assertIsNotNone(round_two_completed)
+
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "legacy Planner projection diverges from versioned output",
+            ):
+                run_v3_prototype(
+                    task,
+                    run_root,
+                    prototype_config(task, credit_limit=100),
+                    (
+                        prototype_proposal(),
+                        regression_after_promotion_proposal(),
+                    ),
+                    backend=backend,
+                    thread_id="prototype-round-two-legacy-tamper-test",
+                )
+
+            registry_after_resume = json.loads(
+                registry_path.read_text(encoding="utf-8")
+            )
+
+        self.assertEqual(
+            [kind for kind, _optimized, _work in calls_before_resume],
+            ["csim", "synth", "cosim", "csim", "synth", "cosim"],
+        )
+        self.assertEqual(backend.calls, calls_before_resume)
+        self.assertEqual(registry_after_resume, registry_before_resume)
+
+    def test_tampered_final_synth_result_fails_before_final_cosim(self) -> None:
+        project = Path(__file__).resolve().parents[1]
+        task = load_public_task(project / "examples" / "u55c_v2_optimize_task")
+        backend = PrototypeBackend()
+        self.assertIsNotNone(v3_prototype_module)
+
+        with tempfile.TemporaryDirectory() as directory:
+            run_root = Path(directory) / "v3-final-synth-result-tamper"
+            with patch.object(
+                v3_prototype_module,
+                "_final_cosim",
+                side_effect=RuntimeError("injected before final cosim"),
+            ):
+                with self.assertRaisesRegex(
+                    RuntimeError, "injected before final cosim"
+                ):
+                    run_v3_prototype(
+                        task,
+                        run_root,
+                        prototype_config(task),
+                        prototype_proposal(),
+                        backend=backend,
+                        thread_id="prototype-final-synth-result-tamper-test",
+                    )
+
+            calls_before_resume = list(backend.calls)
+            final_synth_paths: list[Path] = []
+            for result_path in (run_root / "actions").glob("*/result.json"):
+                value = json.loads(result_path.read_text(encoding="utf-8"))
+                if (
+                    value.get("kind") == "synth"
+                    and value.get("validation_scope") == "final"
+                ):
+                    final_synth_paths.append(result_path)
+            self.assertEqual(len(final_synth_paths), 1)
+            final_synth = json.loads(
+                final_synth_paths[0].read_text(encoding="utf-8")
+            )
+            final_synth["report"]["latency"]["best"] = 1
+            final_synth_paths[0].write_text(
+                json.dumps(final_synth), encoding="utf-8"
+            )
+
+            with self.assertRaisesRegex(RuntimeError, "result digest mismatch"):
+                run_v3_prototype(
+                    task,
+                    run_root,
+                    prototype_config(task),
+                    prototype_proposal(),
+                    backend=backend,
+                    thread_id="prototype-final-synth-result-tamper-test",
+                )
+
+        self.assertEqual(
+            [kind for kind, _optimized, _work in calls_before_resume],
+            [
+                "csim",
+                "synth",
+                "cosim",
+                "csim",
+                "synth",
+                "cosim",
+                "csim",
+                "synth",
+            ],
+        )
+        self.assertEqual(backend.calls, calls_before_resume)
+
+    def test_a1_terminal_cannot_downgrade_by_removing_package_metadata(
+        self,
+    ) -> None:
+        project = Path(__file__).resolve().parents[1]
+        task = load_public_task(project / "examples" / "u55c_v2_optimize_task")
+        backend = PrototypeBackend()
+
+        with tempfile.TemporaryDirectory() as directory:
+            run_root = Path(directory) / "v3-terminal-package-downgrade"
+            run_v3_prototype(
+                task,
+                run_root,
+                prototype_config(task),
+                prototype_proposal(),
+                backend=backend,
+                thread_id="prototype-terminal-package-downgrade-test",
+            )
+            calls_before_reentry = list(backend.calls)
+            result_path = run_root / "v3_prototype_result.json"
+            stored = json.loads(result_path.read_text(encoding="utf-8"))
+            self.assertIsNotNone(stored.pop("package", None))
+            stored["final_candidate_id"] = "candidate_000"
+            result_path.write_text(json.dumps(stored), encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                RuntimeError, "terminal V3 sealed package is required"
+            ):
+                run_v3_prototype(
+                    task,
+                    run_root,
+                    prototype_config(task),
+                    prototype_proposal(),
+                    backend=backend,
+                    thread_id="prototype-terminal-package-downgrade-test",
+                )
+
+        self.assertEqual(backend.calls, calls_before_reentry)
+
+    def test_tampered_final_synth_evidence_fails_before_package_commit(
+        self,
+    ) -> None:
+        project = Path(__file__).resolve().parents[1]
+        task = load_public_task(project / "examples" / "u55c_v2_optimize_task")
+        backend = PrototypeBackend()
+        self.assertIsNotNone(v3_prototype_module)
+
+        with tempfile.TemporaryDirectory() as directory:
+            run_root = Path(directory) / "v3-final-evidence-tamper"
+            with patch.object(
+                v3_prototype_module,
+                "_write_report",
+                side_effect=RuntimeError("injected before package commit"),
+            ):
+                with self.assertRaisesRegex(
+                    RuntimeError, "injected before package commit"
+                ):
+                    run_v3_prototype(
+                        task,
+                        run_root,
+                        prototype_config(task),
+                        prototype_proposal(),
+                        backend=backend,
+                        thread_id="prototype-final-evidence-tamper-test",
+                    )
+
+            calls_before_resume = list(backend.calls)
+            final_evidence_paths: list[Path] = []
+            for evidence_path in (run_root / "evidence" / "synth").glob(
+                "*.json"
+            ):
+                evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+                result = json.loads(
+                    (run_root / str(evidence["result_ref"])).read_text(
+                        encoding="utf-8"
+                    )
+                )
+                if result.get("validation_scope") == "final":
+                    final_evidence_paths.append(evidence_path)
+            self.assertEqual(len(final_evidence_paths), 1)
+            evidence = json.loads(
+                final_evidence_paths[0].read_text(encoding="utf-8")
+            )
+            evidence["top_level"]["latency"]["best"] = 1
+            final_evidence_paths[0].write_text(
+                json.dumps(evidence), encoding="utf-8"
+            )
+
+            with self.assertRaisesRegex(
+                RuntimeError, "Synth evidence artifact hash mismatch"
+            ):
+                run_v3_prototype(
+                    task,
+                    run_root,
+                    prototype_config(task),
+                    prototype_proposal(),
+                    backend=backend,
+                    thread_id="prototype-final-evidence-tamper-test",
+                )
+
+        self.assertEqual(backend.calls, calls_before_resume)
+
+    def test_registry_synth_evidence_digest_must_match_artifact(self) -> None:
+        project = Path(__file__).resolve().parents[1]
+        task = load_public_task(project / "examples" / "u55c_v2_optimize_task")
+        backend = PrototypeBackend()
+
+        with tempfile.TemporaryDirectory() as directory:
+            run_root = Path(directory) / "v3-registry-evidence-digest"
+            run_v3_prototype(
+                task,
+                run_root,
+                prototype_config(task),
+                prototype_proposal(),
+                backend=backend,
+                thread_id="prototype-registry-evidence-digest-test",
+            )
+            calls_before_reentry = list(backend.calls)
+            registry_path = run_root / "candidate_registry.json"
+            registry = json.loads(registry_path.read_text(encoding="utf-8"))
+            registry["candidates"]["candidate_001"][
+                "synth_evidence_sha256"
+            ] = "0" * 64
+            registry_path.write_text(json.dumps(registry), encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                RuntimeError, "Synth evidence artifact hash mismatch"
+            ):
+                run_v3_prototype(
+                    task,
+                    run_root,
+                    prototype_config(task),
+                    prototype_proposal(),
+                    backend=backend,
+                    thread_id="prototype-registry-evidence-digest-test",
+                )
+
+        self.assertEqual(backend.calls, calls_before_reentry)
+
+    def test_tampered_final_score_is_recomputed_before_package_commit(
+        self,
+    ) -> None:
+        project = Path(__file__).resolve().parents[1]
+        task = load_public_task(project / "examples" / "u55c_v2_optimize_task")
+        backend = PrototypeBackend()
+        self.assertIsNotNone(v3_prototype_module)
+
+        with tempfile.TemporaryDirectory() as directory:
+            run_root = Path(directory) / "v3-final-score-tamper"
+            with patch.object(
+                v3_prototype_module,
+                "_write_report",
+                side_effect=RuntimeError("injected before package commit"),
+            ):
+                with self.assertRaisesRegex(
+                    RuntimeError, "injected before package commit"
+                ):
+                    run_v3_prototype(
+                        task,
+                        run_root,
+                        prototype_config(task),
+                        prototype_proposal(),
+                        backend=backend,
+                        thread_id="prototype-final-score-tamper-test",
+                    )
+
+            calls_before_resume = list(backend.calls)
+            score_path = run_root / "scores" / "candidate_001.final.json"
+            score = json.loads(score_path.read_text(encoding="utf-8"))
+            score["tokens_used"] = 999999
+            score["forged_extra"] = "must not survive semantic sealing"
+            score_path.write_text(json.dumps(score), encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                RuntimeError, "score artifact semantic mismatch"
+            ):
+                run_v3_prototype(
+                    task,
+                    run_root,
+                    prototype_config(task),
+                    prototype_proposal(),
+                    backend=backend,
+                    thread_id="prototype-final-score-tamper-test",
+                )
+
+        self.assertEqual(backend.calls, calls_before_resume)
+
+    def test_tampered_candidate_decision_commit_fails_before_package_commit(
+        self,
+    ) -> None:
+        project = Path(__file__).resolve().parents[1]
+        task = load_public_task(project / "examples" / "u55c_v2_optimize_task")
+        backend = PrototypeBackend()
+        self.assertIsNotNone(v3_prototype_module)
+
+        with tempfile.TemporaryDirectory() as directory:
+            run_root = Path(directory) / "v3-candidate-decision-tamper"
+            with patch.object(
+                v3_prototype_module,
+                "_write_report",
+                side_effect=RuntimeError("injected before package commit"),
+            ):
+                with self.assertRaisesRegex(
+                    RuntimeError, "injected before package commit"
+                ):
+                    run_v3_prototype(
+                        task,
+                        run_root,
+                        prototype_config(task),
+                        prototype_proposal(),
+                        backend=backend,
+                        thread_id="prototype-candidate-decision-tamper-test",
+                    )
+
+            calls_before_resume = list(backend.calls)
+            registry = json.loads(
+                (run_root / "candidate_registry.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            operation_id = registry["v3_last_operation_id"]
+            committed_path = (
+                run_root
+                / "control"
+                / "candidate_operations"
+                / f"{operation_id}.committed.json"
+            )
+            committed = json.loads(committed_path.read_text(encoding="utf-8"))
+            committed["request"]["reason"] = "tampered decision reason"
+            committed_path.write_text(json.dumps(committed), encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                RuntimeError, "Candidate decision committed record is malformed"
+            ):
+                run_v3_prototype(
+                    task,
+                    run_root,
+                    prototype_config(task),
+                    prototype_proposal(),
+                    backend=backend,
+                    thread_id="prototype-candidate-decision-tamper-test",
+                )
+
+        self.assertEqual(backend.calls, calls_before_resume)
 
 
 if __name__ == "__main__":

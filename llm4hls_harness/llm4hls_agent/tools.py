@@ -346,6 +346,7 @@ class ToolServer:
         tool_config_hash: str,
         validation_scope: str,
         result_ref: str,
+        expected_backend_fingerprint: str | None = None,
     ) -> ToolResult:
         try:
             encoded = path.read_bytes()
@@ -373,7 +374,8 @@ class ToolServer:
             or result.code_hash != code_hash
             or result.tool_config_hash != tool_config_hash
             or result.validation_scope != validation_scope
-            or result.backend_fingerprint != self.backend_fingerprint
+            or result.backend_fingerprint
+            != (expected_backend_fingerprint or self.backend_fingerprint)
             or result.task_fingerprint != self.task_fingerprint
             or result.result_ref != result_ref
         ):
@@ -389,6 +391,117 @@ class ToolServer:
         if actual_hashes != result.artifact_hashes:
             raise ToolArtifactError(f"artifact digest mismatch for {action_id}")
         return result
+
+    def load_completed_result(
+        self,
+        result_ref: str,
+        *,
+        allowed_backend_fingerprints: set[str] | None = None,
+    ) -> ToolResult:
+        """Load a result only when its action identity and Ledger digest agree."""
+
+        relative = Path(result_ref)
+        if (
+            relative.is_absolute()
+            or ".." in relative.parts
+            or len(relative.parts) != 3
+            or relative.parts[0] != "actions"
+            or relative.parts[2] != "result.json"
+            or re.fullmatch(r"[0-9a-f]{64}", relative.parts[1]) is None
+        ):
+            raise ToolArtifactError("completed result reference is invalid")
+        action_id = relative.parts[1]
+        unresolved = self.run_root / relative
+        cursor = self.run_root
+        for part in relative.parts:
+            cursor = cursor / part
+            if cursor.is_symlink():
+                raise ToolArtifactError(
+                    f"completed result uses a symbolic link for {action_id}"
+                )
+        result_path = unresolved.resolve()
+        run_root = self.run_root.resolve()
+        try:
+            result_path.relative_to(run_root)
+        except ValueError as exc:
+            raise ToolArtifactError(
+                f"completed result escapes the run for {action_id}"
+            ) from exc
+
+        completed = self.budget.completed_event(action_id)
+        action_events = self.budget.action_events(action_id)
+        started = next(
+            (event for event in action_events if event.get("state") == "STARTED"),
+            None,
+        )
+        if completed is None or started is None:
+            raise ToolArtifactError(f"action is not durably completed: {action_id}")
+        expected_digest = completed.get("result_sha256")
+        if (
+            completed.get("result_ref") != result_ref
+            or not isinstance(expected_digest, str)
+            or not result_path.is_file()
+        ):
+            raise ToolArtifactError(
+                f"completed action {action_id} has an invalid result binding"
+            )
+        try:
+            encoded = result_path.read_bytes()
+            if _sha256(encoded) != expected_digest:
+                raise ToolArtifactError(f"result digest mismatch for {action_id}")
+            value = json.loads(encoded.decode("utf-8"))
+            if not isinstance(value, dict):
+                raise TypeError("result is not a JSON object")
+        except ToolArtifactError:
+            raise
+        except (
+            OSError,
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+            TypeError,
+        ) as exc:
+            raise ToolArtifactError(f"cannot load result for {action_id}: {exc}") from exc
+
+        validation_scope = str(value.get("validation_scope", "exploration"))
+        if validation_scope not in _VALIDATION_SCOPES:
+            raise ToolArtifactError(
+                f"invalid validation scope for completed action {action_id}"
+            )
+        result_backend_fingerprint = value.get("backend_fingerprint")
+        allowed_fingerprints = allowed_backend_fingerprints or {
+            self.backend_fingerprint
+        }
+        if (
+            not isinstance(result_backend_fingerprint, str)
+            or result_backend_fingerprint not in allowed_fingerprints
+        ):
+            raise ToolArtifactError(
+                f"backend fingerprint mismatch for completed action {action_id}"
+            )
+        action_payload = {
+            "kind": started.get("kind"),
+            "candidate_id": started.get("candidate_id"),
+            "code_hash": started.get("code_hash"),
+            "tool_config_hash": started.get("tool_config_hash"),
+            "backend_fingerprint": result_backend_fingerprint,
+            "task_fingerprint": self.task_fingerprint,
+        }
+        if validation_scope != "exploration":
+            action_payload["validation_scope"] = validation_scope
+        if _sha256(_canonical_json(action_payload).encode()) != action_id:
+            raise ToolArtifactError(f"action identity mismatch for {action_id}")
+        return self._load_result(
+            result_path,
+            expected_sha256=expected_digest,
+            action_id=action_id,
+            kind=str(started.get("kind", "")),
+            candidate_id=str(started.get("candidate_id", "")),
+            code_hash=str(started.get("code_hash", "")),
+            tool_config_hash=str(started.get("tool_config_hash", "")),
+            validation_scope=validation_scope,
+            result_ref=result_ref,
+            expected_backend_fingerprint=result_backend_fingerprint,
+        )
 
     def _invoke(
         self,

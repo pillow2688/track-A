@@ -186,6 +186,12 @@ class VitisBackendTests(unittest.TestCase):
     <Best-caseLatency>10</Best-caseLatency><Average-caseLatency>11</Average-caseLatency>
     <Worst-caseLatency>12</Worst-caseLatency><Interval-min>2</Interval-min><Interval-max>3</Interval-max>
   </SummaryOfOverallLatency>
+  <SummaryOfLoopLatency>
+    <Loop>
+      <Name>VITIS_LOOP_7_1</Name><TripCount>1024</TripCount>
+      <Latency>1025</Latency><PipelineII>1</PipelineII><PipelineDepth>3</PipelineDepth>
+    </Loop>
+  </SummaryOfLoopLatency>
 </PerformanceEstimates>
 <AreaEstimates>
   <Resources><LUT>100</LUT><FF>200</FF><DSP>3</DSP><BRAM_18K>4</BRAM_18K><URAM>5</URAM></Resources>
@@ -207,6 +213,12 @@ class VitisBackendTests(unittest.TestCase):
         self.assertEqual(synth_metrics["estimated_clock_period_ns"], 4.125)
         self.assertEqual(synth_metrics["latency"]["worst"], 12)
         self.assertEqual(synth_metrics["interval"]["max"], 3)
+        self.assertEqual(
+            synth_metrics["loop_evidence"]["loops"][0]["pipeline_ii"], 1
+        )
+        self.assertEqual(
+            synth_metrics["loop_evidence"]["loops"][0]["trip_count"], 1024
+        )
         self.assertEqual(synth_metrics["resources"]["BRAM_18K"], 4)
         self.assertEqual(synth_metrics["utilization_percent"]["URAM"], 10.0)
         self.assertEqual(cosim_metrics["status"], "Pass")

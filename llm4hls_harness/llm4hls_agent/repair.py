@@ -122,6 +122,83 @@ class PatchProposal:
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
 
+    @classmethod
+    def from_dict(cls, value: Mapping[str, object]) -> "PatchProposal":
+        """Parse the pure proposal object used by versioned Planner outputs."""
+
+        expected = {
+            "patch",
+            "provider",
+            "model",
+            "revision",
+            "input_tokens",
+            "output_tokens",
+            "cached_input_tokens",
+            "request_id",
+            "duration_seconds",
+            "hypothesis",
+            "change_class",
+            "expected_effect",
+            "risk",
+            "required_validation",
+        }
+        if set(value) != expected:
+            missing = sorted(expected.difference(value))
+            extra = sorted(set(value).difference(expected))
+            raise ValueError(
+                f"proposal fields mismatch; missing={missing}, extra={extra}"
+            )
+
+        def required_text(name: str) -> str:
+            item = value[name]
+            if not isinstance(item, str) or not item:
+                raise ValueError(f"proposal {name} must be a non-empty string")
+            return item
+
+        def optional_text(name: str) -> str | None:
+            item = value[name]
+            if item is not None and not isinstance(item, str):
+                raise ValueError(f"proposal {name} must be a string or null")
+            return item
+
+        def token_count(name: str) -> int:
+            item = value[name]
+            if isinstance(item, bool) or not isinstance(item, int) or item < 0:
+                raise ValueError(f"proposal {name} must be a non-negative integer")
+            return item
+
+        duration = value["duration_seconds"]
+        if (
+            isinstance(duration, bool)
+            or not isinstance(duration, (int, float))
+            or not math.isfinite(float(duration))
+            or float(duration) < 0
+        ):
+            raise ValueError(
+                "proposal duration_seconds must be a finite non-negative number"
+            )
+        validations = value["required_validation"]
+        if not isinstance(validations, (list, tuple)) or any(
+            not isinstance(item, str) for item in validations
+        ):
+            raise ValueError("proposal required_validation must be a string list")
+        return cls(
+            patch=required_text("patch"),
+            provider=required_text("provider"),
+            model=required_text("model"),
+            revision=optional_text("revision"),
+            input_tokens=token_count("input_tokens"),
+            output_tokens=token_count("output_tokens"),
+            cached_input_tokens=token_count("cached_input_tokens"),
+            request_id=optional_text("request_id"),
+            duration_seconds=float(duration),
+            hypothesis=optional_text("hypothesis"),
+            change_class=optional_text("change_class"),
+            expected_effect=optional_text("expected_effect"),
+            risk=optional_text("risk"),
+            required_validation=tuple(validations),
+        )
+
 
 @dataclass(frozen=True)
 class RepairContext:

@@ -1,18 +1,20 @@
-# LLM4HLS Agent — 内部里程碑 V0–V3-A0
+# LLM4HLS Agent — 内部里程碑 V0–V3-A1
 
 [English](README.md) | 简体中文
 
 V0 至 V4 是本项目的内部工程里程碑，不是比赛官方阶段。比赛提供的示例名为 **Reference Agent & Evaluation Harness**。两者的范围、接口和实现差异见[中文对比文档](../doc/materials/02_harness/2026-07-14-official-reference-vs-internal-v0.md)。
 
-V0 提供不可变、受预算审计的 `csim -> synth -> cosim` baseline。V1 增加确定性失败诊断、紧凑修复上下文、一次受限 unified diff、隔离候选、真实验证、晋级与安全回滚。修复建议可以来自 OpenAI-compatible API，也可以来自静态补丁测试夹具。V2 增加持久 Candidate 树、确定性验证/约束/PPA/成本比较、每轮一种优化类、best 保留、最终复验和安全拒绝。V3-A0 目前包含独立的确定性多轮 LangGraph：Candidate 被拒绝后可继续下一条 scripted 提议，晋升/拒绝/final 选择具有可恢复操作日志，终态包由哈希 Manifest 保护。自主 LLM Planner 和隐藏评分仍未包含。
+V0 提供不可变、受预算审计的 `csim -> synth -> cosim` baseline。V1 增加确定性失败诊断、紧凑修复上下文、一次受限 unified diff、隔离候选、真实验证、晋级与安全回滚。修复建议可以来自 OpenAI-compatible API，也可以来自静态补丁测试夹具。V2 增加持久 Candidate 树、确定性验证/约束/PPA/成本比较、每轮一种优化类、best 保留、最终复验和安全拒绝。V3-A1 目前包含独立的确定性多轮 LangGraph、版本化 Planner 输入/输出/action 契约、循环级综合证据、完整 Planner 溯源日志和哈希封存的终态包。Candidate 被拒绝后可继续下一条 scripted 提议，晋升/拒绝/final 选择仍可恢复。自主 LLM Planner 和隐藏评分尚未包含。
 
 `runs/v1-deepseek-final` 是 DeepSeek 曾成功修复 `FUNCTIONAL_MISMATCH` 的历史证据，但它早于严格 Candidate/action 绑定和 Artifact Manifest，必须重新生成，不能代表 V1 完成。只有 `FUNCTIONAL_MISMATCH`、`COMPILE_ERROR`、`SYNTHESIS_ERROR` 都具备真实 DeepSeek/Vitis 证据，并且独立的 `PATCH_INVALID` 安全负例通过确定性验收器，才可宣布 V1 完成。
 
-V0–V2 运行时是自包含的，仅依赖 Python 3.11 及以上版本的标准库；V3-A0 的可选依赖固定在 `.[v3]` extra 中。系统不会导入 reference harness。任务加载器只读取 `task.toml`、存在时的 `description.md`、配置指定的 kernel、header 和公开 testbench。任何进入 `hidden/` 或 `reference/` 的路径都会被拒绝。
+V0–V2 运行时是自包含的，仅依赖 Python 3.11 及以上版本的标准库；V3-A1 的可选依赖固定在 `.[v3]` extra 中。系统不会导入 reference harness。任务加载器只读取 `task.toml`、存在时的 `description.md`、配置指定的 kernel、header 和公开 testbench。任何进入 `hidden/` 或 `reference/` 的路径都会被拒绝。
 
-## V3-A0 LangGraph 原型
+## V3-A1 LangGraph 原型
 
-V3-A0 不改变原有 `run`、`repair` 或 `optimize`（V2）入口。它通过独立命令把 baseline CSim/Synth/CoSim、scripted Planner、Candidate 物化、Candidate CSim/Synth、CoSim 价值门控、晋升/拒绝、轮次继续/停止、final CSim/Synth/CoSim 和团队报告拆成可 checkpoint 的动作节点。重复传入 `--patch-file` 可按顺序运行多个确定性提议；只传一个文件时保持原单轮行为。`--max-no-improvement-rounds` 控制连续无提升停止线；只有显式传入 `--enable-final-fallback` 且预算充足时，才最多再尝试一次完整 final 闭环。
+V3-A1 不改变原有 `run`、`repair` 或 `optimize`（V2）入口。它通过独立命令把 baseline CSim/Synth/CoSim、scripted Planner、Candidate 物化、Candidate CSim/Synth、CoSim 价值门控、晋升/拒绝、轮次继续/停止、final CSim/Synth/CoSim 和团队报告拆成可 checkpoint 的动作节点。重复传入 `--patch-file` 可按顺序运行多个确定性提议；只传一个文件时保持原单轮行为。`--max-no-improvement-rounds` 控制连续无提升停止线；只有显式传入 `--enable-final-fallback` 且预算充足时，才最多再尝试一次完整 final 闭环。
+
+每一轮 Planner 现在都会持久化 canonical input、STARTED 日志、版本化 output、旧报告投影和 COMPLETED 日志；Candidate 元数据与最终 Manifest 通过哈希绑定整条链。封包前还会从 Ledger 绑定的工具结果重新计算全部 score，并校验 Candidate 决策的 prepared/committed 配对、operation ID、revision 链和最终 Registry 绑定。若 `csynth.xml` 提供循环信息，综合证据会记录 loop `PipelineII`、TripCount、loop latency 和调度 violation，并明确区分 top-level transaction interval 与 loop II。任何缺失或被修改的溯源证据都会 fail closed。
 
 严格 happy path 的工具成本是 `25 + 25 + 25 = 75 credits`：baseline 完整闭环、Candidate
 完整闭环和一套全新的 final 闭环。如果启动 Candidate 后无法保留 final 所需的 25 credits，
@@ -27,7 +29,7 @@ python3 -m venv .venv
 .venv/bin/llm4hls-v3-prototype \
   --task-dir llm4hls_harness/examples/u55c_v2_optimize_task \
   --patch-file llm4hls_harness/examples/u55c_v3_prototype.diff \
-  --run-dir runs/v3a0-prototype-demo --backend demo
+  --run-dir runs/v3a1-prototype-demo --backend demo
 ```
 
 真实 Vitis 运行应先进入本地开发用 Distrobox（前提是本机已经创建该容器），再用显式
@@ -39,11 +41,11 @@ cd /home/ying/CompetitionTrackA/track-A
 .venv/bin/llm4hls-v3-prototype \
   --task-dir llm4hls_harness/examples/u55c_v2_optimize_task \
   --patch-file llm4hls_harness/examples/u55c_v3_prototype.diff \
-  --run-dir runs/v3a0-prototype-vitis --backend vitis \
+  --run-dir runs/v3a1-prototype-vitis --backend vitis \
   --vitis-root /home/ying/CompetitionTrackA/vitis/AMD/2025.2/Vitis
 ```
 
-`demo` 后端必须标记为 `ORCHESTRATION_SMOKE_ONLY`，不能冒充 HLS 或模型能力证据。`vitis` 后端会真实运行三类工具；结果保存在 `v3_prototype_result.json`，逐节点复盘保存在 `v3_team_report.md`，LangGraph checkpoint 保存在 `graph_checkpoints.sqlite`，`control/package_manifest.json` 与 Candidate 决策日志负责恢复和防篡改。下一步是 A1 的循环级证据与版本化 Planner I/O；真实自主多轮 LLM 搜索属于后续 V3-B。
+`demo` 后端必须标记为 `ORCHESTRATION_SMOKE_ONLY`，不能冒充 HLS 或模型能力证据。`vitis` 后端会真实运行三类工具；结果保存在 `v3_prototype_result.json`，逐节点复盘保存在 `v3_team_report.md`，LangGraph checkpoint 保存在 `graph_checkpoints.sqlite`，`control/package_manifest.json` 与 Candidate/Planner 决策日志负责恢复和防篡改。下一步是 V3-B：把确定性适配器替换为受预算计费、可恢复的自主 LLM Planner，同时不授予模型直接工具或文件系统权限。
 结果 JSON 最后提交；终态再入时可以仅根据它重建缺失的生成式 Markdown 报告，不会重跑
 任何 HLS 工具。
 `vitis` 模式会在启动 Graph 前检查 `<vitis-root>/settings64.sh`，缺失时不会调用工具或消耗
@@ -84,7 +86,7 @@ Patch proposal 必须先完成解析、策略检查和针对不可变源码的 d
 分配 Candidate ID。非法 Patch 因而不会创建 Candidate 目录或 registry 记录；合法
 Patch 才会原子物化、把验证状态重置为 `NOT_RUN`、注册并以自己的 Candidate ID
 绑定 Vitis action。V2 已加入持久 Candidate 树、按验证/硬约束/PPA/成本的确定性比较、
-每轮一种优化类、best 保留、最终复验和独立安全拒绝；V3-A0 已提供独立的确定性多轮 LangGraph，但尚未替代 V2 默认流程。
+每轮一种优化类、best 保留、最终复验和独立安全拒绝；V3-A1 已提供独立的确定性多轮 LangGraph 与证据绑定 Planner 边界，但尚未替代 V2 默认流程。
 
 ## V1 三类错误统一验收
 

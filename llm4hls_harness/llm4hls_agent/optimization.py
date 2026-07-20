@@ -612,19 +612,133 @@ def select_optimization(
         str(item) for item in raw_evidence
     ) if isinstance(raw_evidence, list) else ()
     joined = " ".join(evidence).lower()
+    loop_section = metrics.get("loop_evidence")
+    raw_loops = (
+        loop_section.get("loops") if isinstance(loop_section, Mapping) else None
+    )
+    loops = [item for item in raw_loops if isinstance(item, Mapping)] if isinstance(
+        raw_loops, list
+    ) else []
+
+    def positive_loop_number(loop: Mapping[str, object], name: str) -> float | None:
+        value = loop.get(name)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        parsed = float(value)
+        return parsed if math.isfinite(parsed) and parsed > 0 else None
+
+    dominant = max(
+        loops,
+        key=lambda item: (
+            positive_loop_number(item, "latency_cycles") or 0.0,
+            positive_loop_number(item, "trip_count") or 0.0,
+            str(item.get("name", "")),
+        ),
+    ) if loops else None
+    pipeline_targets = [
+        loop
+        for loop in loops
+        if (positive_loop_number(loop, "pipeline_ii") or 0.0) > 1.0
+    ]
+    pipeline_target = max(
+        pipeline_targets,
+        key=lambda item: (
+            positive_loop_number(item, "latency_cycles") or 0.0,
+            positive_loop_number(item, "pipeline_ii") or 0.0,
+            positive_loop_number(item, "trip_count") or 0.0,
+            str(item.get("name", "")),
+        ),
+    ) if pipeline_targets else None
+    pipeline_target_ii = (
+        positive_loop_number(pipeline_target, "pipeline_ii")
+        if pipeline_target is not None
+        else None
+    )
+    pipeline_target_name = (
+        str(pipeline_target.get("name", "unknown"))
+        if pipeline_target is not None
+        else "unknown"
+    )
+    loop_ii = (
+        positive_loop_number(dominant, "pipeline_ii")
+        if dominant is not None
+        else None
+    )
+    loop_latency = (
+        positive_loop_number(dominant, "latency_cycles")
+        if dominant is not None
+        else None
+    )
+    trip_count = (
+        positive_loop_number(dominant, "trip_count")
+        if dominant is not None
+        else None
+    )
+    loop_name = str(dominant.get("name", "unknown")) if dominant else "unknown"
+    loop_diagnostics = " ".join(
+        str(loop.get(name) or "")
+        for loop in loops
+        for name in ("issue_type", "violation_type")
+    ).lower()
+    memory_signal = any(
+        token in f"{joined} {loop_diagnostics}"
+        for token in ("memory port", "limited memory", "load operation")
+    )
+    decision_evidence = list(evidence)
+    if dominant is not None:
+        decision_evidence.append(
+            "direct loop evidence: "
+            f"{loop_name} PipelineII={loop_ii}, TripCount={trip_count}, "
+            f"Latency={loop_latency}; top-level transaction interval={interval:g}"
+        )
+    if pipeline_target is not None and pipeline_target is not dominant:
+        decision_evidence.append(
+            "actionable II bottleneck: "
+            f"{pipeline_target_name} PipelineII={pipeline_target_ii}, "
+            f"TripCount={positive_loop_number(pipeline_target, 'trip_count')}, "
+            f"Latency={positive_loop_number(pipeline_target, 'latency_cycles')}"
+        )
 
     if (
         "MEMORY_LAYOUT" in available
-        and any(token in joined for token in ("memory port", "limited memory", "load operation"))
+        and memory_signal
     ):
         selected = "MEMORY_LAYOUT"
-        bottleneck = "memory port or array access bottleneck"
-    elif interval > 1 and "LOOP_PIPELINE" in available:
+        bottleneck = "direct scheduler evidence reports a memory access bottleneck"
+    elif pipeline_target is not None and "LOOP_PIPELINE" in available:
         selected = "LOOP_PIPELINE"
-        bottleneck = f"maximum interval is {interval:g}"
-    elif "LOOP_UNROLL" in available and latency > max(4.0, 4.0 * interval):
+        bottleneck = (
+            f"loop {pipeline_target_name} has reported PipelineII "
+            f"{pipeline_target_ii:g}"
+        )
+    elif (
+        dominant is not None
+        and loop_ii == 1
+        and "LOOP_UNROLL" in available
+        and (trip_count or 0.0) >= 4.0
+    ):
         selected = "LOOP_UNROLL"
-        bottleneck = f"worst latency is {latency:g} with interval {interval:g}"
+        bottleneck = (
+            f"loop {loop_name} is already PipelineII=1 but has TripCount "
+            f"{trip_count:g}; pipeline repetition would not reduce its II"
+        )
+    elif not loops and interval > 1 and "LOOP_PIPELINE" in available:
+        selected = "LOOP_PIPELINE"
+        bottleneck = (
+            f"maximum transaction interval is {interval:g}; loop evidence is "
+            "unavailable, so this is a legacy heuristic"
+        )
+        decision_evidence.append("LEGACY_TOP_LEVEL_HEURISTIC")
+    elif "LOOP_UNROLL" in available and (
+        (loop_latency is not None and loop_latency > 4.0)
+        or (not loops and latency > max(4.0, 4.0 * interval))
+    ):
+        selected = "LOOP_UNROLL"
+        bottleneck = (
+            f"dominant loop latency is {loop_latency:g}"
+            if loop_latency is not None
+            else f"worst latency is {latency:g} with interval {interval:g}"
+        )
     elif "MEMORY_LAYOUT" in available:
         selected = "MEMORY_LAYOUT"
         bottleneck = "pipeline and unroll opportunities were exhausted"
@@ -635,7 +749,7 @@ def select_optimization(
     return OptimizationDecision(
         optimization_class=selected,
         bottleneck=bottleneck,
-        evidence=evidence,
+        evidence=tuple(decision_evidence),
         metrics_digest=digest,
     )
 

@@ -1,4 +1,4 @@
-"""Runnable V3-A0 vertical prototype built from action-level LangGraph nodes.
+"""Runnable V3-A1 vertical prototype built from action-level LangGraph nodes.
 
 This module is intentionally parallel to V2.  It proves a deterministic,
 checkpointed optimization closure (baseline -> scripted Candidate rounds ->
@@ -13,6 +13,7 @@ import json
 import math
 import operator
 import os
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
@@ -25,7 +26,7 @@ from langgraph.graph import END, START, StateGraph
 
 from .budget import BudgetLedger
 from .candidate import CandidateManager
-from .optimization import evaluate_exploration_cosim_gate, _read_report
+from .optimization import evaluate_exploration_cosim_gate
 from .repair import (
     PatchLimits,
     PatchProposal,
@@ -43,6 +44,22 @@ from .scoring import (
 )
 from .task import PublicTask
 from .tools import BackendResult, ToolBackend, ToolResult, ToolServer
+from .v3_evidence import build_synth_evidence
+from .v3_planner import (
+    PLANNER_ACTION_SCHEMA,
+    PLANNER_INPUT_SCHEMA,
+    PLANNER_OUTPUT_SCHEMA,
+    ScriptedPlanner,
+    build_planner_input,
+    build_planner_output,
+    canonical_sha256,
+    load_planner_output,
+    planner_action_id,
+    planner_action_request,
+    proposal_payload,
+    stable_validation,
+    validate_planner_input,
+)
 from .vitis import VitisBackend
 from .workflow import (
     RunConfig,
@@ -62,7 +79,8 @@ from .workflow import (
 
 WORKFLOW_NAME = "V3A0_LANGGRAPH_PROTOTYPE"
 STATE_SCHEMA_VERSION = 1
-CHECKPOINT_SCHEMA_VERSION = 2
+CHECKPOINT_SCHEMA_VERSION = 3
+TERMINAL_RESULT_SCHEMA = "v3a.terminal-result.v1"
 _FULL_CLOSURE_CALLS = {"csim": 1, "synth": 1, "cosim": 1}
 
 
@@ -78,10 +96,23 @@ class V3PrototypeState(TypedDict, total=False):
     final_attempt_candidate_id: str | None
     final_candidate_id: str | None
     planner_ref: str
+    planner_action_id: str
+    planner_input_ref: str
+    planner_input_sha256: str
+    planner_output_ref: str
+    planner_output_sha256: str
     baseline_metrics_ref: str
     best_metrics_ref: str
     candidate_metrics_ref: str
     final_metrics_ref: str
+    baseline_synth_evidence_ref: str
+    baseline_synth_evidence_sha256: str
+    best_synth_evidence_ref: str
+    best_synth_evidence_sha256: str
+    candidate_synth_evidence_ref: str
+    candidate_synth_evidence_sha256: str
+    final_synth_evidence_ref: str
+    final_synth_evidence_sha256: str
     baseline_clock: dict[str, object]
     best_clock: dict[str, object]
     candidate_clock: dict[str, object]
@@ -168,7 +199,7 @@ def _backend_fingerprint(backend: ToolBackend) -> str:
 
 def _checkpoint_schema_snapshot() -> dict[str, object]:
     return {
-        "schema_version": "v3a.graph-checkpoint.v2",
+        "schema_version": "v3a.graph-checkpoint.v3",
         "checkpoint_schema_version": CHECKPOINT_SCHEMA_VERSION,
         "compatible_terminal_result_schema": 1,
     }
@@ -207,16 +238,208 @@ def _run_config_snapshot(runtime: _Runtime) -> dict[str, object]:
     return value
 
 
-def _proposal_for_round(runtime: _Runtime, round_index: int) -> PatchProposal:
-    if round_index <= 0 or round_index > len(runtime.proposals):
-        raise ValueError(f"no scripted proposal for round {round_index}")
-    return runtime.proposals[round_index - 1]
+def _safe_run_ref(runtime: _Runtime, reference: str) -> Path:
+    if not reference:
+        raise RuntimeError("artifact reference must not be empty")
+    relative = Path(reference)
+    if relative.is_absolute() or ".." in relative.parts:
+        raise RuntimeError(f"artifact reference escapes the run: {reference}")
+    unresolved = runtime.run_root / relative
+    cursor = runtime.run_root
+    for part in relative.parts:
+        cursor = cursor / part
+        if cursor.is_symlink():
+            raise RuntimeError(
+                f"artifact reference uses a symbolic link: {reference}"
+            )
+    path = unresolved.resolve()
+    run_root = runtime.run_root.resolve()
+    try:
+        path.relative_to(run_root)
+    except ValueError as exc:
+        raise RuntimeError(f"artifact reference escapes the run: {reference}") from exc
+    if not path.is_file():
+        raise RuntimeError(f"artifact reference is missing: {reference}")
+    return path
+
+
+def _artifact_binding(runtime: _Runtime, reference: object) -> dict[str, object]:
+    if not isinstance(reference, str) or not reference:
+        return {"ref": None, "sha256": None}
+    path = _safe_run_ref(runtime, reference)
+    return {"ref": reference, "sha256": _sha256_file(path)}
+
+
+def _verify_synth_evidence_bindings(
+    runtime: _Runtime, value: object
+) -> None:
+    if isinstance(value, Mapping):
+        for key, reference in value.items():
+            name = str(key)
+            if name.endswith("synth_evidence_ref"):
+                digest_key = name[: -len("ref")] + "sha256"
+                digest = value.get(digest_key)
+                if (reference is None or reference == "") and (
+                    digest is None or digest == ""
+                ):
+                    continue
+                if not isinstance(reference, str) or not isinstance(digest, str):
+                    raise RuntimeError("Synth evidence binding is incomplete")
+                if _sha256_file(_safe_run_ref(runtime, reference)) != digest:
+                    raise RuntimeError("Synth evidence artifact hash mismatch")
+            _verify_synth_evidence_bindings(runtime, reference)
+        return
+    if isinstance(value, list):
+        for child in value:
+            _verify_synth_evidence_bindings(runtime, child)
+
+
+def _load_planner_output_only(
+    runtime: _Runtime,
+    *,
+    output_ref: object,
+    output_sha256: object,
+    action_id: object,
+    input_sha256: object,
+) -> PatchProposal:
+    if not all(
+        isinstance(item, str) and item
+        for item in (output_ref, output_sha256, action_id, input_sha256)
+    ):
+        raise RuntimeError("Planner output binding is incomplete")
+    path = _safe_run_ref(runtime, output_ref)
+    value = _read_json_object(path)
+    if canonical_sha256(value) != output_sha256:
+        raise RuntimeError("Planner output artifact hash mismatch")
+    try:
+        return load_planner_output(
+            value,
+            expected_action_id=action_id,
+            expected_input_sha256=input_sha256,
+        )
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(f"Planner output contract violation: {exc}") from exc
+
+
+def _validate_planner_binding(
+    runtime: _Runtime,
+    *,
+    action_id: object,
+    input_ref: object,
+    input_sha256: object,
+    output_ref: object,
+    output_sha256: object,
+    legacy_projection_ref: object,
+) -> PatchProposal:
+    if not all(
+        isinstance(item, str) and item
+        for item in (
+            action_id,
+            input_ref,
+            input_sha256,
+            output_ref,
+            output_sha256,
+            legacy_projection_ref,
+        )
+    ):
+        raise RuntimeError("Planner provenance binding is incomplete")
+
+    planner_input = _read_json_object(_safe_run_ref(runtime, input_ref))
+    if canonical_sha256(planner_input) != input_sha256:
+        raise RuntimeError("Planner input artifact hash mismatch")
+    try:
+        validate_planner_input(planner_input)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(f"Planner input contract violation: {exc}") from exc
+
+    action_root = runtime.run_root / "control" / "planner_actions"
+    started_ref = str(
+        (action_root / f"{action_id}.started.json").relative_to(runtime.run_root)
+    ).replace("\\", "/")
+    completed_ref = str(
+        (action_root / f"{action_id}.completed.json").relative_to(runtime.run_root)
+    ).replace("\\", "/")
+    started = _read_json_object(_safe_run_ref(runtime, started_ref))
+    request_fields = {
+        "schema_version",
+        "planner_fingerprint",
+        "input_ref",
+        "input_sha256",
+        "replay_policy",
+    }
+    request = {name: started.get(name) for name in request_fields}
+    if (
+        set(started) != request_fields | {"action_id", "status"}
+        or started.get("action_id") != action_id
+        or started.get("status") != "STARTED"
+        or request.get("input_ref") != input_ref
+        or request.get("input_sha256") != input_sha256
+    ):
+        raise RuntimeError("Planner STARTED journal binding mismatch")
+    try:
+        if planner_action_id(request) != action_id:
+            raise RuntimeError("Planner STARTED action identity mismatch")
+    except ValueError as exc:
+        raise RuntimeError(f"Planner STARTED journal contract violation: {exc}") from exc
+
+    proposal = _load_planner_output_only(
+        runtime,
+        output_ref=output_ref,
+        output_sha256=output_sha256,
+        action_id=action_id,
+        input_sha256=input_sha256,
+    )
+    legacy_projection = _read_json_object(
+        _safe_run_ref(runtime, legacy_projection_ref)
+    )
+    round_state = planner_input.get("round")
+    if not isinstance(round_state, Mapping):
+        raise RuntimeError("Planner input round state is missing")
+    round_index = round_state.get("round_index")
+    parent_candidate_id = round_state.get("parent_candidate_id")
+    if (
+        isinstance(round_index, bool)
+        or not isinstance(round_index, int)
+        or round_index <= 0
+        or not isinstance(parent_candidate_id, str)
+        or not parent_candidate_id
+    ):
+        raise RuntimeError("Planner input round identity is invalid")
+    expected_projection = _proposal_snapshot(
+        runtime,
+        proposal=proposal,
+        parent_candidate_id=parent_candidate_id,
+        round_index=round_index,
+    )
+    if legacy_projection != expected_projection:
+        raise RuntimeError("legacy Planner projection diverges from versioned output")
+    completed = _read_json_object(_safe_run_ref(runtime, completed_ref))
+    expected_completed = request | {
+        "action_id": action_id,
+        "status": "COMPLETED",
+        "outcome": "PROPOSAL",
+        "result_ref": output_ref,
+        "result_sha256": output_sha256,
+        "legacy_projection_ref": legacy_projection_ref,
+        "legacy_projection_sha256": _sha256_json(legacy_projection),
+    }
+    if completed != expected_completed:
+        raise RuntimeError("Planner COMPLETED journal binding mismatch")
+    return proposal
 
 
 def _current_proposal(
     runtime: _Runtime, state: Mapping[str, object]
 ) -> PatchProposal:
-    return _proposal_for_round(runtime, int(state.get("round_index", 1)))
+    return _validate_planner_binding(
+        runtime,
+        input_ref=state.get("planner_input_ref"),
+        output_ref=state.get("planner_output_ref"),
+        output_sha256=state.get("planner_output_sha256"),
+        action_id=state.get("planner_action_id"),
+        input_sha256=state.get("planner_input_sha256"),
+        legacy_projection_ref=state.get("planner_ref"),
+    )
 
 
 def _proposal_for_candidate(
@@ -229,11 +452,22 @@ def _proposal_for_candidate(
     )
     if not isinstance(candidate, Mapping) or candidate.get("kind") == "baseline":
         return None
-    round_index = candidate.get("round_index")
-    if isinstance(round_index, int):
-        return _proposal_for_round(runtime, round_index)
-    # Legacy one-Candidate artifacts predate explicit round metadata.
-    return runtime.proposal if len(runtime.proposals) == 1 else None
+    proposal = _validate_planner_binding(
+        runtime,
+        input_ref=candidate.get("planner_input_ref"),
+        output_ref=candidate.get("planner_output_ref"),
+        output_sha256=candidate.get("planner_output_sha256"),
+        action_id=candidate.get("planner_action_id"),
+        input_sha256=candidate.get("planner_input_sha256"),
+        legacy_projection_ref=candidate.get("planner_ref"),
+    )
+    expected_proposal_sha256 = candidate.get("proposal_sha256")
+    if (
+        not isinstance(expected_proposal_sha256, str)
+        or canonical_sha256(proposal_payload(proposal)) != expected_proposal_sha256
+    ):
+        raise RuntimeError("Candidate Planner proposal binding mismatch")
+    return proposal
 
 
 def _proposal_snapshot(
@@ -267,6 +501,210 @@ def _sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _planner_candidate_facts(
+    runtime: _Runtime,
+    registry: Mapping[str, object],
+    candidate_id: str,
+) -> dict[str, object]:
+    candidates = registry.get("candidates")
+    candidate = (
+        candidates.get(candidate_id) if isinstance(candidates, Mapping) else None
+    )
+    if not isinstance(candidate, Mapping):
+        raise RuntimeError(f"Planner incumbent is absent: {candidate_id}")
+    validation = candidate.get("validation")
+    metrics_ref = candidate.get("metrics_ref")
+    if isinstance(metrics_ref, str) and metrics_ref:
+        _completed_synth_report(
+            runtime,
+            metrics_ref,
+            candidate_id=candidate_id,
+            validation_scope="exploration",
+        )
+    synth_evidence = _artifact_binding(
+        runtime, candidate.get("synth_evidence_ref")
+    )
+    stored_evidence_hash = candidate.get("synth_evidence_sha256")
+    if (
+        isinstance(stored_evidence_hash, str)
+        and stored_evidence_hash
+        and synth_evidence.get("sha256") != stored_evidence_hash
+    ):
+        raise RuntimeError("Candidate synth evidence binding mismatch")
+    return {
+        "candidate_id": candidate_id,
+        "parent_id": candidate.get("parent_id"),
+        "kind": candidate.get("kind"),
+        "status": candidate.get("status"),
+        "source": _artifact_binding(runtime, candidate.get("source_ref")),
+        "code_hash": candidate.get("code_hash"),
+        "metrics": _artifact_binding(runtime, metrics_ref),
+        "synth_evidence": synth_evidence,
+        "validation": stable_validation(validation)
+        if isinstance(validation, Mapping)
+        else {},
+    }
+
+
+def _build_round_planner_input(
+    runtime: _Runtime, state: Mapping[str, object]
+) -> dict[str, object]:
+    manager = CandidateManager(runtime.run_root, runtime.task)
+    registry = manager.load_registry()
+    round_index = int(state.get("round_index", 1))
+    baseline_id = str(state["baseline_candidate_id"])
+    incumbent_id = str(state["best_candidate_id"])
+    candidates = registry.get("candidates")
+    history: list[dict[str, object]] = []
+    if isinstance(candidates, Mapping):
+        ordered = sorted(
+            (
+                (str(candidate_id), candidate)
+                for candidate_id, candidate in candidates.items()
+                if isinstance(candidate, Mapping)
+                and candidate.get("kind") != "baseline"
+            ),
+            key=lambda item: (
+                int(item[1].get("round_index", 0)),
+                item[0],
+            ),
+        )
+        for candidate_id, candidate in ordered:
+            history.append(
+                {
+                    "kind": "candidate",
+                    "candidate_id": candidate_id,
+                    "round_index": candidate.get("round_index"),
+                    "parent_id": candidate.get("parent_id"),
+                    "status": candidate.get("status"),
+                    "patch_sha256": candidate.get("patch_sha256"),
+                    "metrics": _artifact_binding(
+                        runtime, candidate.get("metrics_ref")
+                    ),
+                    "synth_evidence": _artifact_binding(
+                        runtime, candidate.get("synth_evidence_ref")
+                    ),
+                    "score": _artifact_binding(
+                        runtime,
+                        candidate.get("score_ref")
+                        or candidate.get("rejection_score_ref"),
+                    ),
+                    "rejection_reason": candidate.get("rejection_reason"),
+                }
+            )
+    for rejection_path in sorted(
+        (runtime.run_root / "control" / "proposal_rejections").glob(
+            "round_*.json"
+        )
+    ):
+        rejection = _read_json_object(rejection_path)
+        rejected_round = rejection.get("round_index")
+        if (
+            isinstance(rejected_round, bool)
+            or not isinstance(rejected_round, int)
+            or rejected_round >= round_index
+        ):
+            continue
+        history.append(
+            {
+                "kind": "proposal_rejection",
+                "round_index": rejected_round,
+                "parent_id": rejection.get("parent_candidate_id"),
+                "reason": rejection.get("reason"),
+                "planner_action_id": rejection.get("planner_action_id"),
+                "planner_output": _artifact_binding(
+                    runtime, rejection.get("planner_output_ref")
+                ),
+            }
+        )
+    history.sort(
+        key=lambda item: (
+            int(item.get("round_index", 0)),
+            str(item.get("kind", "")),
+            str(item.get("candidate_id", "")),
+        )
+    )
+    budget_snapshot = BudgetLedger(
+        runtime.run_root / "budget_ledger.jsonl", runtime.config.budget
+    ).snapshot()
+    return build_planner_input(
+        task=_task_spec(runtime.task),
+        round_state={
+            "round_index": round_index,
+            "rounds_completed": int(state.get("rounds_completed", 0)),
+            "consecutive_no_improvement": int(
+                state.get("no_improvement_rounds", 0)
+            ),
+            "parent_candidate_id": incumbent_id,
+        },
+        incumbent=_planner_candidate_facts(runtime, registry, incumbent_id),
+        baseline=_planner_candidate_facts(runtime, registry, baseline_id),
+        history=history,
+        policy={
+            "minimum_frequency_mhz": runtime.config.minimum_frequency_mhz,
+            "requires_cosim": runtime.task.requires_cosim,
+            "candidate_gate": "strict_score_improvement_before_cosim",
+            "final_validation": ["csim", "synth", "cosim"],
+            "max_no_improvement_rounds": runtime.max_no_improvement_rounds,
+            "scoring": runtime.scoring.to_dict(),
+        },
+        budget={
+            "credit_limit": budget_snapshot.get("credit_limit"),
+            "credits_used": budget_snapshot.get("credits_used"),
+            "credits_remaining": budget_snapshot.get("credits_remaining"),
+            "tool_used": budget_snapshot.get("tool_used"),
+            "tool_pending": budget_snapshot.get("tool_pending"),
+            "token_limit": budget_snapshot.get("token_limit"),
+            "tokens_used": budget_snapshot.get("tokens_used"),
+            "tokens_remaining": budget_snapshot.get("tokens_remaining"),
+        },
+    )
+
+
+def _write_synth_evidence(
+    runtime: _Runtime,
+    result: ToolResult | None,
+    *,
+    candidate_id: str,
+) -> tuple[str, str]:
+    if result is None or result.report is None:
+        return "", ""
+    result_path = _safe_run_ref(runtime, result.result_ref)
+    action_root = result_path.parent
+    xml_path: Path | None = None
+    xml_ref: str | None = None
+    xml_sha256: str | None = None
+    relative = result.artifacts.get("csynth_xml")
+    expected_hash = result.artifact_hashes.get("csynth_xml")
+    if relative is not None or expected_hash is not None:
+        if not isinstance(relative, str) or not isinstance(expected_hash, str):
+            raise RuntimeError("Synth result has an incomplete csynth.xml binding")
+        candidate_path = (action_root / relative).resolve()
+        try:
+            candidate_path.relative_to(action_root)
+        except ValueError as exc:
+            raise RuntimeError("csynth.xml artifact escapes its tool action") from exc
+        if not candidate_path.is_file() or _sha256_file(candidate_path) != expected_hash:
+            raise RuntimeError("csynth.xml artifact hash mismatch")
+        xml_path = candidate_path
+        xml_ref = str(candidate_path.relative_to(runtime.run_root)).replace("\\", "/")
+        xml_sha256 = expected_hash
+    evidence = build_synth_evidence(
+        candidate_id=candidate_id,
+        action_id=result.action_id,
+        result_ref=result.result_ref,
+        report=result.report,
+        tool_evidence=result.evidence,
+        csynth_xml_path=xml_path,
+        csynth_xml_ref=xml_ref,
+        csynth_xml_sha256=xml_sha256,
+    )
+    reference = f"evidence/synth/{result.action_id}.json"
+    path = runtime.run_root / reference
+    _write_once_or_verify(path, evidence)
+    return reference, _sha256_file(path)
+
+
 def _build_package_manifest(
     runtime: _Runtime, result: Mapping[str, object]
 ) -> dict[str, object]:
@@ -278,6 +716,16 @@ def _build_package_manifest(
     run_config_path = runtime.run_root / "v3_run_config.json"
     trace_path = runtime.run_root / "trace.jsonl"
     registry = _read_json_object(registry_path)
+    score_artifacts: list[Path] = []
+    candidate_operation_artifacts: list[Path] = []
+    if isinstance(result.get("planner_contract"), Mapping):
+        _validate_candidate_registry_sources(runtime, registry)
+        _verify_synth_evidence_bindings(runtime, registry)
+        _verify_synth_evidence_bindings(runtime, result)
+        score_artifacts = _validate_score_artifacts(runtime, registry, result)
+        candidate_operation_artifacts = _validate_candidate_operation_journals(
+            runtime, registry, result
+        )
     artifact_paths = [
         registry_path,
         ledger_path,
@@ -286,6 +734,8 @@ def _build_package_manifest(
         task_spec_path,
         run_config_path,
         trace_path,
+        *score_artifacts,
+        *candidate_operation_artifacts,
     ]
 
     def collect_references(value: object, *, key: str = "") -> None:
@@ -313,21 +763,82 @@ def _build_package_manifest(
 
     collect_references(registry)
     collect_references(result)
-    for pattern in (
-        "control/candidate_operations/*.committed.json",
-        "control/planner_actions/*.completed.json",
-    ):
+
+    # A Planner result is usable only as one complete provenance chain.  Do
+    # not let optional glob collection make a missing STARTED/COMPLETED journal
+    # disappear from the sealed package.
+    planner_action_root = runtime.run_root / "control" / "planner_actions"
+    planner_output_root = runtime.run_root / "planner" / "outputs"
+    started_paths = sorted(planner_action_root.glob("*.started.json"))
+    completed_paths = sorted(planner_action_root.glob("*.completed.json"))
+    output_paths = sorted(planner_output_root.glob("*.json"))
+
+    def action_ids(paths: Sequence[Path], suffix: str) -> set[str]:
+        identities: set[str] = set()
+        for path in paths:
+            if not path.name.endswith(suffix):
+                raise RuntimeError("Planner journal filename is invalid")
+            action_id = path.name[: -len(suffix)]
+            if not action_id or action_id in identities:
+                raise RuntimeError("Planner journal action identity is invalid")
+            identities.add(action_id)
+        return identities
+
+    started_ids = action_ids(started_paths, ".started.json")
+    completed_ids = action_ids(completed_paths, ".completed.json")
+    output_ids = action_ids(output_paths, ".json")
+    if started_ids != completed_ids or started_ids != output_ids:
+        raise RuntimeError("Planner provenance chain is incomplete")
+
+    for output_path in output_paths:
+        action_id = output_path.stem
+        started_path = planner_action_root / f"{action_id}.started.json"
+        completed_path = planner_action_root / f"{action_id}.completed.json"
+        started = _read_json_object(started_path)
+        completed = _read_json_object(completed_path)
+        input_ref = started.get("input_ref")
+        input_sha256 = started.get("input_sha256")
+        output_ref = str(output_path.relative_to(runtime.run_root)).replace(
+            "\\", "/"
+        )
+        output_sha256 = canonical_sha256(_read_json_object(output_path))
+        legacy_projection_ref = completed.get("legacy_projection_ref")
+        _validate_planner_binding(
+            runtime,
+            action_id=action_id,
+            input_ref=input_ref,
+            input_sha256=input_sha256,
+            output_ref=output_ref,
+            output_sha256=output_sha256,
+            legacy_projection_ref=legacy_projection_ref,
+        )
+        for reference in (input_ref, legacy_projection_ref):
+            if not isinstance(reference, str):
+                raise RuntimeError("Planner provenance reference is incomplete")
+            artifact_paths.append(_safe_run_ref(runtime, reference))
+        artifact_paths.extend(
+            [started_path, completed_path, output_path]
+        )
+
+    for pattern in ("evidence/synth/*.json",):
         artifact_paths.extend(sorted(runtime.run_root.glob(pattern)))
+    completed_tool_results = {
+        item.result_ref: item for item in _validate_completed_tool_actions(runtime)
+    }
+    _budget, tool_server = _server(runtime)
+    for result_ref in completed_tool_results:
+        artifact_paths.append(_safe_run_ref(runtime, result_ref))
     for result_path in list(artifact_paths):
         if result_path.name != "result.json" or result_path.parent.parent.name != "actions":
             continue
-        tool_result = _read_json_object(result_path)
-        tool_artifacts = tool_result.get("artifacts")
-        artifact_hashes = tool_result.get("artifact_hashes")
-        if not isinstance(tool_artifacts, Mapping) or not isinstance(
-            artifact_hashes, Mapping
-        ):
-            continue
+        result_ref = str(result_path.relative_to(runtime.run_root)).replace(
+            "\\", "/"
+        )
+        tool_result = completed_tool_results.get(result_ref)
+        if tool_result is None:
+            tool_result = tool_server.load_completed_result(result_ref)
+        tool_artifacts = tool_result.artifacts
+        artifact_hashes = tool_result.artifact_hashes
         for name, relative in tool_artifacts.items():
             expected_hash = artifact_hashes.get(name)
             if not isinstance(relative, str) or not isinstance(expected_hash, str):
@@ -356,12 +867,21 @@ def _build_package_manifest(
         artifact_paths.append(source)
     artifacts = []
     for path in sorted(set(artifact_paths)):
-        relative = str(path.relative_to(runtime.run_root)).replace("\\", "/")
+        if path.is_symlink():
+            raise RuntimeError("package artifact must not be a symbolic link")
+        resolved = path.resolve()
+        try:
+            resolved.relative_to(runtime.run_root)
+        except ValueError as exc:
+            raise RuntimeError("package artifact escapes the run") from exc
+        if not resolved.is_file():
+            raise RuntimeError("package artifact is missing")
+        relative = str(resolved.relative_to(runtime.run_root)).replace("\\", "/")
         artifacts.append(
             {
                 "path": relative,
-                "sha256": _sha256_file(path),
-                "size_bytes": path.stat().st_size,
+                "sha256": _sha256_file(resolved),
+                "size_bytes": resolved.stat().st_size,
             }
         )
     return {
@@ -386,19 +906,65 @@ def _verify_package_manifest(
 ) -> None:
     package = result.get("package")
     if package is None:
-        # Backward compatibility for already-completed A0 prototype runs.
+        graph_schema_path = runtime.run_root / "v3_graph_schema.json"
+        graph_schema = (
+            _read_json_object(graph_schema_path)
+            if graph_schema_path.is_file()
+            else {}
+        )
+        checkpoint_version = graph_schema.get("checkpoint_schema_version")
+        registry_path = runtime.run_root / "candidate_registry.json"
+        registry = (
+            _read_json_object(registry_path) if registry_path.is_file() else {}
+        )
+        candidates = registry.get("candidates")
+        registry_has_a1 = bool(
+            isinstance(candidates, Mapping)
+            and any(
+                isinstance(candidate, Mapping)
+                and isinstance(candidate.get("planner_action_id"), str)
+                for candidate in candidates.values()
+            )
+        )
+        planner_has_a1 = bool(
+            list((runtime.run_root / "planner" / "inputs").glob("*.json"))
+            or list((runtime.run_root / "planner" / "outputs").glob("*.json"))
+            or list(
+                (runtime.run_root / "control" / "planner_actions").glob(
+                    "*.json"
+                )
+            )
+        )
+        requires_package = bool(
+            result.get("result_schema") == TERMINAL_RESULT_SCHEMA
+            or isinstance(result.get("planner_contract"), Mapping)
+            or registry_has_a1
+            or planner_has_a1
+            or (
+                isinstance(checkpoint_version, int)
+                and not isinstance(checkpoint_version, bool)
+                and checkpoint_version >= 3
+            )
+        )
+        if requires_package:
+            raise RuntimeError("terminal V3 sealed package is required")
+        # Backward compatibility is restricted to historical A0 terminals.
         return
     if not isinstance(package, Mapping):
         raise RuntimeError("terminal V3 package metadata is invalid")
+    if isinstance(result.get("planner_contract"), Mapping):
+        registry = CandidateManager(runtime.run_root, runtime.task).load_registry()
+        _validate_candidate_registry_sources(runtime, registry)
+        _verify_synth_evidence_bindings(runtime, registry)
+        _verify_synth_evidence_bindings(runtime, result)
+        _validate_completed_tool_actions(runtime)
+        _validate_score_artifacts(runtime, registry, result)
+        _validate_candidate_operation_journals(runtime, registry, result)
     manifest_ref = package.get("manifest_ref")
     manifest_hash = package.get("manifest_sha256")
     if not isinstance(manifest_ref, str) or not isinstance(manifest_hash, str):
         raise RuntimeError("terminal V3 package metadata is incomplete")
-    manifest_path = (runtime.run_root / manifest_ref).resolve()
-    try:
-        manifest_path.relative_to(runtime.run_root)
-    except ValueError as exc:
-        raise RuntimeError("terminal V3 package manifest escapes the run") from exc
+    manifest_path = _safe_run_ref(runtime, manifest_ref)
     manifest = _read_json_object(manifest_path)
     if _sha256_json(manifest) != manifest_hash:
         raise RuntimeError("terminal V3 package manifest hash mismatch")
@@ -436,11 +1002,7 @@ def _verify_package_manifest(
             raise RuntimeError("terminal V3 package artifact record is incomplete")
         if reference == "v3_team_report.md" and not verify_report:
             continue
-        path = (runtime.run_root / reference).resolve()
-        try:
-            path.relative_to(runtime.run_root)
-        except ValueError as exc:
-            raise RuntimeError("terminal V3 package artifact escapes the run") from exc
+        path = _safe_run_ref(runtime, reference)
         if (
             not path.is_file()
             or path.stat().st_size != size
@@ -586,6 +1148,269 @@ def _commit_registry_operation(
     return str(committed.relative_to(runtime.run_root)).replace("\\", "/")
 
 
+def _validate_candidate_operation_request(
+    request: Mapping[str, object],
+) -> None:
+    """Validate the semantic shape of one durable Candidate decision."""
+
+    operation_type = request.get("operation_type")
+    reason = request.get("reason")
+    registry_updates = request.get("registry_updates")
+    candidate_updates = request.get("candidate_updates")
+    if not isinstance(reason, str) or not reason:
+        raise RuntimeError("Candidate decision reason is invalid")
+    if not isinstance(registry_updates, Mapping) or not isinstance(
+        candidate_updates, Mapping
+    ):
+        raise RuntimeError("Candidate decision updates are invalid")
+
+    if operation_type == "PROMOTE":
+        if (
+            set(registry_updates) != {"best_candidate_id", "active_candidate_id"}
+            or registry_updates.get("best_candidate_id")
+            != request.get("candidate_id")
+            or registry_updates.get("active_candidate_id") is not None
+            or set(candidate_updates) != {"status", "score_ref"}
+            or candidate_updates.get("status") != "PROMOTED"
+            or not isinstance(candidate_updates.get("score_ref"), str)
+        ):
+            raise RuntimeError("PROMOTE Candidate decision is malformed")
+        return
+    if operation_type == "REJECT":
+        if (
+            dict(registry_updates) != {"active_candidate_id": None}
+            or set(candidate_updates)
+            != {"status", "rejection_reason", "rejection_score_ref"}
+            or candidate_updates.get("status") != "REJECTED"
+            or candidate_updates.get("rejection_reason") != reason
+            or (
+                candidate_updates.get("rejection_score_ref") is not None
+                and not isinstance(
+                    candidate_updates.get("rejection_score_ref"), str
+                )
+            )
+        ):
+            raise RuntimeError("REJECT Candidate decision is malformed")
+        return
+    if operation_type == "SELECT_FINAL_ATTEMPT":
+        if (
+            set(registry_updates)
+            != {"active_candidate_id", "final_attempt_candidate_id"}
+            or registry_updates.get("active_candidate_id") is not None
+            or registry_updates.get("final_attempt_candidate_id")
+            != request.get("candidate_id")
+            or candidate_updates
+        ):
+            raise RuntimeError(
+                "SELECT_FINAL_ATTEMPT Candidate decision is malformed"
+            )
+        return
+    if operation_type == "SELECT_FINAL_FALLBACK":
+        if (
+            dict(registry_updates)
+            != {"final_attempt_candidate_id": request.get("candidate_id")}
+            or candidate_updates
+        ):
+            raise RuntimeError(
+                "SELECT_FINAL_FALLBACK Candidate decision is malformed"
+            )
+        return
+    if operation_type == "COMMIT_FINAL":
+        required_candidate_updates = {
+            "status",
+            "final_validation",
+            "final_metrics_ref",
+            "final_synth_evidence_ref",
+            "final_synth_evidence_sha256",
+            "final_score_ref",
+        }
+        if (
+            set(registry_updates)
+            != {"final_candidate_id", "final_attempt_candidate_id"}
+            or any(
+                registry_updates.get(key) != request.get("candidate_id")
+                for key in registry_updates
+            )
+            or set(candidate_updates) != required_candidate_updates
+            or candidate_updates.get("status") != "FINAL_VERIFIED"
+            or not isinstance(candidate_updates.get("final_validation"), Mapping)
+            or any(
+                not isinstance(candidate_updates.get(key), str)
+                or not candidate_updates.get(key)
+                for key in (
+                    "final_metrics_ref",
+                    "final_synth_evidence_ref",
+                    "final_synth_evidence_sha256",
+                    "final_score_ref",
+                )
+            )
+        ):
+            raise RuntimeError("COMMIT_FINAL Candidate decision is malformed")
+        return
+    raise RuntimeError(f"unknown Candidate decision type: {operation_type}")
+
+
+def _validate_candidate_operation_journals(
+    runtime: _Runtime,
+    registry: Mapping[str, object],
+    result: Mapping[str, object] | None = None,
+) -> list[Path]:
+    """Verify the prepared/committed Candidate decision chain.
+
+    Candidate operation files are control-plane evidence, not arbitrary report
+    attachments.  The package may seal them only after their identities,
+    semantic shapes, revision order, and terminal Registry binding agree.
+    """
+
+    root = runtime.run_root / "control" / "candidate_operations"
+    registry_revision = registry.get("v3_revision", 0)
+    if (
+        not isinstance(registry_revision, int)
+        or isinstance(registry_revision, bool)
+        or registry_revision < 0
+    ):
+        raise RuntimeError("Candidate Registry revision is invalid")
+    if not root.exists():
+        if registry_revision != 0 or registry.get("v3_last_operation_id") not in {
+            None,
+            "",
+        }:
+            raise RuntimeError("Candidate decision journals are missing")
+        return []
+    if root.is_symlink() or not root.is_dir():
+        raise RuntimeError("Candidate decision journal root is invalid")
+
+    prepared_by_id: dict[str, Path] = {}
+    committed_by_id: dict[str, Path] = {}
+    name_pattern = re.compile(
+        r"(?P<operation>[0-9a-f]{64})\.(?P<kind>prepared|committed)\.json\Z"
+    )
+    for path in root.iterdir():
+        if path.is_symlink() or not path.is_file():
+            raise RuntimeError("Candidate decision journal entry is invalid")
+        match = name_pattern.fullmatch(path.name)
+        if match is None:
+            raise RuntimeError(
+                f"Candidate decision journal filename is invalid: {path.name}"
+            )
+        operation_id = match.group("operation")
+        collection = (
+            prepared_by_id
+            if match.group("kind") == "prepared"
+            else committed_by_id
+        )
+        if operation_id in collection:
+            raise RuntimeError("duplicate Candidate decision journal identity")
+        collection[operation_id] = path
+    if set(prepared_by_id) != set(committed_by_id):
+        raise RuntimeError("Candidate decision journal chain is incomplete")
+
+    candidates = registry.get("candidates")
+    if not isinstance(candidates, Mapping):
+        raise RuntimeError("Candidate Registry candidates are invalid")
+    by_revision: dict[int, tuple[str, dict[str, object], dict[str, object]]] = {}
+    request_keys = {
+        "schema_version",
+        "operation_type",
+        "candidate_id",
+        "expected_best_candidate_id",
+        "expected_registry_revision",
+        "round_index",
+        "reason",
+        "registry_updates",
+        "candidate_updates",
+        "operation_id",
+    }
+    commit_keys = {
+        "schema_version",
+        "request",
+        "registry_revision",
+        "registry_sha256",
+    }
+    for operation_id in sorted(prepared_by_id):
+        prepared = _read_json_object(prepared_by_id[operation_id])
+        committed = _read_json_object(committed_by_id[operation_id])
+        if set(prepared) != request_keys:
+            raise RuntimeError("Candidate decision prepared record is malformed")
+        unsigned = dict(prepared)
+        stored_operation_id = unsigned.pop("operation_id", None)
+        if (
+            prepared.get("schema_version") != "v3a.candidate-operation.v1"
+            or stored_operation_id != operation_id
+            or _sha256_json(unsigned) != operation_id
+        ):
+            raise RuntimeError("Candidate decision prepared identity mismatch")
+        candidate_id = prepared.get("candidate_id")
+        expected_best_id = prepared.get("expected_best_candidate_id")
+        expected_revision = prepared.get("expected_registry_revision")
+        round_index = prepared.get("round_index")
+        if (
+            not isinstance(candidate_id, str)
+            or candidate_id not in candidates
+            or not isinstance(expected_best_id, str)
+            or expected_best_id not in candidates
+            or not isinstance(expected_revision, int)
+            or isinstance(expected_revision, bool)
+            or expected_revision < 0
+            or not isinstance(round_index, int)
+            or isinstance(round_index, bool)
+            or round_index <= 0
+        ):
+            raise RuntimeError("Candidate decision prepared state is invalid")
+        _validate_candidate_operation_request(prepared)
+        committed_revision = committed.get("registry_revision")
+        registry_sha256 = committed.get("registry_sha256")
+        if (
+            set(committed) != commit_keys
+            or committed.get("schema_version")
+            != "v3a.candidate-operation-commit.v1"
+            or committed.get("request") != prepared
+            or not isinstance(committed_revision, int)
+            or isinstance(committed_revision, bool)
+            or committed_revision != expected_revision + 1
+            or not isinstance(registry_sha256, str)
+            or re.fullmatch(r"[0-9a-f]{64}", registry_sha256) is None
+        ):
+            raise RuntimeError("Candidate decision committed record is malformed")
+        if committed_revision in by_revision:
+            raise RuntimeError("duplicate Candidate decision Registry revision")
+        by_revision[committed_revision] = (
+            operation_id,
+            prepared,
+            committed,
+        )
+
+    expected_revisions = list(range(1, registry_revision + 1))
+    if sorted(by_revision) != expected_revisions:
+        raise RuntimeError("Candidate decision Registry revision chain is broken")
+    if not by_revision:
+        if registry.get("v3_last_operation_id") not in {None, ""}:
+            raise RuntimeError("Candidate Registry last decision is unjournaled")
+        if result is not None and int(result.get("registry_revision", 0)) != 0:
+            raise RuntimeError("terminal Candidate decision revision mismatch")
+        return []
+
+    for revision in expected_revisions:
+        _operation_id, request, _commit = by_revision[revision]
+        if request.get("expected_registry_revision") != revision - 1:
+            raise RuntimeError("Candidate decision expected revision is not continuous")
+    last_operation_id, _last_request, last_commit = by_revision[registry_revision]
+    last_ref = str(
+        committed_by_id[last_operation_id].relative_to(runtime.run_root)
+    ).replace("\\", "/")
+    if (
+        registry.get("v3_last_operation_id") != last_operation_id
+        or last_commit.get("registry_sha256") != _sha256_json(registry)
+    ):
+        raise RuntimeError("Candidate decision chain does not bind the Registry")
+    if result is not None and (
+        result.get("registry_revision") != registry_revision
+        or result.get("decision_ref") != last_ref
+    ):
+        raise RuntimeError("terminal result does not bind the last Candidate decision")
+    return sorted([*prepared_by_id.values(), *committed_by_id.values()])
+
+
 def _verify_run_identity(
     runtime: _Runtime, *, require_complete: bool = False
 ) -> None:
@@ -608,7 +1433,23 @@ def _verify_run_identity(
                     f"{path.relative_to(runtime.run_root)}"
                 )
             continue
-        if not path.is_file() or _read_json_object(path) != wanted:
+        existing = _read_json_object(path) if path.is_file() else None
+        historical_backend_only = False
+        if (
+            path == config_path
+            and isinstance(existing, dict)
+            and (runtime.run_root / "v3_prototype_result.json").is_file()
+        ):
+            stored_without_backend = dict(existing)
+            wanted_without_backend = dict(wanted)
+            stored_backend = stored_without_backend.pop("backend_fingerprint", None)
+            wanted_without_backend.pop("backend_fingerprint", None)
+            historical_backend_only = bool(
+                isinstance(stored_backend, str)
+                and stored_backend
+                and stored_without_backend == wanted_without_backend
+            )
+        if existing != wanted and not historical_backend_only:
             raise RuntimeError(
                 f"existing run identity mismatch: "
                 f"{path.relative_to(runtime.run_root)}"
@@ -622,15 +1463,25 @@ def _load_terminal_result(runtime: _Runtime) -> dict[str, object] | None:
     _verify_run_identity(runtime, require_complete=True)
     result = _read_json_object(result_path)
     backend = result.get("backend")
+    stored_config = _read_json_object(runtime.run_root / "v3_run_config.json")
+    stored_backend_fingerprint = stored_config.get("backend_fingerprint")
+    allowed_backend_fingerprints = {_backend_fingerprint(runtime.backend)}
+    if isinstance(stored_backend_fingerprint, str):
+        allowed_backend_fingerprints.add(stored_backend_fingerprint)
     if (
         result.get("workflow") != WORKFLOW_NAME
         or result.get("task_id") != runtime.task.id
         or result.get("status") not in {"DONE", "FAILED"}
         or not isinstance(backend, Mapping)
-        or backend.get("fingerprint") != _backend_fingerprint(runtime.backend)
+        or backend.get("fingerprint") not in allowed_backend_fingerprints
     ):
         raise RuntimeError("terminal V3 prototype result has an invalid identity")
     _verify_package_manifest(runtime, result, verify_report=False)
+    if result.get("package") is None:
+        # Legacy A0 terminals predate the sealed package.  They are readable,
+        # but must remain byte-for-byte archival evidence rather than being
+        # silently rewritten by a newer report renderer.
+        return result
     report_path = runtime.run_root / "v3_team_report.md"
     expected_report = _render_team_report(runtime, result)
     try:
@@ -695,6 +1546,95 @@ def _server(runtime: _Runtime) -> tuple[BudgetLedger, ToolServer]:
         backend=runtime.backend,
     )
     return budget, server
+
+
+def _completed_tool_result(
+    runtime: _Runtime,
+    result_ref: object,
+    *,
+    expected_kind: str | None = None,
+    expected_candidate_id: str | None = None,
+    expected_scope: str | None = None,
+) -> ToolResult:
+    if not isinstance(result_ref, str) or not result_ref:
+        raise RuntimeError("tool result reference is incomplete")
+    _budget, server = _server(runtime)
+    allowed_backend_fingerprints = {_backend_fingerprint(runtime.backend)}
+    stored_config_path = runtime.run_root / "v3_run_config.json"
+    if (
+        (runtime.run_root / "v3_prototype_result.json").is_file()
+        and stored_config_path.is_file()
+    ):
+        stored_fingerprint = _read_json_object(stored_config_path).get(
+            "backend_fingerprint"
+        )
+        if isinstance(stored_fingerprint, str) and stored_fingerprint:
+            allowed_backend_fingerprints.add(stored_fingerprint)
+    result = server.load_completed_result(
+        result_ref,
+        allowed_backend_fingerprints=allowed_backend_fingerprints,
+    )
+    if expected_kind is not None and result.kind != expected_kind:
+        raise RuntimeError("tool result kind binding mismatch")
+    if (
+        expected_candidate_id is not None
+        and result.candidate_id != expected_candidate_id
+    ):
+        raise RuntimeError("tool result Candidate binding mismatch")
+    if expected_scope is not None and result.validation_scope != expected_scope:
+        raise RuntimeError("tool result validation-scope binding mismatch")
+    return result
+
+
+def _completed_synth_report(
+    runtime: _Runtime,
+    result_ref: object,
+    *,
+    candidate_id: str,
+    validation_scope: str,
+) -> dict[str, object]:
+    result = _completed_tool_result(
+        runtime,
+        result_ref,
+        expected_kind="synth",
+        expected_candidate_id=candidate_id,
+        expected_scope=validation_scope,
+    )
+    if not isinstance(result.report, dict):
+        raise RuntimeError("completed Synth result has no structured report")
+    return dict(result.report)
+
+
+def _validate_completed_tool_actions(runtime: _Runtime) -> list[ToolResult]:
+    ledger, server = _server(runtime)
+    allowed_backend_fingerprints = {_backend_fingerprint(runtime.backend)}
+    stored_config_path = runtime.run_root / "v3_run_config.json"
+    if (
+        (runtime.run_root / "v3_prototype_result.json").is_file()
+        and stored_config_path.is_file()
+    ):
+        stored_fingerprint = _read_json_object(stored_config_path).get(
+            "backend_fingerprint"
+        )
+        if isinstance(stored_fingerprint, str) and stored_fingerprint:
+            allowed_backend_fingerprints.add(stored_fingerprint)
+    results: list[ToolResult] = []
+    for event in ledger.events():
+        if (
+            event.get("state") != "COMPLETED"
+            or event.get("kind") not in {"csim", "synth", "cosim"}
+        ):
+            continue
+        result_ref = event.get("result_ref")
+        if not isinstance(result_ref, str):
+            raise RuntimeError("completed tool action has no result reference")
+        results.append(
+            server.load_completed_result(
+                result_ref,
+                allowed_backend_fingerprints=allowed_backend_fingerprints,
+            )
+        )
+    return results
 
 
 def _event(
@@ -762,14 +1702,94 @@ def _clock_constraint(
     }
 
 
-def _candidate_source(runtime: _Runtime, candidate_id: str) -> bytes:
-    registry = CandidateManager(runtime.run_root, runtime.task).load_registry()
+def _candidate_source(
+    runtime: _Runtime,
+    candidate_id: str,
+    *,
+    registry: Mapping[str, object] | None = None,
+    visiting: tuple[str, ...] = (),
+) -> bytes:
+    if candidate_id in visiting:
+        raise RuntimeError("Candidate lineage contains a cycle")
+    if registry is None:
+        registry = CandidateManager(runtime.run_root, runtime.task).load_registry()
     candidates = registry.get("candidates")
     record = candidates.get(candidate_id) if isinstance(candidates, Mapping) else None
     if not isinstance(record, Mapping):
-        raise ValueError(f"Candidate is missing: {candidate_id}")
-    path = runtime.run_root / str(record.get("source_ref", ""))
-    return path.read_bytes()
+        raise RuntimeError(f"Candidate is missing: {candidate_id}")
+    source_ref = record.get("source_ref")
+    code_hash = record.get("code_hash")
+    if not isinstance(source_ref, str) or not isinstance(code_hash, str):
+        raise RuntimeError("Candidate source binding is incomplete")
+    source = _safe_run_ref(runtime, source_ref).read_bytes()
+    if hashlib.sha256(source).hexdigest() != code_hash:
+        raise RuntimeError(f"Candidate source hash mismatch: {candidate_id}")
+
+    parent_id = record.get("parent_id")
+    if record.get("kind") == "baseline":
+        if parent_id is not None or source != runtime.task.kernel_bytes:
+            raise RuntimeError("baseline Candidate diverges from the public task")
+        return source
+    if not isinstance(parent_id, str) or not parent_id:
+        raise RuntimeError("derived Candidate parent binding is incomplete")
+    patch_ref = record.get("patch_ref")
+    patch_sha256 = record.get("patch_sha256")
+    if not isinstance(patch_ref, str) or not isinstance(patch_sha256, str):
+        raise RuntimeError("derived Candidate Patch binding is incomplete")
+    patch_path = _safe_run_ref(runtime, patch_ref)
+    try:
+        patch_text = patch_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise RuntimeError(f"cannot read Candidate Patch: {candidate_id}") from exc
+    if hashlib.sha256(patch_text.encode("utf-8")).hexdigest() != patch_sha256:
+        raise RuntimeError(f"Candidate Patch hash mismatch: {candidate_id}")
+
+    parent_source = _candidate_source(
+        runtime,
+        parent_id,
+        registry=registry,
+        visiting=(*visiting, candidate_id),
+    )
+    try:
+        application = apply_unified_diff(
+            parent_source,
+            patch_text,
+            kernel_name=runtime.task.kernel_name,
+            limits=runtime.patch_limits,
+        )
+    except PatchValidationError as exc:
+        raise RuntimeError(
+            f"Candidate Patch no longer applies to its parent: {candidate_id}"
+        ) from exc
+    if application.patched_bytes != source or application.patched_sha256 != code_hash:
+        raise RuntimeError(
+            f"Candidate source diverges from parent plus Patch: {candidate_id}"
+        )
+
+    proposal = _proposal_for_candidate(runtime, candidate_id)
+    if proposal is None or proposal.patch != patch_text:
+        raise RuntimeError(
+            f"Candidate Patch diverges from Planner output: {candidate_id}"
+        )
+    metadata_ref = f"candidates/{candidate_id}/candidate.json"
+    immutable_metadata = _read_json_object(_safe_run_ref(runtime, metadata_ref))
+    mutable_fields = {"status", "validation", "metrics_ref", "credits_used"}
+    for name, value in immutable_metadata.items():
+        if name not in mutable_fields and record.get(name) != value:
+            raise RuntimeError(
+                f"Candidate immutable metadata mismatch: {candidate_id}.{name}"
+            )
+    return source
+
+
+def _validate_candidate_registry_sources(
+    runtime: _Runtime, registry: Mapping[str, object]
+) -> None:
+    candidates = registry.get("candidates")
+    if not isinstance(candidates, Mapping):
+        raise RuntimeError("Candidate Registry is missing candidates")
+    for candidate_id in sorted(str(item) for item in candidates):
+        _candidate_source(runtime, candidate_id, registry=registry)
 
 
 def _save_validation(
@@ -779,6 +1799,8 @@ def _save_validation(
     record: Mapping[str, object],
     *,
     metrics_ref: str | None = None,
+    synth_evidence_ref: str | None = None,
+    synth_evidence_sha256: str | None = None,
 ) -> None:
     manager = CandidateManager(runtime.run_root, runtime.task)
     registry = manager.load_registry()
@@ -792,6 +1814,10 @@ def _save_validation(
     candidate["status"] = "EVALUATING"
     if metrics_ref is not None:
         candidate["metrics_ref"] = metrics_ref
+    if synth_evidence_ref is not None:
+        candidate["synth_evidence_ref"] = synth_evidence_ref
+    if synth_evidence_sha256 is not None:
+        candidate["synth_evidence_sha256"] = synth_evidence_sha256
     candidate["credits_used"] = sum(
         int(runtime.config.budget.costs[name])
         for name in ("csim", "synth", "cosim")
@@ -855,18 +1881,47 @@ def _run_tool(
     return result, record, event
 
 
+def _validated_validation(
+    runtime: _Runtime,
+    candidate_id: str,
+    validation: object,
+) -> dict[str, dict[str, object]]:
+    if not isinstance(validation, Mapping):
+        raise ValueError(f"Candidate {candidate_id} has no validation state")
+    records = {
+        stage: dict(record) if isinstance(record, Mapping) else {"status": "NOT_RUN"}
+        for stage, record in validation.items()
+    }
+    for stage, record in records.items():
+        action_id = record.get("action_id")
+        result_ref = record.get("result_ref")
+        if not isinstance(action_id, str):
+            continue
+        scope = str(record.get("validation_scope", "exploration"))
+        result = _completed_tool_result(
+            runtime,
+            result_ref,
+            expected_kind=stage,
+            expected_candidate_id=candidate_id,
+            expected_scope=scope,
+        )
+        expected = _validation_record(result) | {"validation_scope": scope}
+        if result.action_id != action_id or stable_validation(record) != stable_validation(
+            expected
+        ):
+            raise RuntimeError(
+                f"Candidate validation diverges from completed action: "
+                f"{candidate_id}.{stage}"
+            )
+    return records
+
+
 def _registry_validation(
     runtime: _Runtime, candidate_id: str
 ) -> dict[str, dict[str, object]]:
     registry = CandidateManager(runtime.run_root, runtime.task).load_registry()
     candidate = registry["candidates"][candidate_id]
-    validation = candidate.get("validation")
-    if not isinstance(validation, Mapping):
-        raise ValueError(f"Candidate {candidate_id} has no validation state")
-    return {
-        stage: dict(record) if isinstance(record, Mapping) else {"status": "NOT_RUN"}
-        for stage, record in validation.items()
-    }
+    return _validated_validation(runtime, candidate_id, candidate.get("validation"))
 
 
 def _score(
@@ -921,6 +1976,140 @@ def _score(
             OFFICIAL_SCORE_SOURCE if official_score is not None else None
         ),
     )
+
+
+def _recompute_exploration_score(
+    runtime: _Runtime,
+    registry: Mapping[str, object],
+    *,
+    candidate_id: str,
+    baseline_metrics: Mapping[str, object],
+    provisional_cosim: bool,
+    include_proposal: bool,
+) -> CandidateScore:
+    candidates = registry.get("candidates")
+    candidate = (
+        candidates.get(candidate_id) if isinstance(candidates, Mapping) else None
+    )
+    if not isinstance(candidate, Mapping):
+        raise RuntimeError(f"score Candidate is missing: {candidate_id}")
+    metrics = _completed_synth_report(
+        runtime,
+        candidate.get("metrics_ref"),
+        candidate_id=candidate_id,
+        validation_scope="exploration",
+    )
+    validation = _registry_validation(runtime, candidate_id)
+    if provisional_cosim:
+        validation = dict(validation)
+        validation["cosim"] = {"status": "NOT_RUN"}
+    return _score(
+        runtime,
+        candidate_id=candidate_id,
+        baseline_metrics=baseline_metrics,
+        candidate_metrics=metrics,
+        validation=validation,
+        clock=_clock_constraint(metrics, runtime.config.minimum_frequency_mhz),
+        proposal=(
+            _proposal_for_candidate(runtime, candidate_id)
+            if include_proposal
+            else None
+        ),
+        provisional_cosim=provisional_cosim,
+    )
+
+
+def _validate_score_artifacts(
+    runtime: _Runtime,
+    registry: Mapping[str, object],
+    result: Mapping[str, object],
+) -> list[Path]:
+    score_paths = sorted((runtime.run_root / "scores").glob("*.json"))
+    if not score_paths:
+        return []
+    baseline_id = result.get("baseline_candidate_id")
+    if not isinstance(baseline_id, str):
+        raise RuntimeError("score validation has no baseline Candidate")
+    baseline_metrics = _completed_synth_report(
+        runtime,
+        result.get("baseline_metrics_ref"),
+        candidate_id=baseline_id,
+        validation_scope="exploration",
+    )
+    validated: list[Path] = []
+    pattern = re.compile(
+        r"(?P<candidate>candidate_\d+)(?:"
+        r"(?P<incumbent>\.round_\d+\.incumbent)|"
+        r"(?P<pre>\.pre_cosim)|"
+        r"(?P<verified>\.verified)|"
+        r"(?P<final>\.final))\.json\Z"
+    )
+    completed_final_results: dict[tuple[str, str], ToolResult] = {
+        (item.candidate_id, item.kind): item
+        for item in _validate_completed_tool_actions(runtime)
+        if item.validation_scope == "final"
+    }
+    attempted_final_ids = {
+        str(item) for item in result.get("final_attempted_candidate_ids", [])
+    }
+    for score_path in score_paths:
+        if score_path.is_symlink():
+            raise RuntimeError("score artifact must not be a symbolic link")
+        match = pattern.fullmatch(score_path.name)
+        if match is None:
+            raise RuntimeError(f"unrecognized score artifact: {score_path.name}")
+        candidate_id = match.group("candidate")
+        raw_score = _read_json_object(score_path)
+        CandidateScore.from_dict(raw_score)
+        if match.group("final") is not None:
+            if candidate_id not in attempted_final_ids:
+                raise RuntimeError("final score Candidate was never attempted")
+            stage_results = {
+                stage: completed_final_results.get((candidate_id, stage))
+                for stage in ("csim", "synth", "cosim")
+            }
+            if any(item is None for item in stage_results.values()):
+                raise RuntimeError("final score lacks a complete tool closure")
+            synth_result = stage_results["synth"]
+            assert synth_result is not None
+            if not isinstance(synth_result.report, dict):
+                raise RuntimeError("final score Synth report is missing")
+            final_metrics = dict(synth_result.report)
+            final_validation = {
+                stage: _validation_record(tool_result) | {
+                    "validation_scope": "final"
+                }
+                for stage, tool_result in stage_results.items()
+                if tool_result is not None
+            }
+            expected = _score(
+                runtime,
+                candidate_id=candidate_id,
+                baseline_metrics=baseline_metrics,
+                candidate_metrics=final_metrics,
+                validation=final_validation,
+                clock=_clock_constraint(
+                    final_metrics, runtime.config.minimum_frequency_mhz
+                ),
+                proposal=_proposal_for_candidate(runtime, candidate_id),
+                provisional_cosim=False,
+            )
+        else:
+            expected = _recompute_exploration_score(
+                runtime,
+                registry,
+                candidate_id=candidate_id,
+                baseline_metrics=baseline_metrics,
+                provisional_cosim=match.group("pre") is not None,
+                include_proposal=(
+                    match.group("pre") is not None
+                    or match.group("verified") is not None
+                ),
+            )
+        if raw_score != expected.to_dict():
+            raise RuntimeError(f"score artifact semantic mismatch: {score_path.name}")
+        validated.append(score_path)
+    return validated
 
 
 def _initialize(runtime: _Runtime, _state: V3PrototypeState) -> V3PrototypeState:
@@ -1027,15 +2216,35 @@ def _baseline_synth(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeSt
         validation_scope="exploration",
     )
     metrics_ref = result.result_ref if result is not None and result.report is not None else None
-    _save_validation(runtime, candidate_id, "synth", record, metrics_ref=metrics_ref)
+    synth_evidence_ref, synth_evidence_sha256 = _write_synth_evidence(
+        runtime, result, candidate_id=candidate_id
+    )
+    _save_validation(
+        runtime,
+        candidate_id,
+        "synth",
+        record,
+        metrics_ref=metrics_ref,
+        synth_evidence_ref=synth_evidence_ref or None,
+        synth_evidence_sha256=synth_evidence_sha256 or None,
+    )
     clock = _clock_constraint(
         result.report if result is not None else None,
         runtime.config.minimum_frequency_mhz,
     )
     ok = bool(result is not None and result.ok and metrics_ref and clock["passed"])
+    if synth_evidence_ref:
+        event["details"] = {
+            "synth_evidence_ref": synth_evidence_ref,
+            "synth_evidence_sha256": synth_evidence_sha256,
+        }
     return {
         "baseline_metrics_ref": metrics_ref or "",
         "best_metrics_ref": metrics_ref or "",
+        "baseline_synth_evidence_ref": synth_evidence_ref,
+        "baseline_synth_evidence_sha256": synth_evidence_sha256,
+        "best_synth_evidence_ref": synth_evidence_ref,
+        "best_synth_evidence_sha256": synth_evidence_sha256,
         "baseline_clock": clock,
         "best_clock": clock,
         "last_tool_ok": ok,
@@ -1143,26 +2352,52 @@ def _evaluate_round_budget(
 
 def _plan_candidate(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeState:
     round_index = int(state.get("round_index", 1))
-    proposal = _proposal_for_round(runtime, round_index)
+    planner = ScriptedPlanner(runtime.proposals)
+    planner_input = _build_round_planner_input(runtime, state)
+    input_ref = f"planner/inputs/round_{round_index:03d}.json"
+    input_sha256 = canonical_sha256(planner_input)
+    _write_once_or_verify(runtime.run_root / input_ref, planner_input)
+    request = planner_action_request(
+        planner_fingerprint=planner.fingerprint(),
+        planner_input_ref=input_ref,
+        planner_input_sha256=input_sha256,
+        replay_policy=planner.replay_policy,
+    )
+    action_id = planner_action_id(request)
+    action_root = runtime.run_root / "control" / "planner_actions"
+    started = request | {"action_id": action_id, "status": "STARTED"}
+    _write_once_or_verify(action_root / f"{action_id}.started.json", started)
+
+    # ScriptedPlanner is deterministic, so a STARTED action without an output
+    # is safe to replay.  The future LLM Planner must supply an idempotency key
+    # or fail closed at this boundary instead.
+    proposal = planner.plan(planner_input)
+    output = build_planner_output(
+        action_id=action_id,
+        input_sha256=input_sha256,
+        proposal=proposal,
+    )
+    output_ref = f"planner/outputs/{action_id}.json"
+    output_sha256 = canonical_sha256(output)
+    _write_once_or_verify(runtime.run_root / output_ref, output)
+    output_proposal = _load_planner_output_only(
+        runtime,
+        output_ref=output_ref,
+        output_sha256=output_sha256,
+        action_id=action_id,
+        input_sha256=input_sha256,
+    )
+    if proposal_payload(output_proposal) != proposal_payload(proposal):
+        raise RuntimeError("deterministic Planner replay diverged")
+
+    # Keep the A0 projection for old reports and completed-run identity checks;
+    # all executable downstream decisions consume the versioned output above.
     proposal_ref = f"planner/proposal_{round_index:03d}.json"
     value = _proposal_snapshot(
         runtime,
-        proposal=proposal,
+        proposal=output_proposal,
         parent_candidate_id=state["best_candidate_id"],
         round_index=round_index,
-    )
-    request = {
-        "schema_version": "v3a.planner-action.v1",
-        "planner_mode": "scripted_prototype",
-        "round_index": round_index,
-        "parent_candidate_id": state["best_candidate_id"],
-        "proposal_sha256": _sha256_json(proposal.to_dict()),
-    }
-    action_id = _sha256_json(request)
-    action_root = runtime.run_root / "control" / "planner_actions"
-    _write_once_or_verify(
-        action_root / f"{action_id}.started.json",
-        request | {"action_id": action_id, "status": "STARTED"},
     )
     _write_once_or_verify(runtime.run_root / proposal_ref, value)
     _write_once_or_verify(
@@ -1172,24 +2407,50 @@ def _plan_candidate(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeSt
             "action_id": action_id,
             "status": "COMPLETED",
             "outcome": "PROPOSAL",
-            "result_ref": proposal_ref,
-            "result_sha256": _sha256_json(value),
+            "result_ref": output_ref,
+            "result_sha256": output_sha256,
+            "legacy_projection_ref": proposal_ref,
+            "legacy_projection_sha256": _sha256_json(value),
         },
     )
+    durable_proposal = _validate_planner_binding(
+        runtime,
+        action_id=action_id,
+        input_ref=input_ref,
+        input_sha256=input_sha256,
+        output_ref=output_ref,
+        output_sha256=output_sha256,
+        legacy_projection_ref=proposal_ref,
+    )
+    if proposal_payload(durable_proposal) != proposal_payload(proposal):
+        raise RuntimeError("durable Planner provenance diverged")
     event = _event(
         runtime,
         node="plan_candidate",
         phase="OPTIMIZE",
         candidate_id=state["best_candidate_id"],
         action="scripted_planner_proposal",
-        why=proposal.hypothesis or "Apply the configured prototype Patch.",
+        why=durable_proposal.hypothesis or "Apply the configured prototype Patch.",
         outcome="PROPOSAL_READY",
-        result_ref=proposal_ref,
+        result_ref=output_ref,
         round_index=round_index,
+        details={
+            "planner_action_id": action_id,
+            "planner_input_ref": input_ref,
+            "planner_input_sha256": input_sha256,
+            "planner_output_ref": output_ref,
+            "planner_output_sha256": output_sha256,
+            "legacy_projection_ref": proposal_ref,
+        },
     )
     return {
         "phase": "OPTIMIZE",
         "planner_ref": proposal_ref,
+        "planner_action_id": action_id,
+        "planner_input_ref": input_ref,
+        "planner_input_sha256": input_sha256,
+        "planner_output_ref": output_ref,
+        "planner_output_sha256": output_sha256,
         "node_events": [event],
     }
 
@@ -1199,7 +2460,7 @@ def _materialize_candidate(
 ) -> V3PrototypeState:
     parent_id = state["best_candidate_id"]
     round_index = int(state.get("round_index", 1))
-    proposal = _proposal_for_round(runtime, round_index)
+    proposal = _current_proposal(runtime, state)
     manager = CandidateManager(runtime.run_root, runtime.task)
     registry = manager.load_registry()
     patch_sha256 = hashlib.sha256(proposal.patch.encode("utf-8")).hexdigest()
@@ -1221,6 +2482,10 @@ def _materialize_candidate(
         and duplicate_record is not None
         and duplicate_record.get("round_index") == round_index
         and duplicate_record.get("planner_ref") == state.get("planner_ref")
+        and duplicate_record.get("planner_output_ref")
+        == state.get("planner_output_ref")
+        and duplicate_record.get("planner_output_sha256")
+        == state.get("planner_output_sha256")
         and duplicate_record.get("status") == "MATERIALIZED"
         and registry.get("active_candidate_id") == duplicate_id
     )
@@ -1278,6 +2543,12 @@ def _materialize_candidate(
         kind="optimization",
         metadata={
             "planner_ref": state["planner_ref"],
+            "planner_action_id": state["planner_action_id"],
+            "planner_input_ref": state["planner_input_ref"],
+            "planner_input_sha256": state["planner_input_sha256"],
+            "planner_output_ref": state["planner_output_ref"],
+            "planner_output_sha256": state["planner_output_sha256"],
+            "proposal_sha256": canonical_sha256(proposal_payload(proposal)),
             "round_index": round_index,
             "provider": proposal.provider,
             "model": proposal.model,
@@ -1308,6 +2579,8 @@ def _materialize_candidate(
         "active_candidate_id": materialized.candidate_id,
         "last_tool_ok": True,
         "candidate_metrics_ref": "",
+        "candidate_synth_evidence_ref": "",
+        "candidate_synth_evidence_sha256": "",
         "candidate_score_ref": "",
         "candidate_clock": {},
         "cosim_gate": {"eligible": False, "reason": "NOT_EVALUATED"},
@@ -1326,6 +2599,11 @@ def _record_rejected_proposal(
         "round_index": round_index,
         "parent_candidate_id": state["best_candidate_id"],
         "planner_ref": state.get("planner_ref"),
+        "planner_action_id": state.get("planner_action_id"),
+        "planner_input_ref": state.get("planner_input_ref"),
+        "planner_input_sha256": state.get("planner_input_sha256"),
+        "planner_output_ref": state.get("planner_output_ref"),
+        "planner_output_sha256": state.get("planner_output_sha256"),
         "reason": reason,
     }
     _write_once_or_verify(runtime.run_root / rejection_ref, record)
@@ -1344,6 +2622,8 @@ def _record_rejected_proposal(
         "phase": "DECIDE",
         "active_candidate_id": None,
         "candidate_metrics_ref": "",
+        "candidate_synth_evidence_ref": "",
+        "candidate_synth_evidence_sha256": "",
         "candidate_score_ref": "",
         "candidate_clock": {},
         "last_round_improved": False,
@@ -1390,14 +2670,32 @@ def _candidate_synth(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeS
         round_index=int(state.get("round_index", 1)),
     )
     metrics_ref = result.result_ref if result is not None and result.report is not None else None
-    _save_validation(runtime, candidate_id, "synth", record, metrics_ref=metrics_ref)
+    synth_evidence_ref, synth_evidence_sha256 = _write_synth_evidence(
+        runtime, result, candidate_id=candidate_id
+    )
+    _save_validation(
+        runtime,
+        candidate_id,
+        "synth",
+        record,
+        metrics_ref=metrics_ref,
+        synth_evidence_ref=synth_evidence_ref or None,
+        synth_evidence_sha256=synth_evidence_sha256 or None,
+    )
     clock = _clock_constraint(
         result.report if result is not None else None,
         runtime.config.minimum_frequency_mhz,
     )
     ok = bool(result is not None and result.ok and metrics_ref and clock["passed"])
+    if synth_evidence_ref:
+        event["details"] = {
+            "synth_evidence_ref": synth_evidence_ref,
+            "synth_evidence_sha256": synth_evidence_sha256,
+        }
     update: V3PrototypeState = {
         "candidate_metrics_ref": metrics_ref or "",
+        "candidate_synth_evidence_ref": synth_evidence_ref,
+        "candidate_synth_evidence_sha256": synth_evidence_sha256,
         "candidate_clock": clock,
         "last_tool_ok": ok,
         "last_tool_phase": result.phase if result is not None else str(record.get("phase")),
@@ -1418,9 +2716,24 @@ def _candidate_score_gate(
     incumbent_id = state["best_candidate_id"]
     candidate_id = state["active_candidate_id"]
     proposal = _current_proposal(runtime, state)
-    baseline_metrics = _read_report(runtime.run_root, state["baseline_metrics_ref"])
-    incumbent_metrics = _read_report(runtime.run_root, state["best_metrics_ref"])
-    candidate_metrics = _read_report(runtime.run_root, state["candidate_metrics_ref"])
+    baseline_metrics = _completed_synth_report(
+        runtime,
+        state["baseline_metrics_ref"],
+        candidate_id=baseline_id,
+        validation_scope="exploration",
+    )
+    incumbent_metrics = _completed_synth_report(
+        runtime,
+        state["best_metrics_ref"],
+        candidate_id=incumbent_id,
+        validation_scope="exploration",
+    )
+    candidate_metrics = _completed_synth_report(
+        runtime,
+        state["candidate_metrics_ref"],
+        candidate_id=candidate_id,
+        validation_scope="exploration",
+    )
     incumbent_score = _score(
         runtime,
         candidate_id=incumbent_id,
@@ -1561,8 +2874,18 @@ def _candidate_cosim(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeS
 def _promote_candidate(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeState:
     candidate_id = state["active_candidate_id"]
     proposal = _current_proposal(runtime, state)
-    baseline_metrics = _read_report(runtime.run_root, state["baseline_metrics_ref"])
-    candidate_metrics = _read_report(runtime.run_root, state["candidate_metrics_ref"])
+    baseline_metrics = _completed_synth_report(
+        runtime,
+        state["baseline_metrics_ref"],
+        candidate_id=state["baseline_candidate_id"],
+        validation_scope="exploration",
+    )
+    candidate_metrics = _completed_synth_report(
+        runtime,
+        state["candidate_metrics_ref"],
+        candidate_id=candidate_id,
+        validation_scope="exploration",
+    )
     score = _score(
         runtime,
         candidate_id=candidate_id,
@@ -1605,6 +2928,10 @@ def _promote_candidate(runtime: _Runtime, state: V3PrototypeState) -> V3Prototyp
         "active_candidate_id": None,
         "best_candidate_id": candidate_id,
         "best_metrics_ref": state["candidate_metrics_ref"],
+        "best_synth_evidence_ref": state["candidate_synth_evidence_ref"],
+        "best_synth_evidence_sha256": state[
+            "candidate_synth_evidence_sha256"
+        ],
         "best_clock": state["candidate_clock"],
         "candidate_score_ref": score_ref,
         "last_round_improved": True,
@@ -1649,6 +2976,8 @@ def _reject_candidate(runtime: _Runtime, state: V3PrototypeState) -> V3Prototype
         "active_candidate_id": None,
         "best_candidate_id": incumbent_id,
         "candidate_metrics_ref": "",
+        "candidate_synth_evidence_ref": "",
+        "candidate_synth_evidence_sha256": "",
         "candidate_score_ref": "",
         "candidate_clock": {},
         "last_round_improved": False,
@@ -1721,6 +3050,8 @@ def _select_final_attempt(
         "final_attempt_count": 1,
         "final_attempted_candidate_ids": [candidate_id],
         "final_validation": _initial_validation(),
+        "final_synth_evidence_ref": "",
+        "final_synth_evidence_sha256": "",
         "decision_ref": decision_ref,
         "registry_revision": int(state.get("registry_revision", 0)) + 1,
         "node_events": [event],
@@ -1775,8 +3106,11 @@ def _evaluate_final_fallback(
     candidates = registry.get("candidates")
     eligible: list[str] = []
     if isinstance(candidates, Mapping):
-        baseline_metrics = _read_report(
-            runtime.run_root, state["baseline_metrics_ref"]
+        baseline_metrics = _completed_synth_report(
+            runtime,
+            state["baseline_metrics_ref"],
+            candidate_id=state["baseline_candidate_id"],
+            validation_scope="exploration",
         )
         ranked: list[CandidateScore] = []
         for candidate_id, candidate in candidates.items():
@@ -1787,24 +3121,14 @@ def _evaluate_final_fallback(
                 or not _fallback_verified(candidate)
             ):
                 continue
-            score_ref = candidate.get("score_ref")
-            if isinstance(score_ref, str) and score_ref:
-                score = CandidateScore.from_dict(
-                    _read_json_object(runtime.run_root / score_ref)
-                )
-            elif identifier == state["baseline_candidate_id"]:
-                score = _score(
-                    runtime,
-                    candidate_id=identifier,
-                    baseline_metrics=baseline_metrics,
-                    candidate_metrics=baseline_metrics,
-                    validation=_registry_validation(runtime, identifier),
-                    clock=state["baseline_clock"],
-                    proposal=None,
-                    provisional_cosim=False,
-                )
-            else:
-                continue
+            score = _recompute_exploration_score(
+                runtime,
+                registry,
+                candidate_id=identifier,
+                baseline_metrics=baseline_metrics,
+                provisional_cosim=False,
+                include_proposal=(identifier != state["baseline_candidate_id"]),
+            )
             if score.candidate_id != identifier:
                 raise RuntimeError("fallback Candidate score identity mismatch")
             if (
@@ -1886,6 +3210,8 @@ def _evaluate_final_fallback(
         "final_attempted_candidate_ids": [*attempted, fallback_id],
         "final_validation": _initial_validation(),
         "final_metrics_ref": "",
+        "final_synth_evidence_ref": "",
+        "final_synth_evidence_sha256": "",
         "final_score_ref": "",
         "final_clock": {},
         "decision_ref": decision_ref,
@@ -1926,11 +3252,21 @@ def _final_stage(
     }
     if stage == "synth":
         metrics_ref = result.result_ref if result is not None and result.report is not None else ""
+        synth_evidence_ref, synth_evidence_sha256 = _write_synth_evidence(
+            runtime, result, candidate_id=candidate_id
+        )
         clock = _clock_constraint(
             result.report if result is not None else None,
             runtime.config.minimum_frequency_mhz,
         )
         update["final_metrics_ref"] = metrics_ref
+        update["final_synth_evidence_ref"] = synth_evidence_ref
+        update["final_synth_evidence_sha256"] = synth_evidence_sha256
+        if synth_evidence_ref:
+            event["details"] = {
+                "synth_evidence_ref": synth_evidence_ref,
+                "synth_evidence_sha256": synth_evidence_sha256,
+            }
         update["final_clock"] = clock
         update["last_tool_ok"] = bool(
             result is not None and result.ok and metrics_ref and clock["passed"]
@@ -1983,8 +3319,18 @@ def _final_cosim(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeState
     if candidate_id is None:
         raise RuntimeError("final validation has no selected attempt")
     validation = update["final_validation"]
-    baseline_metrics = _read_report(runtime.run_root, state["baseline_metrics_ref"])
-    final_metrics = _read_report(runtime.run_root, state["final_metrics_ref"])
+    baseline_metrics = _completed_synth_report(
+        runtime,
+        state["baseline_metrics_ref"],
+        candidate_id=state["baseline_candidate_id"],
+        validation_scope="exploration",
+    )
+    final_metrics = _completed_synth_report(
+        runtime,
+        state["final_metrics_ref"],
+        candidate_id=candidate_id,
+        validation_scope="final",
+    )
     score = _score(
         runtime,
         candidate_id=candidate_id,
@@ -2020,6 +3366,10 @@ def _final_cosim(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeState
             "status": "FINAL_VERIFIED",
             "final_validation": validation,
             "final_metrics_ref": state["final_metrics_ref"],
+            "final_synth_evidence_ref": state.get("final_synth_evidence_ref"),
+            "final_synth_evidence_sha256": state.get(
+                "final_synth_evidence_sha256"
+            ),
             "final_score_ref": score_ref,
         },
     )
@@ -2140,9 +3490,38 @@ def _render_team_report(
             )
             + " |"
         )
+    planner_contract = result.get("planner_contract")
+    a1_lines: list[str] = []
+    if isinstance(planner_contract, Mapping):
+        a1_lines = [
+            "## Planner 与综合证据链",
+            "",
+            "- Planner contract: `"
+            + str(planner_contract.get("action_schema", "-"))
+            + "`",
+            f"- Last Planner action: `{result.get('planner_action_id') or '-'}`",
+            f"- Planner input: `{result.get('planner_input_ref') or '-'}`",
+            f"- Planner output: `{result.get('planner_output_ref') or '-'}`",
+            "- Baseline synth evidence: `"
+            + str(result.get("baseline_synth_evidence_ref") or "-")
+            + "`",
+            "- Best synth evidence: `"
+            + str(result.get("best_synth_evidence_ref") or "-")
+            + "`",
+            "- Final synth evidence: `"
+            + str(result.get("final_synth_evidence_ref") or "-")
+            + "`",
+            "- 解释口径：top-level transaction interval 是整次调用间隔，"
+            "不能当作 loop PipelineII。",
+            "",
+        ]
     return "\n".join(
         [
-            "# V3-A0 原型团队复盘报告",
+            (
+                "# V3-A1 原型团队复盘报告"
+                if isinstance(planner_contract, Mapping)
+                else "# V3-A0 原型团队复盘报告"
+            ),
             "",
             f"- Task: `{runtime.task.id}`",
             f"- Status: `{result.get('status', 'FAILED')}`",
@@ -2174,6 +3553,7 @@ def _render_team_report(
             f"- Final metrics: `{result.get('final_metrics_ref') or '-'}`",
             f"- Final score: `{result.get('final_score_ref') or '-'}`",
             "",
+            *a1_lines,
             "## 数据与控制流",
             "",
             *rows,
@@ -2206,6 +3586,7 @@ def _write_report(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeStat
     ).snapshot()
     result: dict[str, object] = {
         "schema_version": 1,
+        "result_schema": TERMINAL_RESULT_SCHEMA,
         "workflow": WORKFLOW_NAME,
         "prototype": True,
         "backend": {
@@ -2249,9 +3630,40 @@ def _write_report(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeStat
         ),
         "registry_revision": int(state.get("registry_revision", 0)),
         "decision_ref": state.get("decision_ref"),
+        "planner_contract": {
+            "input_schema": PLANNER_INPUT_SCHEMA,
+            "output_schema": PLANNER_OUTPUT_SCHEMA,
+            "action_schema": PLANNER_ACTION_SCHEMA,
+            "mode": "scripted_deterministic_adapter",
+        },
+        "planner_action_id": state.get("planner_action_id"),
+        "planner_input_ref": state.get("planner_input_ref"),
+        "planner_input_sha256": state.get("planner_input_sha256"),
+        "planner_output_ref": state.get("planner_output_ref"),
+        "planner_output_sha256": state.get("planner_output_sha256"),
         "baseline_metrics_ref": state.get("baseline_metrics_ref"),
         "candidate_metrics_ref": state.get("candidate_metrics_ref"),
         "final_metrics_ref": state.get("final_metrics_ref"),
+        "baseline_synth_evidence_ref": state.get(
+            "baseline_synth_evidence_ref"
+        ),
+        "baseline_synth_evidence_sha256": state.get(
+            "baseline_synth_evidence_sha256"
+        ),
+        "best_synth_evidence_ref": state.get("best_synth_evidence_ref"),
+        "best_synth_evidence_sha256": state.get(
+            "best_synth_evidence_sha256"
+        ),
+        "candidate_synth_evidence_ref": state.get(
+            "candidate_synth_evidence_ref"
+        ),
+        "candidate_synth_evidence_sha256": state.get(
+            "candidate_synth_evidence_sha256"
+        ),
+        "final_synth_evidence_ref": state.get("final_synth_evidence_ref"),
+        "final_synth_evidence_sha256": state.get(
+            "final_synth_evidence_sha256"
+        ),
         "baseline_score_ref": state.get("baseline_score_ref"),
         "candidate_score_ref": state.get("candidate_score_ref"),
         "final_score_ref": state.get("final_score_ref"),
@@ -2263,7 +3675,8 @@ def _write_report(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeStat
         "budget": budget,
         "node_events": node_events,
         "prototype_limits": [
-            "deterministic scripted proposal sequence; no autonomous LLM planner yet",
+            "versioned deterministic Planner boundary; no autonomous LLM planner yet",
+            "loop-level synth evidence is explicit; unavailable evidence is never fabricated",
             "Candidate decisions use recoverable compare-and-set operation journals",
             "final fallback is best-effort and runs only when one fresh closure remains affordable",
             "A1 risk-gated provisional Candidates are not enabled",
@@ -2274,6 +3687,9 @@ def _write_report(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeStat
             "budget_ledger": "budget_ledger.jsonl",
             "trace": "trace.jsonl",
             "candidate_operations": "control/candidate_operations",
+            "planner_inputs": "planner/inputs",
+            "planner_outputs": "planner/outputs",
+            "synth_evidence": "evidence/synth",
             "package_manifest": "control/package_manifest.json",
             "team_report": "v3_team_report.md",
             "result": "v3_prototype_result.json",
@@ -2473,7 +3889,7 @@ def run_v3_prototype(
     max_no_improvement_rounds: int = 2,
     max_final_attempts: int = 1,
 ) -> dict[str, object]:
-    """Run the checkpointed V3-A0 graph and return its durable result.
+    """Run the checkpointed V3-A1 graph and return its durable result.
 
     A single ``PatchProposal`` preserves the published prototype behavior.
     Passing an ordered sequence enables deterministic multi-round hardening.
@@ -2527,8 +3943,22 @@ def run_v3_prototype(
         ):
             raise RuntimeError(
                 "V3_CHECKPOINT_MIGRATION_REQUIRED: an unfinished pre-hardening "
-                "checkpoint cannot be resumed by checkpoint schema v2"
+                "checkpoint cannot be resumed by checkpoint schema v3"
             )
+        if graph_schema_path.exists():
+            existing_graph_schema = _read_json_object(graph_schema_path)
+            if existing_graph_schema != _checkpoint_schema_snapshot():
+                raise RuntimeError(
+                    "V3_CHECKPOINT_MIGRATION_REQUIRED: an unfinished checkpoint "
+                    "does not use checkpoint schema v3"
+                )
+            registry_path = root / "candidate_registry.json"
+            if registry_path.is_file():
+                registry = CandidateManager(root, task).load_registry()
+                _validate_candidate_registry_sources(runtime, registry)
+                _verify_synth_evidence_bindings(runtime, registry)
+            if (root / "budget_ledger.jsonl").is_file():
+                _validate_completed_tool_actions(runtime)
         _write_once_or_verify(graph_schema_path, _checkpoint_schema_snapshot())
         with SqliteSaver.from_conn_string(str(checkpoint_path)) as checkpointer:
             graph = build_v3_prototype_graph(runtime, checkpointer)

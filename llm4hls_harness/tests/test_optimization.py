@@ -57,6 +57,83 @@ class OptimizationSelectorTests(unittest.TestCase):
         self.assertEqual(decision.stop_reason, None)
         self.assertTrue(decision.metrics_digest)
 
+    def test_top_interval_is_not_treated_as_loop_ii_when_loop_is_already_ii_one(self) -> None:
+        metrics = self.metrics(interval=1025, latency=1027)
+        metrics["loop_evidence"] = {
+            "loops": [
+                {
+                    "name": "VITIS_LOOP_7_1",
+                    "trip_count": 1024,
+                    "latency_cycles": 1025,
+                    "pipeline_ii": 1,
+                }
+            ]
+        }
+
+        decision = select_optimization(
+            metrics,
+            source="for (int i = 0; i < 1024; ++i) sum += a[i] * b[i];",
+            attempted=(),
+            failures=(),
+        )
+
+        self.assertEqual(decision.optimization_class, "LOOP_UNROLL")
+        self.assertNotEqual(decision.optimization_class, "LOOP_PIPELINE")
+        self.assertIn("already PipelineII=1", decision.bottleneck)
+
+    def test_reported_loop_ii_above_one_selects_pipeline(self) -> None:
+        metrics = self.metrics(interval=512, latency=513)
+        metrics["loop_evidence"] = {
+            "loops": [
+                {
+                    "name": "VITIS_LOOP_9_1",
+                    "trip_count": 256,
+                    "latency_cycles": 513,
+                    "pipeline_ii": 2,
+                }
+            ]
+        }
+
+        decision = select_optimization(
+            metrics,
+            source="for (int i = 0; i < 256; ++i) c[i] = a[i] + b[i];",
+            attempted=(),
+            failures=(),
+        )
+
+        self.assertEqual(decision.optimization_class, "LOOP_PIPELINE")
+        self.assertIn("reported PipelineII 2", decision.bottleneck)
+
+    def test_inner_loop_ii_bottleneck_precedes_outer_loop_unroll(self) -> None:
+        metrics = self.metrics(interval=1000, latency=10000)
+        metrics["loop_evidence"] = {
+            "loops": [
+                {
+                    "name": "outer_loop",
+                    "trip_count": 1000,
+                    "latency_cycles": 10000,
+                    "pipeline_ii": 1,
+                },
+                {
+                    "name": "inner_loop",
+                    "trip_count": 25,
+                    "latency_cycles": 100,
+                    "pipeline_ii": 4,
+                },
+            ]
+        }
+
+        decision = select_optimization(
+            metrics,
+            source="nested loops",
+            attempted=(),
+            failures=(),
+        )
+
+        self.assertEqual(decision.optimization_class, "LOOP_PIPELINE")
+        self.assertIn("inner_loop", decision.bottleneck)
+        self.assertIn("reported PipelineII 4", decision.bottleneck)
+
     def test_high_latency_after_pipeline_selects_unroll(self) -> None:
         source = (
             "for (int i = 0; i < 256; ++i) {\n"

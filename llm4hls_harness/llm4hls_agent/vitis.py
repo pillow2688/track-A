@@ -15,6 +15,7 @@ from typing import Protocol
 
 from .task import PublicTask
 from .tools import BackendResult, ToolConfig
+from .v3_evidence import parse_csynth_loop_evidence
 
 
 _RESOURCES = ("LUT", "FF", "DSP", "BRAM_18K", "URAM")
@@ -79,6 +80,7 @@ def parse_synth_report(path: str | Path) -> dict[str, object]:
         )
         for name in _RESOURCES
     }
+    loop_evidence = parse_csynth_loop_evidence(path)
     return {
         "estimated_clock_period_ns": estimated_clock,
         "latency": {
@@ -90,6 +92,7 @@ def parse_synth_report(path: str | Path) -> dict[str, object]:
             "min": latency_value("Interval-min"),
             "max": latency_value("Interval-max"),
         },
+        "loop_evidence": loop_evidence,
         "resources": resources,
         "available_resources": available,
         "utilization_percent": utilization,
@@ -236,7 +239,7 @@ class VitisBackend:
     def fingerprint(self) -> str:
         """Stable cache identity; bump when command/report semantics change."""
 
-        return "llm4hls_agent.vitis.VitisBackend:v0.4"
+        return "llm4hls_agent.vitis.VitisBackend:v0.5"
 
     def run(
         self,
