@@ -21,6 +21,7 @@ from typing import Mapping, Protocol
 from .budget import BudgetError, BudgetExceeded, BudgetLedger, BudgetLedgerError
 from .candidate import CandidateManager
 from .task import PublicTask
+from .top_interface_guard import TopInterfaceGuard, TopInterfaceGuardResult
 from .tools import ToolBackend
 from .validation import validate_candidate
 from .workflow import (
@@ -40,6 +41,15 @@ class V1Error(RuntimeError):
 
 class PatchValidationError(V1Error, ValueError):
     """Raised when a model patch violates the constrained patch contract."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        interface_guard: TopInterfaceGuardResult | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.interface_guard = interface_guard
 
 
 class RepairProviderError(V1Error):
@@ -274,6 +284,7 @@ class PatchApplication:
     additions: int
     deletions: int
     hunks: int
+    interface_guard: TopInterfaceGuardResult | None = None
 
 
 @dataclass(frozen=True)
@@ -503,6 +514,7 @@ def apply_unified_diff(
     *,
     kernel_name: str,
     limits: PatchLimits | None = None,
+    task: PublicTask | None = None,
 ) -> PatchApplication:
     """Strictly parse and apply a one-file unified diff.
 
@@ -603,6 +615,22 @@ def apply_unified_diff(
         raise PatchValidationError("patch does not change the kernel")
     if not patched_bytes.strip():
         raise PatchValidationError("patch would produce an empty kernel")
+    guard_result = None
+    if task is not None:
+        if task.kernel_name != kernel_name:
+            raise PatchValidationError(
+                "top interface guard task/kernel binding does not match"
+            )
+        guard_result = TopInterfaceGuard.from_task(task).check(
+            patched_bytes,
+            changed_files=(kernel_name,),
+        )
+        if not guard_result.allowed:
+            raise PatchValidationError(
+                "top interface guard rejected patch: "
+                + guard_result.failure_summary(),
+                interface_guard=guard_result,
+            )
     return PatchApplication(
         kernel_name=kernel_name,
         original_sha256=_sha256(source_bytes),
@@ -611,6 +639,7 @@ def apply_unified_diff(
         additions=additions,
         deletions=deletions,
         hunks=len(hunks),
+        interface_guard=guard_result,
     )
 
 
@@ -888,13 +917,18 @@ def _materialize_candidate(
         application=application,
         kind="repair",
         metadata={
-        "diagnostic_ref": f"diagnostics/{diagnostic.candidate_id}.json",
-        "llm_ref": proposal_ref,
-        "provider": proposal.provider,
-        "model": proposal.model,
-        "revision": proposal.revision,
-        "input_tokens": proposal.input_tokens,
-        "output_tokens": proposal.output_tokens,
+            "diagnostic_ref": f"diagnostics/{diagnostic.candidate_id}.json",
+            "llm_ref": proposal_ref,
+            "provider": proposal.provider,
+            "model": proposal.model,
+            "revision": proposal.revision,
+            "input_tokens": proposal.input_tokens,
+            "output_tokens": proposal.output_tokens,
+            "interface_guard": (
+                application.interface_guard.to_dict()
+                if application.interface_guard is not None
+                else None
+            ),
         },
     )
     return materialized.candidate_id, materialized.record
@@ -1066,6 +1100,7 @@ def run_v1(
             normalized_patch,
             kernel_name=task.kernel_name,
             limits=patch_limits,
+            task=task,
         )
     except PatchValidationError as exc:
         result = {
@@ -1077,6 +1112,11 @@ def run_v1(
             "diagnostic": diagnostic.to_dict(),
             "diagnostic_ref": diagnostic_ref,
             "patch_error": str(exc),
+            "interface_guard": (
+                exc.interface_guard.to_dict()
+                if exc.interface_guard is not None
+                else None
+            ),
             "patch": proposal.to_dict()
             | {
                 "normalization_applied": normalized_patch != proposal.patch,
@@ -1159,6 +1199,11 @@ def run_v1(
             "hunks": application.hunks,
             "original_sha256": application.original_sha256,
             "patched_sha256": application.patched_sha256,
+            "interface_guard": (
+                application.interface_guard.to_dict()
+                if application.interface_guard is not None
+                else None
+            ),
         },
         "candidate_id": candidate_id,
         "candidate": candidate_record,

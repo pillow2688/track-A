@@ -1352,6 +1352,7 @@ def run_v2_rejection(
         normalized,
         kernel_name=task.kernel_name,
         limits=patch_limits,
+        task=task,
     )
     manager = CandidateManager(run_root, task)
     registry = manager.load_registry()
@@ -1385,6 +1386,11 @@ def run_v2_rejection(
             "model": None,
             "fallback": "NOT_APPLICABLE",
             "optimization_class": "SAFETY_REGRESSION",
+            "interface_guard": (
+                application.interface_guard.to_dict()
+                if application.interface_guard is not None
+                else None
+            ),
         },
     )
     candidate_id = materialized.candidate_id
@@ -1850,6 +1856,7 @@ def run_v2(
                     normalized_patch,
                     kernel_name=task.kernel_name,
                     limits=optimization_config.patch_limits,
+                    task=task,
                 )
                 stored_source = stored_source_path.read_bytes()
             except (OSError, UnicodeDecodeError, PatchValidationError) as exc:
@@ -2113,6 +2120,7 @@ def run_v2(
                         rejected_patch,
                         kernel_name=task.kernel_name,
                         limits=optimization_config.patch_limits,
+                        task=task,
                     )
                 except PatchValidationError:
                     pass
@@ -2247,10 +2255,16 @@ def run_v2(
                     normalized,
                     kernel_name=task.kernel_name,
                     limits=optimization_config.patch_limits,
+                    task=task,
                 )
             except PatchValidationError as exc:
                 round_record["decision"] = "PATCH_REJECTED"
                 round_record["error"] = str(exc)
+                round_record["interface_guard"] = (
+                    exc.interface_guard.to_dict()
+                    if exc.interface_guard is not None
+                    else None
+                )
                 failures.append((decision.optimization_class, decision.metrics_digest))
                 no_improvement += 1
             else:
@@ -2274,6 +2288,11 @@ def run_v2(
                             "input_tokens": proposal.input_tokens,
                             "output_tokens": proposal.output_tokens,
                             "cached_input_tokens": proposal.cached_input_tokens,
+                            "interface_guard": (
+                                application.interface_guard.to_dict()
+                                if application.interface_guard is not None
+                                else None
+                            ),
                         },
                     )
                 candidate_id = materialized.candidate_id

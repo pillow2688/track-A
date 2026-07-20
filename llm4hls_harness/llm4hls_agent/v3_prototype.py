@@ -2051,6 +2051,7 @@ def _candidate_source(
             patch_text,
             kernel_name=runtime.task.kernel_name,
             limits=runtime.patch_limits,
+            task=runtime.task,
         )
     except PatchValidationError as exc:
         raise RuntimeError(
@@ -3361,6 +3362,7 @@ def _materialize_candidate(
             applied_patch,
             kernel_name=runtime.task.kernel_name,
             limits=runtime.patch_limits,
+            task=runtime.task,
         )
     except PatchValidationError as exc:
         reason = "PATCH_POLICY_REJECTED"
@@ -3373,6 +3375,13 @@ def _materialize_candidate(
             why=str(exc),
             outcome=reason,
             round_index=round_index,
+            details={
+                "interface_guard": (
+                    exc.interface_guard.to_dict()
+                    if exc.interface_guard is not None
+                    else None
+                )
+            },
         )
         return {
             "active_candidate_id": None,
@@ -3476,6 +3485,11 @@ def _materialize_candidate(
             "expected_effect": proposal.expected_effect,
             "risk": proposal.risk,
             "required_validation": list(proposal.required_validation),
+            "interface_guard": (
+                application.interface_guard.to_dict()
+                if application.interface_guard is not None
+                else None
+            ),
             "input_tokens": proposal.input_tokens,
             "output_tokens": proposal.output_tokens,
             **(
@@ -3523,6 +3537,11 @@ def _materialize_candidate(
             "planner_patch_sha256": planner_patch_sha256,
             "applied_patch_sha256": patch_sha256,
             "patch_metadata_normalized": applied_patch != proposal.patch,
+            "interface_guard": (
+                application.interface_guard.to_dict()
+                if application.interface_guard is not None
+                else None
+            ),
         },
     )
     return {
@@ -3703,10 +3722,11 @@ def _worst_latency(
 def _fast_experiment_risk(
     runtime: _Runtime, proposal: PatchProposal
 ) -> dict[str, object]:
-    added = "\n".join(
+    changed = "\n".join(
         line[1:]
         for line in proposal.patch.splitlines()
-        if line.startswith("+") and not line.startswith("+++")
+        if line.startswith(("+", "-"))
+        and not line.startswith(("+++", "---"))
     ).casefold()
     bundle = {
         item.strip().upper()
@@ -3738,7 +3758,7 @@ def _fast_experiment_risk(
         "ap_ufixed<": "BITWIDTH_CHANGE",
     }
     for token, reason in structural_patterns.items():
-        if token in added and reason not in reasons:
+        if token in changed and reason not in reasons:
             reasons.append(reason)
     if declared_level == "HIGH":
         reasons.append("PLANNER_DECLARED_HIGH_RISK")
