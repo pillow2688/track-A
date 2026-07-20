@@ -2,15 +2,33 @@
 
 - 更新时间：2026-07-20
 - 当前代码分支：`feat/v3c-task-aware-router`
-- Agent 功能代码基线：`d56a2ed`（V3-C task-aware routing）
-- 报告与统一测试入口版本：查看 `git log -1 -- doc/docs/2026-07-20-current-system-and-team-progress.md`
+- 当前代码基线：`d1cf869`（V3-C task-aware routing + LLM Patch 唯一上下文重定位）
+- 当前快速回归：`291 tests PASS`
+- 报告版本：查看 `git log -1 -- doc/docs/2026-07-20-current-system-and-team-progress.md`
 - 发布状态：当前仅在本地功能分支提交，尚未合并或推送到远端
 - 面向读者：第一次接触项目的组员、需要复盘实验的开发者、论文与演示负责人
 - 文档定位：当前事实入口。历史设计文档用于解释“为什么这样设计”，本报告说明“代码现在实际能做什么”
 
+## 0. 新成员先按这个顺序看
+
+如果你只有 10 分钟，不需要先读历史聊天或几百行设计规范：
+
+1. 看第 1 节，知道项目现在做到哪里；
+2. 看第 2.1、2.2 节，把概念职责映射到真实代码并认清常用术语；
+3. 看第 3.0～3.2 节，理解真实系统边界、纵向流程和横向组件；
+4. 看第 8.1、8.3 节，各看一个真实成功和真实失败；
+5. 看第 10、14 节，知道当前成绩和唯一最高优先级；
+6. 只有准备改代码时，再查第 4、5 节的入口和文件地图。
+
+加入开发前必须记住三条：
+
+- 我们优化的是 **HLS kernel**，不是修改 testbench 来让测试通过；
+- LLM 只负责提出假设和 Patch，预算、工具、晋升和 final 都由程序控制；
+- `tests PASS` 只说明程序逻辑没回归，只有真实 LLM + 真实 Vitis + fresh final 才是比赛实验结果。
+
 ## 1. 先看结论
 
-我们正在做一个自动修改 HLS C++ 的程序。它收到一道题后，会先判断代码哪里有问题，再让大模型提出一个 Patch，最后调用 Vitis 验证修改是否正确、能否综合、是否更快。
+我们正在做一个自动修改 HLS C++ 的程序。它收到一道题后，先让真实工具产生 baseline 事实；PhaseRouter 只负责选择任务模式，Evidence Extractor 压缩失败或性能信息，再由大模型诊断具体问题并提出 Patch，最后调用 Vitis 验证修改是否正确、能否综合、是否更快。
 
 截至 2026-07-20，最准确的项目状态是：
 
@@ -18,12 +36,13 @@
 2. V3-A 已把工具节点和 scripted Planner 流程迁移到可 checkpoint 的 LangGraph；V3-B 进一步加入真实、不可重放 LLM 请求的 STARTED/COMPLETED action 记录与恢复边界。
 3. V3-B 已接入真实 OpenAI-compatible Planner，并在官方 `dotProduct_optimize` 上得到一次真实成功结果：Synth worst latency 从 `1027` 降到 `38 cycles`，最终 CSim、Synth、CoSim 全部通过。
 4. V3-C 已加入任务分诊能力，能够区分功能修复、综合修复、RTL 结构修复和性能优化。
-5. V3-C 当前通过了完整单元测试和三道官方题目的确定性编排烟测，但还没有用真实 LLM + Vitis 完成 `REPAIR`、`SYNTH_FIX`、`STRUCTURAL_FIX` 三种模式的专项验收。
-6. 当前最大的工作重点已经不是继续扩建框架，而是补真实实验、模型对比、提交材料和复现环境。
+5. V3-C 已对官方 `projection_bugfix` 做了 3 次真实 REPAIR 尝试：真实 Vitis 正确暴露 baseline CSim 失败，PhaseRouter 正确进入 REPAIR，真实 `deepseek-v4-pro` 三次都诊断并修对了漏掉的 `z2 / 3`；但旧 V3 Patch 落地因 diff 行号偏移而在 Candidate 创建前拒绝，三次都未进入 Synth/CoSim。
+6. `d1cf869` 已把现有“唯一、逐字 old-hunk 重定位”能力接入 V3，并覆盖同一官方 projection 的 `@@ -12 → -14` 错位模式；当前 291 项快速测试通过，但修复后尚未重新取得真实 fresh final 证据。
+7. 当前最大的工作重点不是继续扩建框架，而是完成 V3-C 三种非 optimize mode 的真实验收、模型对比、提交材料和复现环境。
 
 一句话概括：
 
-> 系统骨架已经能跑，优化路径已经出现真实强结果；现在需要证明它不只会做 dotProduct 优化，也能稳定修复其他类型的官方任务。
+> 系统骨架、真实 LLM 接口和真实优化路径已经打通；当前要把“模型会提出正确修复”推进成“修复 Candidate 经过真实 Vitis fresh final 全部通过”。
 
 ## 2. 用最通俗的话理解整个系统
 
@@ -33,7 +52,7 @@
 |---|---|---|
 | PhaseRouter | 分诊台 | 判断病人应该去功能修复、综合修复、结构修复还是优化科 |
 | LLM Planner | 提方案的工程师 | 根据代码和有限证据提出一个修改假设与 Patch |
-| Patch Validator | 安检员 | 禁止修改 header、testbench 和其他文件，并限制 Patch 格式与大小 |
+| Patch Validator | 安检员 | 禁止修改 header/testbench；允许把行号不准但 old-hunk 唯一逐字匹配的 Patch 重定位到正确位置 |
 | Candidate Manager | 样品仓库 | 保存 baseline、Candidate、父子关系，以及 Graph 写入的 best 状态 |
 | CSim | 软件功能检查 | 检查 C/C++ 输出在公开测试上是否正确 |
 | Synth | 硬件生成和体检 | 检查能否生成 RTL，并给出 latency、II、时钟和资源 |
@@ -50,7 +69,76 @@
 - 大模型不能决定 Candidate 晋升；
 - 最终结果只由程序根据真实工具证据确定。
 
+### 2.1 设计图中的名字，代码里不一定是同名类
+
+历史讨论中经常出现 `Supervisor`、`Phase Controller`、`Risk Analyzer`、`Tool Router`。这些是职责名称，不代表仓库中已经各自存在一个独立 Agent 或 class。当前真实映射如下：
+
+| 概念职责 | 当前真实实现 | 成熟度 |
+|---|---|---|
+| Supervisor / 总控 | `build_v3_prototype_graph()`、条件边和若干纯路由函数 | 已运行，不是 LLM，也不是独立 class |
+| Phase Controller | `phase_router` Graph 节点 + `v3_phase_router.py` | 已实现四模式确定性路由 |
+| Optimization Planner | 一个 OpenAI-compatible Planner，根据 `mode` 改变目标 | 已实现；不是多个 Agent 对话 |
+| Risk Analyzer | fast-experiment OPTIMIZE 用 `_fast_experiment_risk()` 读取 task/strategy/Patch/Planner risk，再结合 score/budget gate；strict 按 score/PPA gate | 已实现为规则/节点组合，不是独立学习模型 |
+| Budget Controller | `BudgetLedger` + 各预算 gate 节点 | 已实现为硬规则，不由 LLM 决定 |
+| Tool Router | Graph 条件边 + `ToolServer` | 已实现；ToolServer 负责执行/计费，条件边决定下一工具 |
+| Memory | Candidate registry、失败摘要、最近策略、Artifact 引用 | 已实现 run 内记忆；fast history 显式截断，strict 主要由轮数限制；没有长期 RAG Memory |
+| Reporter | `v3_prototype.py` 内的 `write_report` | 已实现，但尚未独立成模块 |
+
+明确不存在的内容：
+
+- 没有 RL、Bandit、beam search；
+- 没有多个 LLM Agent 相互讨论；
+- 没有让 LLM 直接执行 shell/Vitis；
+- hidden testbench/reference kernel 不进入模型上下文；API key 只用于发往配置 provider 的 Authorization header，不进入 Prompt 或持久化 request audit；
+- 没有一个万能“智能 Router”自动替代所有确定性规则。
+
+### 2.2 七个必须先分清的术语
+
+| 术语 | 在本项目中的含义 |
+|---|---|
+| baseline | 题目最初给出的 kernel 及其真实验证结果，是修复或优化的起点 |
+| Candidate | 从某个父版本应用一份通过安全校验的 Patch 后，物化出的不可变代码版本 |
+| incumbent / best | 当前探索中已被程序接受、下一轮优先从它继续修改的最好 Candidate |
+| mode | PhaseRouter 选择的当前任务目标：`REPAIR`、`SYNTH_FIX`、`STRUCTURAL_FIX` 或 `OPTIMIZE` |
+| validation profile | 验证策略档位；当前有保守的 `strict` 和节省探索 CoSim 的 `fast-experiment` |
+| exploration | final 之前的候选搜索阶段，允许快速拒绝无效 Candidate，并按风险决定验证深度 |
+| fresh final | 对最终选中代码重新发起、不复用探索结论的 CSim、Synth、CoSim 出厂验证 |
+
 ## 3. 一道题实际怎样流动
+
+### 3.0 当前真实系统边界
+
+下面不是未来设想，而是当前代码的真实依赖关系：
+
+```text
+公开 Task Package
+  task.toml + description.md + kernel.cpp + headers + public TB
+                         │
+                         ▼
+                 v3_prototype_cli.py
+                         │
+                         ▼
+              LangGraph（v3_prototype.py）
+                │                    │
+                │                    ├── OpenAI-compatible Planner API
+                │                    │      只收受限上下文，返回 JSON + Patch
+                │                    │
+                │                    └── ToolServer
+                │                          ├── --backend vitis → VitisBackend → Vitis 2025.2
+                │                          └── 默认/demo → DeterministicPrototypeBackend
+                │                                  只证明编排，不能当真实工具结果
+                ▼
+运行目录 runs/<run-id>/
+  Candidate 源码、Planner 输入输出、工具结果、Evidence、Budget、Trace、Checkpoint、Final Report
+```
+
+系统边界之外：
+
+```text
+hidden testbench / hidden grader / reference solution
+```
+
+它们不进入 Planner Prompt，也不参与 Agent 内部搜索。正式评分由外部 grader 完成。
 
 ### 3.1 纵向主流程
 
@@ -82,6 +170,24 @@ Patch 安全检查
 写入机器结果和团队报告
 ```
 
+在代码中，这条主流程不是一个巨大的 `while`，而是 26 个动作级节点。新人不需要逐个背，先按六组理解：
+
+| 节点组 | 实际节点 | 作用 |
+|---|---|---|
+| 初始化 | `initialize` | 固定任务、baseline、预算、run identity 和 checkpoint 边界 |
+| Baseline | `baseline_csim`、`baseline_synth`、`baseline_cosim` | 取得分诊与性能基线；失败时可提前进入 PhaseRouter |
+| 分诊与预算 | `phase_router`、`evaluate_task_round_budget`、`evaluate_round_budget` | 选择 mode，并确认本轮与 final reserve 仍可支付 |
+| Planner 与 Candidate | `plan_candidate`、`materialize_candidate`、`record_rejected_proposal` | 调模型、规范化 Patch、创建不可变 Candidate，或记录未落地提案 |
+| Candidate 验证与决策 | `candidate_csim`、`candidate_synth`、`candidate_score_gate`、`candidate_cosim_budget_gate`、`candidate_cosim`、`promote_*`、`reject_candidate`、`advance_round` | 真实验证、收益/风险门控、晋升/拒绝和多轮继续 |
+| Final 与报告 | `select_final_attempt`、`evaluate_final_budget`、`final_csim`、`final_synth`、`final_cosim`、`evaluate_final_fallback`、`write_report` | 对 best 做 fresh closure；次数、预算和 eligible Candidate 允许时才 fallback，最后封存报告 |
+
+这些节点有两个重要性质：
+
+1. 一个 LLM 或 Vitis 副作用只属于一个节点，便于 checkpoint 后恢复；
+2. Graph State 主要保存小字段和 Artifact 引用，不把完整代码、日志和 Prompt 塞进 SQLite。
+
+Final fallback 也有边界：OPTIMIZE 只有在 `max_final_attempts`、预算和 eligible Candidate 同时允许时才 fallback；候选必须满足当前 profile 的探索验证要求——fast 普通任务至少通过 CSim+Synth，strict 或 required-cosim 路径还要求 CoSim。fallback 选中历史 Candidate 后仍必须重新跑完整的 fresh CSim/Synth/CoSim。REPAIR、SYNTH_FIX、STRUCTURAL_FIX 不能回退到原本就有错误的 baseline，修复 Candidate final 失败会明确结束。
+
 PhaseRouter 的四个出口如下：
 
 ```text
@@ -107,26 +213,37 @@ Baseline CSim、Synth PASS，但需要的 CoSim FAIL
 | `REPAIR` | 修复功能、编译或运行结果 | CSim → Synth → 题目要求时 CoSim |
 | `SYNTH_FIX` | 修复不可综合、时钟或资源问题 | CSim → Synth |
 | `STRUCTURAL_FIX` | 修复 deadlock、stream、FIFO、RTL mismatch | CSim → CoSim |
-| `OPTIMIZE` | 在正确前提下降低 latency/PPA | CSim → Synth → 风险/收益 CoSim gate |
+| `OPTIMIZE` | 在正确前提下降低 latency/PPA proxy | CSim → Synth → 风险/收益 CoSim gate |
 
 无论探索阶段走哪个模式，最终提交对象都必须重新运行完整的 CSim、Synth、CoSim。
+
+当前保留两种 validation profile：
+
+| Profile | Baseline | Optimize Candidate | 适用场景 |
+|---|---|---|---|
+| `strict` | CSim PASS 后跑 Synth；Synth PASS 后跑 baseline CoSim；任一失败都会提前进入 PhaseRouter | 使用完整评分/CoSim gate，策略更保守 | 回归、保守验证和兼容旧实验 |
+| `fast-experiment` | 普通任务默认 CSim + Synth；`requires_cosim=true` 才跑 baseline CoSim | 先 CSim + Synth；无严格 latency 提升直接拒绝；低风险提升可把 CoSim 推迟到 final，高风险提升才探索 CoSim | 有限 Credit 下的真实多轮搜索 |
+
+`fast-experiment` 省略的只是部分**探索 CoSim**，不是最终正确性。Final 仍固定为 fresh CSim → Synth → CoSim。
+
+另外，当前三种修复模式通过对应 correctness gate 后会直接进入 final；系统还没有实现“修复成功后自动切换到 OPTIMIZE 再继续提速”。
 
 ### 3.2 横向公共组件
 
 “横向”指它们不只属于某一步，而是从开始到结束一直保护主流程。
 
-| 横向组件 | 它怎样影响纵向流程 |
-|---|---|
-| Task Loader | 限制系统只能读取公开 kernel、header、description 和公开 testbench |
-| Budget Ledger | 每次模型、CSim、Synth、CoSim 前判断是否还有预算 |
-| Candidate Manager | 负责代码版本的创建、保存和父子关系；晋升/回退由 Graph 决策节点决定 |
-| Patch Validator | 在创建 Candidate 前拒绝越权 Patch |
-| ToolServer | 所有 Vitis 调用必须经过它，统一计费、缓存和审计 |
-| Evidence Extractor | 把大段工具报告压缩成有限、结构化事实供 Planner 使用 |
-| Scoring/Comparator | Synth 后判断优化 Candidate 是否严格优于当前 best |
-| CoSim gate | 避免给没有性能提升或低价值的 Candidate 浪费 20 Credits |
-| Checkpoint | 每个 LangGraph 节点结束后保存状态，支持恢复 |
-| Report/Manifest | 最后把代码、模型、工具、预算和决策串成可复盘证据 |
+| 横向组件 | 输入/触发 | 它怎样影响纵向流程 | 它无权做什么 |
+|---|---|---|---|
+| Task Loader | task 目录 | 只加载公开 kernel、headers、description 和 public TB，固定任务指纹 | 不能读取 hidden/reference 给 Planner |
+| Budget gate + Ledger | 每轮规划及每次 LLM/工具动作前后 | Graph gate 先判断本轮和 final reserve 是否整体付得起；Ledger 再以 STARTED、COMPLETED/AMBIGUOUS 记录并硬限制每个真实动作的 Token/Credit/次数/runtime | 不能生成 Patch 或提高预算上限 |
+| Candidate Manager | 通过校验的 Patch + parent | 原子保存源码、Patch、hash 和父子关系 | 不决定 promote、reject 或 final |
+| Patch Validator | Planner unified diff + parent source | 校验路径/大小并做唯一精确上下文重定位 | 不接受歧义修改，也不判断性能 |
+| ToolServer | Graph 指定的 stage + Candidate | 统一调用、计费、缓存、保存 action 结果 | 不自己选择下一工具或 final |
+| Evidence Extractor | ToolResult 和有限日志 | 压缩成 CSim/Synth/CoSim failure 或 Synth 性能事实 | 不虚构缺失的 II、latency 或根因 |
+| Scoring/Comparator | Candidate Synth/验证结果 | 判断 optimize Candidate 是否严格优于 incumbent | 不覆盖 correctness gate |
+| CoSim gate | 收益、risk、task、final reserve | 决定探索 CoSim、推迟到 final 或拒绝 | 不允许跳过最终 CoSim |
+| Checkpoint | 每个 Graph step 的小 State | 中断后恢复下一节点，配合 action journal 避免重复副作用 | 不保存完整代码/日志作为真相 |
+| Report/Manifest | 终态 registry、ledger、trace、artifacts | 串起模型、工具、预算、Candidate 和 final 证据 | 不能把失败美化成 PASS |
 
 可以简单理解为：
 
@@ -135,6 +252,80 @@ Baseline CSim、Synth PASS，但需要的 CoSim FAIL
 
 横向组件 = 导航、油表、收费站、仓库、安检和行车记录仪
 ```
+
+### 3.3 三条真实数据流
+
+新成员调试时要区分代码、证据和控制状态，它们不是同一份数据。
+
+#### 代码流
+
+```text
+公开 kernel bytes
+  → candidate_000（不可变 baseline）
+  → Planner Patch
+  → Patch 唯一上下文匹配/安全校验
+  → candidates/candidate_NNN/source/<kernel>.cpp
+  → CSim/Synth/CoSim
+```
+
+Patch 行号只是定位元数据。当前策略允许自动纠正错误行号，但必须满足：目标仍是 kernel、old-hunk 在源码中只有一个逐字匹配、修改大小合法、最终 diff 可完整应用。零匹配或多匹配仍会拒绝。
+
+#### 证据流
+
+```text
+Vitis 原始日志/报告
+  → actions/<action-id>/result.json
+  → Failure Evidence 或 Synth Evidence
+  → 有界 Planner Input
+  → Planner hypothesis + Patch
+  → Candidate 结果与下一轮最近失败摘要
+```
+
+模型不接收完整原始日志或完整对话历史。fast optimize 显式限制为最多 8 个 attempts 和 3 个 failures；task-aware 修复主要发送当前 Failure Evidence，不追加增长式 Candidate 历史；strict optimize 的历史规模目前主要由配置轮数间接限制，尚没有与 fast 相同的显式切片。
+
+#### 控制与审计流
+
+```text
+LangGraph State（当前 mode、best、active、round、Artifact refs）
+  ↔ graph_checkpoints.sqlite
+
+Budget reserve() 写入 STARTED → COMPLETED/AMBIGUOUS → reconcile
+  → budget_ledger.jsonl
+
+每个节点结果
+  → trace.jsonl + candidate_registry.json + v3_prototype_result.json
+```
+
+所以某一步失败时，应先问：“代码没生成、工具失败，还是只是 Graph/报告状态错误？”不要只看终端最后一行。
+
+### 3.4 提交前的目标整体架构
+
+目标不是再堆新的 Agent，而是把当前同一套架构补齐真实覆盖和可复现性：
+
+```text
+Reference-compatible Task Input
+             ↓
+一张 task-aware、budget-aware、可恢复的 LangGraph
+             ├── 硬控制：Python Phase / Budget / Stop / Final 路由 + 启发式/Planner risk gate
+             ├── 一个 LLM Planner：按 mode 诊断、规划、生成 Patch
+             ├── 受限执行面：Patch → Candidate → ToolServer → Vitis
+             └── 证据面：Evidence / Ledger / Trace / Checkpoint / Report
+             ↓
+经过 fresh CSim + Synth + CoSim 的最终 kernel
+             ↓
+Docker/唯一命令/实验矩阵/论文与视频
+```
+
+| 层次 | 当前真实状态 | 提交前目标 | 主要缺口 |
+|---|---|---|---|
+| 任务输入 | 三道官方公开题和少量 fixture | reference-compatible + hidden-like 变体 | 题目覆盖和泛化不足 |
+| 控制面 | 四 mode、预算、checkpoint、final/fallback | 保持现架构，冻结非必要变化 | 三种修复 mode 的真实 final 证据 |
+| 推理面 | DeepSeek 单一 mode-aware Planner 已真实接入 | 至少完成推荐模型可用范围内的公平矩阵 | Qwen 等模型覆盖、重复实验 |
+| 执行面 | Candidate、Patch、ToolServer、Vitis 2025.2 已工作 | 在干净环境稳定复现并控制超时/XSIM 风险 | Docker、环境探测、真实 structural/synth-fix |
+| 评价面 | latency、II、clock、resource 和 public score proxy | 正确性优先，报告可追溯；不冒充 hidden scorer | Power 没有可靠实测，官方最终评分仍可能调整 |
+| 交付面 | 本地 runs 和部分 release/report | 唯一启动命令、脱敏包、实验表、论文、视频 | 冻结、打包和提交 QA |
+
+因此目标架构的“升级”主要发生在证据覆盖、任务覆盖和交付层，不是继续新增 Controller、Multi-Agent、RL 或 RAG。
 
 ## 4. 当前代码从哪里开始看
 
@@ -201,8 +392,8 @@ openai_provider.py   = 真正把请求发给模型
 
 | 文件 | 一句话职责 | 出问题时的典型现象 |
 |---|---|---|
-| [`repair.py`](../../llm4hls_harness/llm4hls_agent/repair.py) | 检查、规范化和应用 unified diff | Patch 越权、hunk 不匹配、改动过大 |
-| [`candidate.py`](../../llm4hls_harness/llm4hls_agent/candidate.py) | 原子创建不可变 Candidate，维护父子关系和验证记录 | Candidate ID、best、回退不一致 |
+| [`repair.py`](../../llm4hls_harness/llm4hls_agent/repair.py) | 检查、规范化和应用 unified diff；唯一逐字 old-hunk 可修正错误行号 | Patch 越权、零/多处匹配、改动过大 |
+| [`candidate.py`](../../llm4hls_harness/llm4hls_agent/candidate.py) | 原子创建不可变 Candidate 并保存 lineage；Graph 把验证记录和 best/active/final 决策写入同一 registry | Candidate ID、best、回退不一致 |
 | [`budget.py`](../../llm4hls_harness/llm4hls_agent/budget.py) | 追加式记录 Credit、Token、次数和时间 | 预算不足、重复计费、账本不一致 |
 | [`tools.py`](../../llm4hls_harness/llm4hls_agent/tools.py) | CSim/Synth/CoSim 唯一受预算控制的调用入口 | 缓存、action 绑定、工具结果审计失败 |
 | [`vitis.py`](../../llm4hls_harness/llm4hls_agent/vitis.py) | 真正启动 Vitis 2025.2 并解析报告 | Vitis/XSIM、license、超时、报告解析问题 |
@@ -212,8 +403,8 @@ openai_provider.py   = 真正把请求发给模型
 
 | 文件 | 一句话职责 | 当前地位 |
 |---|---|---|
-| [`optimization.py`](../../llm4hls_harness/llm4hls_agent/optimization.py) | V2 优化主循环、旧 Selector 和 CoSim gate | 稳定旧实现，不再扩展其 optimize loop |
-| [`scoring.py`](../../llm4hls_harness/llm4hls_agent/scoring.py) | 检查验证等级、时钟、资源和 PPA，比较 Candidate | public proxy，不等于 hidden 最终分 |
+| [`optimization.py`](../../llm4hls_harness/llm4hls_agent/optimization.py) | V2 优化主循环和旧 Selector；V3 只复用 `evaluate_exploration_cosim_gate` 的探索 CoSim 门控 | V3 Planner 和循环由当前 Graph 实现，不复用 V2 Selector |
+| [`scoring.py`](../../llm4hls_harness/llm4hls_agent/scoring.py) | 检查验证等级、时钟、资源和 PPA proxy，比较 Candidate | public proxy，不等于 hidden 最终分 |
 | [`artifacts.py`](../../llm4hls_harness/llm4hls_agent/artifacts.py) | 生成和验证 V0-V2 证据 Manifest | 防止报告引用丢失或被修改的文件 |
 | [`v2_team_report.py`](../../llm4hls_harness/llm4hls_agent/v2_team_report.py) | 根据 V2 证据生成逐轮团队报告 | V2 复盘使用 |
 
@@ -246,6 +437,21 @@ V3 的报告生成目前仍在 `v3_prototype.py` 内部，没有单独拆文件�
 
 不要为了调一个 Prompt 去改 `BudgetLedger`、Candidate 事务或 ToolServer；这些属于已经验收的公共底座。
 
+### 5.8 核心数据对象
+
+| 对象/文件 | 谁创建 | 保存什么 | 下游怎样使用 |
+|---|---|---|---|
+| `PublicTask` | `task.py` | 公开 kernel、headers、description、public TB、约束 | 初始化 baseline 和所有 Planner/工具边界 |
+| `V3PrototypeState` | LangGraph | 当前 mode、round、best/active/final Candidate ID、最近结果和 Artifact refs | 条件边决定下一节点；SQLite checkpoint 保存 |
+| `PatchProposal` | scripted/live Planner | hypothesis、change class/bundle、risk、`required_validation` 归一化提示、unified diff、Token | Patch policy 校验并物化 Candidate；最终工具路径仍由 Graph、task mode、risk gate 和 Budget 决定 |
+| `candidate_registry.json` | Candidate Manager + Graph 决策节点 | Candidate lineage、code/patch hash、验证、best/active、状态 | 恢复、晋升、拒绝、final/fallback |
+| `ToolResult` / `actions/*/result.json` | ToolServer | CSim/Synth/CoSim 终态、报告、配置/code hash、耗时 | 更新验证状态并生成 Evidence/score |
+| Failure/Synth Evidence | Evidence Extractor | 有界失败摘要或 latency/II/TripCount/resource 事实 | 进入下一轮 Planner Input |
+| `budget_ledger.jsonl` | Budget Ledger | STARTED、COMPLETED/AMBIGUOUS、Token/Credit/runtime | 所有收费动作前后核账和恢复 |
+| `v3_prototype_result.json` | `write_report` | 程序认定的终态、mode、best/final、预算、最终验证 | 自动汇总和验收；比 Markdown 报告更权威 |
+
+权限边界：Planner 生成 `PatchProposal`，其中 `required_validation` 只是 Provider/V3 adapter 归一化后的验证提示，不是模型对工具的批准。Candidate Manager 保存代码版本，Graph 节点根据 task mode、risk gate 和预算决定验证路径与 promote/reject，并规划本轮与 final reserve；ToolServer 执行工具，Budget Ledger 对每个真实动作执行最终硬约束和计费。它们不能互相越权。
+
 ## 6. 一次 V3 运行结束后怎样读报告
 
 不要一开始翻几百个文件。按下面顺序即可：
@@ -262,6 +468,13 @@ V3 的报告生成目前仍在 `v3_prototype.py` 内部，没有单独拆文件�
 | 8 | `trace.jsonl` | 完整节点时间线和路由理由 |
 | 9 | `graph_checkpoints.sqlite` | 程序恢复用，一般不人工阅读 |
 | 10 | `control/package_manifest.json` | 终态产物是否完整、是否被修改 |
+
+真实实验的目录规则：
+
+- 每次新的模型实验必须使用全新 run 目录；失败后把 attempt 从 `A01` 改为 `A02/A03/...`，不要覆盖或续写旧目录；
+- 想恢复**同一次因进程中断的事务**才使用原 run/thread/checkpoint；一次已经正常结束为 FAILED 的实验不是“中断恢复”；
+- 目录名应包含 task、mode、attempt，使用本地超额预算时显式加入 `LOCAL_BUDGET_OVERRIDE`；
+- 环境变量只在执行命令的终端设置，报告保存模型名和配置摘要，不保存 API key。
 
 证据等级必须严格区分：
 
@@ -282,7 +495,7 @@ V3 的报告生成目前仍在 `v3_prototype.py` 内部，没有单独拆文件�
 | V2 | 让模型反复优化并保留最好版本 | Candidate 树、PPA 比较、CoSim gate、多轮优化、final closure、团队报告 | 已冻结发布，不再扩展 |
 | V3-A | 把流程变成可恢复状态机 | LangGraph 节点、checkpoint、scripted Planner/action 哈希、循环级 Synth Evidence | 已完成 |
 | V3-B | 让真实 LLM 自主分析优化 | OpenAI-compatible Planner、live action journal、fast-experiment、多轮拒绝后继续、风险 CoSim gate | optimize 真实闭环已成功 |
-| V3-C | 先判断题型，再进入相应流程 | PhaseRouter、三类失败 Evidence、四种 mode、共享 Candidate/Budget/Final | 代码和 smoke 完成；真实修复验收待补 |
+| V3-C | 先判断题型，再进入相应流程 | PhaseRouter、三类失败 Evidence、四种 mode、共享 Candidate/Budget/Final | 代码和 smoke 完成；REPAIR 有真实部分链路，三种修复 mode 均缺完整真实 final 成功 |
 | V4 | 变成可提交、可泛化的比赛系统 | hidden-like 测试、多模型矩阵、Docker/复现包、论文和视频 | 尚未完成 |
 
 ## 8. 目前最重要的真实结果
@@ -346,6 +559,7 @@ ARRAY_PARTITION + LOOP_UNROLL + MULTI_PARTIAL_SUM
 | Total tokens | 8128 |
 | CSim / Synth / CoSim | 3 / 3 / 1 |
 | Credits | 35 / 40 |
+| Wall time | 130.781 seconds |
 
 后两轮 Planner 提出的 Patch 因超过改动行数限制而在 Candidate 创建前被拒绝，没有再次调用 Vitis。系统保留第一轮的 `candidate_001`，并完成全新的 Final 三阶段验证。
 
@@ -363,11 +577,43 @@ ARRAY_PARTITION + LOOP_UNROLL + MULTI_PARTIAL_SUM
 
 此外还有一个合成的资源超限 Graph 测试，证明“工具返回 Synth PASS，但资源超出上限”时仍会进入 `SYNTH_FIX`，不会误进入优化。
 
-### 8.3 当前自动测试
+### 8.3 V3-C projection：三次真实部分链路，尚未验收成功
 
-截至 Agent 功能代码基线 `d56a2ed`，并包含本报告提交中的 `tests/__init__.py` 测试发现入口：
+下面三次不是 fake smoke：都调用了真实 Vitis baseline CSim 和真实 OpenAI-compatible `deepseek-v4-pro`，并使用独立 run 目录。但它们都发生在 Patch 重定位修复之前，因此不能写成 REPAIR 成功。
 
-- 完整回归：286 tests PASS；
+| Attempt | Baseline / Router | 模型判断 | 停止位置 | Token | Credit | Candidate / Final |
+|---|---|---|---|---:|---:|---|
+| A01 | CSim FAIL → REPAIR | 正确发现 `angle==0` 漏掉 `z2 / 3` | Patch hunk 声明第 12 行，实际唯一上下文在第 14 行，旧策略拒绝 | 2034 | 1/40 | 未创建 / 未运行 |
+| A02 | CSim FAIL → REPAIR | 同样正确 | 同上 | 2027 | 1/40 | 未创建 / 未运行 |
+| A03 | CSim FAIL → REPAIR | 同样正确 | 同上 | 2033 | 1/40 | 未创建 / 未运行 |
+
+对应本机 run 目录：
+
+```text
+llm4hls_harness/runs/v3c-real-projection-repair-a01-LOCAL_BUDGET_OVERRIDE/
+llm4hls_harness/runs/v3c-real-projection-repair-a02-LOCAL_BUDGET_OVERRIDE/
+llm4hls_harness/runs/v3c-real-projection-repair-a03-LOCAL_BUDGET_OVERRIDE/
+```
+
+三个不同模型 request ID 证明它们是三次真实请求；A02/A03 的 `cached_input_tokens` 是服务端 Prompt 前缀缓存，不是复用旧 run 结果。三次合计 6094 Tokens、3 Credits、约 28.9 秒，只运行了 3 次 baseline CSim，没有 Synth/CoSim。
+
+这组失败证明了三件事：
+
+1. 真实 PhaseRouter 和 Failure Evidence 已经能把任务送到正确模式；
+2. 真实模型能理解并修正功能 Bug；
+3. 当时的直接阻塞在“Planner diff → Candidate materialization”，不是 Vitis 环境或模型诊断。
+
+`d1cf869` 已修复该阻断：行号错误时，只有 old-hunk 在 kernel 中存在唯一逐字匹配才自动重定位；零匹配、多匹配和非 kernel 目标仍拒绝。修复后只要 Candidate 成功物化，系统会在 Candidate/Trace 中同时保存 Planner 原 Patch hash、实际应用 Patch hash 和 normalization 标记；A01～A03 发生在修复前且没有创建 Candidate，因此只有 Planner 原 Patch 证据。回归覆盖了同一官方 projection 的 `-12 → -14` 错位模式，以及大偏移、歧义、缺失和越权路径。
+
+当前证据边界：代码修复和 291 项回归已完成，**修复后的干净 A04 尚未执行**，所以 REPAIR 仍是黄色状态。
+
+这三次都以 40 Credits 本地覆盖运行，必须标记 `LOCAL_BUDGET_OVERRIDE`；不能宣称满足官方样例的 20-Credit 预算。
+
+### 8.4 当前自动测试
+
+截至代码基线 `d1cf869`：
+
+- 完整回归：291 tests PASS；
 - Python 语法检查：PASS；
 - `git diff --check`：PASS；
 - 旧 V3-B checkpoint 缺少 `mode` 时仍默认按 OPTIMIZE 恢复。
@@ -388,7 +634,7 @@ PYTHONPATH=. ../.venv/bin/python -m unittest discover -s tests -t . -v
 - 加载三道官方公开任务并保护 public/hidden 边界；
 - 用 baseline 结果自动选择四种任务模式；
 - 用同一个 LLM Planner 根据 mode 生成不同目标的 Patch；
-- 限制模型只能修改 kernel；
+- 限制模型只能修改 kernel，并自动修正 old-hunk 唯一逐字匹配的错误 diff 行号；
 - 在预算内多轮创建、验证、晋升或拒绝 Candidate；
 - 从 Synth 提取 top latency、transaction interval、loop II、TripCount 和资源；
 - 对低价值 Candidate 跳过探索 CoSim；
@@ -398,14 +644,15 @@ PYTHONPATH=. ../.venv/bin/python -m unittest discover -s tests -t . -v
 
 ### 9.2 还不能宣布完成
 
-- V3-C 的 REPAIR 尚无真实 LLM + Vitis 最终成功证据；
+- V3-C 的 REPAIR 已有三次真实 baseline/Router/Planner/正确 Patch 证据，但尚无 Candidate + fresh final 成功证据；
 - V3-C 的 SYNTH_FIX 尚无真实 LLM + Vitis 最终成功证据；
 - V3-C 的 STRUCTURAL_FIX 尚无真实 LLM + Vitis 最终成功证据；
 - 当前没有独立的函数签名/顶层接口静态 diff gate；接口保持主要依赖 Planner 约束和后续 CSim/Synth/CoSim，不能把 Patch 路径检查描述成完整接口证明；
 - 当前只完成 DeepSeek 的重点真实实验，尚未完成三种推荐模型的公平对比；
 - 三道公开任务数量太少，尚未充分证明对 hidden-like 任务的泛化；
+- 当前所谓 PPA 评价主要是 latency/II、clock 和资源占用的 proxy；没有可靠的板上或 post-route Power 测量，不能宣称已经优化真实功耗；
 - Docker、干净环境复现、最终 `.zip`、论文实验表和 5 分钟视频尚未形成完整交付；
-- 当前环境没有设置 `OPENAI_BASE_URL`、`OPENAI_API_KEY`、`LLM4HLS_MODEL`，不能立即复跑真实模型实验；
+- 真实运行必须在**执行命令的那个终端**设置 `OPENAI_BASE_URL`、`OPENAI_API_KEY`、`LLM4HLS_MODEL`；不同 Codex/shell 进程不会自动继承，任何密钥都不得进入 Git、Prompt 审计文件或报告；
 - 官方精确评分公式、Token 权重和最终统一 Credit 仍未公开确认。
 
 ### 9.3 一个必须提前处理的预算冲突
@@ -425,7 +672,7 @@ baseline CSim 1
 = 31 Credits
 ```
 
-因此当前完整 smoke 使用了本地预算覆盖。真实比赛前必须确认：
+因此 deterministic 完整 smoke 使用 `credit_limit=100` 的本地测试配置；A01–A03 真实实验使用 40-Credit `LOCAL_BUDGET_OVERRIDE`。真实比赛前必须确认：
 
 - 最终评测是否允许本地 final CoSim 不计入 Agent 的任务 Credit；或
 - 不要求 CoSim 的任务是否可以采用更轻的 final；或
@@ -450,8 +697,8 @@ baseline CSim 1
 | V0/V1/V2 工程底座 | 绿色 | V1 REAL/PASS；V2 冻结发布与真实验收 | 只维护，不再扩架构 |
 | V3 LangGraph/Checkpoint | 绿色 | 动作节点、恢复、Manifest、完整回归 | 只修阻断性问题 |
 | V3-B optimize | 绿色（单题） | 官方 dotProduct 真实 1027 → 38，Final 三项 PASS | 增加重复实验和模型对比 |
-| V3-C PhaseRouter | 黄色 | 四模式路由测试和三题 smoke | 真实 repair/structural 路由验收后转绿 |
-| V3-C REPAIR | 黄色 | projection deterministic smoke PASS | 真实 LLM + Vitis 成功运行 |
+| V3-C PhaseRouter | 黄色偏绿 | 四模式测试、三题 smoke；projection 三次真实路由均正确进入 REPAIR | structural/synth-fix 真实路由与 final 成功后转绿 |
+| V3-C REPAIR | 黄色 | deterministic smoke PASS；A01–A03 真实模型均诊断/修复正确；`d1cf869` 已解除 Patch 行号阻断 | 干净 A04 完成 Candidate 与 fresh final 三项 PASS |
 | V3-C SYNTH_FIX | 黄色 | Router/Planner/资源超限 Graph 测试 PASS | 真实综合失败任务成功运行 |
 | V3-C STRUCTURAL_FIX | 黄色 | residual deterministic smoke PASS | 真实 CoSim deadlock 修复成功 |
 | 模型覆盖 | 红色 | DeepSeek 真实结果 | 补 Qwen3.5、Qwen3.6 或写明不可用原因 |
@@ -469,11 +716,11 @@ baseline CSim 1
 
 ### 7 月 20 日至 7 月 24 日：补齐 V3-C 真实闭环
 
-目标：证明新 PhaseRouter 不是只在 fake backend 上有效。
+目标：补齐三种非 optimize mode 的真实 Candidate + fresh final 闭环。projection 的真实路由和模型诊断已经由 A01–A03 证明，但后半条 Candidate/Vitis 链路尚未闭环。
 
 必须交付：
 
-1. `projection_bugfix`：真实模型进入 REPAIR，使用至少 31 Credits 的本地覆盖完成最终 CSim/Synth/CoSim，并明确标记 `LOCAL_BUDGET_OVERRIDE`，不能据此宣称满足官方样例的 20 Credits；
+1. `projection_bugfix`：在 `d1cf869` 后使用全新 A04 run 目录，真实模型进入 REPAIR，验证 Patch 重定位后完成 Candidate 与 fresh CSim/Synth/CoSim；使用至少 31 Credits 的本地覆盖，并明确标记 `LOCAL_BUDGET_OVERRIDE`，不能据此宣称满足官方样例的 20 Credits；A01–A03 已用完原定三次真实模型额度，执行 A04 前需要团队明确批准将该专项上限由 3 放宽到 4，并把它记录为新增 post-fix 实验；
 2. `residual_stream_deadlock`：真实模型进入 STRUCTURAL_FIX，最终三项 PASS；
 3. 团队 synthesis-error fixture：真实进入 SYNTH_FIX，最终三项 PASS；
 4. 每次实验保存模型 ID、Prompt 版本、Token、Credits、工具次数、wall time 和失败原因；
@@ -576,9 +823,9 @@ baseline CSim 1
 
 现在最值得做的不是拆文件或增加新架构，而是：
 
-> 用真实模型和真实 Vitis，完整跑通 `projection_bugfix` 的 REPAIR 路径，并生成第一份 V3-C 真实团队报告。
+> 基于 `d1cf869`，在从未使用过的 A04 run 目录中重新运行 `projection_bugfix`，让已经正确生成的修复真正进入 Candidate CSim/Synth 和 fresh final CSim/Synth/CoSim。
 
-原因是它成本和复杂度都低于 structural deadlock，却能一次验证 PhaseRouter、失败 Evidence、task-aware Prompt、Patch、Candidate、Budget 和 Final closure 是否真的连通。完成后再处理 `residual_stream_deadlock`。
+原因是 A01–A03 已经证明 PhaseRouter、Failure Evidence 和真实模型诊断有效，现在只差验证 `d1cf869` 的 Patch materialization 修复及后半条真实 Vitis 链路。注意 A04 会超过原 projection“最多 3 次”的实验上限，必须先由团队明确批准将上限放宽到 4，并继续使用全新目录。A04 完成后，再按 `residual_stream_deadlock` → synthesis-error fixture → 多模型矩阵的顺序推进。
 
 ## 15. 文档与命名债务
 
