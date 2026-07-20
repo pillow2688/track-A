@@ -1,0 +1,3396 @@
+"""Resumable, evidence-aware batch benchmark runner for V3 task packages.
+
+The module deliberately keeps corpus discovery and aggregation independent of
+the optional corpus builder.  Any directory tree containing loadable
+``task.toml`` packages can be benchmarked directly.
+
+``demo`` and ``deterministic`` are offline fixtures.  They are useful for
+proving orchestration and report generation, but their rows are never included
+in the real-evidence headline.  Only a ``vitis`` execution with structured
+terminal backend evidence is eligible for that headline.
+"""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import fnmatch
+import hashlib
+import json
+import math
+import os
+import re
+import statistics
+import subprocess
+import sys
+import time
+import tomllib
+from collections import Counter
+from contextlib import contextmanager
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from enum import Enum
+from functools import lru_cache
+from pathlib import Path
+from typing import Callable, Iterator, Mapping, Protocol, Sequence, TextIO
+
+from .task import PublicTask, load_public_task
+
+
+RUN_SCHEMA = "v3d.benchmark-run.v1"
+SUMMARY_SCHEMA = "v3d.benchmark-summary.v1"
+PLAN_SCHEMA = "v3d.benchmark-plan.v1"
+RUNNER_FINGERPRINT = "llm4hls-v3d-batch-benchmark:v4"
+REAL_EVIDENCE_AUTHORITY = "V3_PROTOTYPE_CLI_VITIS_V1"
+
+# These files contain the execution semantics which can change a benchmark
+# outcome without changing a task package or model name.  Their content hashes
+# are part of every run identity.  In particular this covers the PhaseRouter,
+# prompt construction/response parsing, Planner journals and Vitis parsing.
+_CRITICAL_IMPLEMENTATION_MODULES = (
+    "v3_batch_benchmark.py",
+    "v3_prototype_cli.py",
+    "v3_prototype.py",
+    "v3_phase_router.py",
+    "v3_planner.py",
+    "v3_planner_action.py",
+    "v3_openai_planner.py",
+    "openai_provider.py",
+    "repair.py",
+    "task.py",
+    "budget.py",
+    "tools.py",
+    "vitis.py",
+)
+
+_MODES = {"REPAIR", "SYNTH_FIX", "STRUCTURAL_FIX", "OPTIMIZE"}
+_MODE_ALIASES = {
+    "REPAIR": "REPAIR",
+    "BUGFIX": "REPAIR",
+    "SYNTH_FIX": "SYNTH_FIX",
+    "SYNTH-FIX": "SYNTH_FIX",
+    "SYNTHESIS_FIX": "SYNTH_FIX",
+    "STRUCTURAL": "STRUCTURAL_FIX",
+    "STRUCTURAL_FIX": "STRUCTURAL_FIX",
+    "STRUCTURAL-FIX": "STRUCTURAL_FIX",
+    "OPTIMIZE": "OPTIMIZE",
+    "OPTIMIZATION": "OPTIMIZE",
+}
+_TASK_TYPE_MODES = {
+    "repair": "REPAIR",
+    "bugfix": "REPAIR",
+    "synth_fix": "SYNTH_FIX",
+    "synthesis_fix": "SYNTH_FIX",
+    "structural": "STRUCTURAL_FIX",
+    "structural_fix": "STRUCTURAL_FIX",
+    "optimize": "OPTIMIZE",
+    "optimization": "OPTIMIZE",
+}
+_TERMINAL_STATUSES = {"DONE", "FAILED", "ERROR"}
+_PASS_STATUSES = {"PASS", "PASSED", "SUCCESS", "SUCCEEDED"}
+
+
+class BenchmarkError(RuntimeError):
+    """Base error for invalid batch configuration or durable state."""
+
+
+class BenchmarkExecutionError(BenchmarkError):
+    """Raised when one executor invocation has no structured result."""
+
+
+class EvidenceClass(str, Enum):
+    """Mutually exclusive evidence populations used by every aggregate."""
+
+    DEMO = "DEMO"
+    DETERMINISTIC = "DETERMINISTIC"
+    REAL = "REAL"
+
+
+def _utc_now() -> str:
+    return datetime.now(UTC).isoformat()
+
+
+def _canonical_json(value: object) -> str:
+    return json.dumps(
+        value,
+        allow_nan=False,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def _sha256_json(value: object) -> str:
+    return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
+
+
+def _sha256_bytes(value: bytes) -> str:
+    return hashlib.sha256(value).hexdigest()
+
+
+def _sha256_file(path: Path) -> str:
+    try:
+        return _sha256_bytes(path.read_bytes())
+    except OSError as exc:
+        raise BenchmarkError(f"cannot hash benchmark implementation file: {path}") from exc
+
+
+@lru_cache(maxsize=1)
+def _implementation_facts() -> dict[str, object]:
+    """Return secret-free, content-addressed facts for run identity.
+
+    A static version string is insufficient for scientific resume: prompt,
+    parser, Planner, or backend changes could otherwise reuse an old slot.
+    File names and hashes are stable across installation locations.
+    """
+
+    module_root = Path(__file__).resolve().parent
+    modules: dict[str, str] = {}
+    for name in _CRITICAL_IMPLEMENTATION_MODULES:
+        path = module_root / name
+        modules[name] = _sha256_file(path) if path.is_file() else "MISSING"
+    categories = {
+        "batch_and_task_parsing": (
+            modules["v3_batch_benchmark.py"],
+            modules["v3_prototype_cli.py"],
+            modules["task.py"],
+        ),
+        "phase_router": (modules["v3_phase_router.py"],),
+        "planner_and_prompts": (
+            modules["v3_planner.py"],
+            modules["v3_planner_action.py"],
+            modules["v3_openai_planner.py"],
+            modules["openai_provider.py"],
+            modules["repair.py"],
+        ),
+        "backend_and_accounting": (
+            modules["vitis.py"],
+            modules["tools.py"],
+            modules["budget.py"],
+            modules["v3_prototype.py"],
+        ),
+    }
+    return {
+        "schema_version": "v3d.implementation-facts.v1",
+        "modules": modules,
+        "category_sha256": {
+            name: _sha256_json(list(digests))
+            for name, digests in sorted(categories.items())
+        },
+    }
+
+
+def _implementation_fingerprint() -> str:
+    return _sha256_json(_implementation_facts())
+
+
+def _plain_json(value: object) -> object:
+    if isinstance(value, Mapping):
+        return {str(key): _plain_json(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_plain_json(item) for item in value]
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, Enum):
+        return value.value
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
+
+
+def _atomic_text(path: Path, value: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    with temporary.open("w", encoding="utf-8", newline="\n") as stream:
+        stream.write(value)
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(temporary, path)
+
+
+def _atomic_json(path: Path, value: object) -> None:
+    _atomic_text(path, _canonical_json(_plain_json(value)) + "\n")
+
+
+def _append_jsonl(path: Path, value: Mapping[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8", newline="\n") as stream:
+        stream.write(_canonical_json(_plain_json(value)) + "\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+
+
+def _safe_slug(value: str, *, fallback: str) -> str:
+    slug = re.sub(r"[^A-Za-z0-9_.-]+", "-", value.strip()).strip(".-")
+    return (slug or fallback)[:64]
+
+
+def _normalise_mode(value: object) -> str | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    return _MODE_ALIASES.get(value.strip().upper().replace(" ", "_"))
+
+
+def _normalise_split(value: object) -> str:
+    if not isinstance(value, str) or not value.strip():
+        return "unspecified"
+    split = value.strip().casefold()
+    return {"val": "validation", "valid": "validation"}.get(split, split)
+
+
+def _as_nonnegative_int(value: object, default: int = 0) -> int:
+    if isinstance(value, bool):
+        return default
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return default
+    return parsed if parsed >= 0 else default
+
+
+def _as_finite_float(value: object) -> float | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return parsed if math.isfinite(parsed) else None
+
+
+@dataclass(frozen=True)
+class TaskDescriptor:
+    """One discovered task plus benchmark-only metadata."""
+
+    directory: Path
+    relative_path: str
+    task_id: str
+    task_type: str
+    difficulty: int | None
+    split: str
+    expected_mode: str | None
+    expected_mode_source: str | None
+    task_fingerprint: str
+    task: PublicTask | None = field(compare=False, repr=False)
+    load_error_type: str | None = None
+    load_error_detail: str | None = None
+
+    @property
+    def loadable(self) -> bool:
+        return self.task is not None and self.load_error_type is None
+
+
+@dataclass(frozen=True)
+class BenchmarkRunSpec:
+    """Immutable identity passed to an injected executor."""
+
+    task: PublicTask
+    descriptor: TaskDescriptor
+    model: str
+    repeat_index: int
+    backend: str
+    run_id: str
+    run_fingerprint: str
+    run_dir: Path
+
+
+class BenchmarkExecutor(Protocol):
+    """Small injection boundary used by fake, deterministic and Vitis runs."""
+
+    evidence_class: EvidenceClass
+    requires_vitis_lock: bool
+
+    def fingerprint(self) -> str: ...
+
+    def execute(
+        self,
+        spec: BenchmarkRunSpec,
+        *,
+        timeout_seconds: float | None = None,
+    ) -> Mapping[str, object]: ...
+
+
+@dataclass(frozen=True)
+class BenchmarkConfig:
+    """Selection, repetition, output and stopping policy for one batch."""
+
+    corpus: Path | str | Sequence[Path | str]
+    output_dir: Path | str
+    models: Sequence[str] = ("deterministic-fixture-v1",)
+    repeats: int = 1
+    backend: str = "deterministic"
+    splits: Sequence[str] = ("all",)
+    mode_filters: Sequence[str] = ()
+    task_filters: Sequence[str] = ()
+    difficulty_filters: Sequence[str | int] = ()
+    model_filters: Sequence[str] = ()
+    resume: bool = False
+    retry_failures: bool = False
+    max_tasks: int | None = None
+    max_runtime_seconds: float | None = None
+
+    def __post_init__(self) -> None:
+        raw_corpus = self.corpus
+        corpus_items: Sequence[Path | str]
+        if isinstance(raw_corpus, (str, Path)):
+            corpus_items = (raw_corpus,)
+        else:
+            corpus_items = tuple(raw_corpus)
+        corpora = tuple(Path(item).expanduser().resolve() for item in corpus_items)
+        if not corpora:
+            raise ValueError("at least one corpus path is required")
+        models = tuple(dict.fromkeys(str(item).strip() for item in self.models))
+        if not models or any(not item for item in models):
+            raise ValueError("models must contain non-empty names")
+        repeats = int(self.repeats)
+        if repeats <= 0:
+            raise ValueError("repeats must be positive")
+        backend = str(self.backend).strip().casefold()
+        if backend not in {"demo", "deterministic", "vitis"}:
+            raise ValueError("backend must be demo, deterministic, or vitis")
+        max_tasks = self.max_tasks
+        if max_tasks is not None and int(max_tasks) <= 0:
+            raise ValueError("max_tasks must be positive when provided")
+        max_runtime = self.max_runtime_seconds
+        if max_runtime is not None:
+            max_runtime = float(max_runtime)
+            if not math.isfinite(max_runtime) or max_runtime <= 0:
+                raise ValueError("max_runtime_seconds must be finite and positive")
+        normalised_modes: list[str] = []
+        for raw_mode in self.mode_filters:
+            mode = _normalise_mode(raw_mode)
+            if mode is None:
+                raise ValueError(f"unsupported mode filter: {raw_mode}")
+            if mode not in normalised_modes:
+                normalised_modes.append(mode)
+        # Parse once during construction so a malformed filter cannot silently
+        # broaden an overnight batch to the entire corpus.
+        _difficulty_values(self.difficulty_filters)
+        object.__setattr__(self, "corpus", corpora)
+        object.__setattr__(self, "output_dir", Path(self.output_dir).expanduser().resolve())
+        object.__setattr__(self, "models", models)
+        object.__setattr__(self, "repeats", repeats)
+        object.__setattr__(self, "backend", backend)
+        object.__setattr__(
+            self,
+            "splits",
+            tuple(dict.fromkeys(_normalise_split(item) for item in self.splits)) or ("all",),
+        )
+        object.__setattr__(self, "mode_filters", tuple(normalised_modes))
+        object.__setattr__(self, "task_filters", tuple(self.task_filters))
+        object.__setattr__(self, "difficulty_filters", tuple(self.difficulty_filters))
+        object.__setattr__(self, "model_filters", tuple(self.model_filters))
+        object.__setattr__(self, "max_tasks", None if max_tasks is None else int(max_tasks))
+        object.__setattr__(self, "max_runtime_seconds", max_runtime)
+
+    def public_dict(self) -> dict[str, object]:
+        return {
+            "corpus": [str(item) for item in self.corpus],
+            "output_dir": str(self.output_dir),
+            "models": list(self.models),
+            "repeats": self.repeats,
+            "backend": self.backend,
+            "splits": list(self.splits),
+            "mode_filters": list(self.mode_filters),
+            "task_filters": list(self.task_filters),
+            "difficulty_filters": [str(item) for item in self.difficulty_filters],
+            "model_filters": list(self.model_filters),
+            "resume": self.resume,
+            "retry_failures": self.retry_failures,
+            "max_tasks": self.max_tasks,
+            "max_runtime_seconds": self.max_runtime_seconds,
+        }
+
+
+def _read_task_metadata(task_toml: Path) -> Mapping[str, object]:
+    try:
+        value = tomllib.loads(task_toml.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
+        return {}
+    return value if isinstance(value, Mapping) else {}
+
+
+def _benchmark_metadata(spec: Mapping[str, object]) -> Mapping[str, object]:
+    value = spec.get("benchmark")
+    return value if isinstance(value, Mapping) else {}
+
+
+def _inferred_split(
+    relative: Path,
+    spec: Mapping[str, object],
+    external_labels: Sequence[tuple[str, Mapping[str, object]]] = (),
+) -> str:
+    benchmark = _benchmark_metadata(spec)
+    explicit = benchmark.get("split", spec.get("split"))
+    if isinstance(explicit, str) and explicit.strip():
+        return _normalise_split(explicit)
+    for _source, labels in external_labels:
+        explicit = labels.get("split")
+        if isinstance(explicit, str) and explicit.strip():
+            return _normalise_split(explicit)
+    for part in relative.parts[:-1]:
+        candidate = _normalise_split(part)
+        if candidate in {"train", "validation", "test", "dev", "holdout"}:
+            return candidate
+    return "unspecified"
+
+
+def _expected_mode(
+    spec: Mapping[str, object],
+    task_type: str,
+    external_labels: Sequence[tuple[str, Mapping[str, object]]] = (),
+) -> tuple[str | None, str | None]:
+    benchmark = _benchmark_metadata(spec)
+    for source, raw in (
+        ("benchmark.expected_mode", benchmark.get("expected_mode")),
+        ("benchmark.expected_router_mode", benchmark.get("expected_router_mode")),
+        ("task.expected_mode", spec.get("expected_mode")),
+        ("task.expected_router_mode", spec.get("expected_router_mode")),
+    ):
+        if raw is not None:
+            mode = _normalise_mode(raw)
+            return mode, source if mode is not None else None
+    for source, labels in external_labels:
+        for field in ("expected_mode", "expected_router_mode", "mode"):
+            if labels.get(field) is not None:
+                mode = _normalise_mode(labels.get(field))
+                if mode is not None:
+                    return mode, f"{source}.{field}"
+    inferred = _TASK_TYPE_MODES.get(task_type.casefold())
+    return inferred, "task_type" if inferred is not None else None
+
+
+def _read_label_sidecar(path: Path, *, task_id: str | None = None) -> Mapping[str, object]:
+    """Read only evaluator labels from an optional JSON sidecar.
+
+    The returned mapping is never attached to ``PublicTask`` or passed to an
+    executor.  This keeps golden hashes and hidden-like evaluator data outside
+    the Planner boundary while still making router accuracy measurable.
+    """
+
+    try:
+        resolved = path.resolve(strict=True)
+        resolved.relative_to(path.parent.resolve())
+        value = json.loads(resolved.read_text(encoding="utf-8"))
+    except (OSError, ValueError, UnicodeDecodeError, json.JSONDecodeError):
+        return {}
+    if not isinstance(value, Mapping):
+        return {}
+    recorded_task_id = value.get("task_id")
+    if (
+        task_id is not None
+        and recorded_task_id is not None
+        and str(recorded_task_id) != task_id
+    ):
+        return {}
+    return {
+        field: value[field]
+        for field in ("expected_mode", "expected_router_mode", "mode", "split")
+        if field in value
+    }
+
+
+def _manifest_labels(corpus: Path) -> dict[Path, Mapping[str, object]]:
+    root = corpus if corpus.is_dir() else corpus.parent
+    manifest_path = root / "corpus_manifest.json"
+    try:
+        value = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return {}
+    tasks = value.get("tasks") if isinstance(value, Mapping) else None
+    if not isinstance(tasks, list):
+        return {}
+    labels: dict[Path, Mapping[str, object]] = {}
+    resolved_root = root.resolve()
+    for raw in tasks:
+        if not isinstance(raw, Mapping) or not isinstance(raw.get("path"), str):
+            continue
+        candidate = (resolved_root / str(raw["path"])).resolve()
+        try:
+            candidate.relative_to(resolved_root)
+        except ValueError:
+            continue
+        labels[candidate] = {
+            field: raw[field]
+            for field in ("expected_mode", "expected_router_mode", "mode", "split")
+            if field in raw
+        }
+    return labels
+
+
+def _task_fingerprint(task: PublicTask) -> str:
+    return _sha256_json(
+        {
+            "task_id": task.id,
+            "public_file_hashes": dict(sorted(task.public_file_hashes.items())),
+        }
+    )
+
+
+def _candidate_task_tomls(corpus: Path) -> list[tuple[Path, Path]]:
+    if corpus.is_file():
+        if corpus.name != "task.toml":
+            raise BenchmarkError(
+                f"corpus file must be a task.toml or a directory: {corpus}"
+            )
+        return [(corpus.parent, Path(corpus.parent.name))]
+    if not corpus.is_dir():
+        raise BenchmarkError(f"corpus path does not exist: {corpus}")
+    direct = corpus / "task.toml"
+    if direct.is_file():
+        return [(corpus, Path(corpus.name))]
+    found: list[tuple[Path, Path]] = []
+    for task_toml in sorted(corpus.rglob("task.toml")):
+        relative = task_toml.parent.relative_to(corpus)
+        lowered = {part.casefold() for part in relative.parts}
+        if lowered.intersection(
+            {"answer", "golden", "hidden", "hidden_like", "reference"}
+        ):
+            continue
+        found.append((task_toml.parent, relative))
+    return found
+
+
+def discover_tasks(corpora: Path | str | Sequence[Path | str]) -> list[TaskDescriptor]:
+    """Discover every compatible task package without a corpus-manifest dependency."""
+
+    items: Sequence[Path | str]
+    if isinstance(corpora, (Path, str)):
+        items = (corpora,)
+    else:
+        items = corpora
+    descriptors: list[TaskDescriptor] = []
+    seen: set[Path] = set()
+    for raw_root in items:
+        root = Path(raw_root).expanduser().resolve()
+        manifest_labels = _manifest_labels(root)
+        for directory, relative in _candidate_task_tomls(root):
+            resolved = directory.resolve()
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            task_toml = resolved / "task.toml"
+            spec = _read_task_metadata(task_toml)
+            task_id = str(spec.get("task_id", resolved.name))
+            task_type = str(spec.get("task_type", "generate"))
+            external_labels = (
+                ("corpus_manifest", manifest_labels.get(resolved, {})),
+                (
+                    "acceptance",
+                    _read_label_sidecar(
+                        resolved / "acceptance.json", task_id=task_id
+                    ),
+                ),
+            )
+            raw_difficulty = spec.get("difficulty")
+            try:
+                difficulty = int(raw_difficulty) if raw_difficulty is not None else None
+            except (TypeError, ValueError, OverflowError):
+                difficulty = None
+            expected_mode, mode_source = _expected_mode(
+                spec, task_type, external_labels
+            )
+            split = _inferred_split(relative, spec, external_labels)
+            try:
+                task = load_public_task(resolved)
+            except Exception as exc:
+                try:
+                    raw_hash = _sha256_bytes(task_toml.read_bytes())
+                except OSError:
+                    raw_hash = _sha256_json({"path": str(resolved)})
+                descriptors.append(
+                    TaskDescriptor(
+                        directory=resolved,
+                        relative_path=relative.as_posix(),
+                        task_id=task_id,
+                        task_type=task_type,
+                        difficulty=difficulty,
+                        split=split,
+                        expected_mode=expected_mode,
+                        expected_mode_source=mode_source,
+                        task_fingerprint=raw_hash,
+                        task=None,
+                        load_error_type=type(exc).__name__,
+                        load_error_detail=str(exc),
+                    )
+                )
+                continue
+            descriptors.append(
+                TaskDescriptor(
+                    directory=resolved,
+                    relative_path=relative.as_posix(),
+                    task_id=task.id,
+                    task_type=task.task_type,
+                    difficulty=task.difficulty,
+                    split=split,
+                    expected_mode=expected_mode,
+                    expected_mode_source=mode_source,
+                    task_fingerprint=_task_fingerprint(task),
+                    task=task,
+                )
+            )
+    return sorted(
+        descriptors,
+        key=lambda item: (item.task_id.casefold(), str(item.directory)),
+    )
+
+
+def _matches_pattern(value: str, patterns: Sequence[str]) -> bool:
+    if not patterns:
+        return True
+    folded = value.casefold()
+    for raw in patterns:
+        pattern = str(raw).strip().casefold()
+        if not pattern:
+            continue
+        if folded == pattern or fnmatch.fnmatchcase(folded, pattern):
+            return True
+    return False
+
+
+def _difficulty_values(filters: Sequence[str | int]) -> set[int]:
+    values: set[int] = set()
+    for raw in filters:
+        for token in str(raw).split(","):
+            token = token.strip()
+            if not token:
+                continue
+            match = re.fullmatch(r"(-?\d+)\s*[-:]\s*(-?\d+)", token)
+            if match is not None:
+                start, end = int(match.group(1)), int(match.group(2))
+                step = 1 if end >= start else -1
+                values.update(range(start, end + step, step))
+            else:
+                values.add(int(token))
+    return values
+
+
+def select_tasks(
+    descriptors: Sequence[TaskDescriptor], config: BenchmarkConfig
+) -> list[TaskDescriptor]:
+    splits = set(config.splits)
+    mode_filters = {
+        mode
+        for raw in config.mode_filters
+        for mode in [_normalise_mode(raw)]
+        if mode is not None
+    }
+    difficulties = _difficulty_values(config.difficulty_filters)
+    selected: list[TaskDescriptor] = []
+    for descriptor in descriptors:
+        if "all" not in splits and descriptor.split not in splits:
+            continue
+        if config.task_filters and not (
+            _matches_pattern(descriptor.task_id, config.task_filters)
+            or _matches_pattern(descriptor.relative_path, config.task_filters)
+        ):
+            continue
+        if mode_filters and descriptor.expected_mode not in mode_filters:
+            continue
+        if difficulties and descriptor.difficulty not in difficulties:
+            continue
+        selected.append(descriptor)
+    if config.max_tasks is not None:
+        selected = selected[: config.max_tasks]
+    return selected
+
+
+def select_models(config: BenchmarkConfig) -> tuple[str, ...]:
+    return tuple(
+        model
+        for model in config.models
+        if _matches_pattern(model, config.model_filters)
+    )
+
+
+class SyntheticBenchmarkExecutor:
+    """Offline orchestration fixture which deliberately emits no HLS metrics.
+
+    The receipt proves selection, scheduling, isolation and durable report
+    generation only.  It does not invent baseline observations for the real
+    ``PhaseRouter`` and it does not fabricate tool validation or acceleration.
+    """
+
+    requires_vitis_lock = False
+
+    def __init__(self, evidence_class: EvidenceClass) -> None:
+        if evidence_class not in {EvidenceClass.DEMO, EvidenceClass.DETERMINISTIC}:
+            raise ValueError("synthetic executor cannot emit real evidence")
+        self.evidence_class = evidence_class
+
+    def fingerprint(self) -> str:
+        return (
+            f"synthetic-v3d-orchestration:v2:{self.evidence_class.value}:"
+            f"{_implementation_fingerprint()}"
+        )
+
+    def execute(
+        self,
+        spec: BenchmarkRunSpec,
+        *,
+        timeout_seconds: float | None = None,
+    ) -> Mapping[str, object]:
+        del timeout_seconds
+        evidence_level = (
+            "ORCHESTRATION_SMOKE_ONLY"
+            if self.evidence_class is EvidenceClass.DEMO
+            else "DETERMINISTIC_TEST_ONLY"
+        )
+        return {
+            "schema_version": 1,
+            "result_schema": "v3d.orchestration-receipt.v1",
+            "workflow": "v3d-synthetic-orchestration",
+            "backend": {
+                "class": f"{type(self).__module__}.{type(self).__qualname__}",
+                "fingerprint": self.fingerprint(),
+                "evidence_level": evidence_level,
+            },
+            "task_id": spec.task.id,
+            "status": "ORCHESTRATION_ONLY",
+            "stop_reason": "ORCHESTRATION_RECEIPT_COMPLETED",
+            "orchestration": {
+                "run_id": spec.run_id,
+                "run_fingerprint": spec.run_fingerprint,
+                "task_fingerprint": spec.descriptor.task_fingerprint,
+                "scheduled_model": spec.model,
+                "scheduled_backend": spec.backend,
+                "repeat_index": spec.repeat_index,
+            },
+            "metric_applicability": {
+                "phase_router": "N/A_NO_OBSERVED_BASELINE",
+                "e2e_success": "N/A_NO_TOOL_EXECUTION",
+                "fresh_final": "N/A_NO_TOOL_EXECUTION",
+                "acceleration": "N/A_NO_SYNTHESIS_MEASUREMENTS",
+            },
+            "budget": {
+                "credits_used": 0,
+                "tokens_used": 0,
+                "input_tokens_used": 0,
+                "output_tokens_used": 0,
+                "cached_input_tokens_used": 0,
+                "runtime_used_seconds": 0.0,
+                "tool_used": {},
+            },
+        }
+
+
+class V3PrototypeCLIExecutor:
+    """Serialized adapter around the existing real V3 single-task CLI."""
+
+    evidence_class = EvidenceClass.REAL
+    requires_vitis_lock = True
+    real_evidence_authority = REAL_EVIDENCE_AUTHORITY
+
+    _FORBIDDEN_EXTRA_ARGUMENTS = {
+        "--task-dir",
+        "--run-dir",
+        "--thread-id",
+        "--backend",
+        "--planner",
+        "--live-openai",
+        "--patch-file",
+        "--model",
+    }
+
+    def __init__(self, extra_args: Sequence[str] = ()) -> None:
+        self.extra_args = tuple(str(item) for item in extra_args)
+        for item in self.extra_args:
+            option = item.split("=", 1)[0]
+            if option in self._FORBIDDEN_EXTRA_ARGUMENTS:
+                raise BenchmarkError(
+                    f"real benchmark executor cannot override {option}"
+                )
+
+    def fingerprint(self) -> str:
+        # Only hashes of environment-derived values are retained.  The API key
+        # is intentionally absent; it neither changes execution semantics nor
+        # belongs in durable benchmark metadata.
+        effective_environment = {
+            "openai_base_url": os.environ.get("OPENAI_BASE_URL", "").strip(),
+            "vitis_root": os.environ.get(
+                "LLM4HLS_VITIS_HLS_ROOT", "/opt/xilinx/2025.2/Vitis"
+            ),
+            "toolchain_id": os.environ.get(
+                "LLM4HLS_TOOLCHAIN_ID", "Vitis 2025.2"
+            ),
+            "llm_timeout_s": os.environ.get("LLM4HLS_LLM_TIMEOUT_S", "120"),
+            "llm_max_output_tokens": os.environ.get(
+                "LLM4HLS_LLM_MAX_OUTPUT_TOKENS", "1000"
+            ),
+        }
+        return _sha256_json(
+            {
+                "executor": "v3-prototype-cli:v2",
+                "python": sys.version.split()[0],
+                "extra_args": self.extra_args,
+                "implementation_fingerprint": _implementation_fingerprint(),
+                "effective_environment_sha256": _sha256_json(
+                    effective_environment
+                ),
+            }
+        )
+
+    def _command(self, spec: BenchmarkRunSpec) -> list[str]:
+        return [
+            sys.executable,
+            "-m",
+            "llm4hls_agent.v3_prototype_cli",
+            "--task-dir",
+            str(spec.descriptor.directory),
+            "--run-dir",
+            str(spec.run_dir),
+            "--thread-id",
+            spec.run_id,
+            "--backend",
+            "vitis",
+            "--planner",
+            "openai-compatible",
+            "--model",
+            spec.model,
+            *self.extra_args,
+        ]
+
+    def execute(
+        self,
+        spec: BenchmarkRunSpec,
+        *,
+        timeout_seconds: float | None = None,
+    ) -> Mapping[str, object]:
+        result_path = spec.run_dir / "v3_prototype_result.json"
+        if result_path.exists():
+            raise BenchmarkExecutionError(
+                "refusing to execute with a pre-existing V3 terminal result"
+            )
+        command = self._command(spec)
+        _atomic_json(spec.run_dir / "benchmark_executor_command.json", command)
+        _atomic_json(
+            spec.run_dir / "benchmark_execution_binding.json",
+            {
+                "schema_version": "v3d.execution-binding.v1",
+                "run_id": spec.run_id,
+                "run_fingerprint": spec.run_fingerprint,
+                "task_id": spec.task.id,
+                "task_fingerprint": spec.descriptor.task_fingerprint,
+                "model": spec.model,
+            },
+        )
+        try:
+            completed = subprocess.run(
+                command,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=timeout_seconds,
+            )
+        except subprocess.TimeoutExpired as exc:
+            _atomic_text(spec.run_dir / "benchmark_stdout.log", exc.stdout or "")
+            _atomic_text(spec.run_dir / "benchmark_stderr.log", exc.stderr or "")
+            raise BenchmarkExecutionError("V3 CLI timed out") from exc
+        _atomic_text(spec.run_dir / "benchmark_stdout.log", completed.stdout)
+        _atomic_text(spec.run_dir / "benchmark_stderr.log", completed.stderr)
+        if result_path.is_file():
+            try:
+                value = json.loads(result_path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise BenchmarkExecutionError(
+                    "V3 CLI produced an unreadable terminal result"
+                ) from exc
+            if isinstance(value, Mapping):
+                status = str(value.get("status", "")).upper()
+                if completed.returncode != 0 and status == "DONE":
+                    raise BenchmarkExecutionError(
+                        "V3 CLI returned a successful terminal result with a "
+                        "non-zero process exit"
+                    )
+                if completed.returncode == 0 and status != "DONE":
+                    raise BenchmarkExecutionError(
+                        "V3 CLI exited zero without a DONE terminal result"
+                    )
+                self._validate_terminal_provenance(spec, value)
+                return value
+        detail = completed.stderr.strip().splitlines()[-1:] or ["no stderr"]
+        raise BenchmarkExecutionError(
+            f"V3 CLI exited {completed.returncode} without a terminal result: {detail[0]}"
+        )
+
+    @staticmethod
+    def _run_path(run_dir: Path, reference: str) -> Path:
+        if not isinstance(reference, str) or not reference:
+            raise BenchmarkExecutionError("V3 result contains an empty artifact ref")
+        relative = Path(reference)
+        if relative.is_absolute() or ".." in relative.parts:
+            raise BenchmarkExecutionError("V3 result contains an unsafe artifact ref")
+        root = run_dir.resolve()
+        cursor = root
+        for part in relative.parts:
+            cursor = cursor / part
+            if cursor.is_symlink():
+                raise BenchmarkExecutionError(
+                    f"V3 provenance artifact uses a symbolic link: {reference}"
+                )
+        path = (root / relative).resolve()
+        try:
+            path.relative_to(root)
+        except ValueError as exc:
+            raise BenchmarkExecutionError(
+                f"V3 provenance artifact escapes the run: {reference}"
+            ) from exc
+        if not path.is_file():
+            raise BenchmarkExecutionError(
+                f"V3 provenance artifact is missing: {reference}"
+            )
+        return path
+
+    @classmethod
+    def _run_json_with_hash(
+        cls, run_dir: Path, reference: str
+    ) -> tuple[Mapping[str, object], str, int]:
+        path = cls._run_path(run_dir, reference)
+        try:
+            data = path.read_bytes()
+            value = json.loads(data.decode("utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise BenchmarkExecutionError(
+                f"V3 provenance artifact is unreadable: {reference}"
+            ) from exc
+        if not isinstance(value, Mapping):
+            raise BenchmarkExecutionError(
+                f"V3 provenance artifact is not an object: {reference}"
+            )
+        return value, _sha256_bytes(data), len(data)
+
+    @classmethod
+    def _run_json(cls, run_dir: Path, reference: str) -> Mapping[str, object]:
+        return cls._run_json_with_hash(run_dir, reference)[0]
+
+    @staticmethod
+    def _ledger_events(run_dir: Path, reference: str) -> tuple[list[dict[str, object]], str]:
+        path = V3PrototypeCLIExecutor._run_path(run_dir, reference)
+        try:
+            data = path.read_bytes()
+            lines = data.decode("utf-8").splitlines()
+        except (OSError, UnicodeDecodeError) as exc:
+            raise BenchmarkExecutionError("V3 budget ledger is unreadable") from exc
+        events: list[dict[str, object]] = []
+        for number, line in enumerate(lines, 1):
+            if not line.strip():
+                continue
+            try:
+                value = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise BenchmarkExecutionError(
+                    f"V3 budget ledger line {number} is invalid"
+                ) from exc
+            if not isinstance(value, dict):
+                raise BenchmarkExecutionError(
+                    f"V3 budget ledger line {number} is not an object"
+                )
+            events.append(value)
+        if not events or events[0].get("state") != "INITIALIZED":
+            raise BenchmarkExecutionError("V3 budget ledger is not initialized")
+        return events, _sha256_bytes(data)
+
+    @staticmethod
+    def _require_digest(value: object, *, label: str) -> str:
+        if (
+            not isinstance(value, str)
+            or re.fullmatch(r"[0-9a-f]{64}", value) is None
+        ):
+            raise BenchmarkExecutionError(f"{label} is not a SHA-256 digest")
+        return value
+
+    def _validate_terminal_provenance(
+        self, spec: BenchmarkRunSpec, result: Mapping[str, object]
+    ) -> dict[str, object]:
+        """Validate and hash-bind one REAL terminal and every decisive ref.
+
+        This is the single validator used immediately after execution and on
+        ``--resume``.  Resume therefore cannot trust a once-valid summary row
+        after its source, package, Planner, ledger, final action, or Candidate
+        source has been changed.
+        """
+
+        source_ref = "v3_prototype_result.json"
+        source_result, source_sha256, _source_size = self._run_json_with_hash(
+            spec.run_dir, source_ref
+        )
+        if dict(source_result) != dict(result):
+            raise BenchmarkExecutionError(
+                "V3 source terminal result differs from the validated payload"
+            )
+
+        config_ref = "v3_run_config.json"
+        task_spec_ref = "v3_task_spec.json"
+        binding_ref = "benchmark_execution_binding.json"
+        command_ref = "benchmark_executor_command.json"
+        config, config_sha256, _ = self._run_json_with_hash(
+            spec.run_dir, config_ref
+        )
+        task_spec, task_spec_sha256, _ = self._run_json_with_hash(
+            spec.run_dir, task_spec_ref
+        )
+        binding, binding_sha256, _ = self._run_json_with_hash(
+            spec.run_dir, binding_ref
+        )
+        command_path = self._run_path(spec.run_dir, command_ref)
+        try:
+            command_data = command_path.read_bytes()
+            recorded_command = json.loads(command_data.decode("utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise BenchmarkExecutionError("V3 benchmark command is unreadable") from exc
+        if recorded_command != self._command(spec):
+            raise BenchmarkExecutionError(
+                "V3 benchmark command does not match the scheduled run"
+            )
+        command_sha256 = _sha256_bytes(command_data)
+
+        if config.get("thread_id") != spec.run_id:
+            raise BenchmarkExecutionError("V3 run thread_id does not match batch run_id")
+        if (
+            task_spec.get("task_id") != spec.task.id
+            or task_spec.get("public_file_hashes")
+            != dict(spec.task.public_file_hashes)
+        ):
+            raise BenchmarkExecutionError("V3 task spec does not match scheduled task")
+        expected_binding = {
+            "schema_version": "v3d.execution-binding.v1",
+            "run_id": spec.run_id,
+            "run_fingerprint": spec.run_fingerprint,
+            "task_id": spec.task.id,
+            "task_fingerprint": spec.descriptor.task_fingerprint,
+            "model": spec.model,
+        }
+        if dict(binding) != expected_binding:
+            raise BenchmarkExecutionError(
+                "V3 execution binding does not match the scheduled run"
+            )
+        if result.get("task_id") != spec.task.id:
+            raise BenchmarkExecutionError("V3 result does not match scheduled task")
+        backend = _mapping(result.get("backend"))
+        if (
+            backend.get("class") != "llm4hls_agent.vitis.VitisBackend"
+            or backend.get("fingerprint") != config.get("backend_fingerprint")
+        ):
+            raise BenchmarkExecutionError("REAL row was not produced by VitisBackend")
+
+        package = _mapping(result.get("package"))
+        manifest_ref = package.get("manifest_ref")
+        if not isinstance(manifest_ref, str) or not manifest_ref:
+            raise BenchmarkExecutionError("REAL terminal lacks a package manifest ref")
+        manifest, manifest_file_sha256, _ = self._run_json_with_hash(
+            spec.run_dir, manifest_ref
+        )
+        manifest_sha256 = self._require_digest(
+            package.get("manifest_sha256"), label="package manifest_sha256"
+        )
+        if _sha256_json(manifest) != manifest_sha256:
+            raise BenchmarkExecutionError("V3 package manifest hash mismatch")
+        terminal_payload = dict(result)
+        terminal_payload.pop("package", None)
+        if manifest.get("terminal_payload_sha256") != _sha256_json(
+            terminal_payload
+        ):
+            raise BenchmarkExecutionError("V3 terminal payload hash mismatch")
+        node_events = result.get("node_events")
+        if (
+            manifest.get("workflow") != result.get("workflow")
+            or manifest.get("task_id") != spec.task.id
+            or manifest.get("status") != result.get("status")
+            or manifest.get("final_candidate_id")
+            != result.get("final_candidate_id")
+            or not isinstance(node_events, list)
+            or manifest.get("node_event_count") != len(node_events)
+        ):
+            raise BenchmarkExecutionError("V3 package identity is inconsistent")
+
+        raw_artifacts = manifest.get("artifacts")
+        if not isinstance(raw_artifacts, list):
+            raise BenchmarkExecutionError("V3 package artifact list is invalid")
+        artifact_index: dict[str, str] = {}
+        artifact_order: list[str] = []
+        for raw in raw_artifacts:
+            item = _mapping(raw)
+            reference = item.get("path")
+            digest = item.get("sha256")
+            size = item.get("size_bytes")
+            if (
+                not isinstance(reference, str)
+                or reference in artifact_index
+                or not isinstance(size, int)
+                or isinstance(size, bool)
+                or size < 0
+            ):
+                raise BenchmarkExecutionError(
+                    "V3 package artifact entry is invalid or duplicated"
+                )
+            expected_digest = self._require_digest(
+                digest, label=f"package artifact {reference} sha256"
+            )
+            path = self._run_path(spec.run_dir, reference)
+            try:
+                data = path.read_bytes()
+            except OSError as exc:
+                raise BenchmarkExecutionError(
+                    f"V3 package artifact is unreadable: {reference}"
+                ) from exc
+            if len(data) != size or _sha256_bytes(data) != expected_digest:
+                raise BenchmarkExecutionError(
+                    f"V3 package artifact hash mismatch: {reference}"
+                )
+            artifact_index[reference] = expected_digest
+            artifact_order.append(reference)
+        if artifact_order != sorted(artifact_order):
+            raise BenchmarkExecutionError("V3 package artifacts are not sorted")
+
+        def covered(reference: str) -> str:
+            digest = artifact_index.get(reference)
+            if digest is None:
+                raise BenchmarkExecutionError(
+                    f"V3 decisive artifact is absent from package: {reference}"
+                )
+            return digest
+
+        for required in (config_ref, task_spec_ref, "budget_ledger.jsonl"):
+            covered(required)
+
+        hash_bound_refs: list[dict[str, str]] = []
+
+        def validate_json_ref(
+            *,
+            role: str,
+            reference_value: object,
+            digest_value: object | None = None,
+            canonical_digest: bool = False,
+            required: bool = False,
+        ) -> Mapping[str, object] | None:
+            if reference_value is None or reference_value == "":
+                if required:
+                    raise BenchmarkExecutionError(
+                        f"successful REAL model row lacks {role} ref"
+                    )
+                return None
+            if not isinstance(reference_value, str):
+                raise BenchmarkExecutionError(f"V3 {role} ref is invalid")
+            value, raw_digest, _ = self._run_json_with_hash(
+                spec.run_dir, reference_value
+            )
+            manifest_digest = covered(reference_value)
+            if raw_digest != manifest_digest:
+                raise BenchmarkExecutionError(
+                    f"V3 {role} differs from its package digest"
+                )
+            if digest_value is not None:
+                declared = self._require_digest(
+                    digest_value, label=f"{role} declared sha256"
+                )
+                actual = _sha256_json(value) if canonical_digest else raw_digest
+                if declared != actual:
+                    raise BenchmarkExecutionError(f"V3 {role} hash mismatch")
+            hash_bound_refs.append(
+                {"role": role, "ref": reference_value, "sha256": raw_digest}
+            )
+            return value
+
+        planner_input = validate_json_ref(
+            role="planner_input",
+            reference_value=result.get("planner_input_ref"),
+            digest_value=result.get("planner_input_sha256"),
+            canonical_digest=True,
+        )
+        planner_output = validate_json_ref(
+            role="planner_output",
+            reference_value=result.get("planner_output_ref"),
+            digest_value=result.get("planner_output_sha256"),
+            canonical_digest=True,
+        )
+        if (planner_input is None) != (planner_output is None):
+            raise BenchmarkExecutionError("V3 Planner input/output chain is incomplete")
+
+        for stem in (
+            "failure_evidence",
+            "baseline_synth_evidence",
+            "best_synth_evidence",
+            "candidate_synth_evidence",
+            "final_synth_evidence",
+        ):
+            validate_json_ref(
+                role=stem,
+                reference_value=result.get(f"{stem}_ref"),
+                digest_value=result.get(f"{stem}_sha256"),
+            )
+
+        registry, _registry_sha, _ = self._run_json_with_hash(
+            spec.run_dir, "candidate_registry.json"
+        )
+        covered("candidate_registry.json")
+        final_source: dict[str, str] | None = None
+        final_candidate_id = result.get("final_candidate_id")
+        if isinstance(final_candidate_id, str):
+            candidates = _mapping(registry.get("candidates"))
+            candidate = _mapping(candidates.get(final_candidate_id))
+            source_candidate_ref = candidate.get("source_ref")
+            if not isinstance(source_candidate_ref, str) or not source_candidate_ref:
+                raise BenchmarkExecutionError("V3 final Candidate source ref is missing")
+            source_path = self._run_path(spec.run_dir, source_candidate_ref)
+            source_digest = _sha256_file(source_path)
+            if (
+                covered(source_candidate_ref) != source_digest
+                or candidate.get("code_hash") != source_digest
+            ):
+                raise BenchmarkExecutionError(
+                    "V3 final Candidate source hash is inconsistent"
+                )
+            final_source = {
+                "candidate_id": final_candidate_id,
+                "ref": source_candidate_ref,
+                "sha256": source_digest,
+            }
+
+        ledger_events, ledger_sha256 = self._ledger_events(
+            spec.run_dir, "budget_ledger.jsonl"
+        )
+        if covered("budget_ledger.jsonl") != ledger_sha256:
+            raise BenchmarkExecutionError("V3 budget ledger package hash mismatch")
+        initialized_config = _mapping(ledger_events[0].get("config"))
+        if initialized_config != _mapping(config.get("budget")):
+            raise BenchmarkExecutionError("V3 budget ledger config mismatch")
+        events_by_action: dict[str, list[Mapping[str, object]]] = {}
+        for event in ledger_events[1:]:
+            action_id = event.get("action_id")
+            if isinstance(action_id, str):
+                events_by_action.setdefault(action_id, []).append(event)
+
+        live_completed_refs = sorted(
+            reference
+            for reference in artifact_index
+            if reference.startswith("control/live_planner_actions/")
+            and reference.endswith(".completed.json")
+        )
+        model_outcomes: list[dict[str, object]] = []
+        live_action_ids: set[str] = set()
+        for completed_ref in live_completed_refs:
+            action_id = Path(completed_ref).name[: -len(".completed.json")]
+            started_ref = (
+                f"control/live_planner_actions/{action_id}.started.json"
+            )
+            completed = validate_json_ref(
+                role=f"live_planner_completed:{action_id}",
+                reference_value=completed_ref,
+                required=True,
+            )
+            started = validate_json_ref(
+                role=f"live_planner_started:{action_id}",
+                reference_value=started_ref,
+                required=True,
+            )
+            assert completed is not None and started is not None
+            action_request = _mapping(completed.get("request"))
+            if (
+                completed.get("action_id") != action_id
+                or completed.get("status") != "COMPLETED"
+                or started.get("action_id") != action_id
+                or started.get("status") != "STARTED"
+                or _mapping(started.get("request")) != action_request
+                or _sha256_json(action_request) != action_id
+            ):
+                raise BenchmarkExecutionError(
+                    "V3 live Planner STARTED/COMPLETED identity mismatch"
+                )
+            request_ref = action_request.get("request_ref")
+            request_sha256 = action_request.get("request_sha256")
+            request_audit = validate_json_ref(
+                role=f"live_planner_request:{action_id}",
+                reference_value=request_ref,
+                digest_value=request_sha256,
+                canonical_digest=True,
+                required=True,
+            )
+            output_ref = completed.get("result_ref")
+            output_sha256 = completed.get("result_sha256")
+            outcome = validate_json_ref(
+                role=f"live_planner_outcome:{action_id}",
+                reference_value=output_ref,
+                digest_value=output_sha256,
+                required=True,
+            )
+            assert request_audit is not None and outcome is not None
+            provider_request = _mapping(
+                _mapping(request_audit.get("request")).get("provider_request")
+            )
+            provider_body = _mapping(provider_request.get("http_body"))
+            provider_binding = _mapping(outcome.get("provider_binding"))
+            proposal = _mapping(outcome.get("proposal"))
+            usage = _mapping(outcome.get("usage"))
+            if (
+                request_audit.get("planner_fingerprint")
+                != action_request.get("planner_fingerprint")
+                or request_audit.get("input_sha256")
+                != action_request.get("input_sha256")
+                or provider_request.get("provider") != "openai-compatible"
+                or provider_request.get("model") != spec.model
+                or provider_body.get("model") != spec.model
+                or provider_binding.get("planner_fingerprint")
+                != action_request.get("planner_fingerprint")
+                or provider_binding.get("provider") != proposal.get("provider")
+                or provider_binding.get("model") != spec.model
+                or proposal.get("model") != spec.model
+                or outcome.get("action_id") != action_id
+                or outcome.get("input_sha256")
+                != action_request.get("input_sha256")
+                or usage.get("usage_complete") is not True
+            ):
+                raise BenchmarkExecutionError(
+                    "V3 live Planner provider/model binding mismatch"
+                )
+            input_tokens = _as_nonnegative_int(usage.get("input_tokens"), -1)
+            output_tokens = _as_nonnegative_int(usage.get("output_tokens"), -1)
+            cached_tokens = _as_nonnegative_int(
+                usage.get("cached_input_tokens"), -1
+            )
+            tokens_used = _as_nonnegative_int(usage.get("tokens_used"), -1)
+            if (
+                input_tokens <= 0
+                or output_tokens <= 0
+                or cached_tokens < 0
+                or tokens_used != input_tokens + output_tokens
+                or proposal.get("input_tokens") != input_tokens
+                or proposal.get("output_tokens") != output_tokens
+                or proposal.get("cached_input_tokens") != cached_tokens
+                or completed.get("input_tokens") != input_tokens
+                or completed.get("output_tokens") != output_tokens
+                or completed.get("cached_input_tokens") != cached_tokens
+                or completed.get("tokens_used") != tokens_used
+            ):
+                raise BenchmarkExecutionError(
+                    "V3 live Planner outcome usage is inconsistent"
+                )
+            ledger_action = events_by_action.get(action_id, [])
+            ledger_started = [
+                event for event in ledger_action if event.get("state") == "STARTED"
+            ]
+            ledger_completed = [
+                event
+                for event in ledger_action
+                if event.get("state") == "COMPLETED"
+            ]
+            if (
+                len(ledger_started) != 1
+                or len(ledger_completed) != 1
+                or len(ledger_action) != 2
+                or ledger_started[0].get("kind") != "llm"
+                or ledger_started[0].get("tool_config_hash") != request_sha256
+                or ledger_completed[0].get("result_ref") != output_ref
+                or ledger_completed[0].get("result_sha256") != output_sha256
+                or ledger_completed[0].get("tokens_used") != tokens_used
+                or ledger_completed[0].get("input_tokens") != input_tokens
+                or ledger_completed[0].get("output_tokens") != output_tokens
+                or ledger_completed[0].get("cached_input_tokens") != cached_tokens
+            ):
+                raise BenchmarkExecutionError(
+                    "V3 live Planner outcome is not bound to the token ledger"
+                )
+            live_action_ids.add(action_id)
+            model_outcomes.append(
+                {
+                    "action_id": action_id,
+                    "provider": provider_binding.get("provider"),
+                    "model": spec.model,
+                    "request_ref": request_ref,
+                    "request_sha256": request_sha256,
+                    "outcome_ref": output_ref,
+                    "outcome_sha256": output_sha256,
+                    "tokens_used": tokens_used,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "cached_input_tokens": cached_tokens,
+                }
+            )
+
+        llm_terminal_events = [
+            event
+            for event in ledger_events
+            if event.get("kind") == "llm"
+            and event.get("state") in {"COMPLETED", "AMBIGUOUS"}
+        ]
+        completed_llm_ids = {
+            str(event.get("action_id"))
+            for event in llm_terminal_events
+            if event.get("state") == "COMPLETED"
+        }
+        if completed_llm_ids != live_action_ids:
+            raise BenchmarkExecutionError(
+                "V3 live Planner artifacts do not cover all completed ledger calls"
+            )
+
+        top_live_action_id = result.get("live_planner_action_id")
+        if isinstance(top_live_action_id, str) and top_live_action_id:
+            matching_outcomes = [
+                outcome
+                for outcome in model_outcomes
+                if outcome.get("action_id") == top_live_action_id
+            ]
+            if (
+                len(matching_outcomes) != 1
+                or matching_outcomes[0].get("request_ref")
+                != result.get("live_planner_request_ref")
+                or matching_outcomes[0].get("request_sha256")
+                != result.get("live_planner_request_sha256")
+                or matching_outcomes[0].get("outcome_ref")
+                != result.get("live_planner_output_ref")
+                or matching_outcomes[0].get("outcome_sha256")
+                != result.get("live_planner_output_sha256")
+            ):
+                raise BenchmarkExecutionError(
+                    "V3 terminal live Planner refs do not match its model outcome"
+                )
+
+        budget = _mapping(result.get("budget"))
+        tool_used = _mapping(budget.get("tool_used"))
+        llm_calls = _as_nonnegative_int(tool_used.get("llm"))
+        ledger_tokens = sum(
+            _as_nonnegative_int(event.get("tokens_used"))
+            for event in llm_terminal_events
+        )
+        ledger_input = sum(
+            _as_nonnegative_int(event.get("input_tokens"))
+            for event in llm_terminal_events
+        )
+        ledger_output = sum(
+            _as_nonnegative_int(event.get("output_tokens"))
+            for event in llm_terminal_events
+        )
+        ledger_cached = sum(
+            _as_nonnegative_int(event.get("cached_input_tokens"))
+            for event in llm_terminal_events
+        )
+        if (
+            llm_calls != len(llm_terminal_events)
+            or _as_nonnegative_int(budget.get("tokens_used")) != ledger_tokens
+            or _as_nonnegative_int(budget.get("input_tokens_used")) != ledger_input
+            or _as_nonnegative_int(budget.get("output_tokens_used")) != ledger_output
+            or _as_nonnegative_int(budget.get("cached_input_tokens_used"))
+            != ledger_cached
+        ):
+            raise BenchmarkExecutionError(
+                "V3 terminal usage does not match its token ledger"
+            )
+
+        status = str(result.get("status", "")).upper()
+        if status == "DONE" and (
+            not model_outcomes
+            or any(event.get("state") != "COMPLETED" for event in llm_terminal_events)
+            or budget.get("token_usage_complete") is not True
+        ):
+            raise BenchmarkExecutionError(
+                "successful REAL model row lacks complete live Planner usage"
+            )
+
+        for key in (
+            "live_planner_request_ref",
+            "live_planner_output_ref",
+            "live_planner_started_ref",
+            "live_planner_completed_ref",
+        ):
+            reference = result.get(key)
+            if status == "DONE" and (not isinstance(reference, str) or not reference):
+                raise BenchmarkExecutionError(
+                    f"successful REAL model row lacks {key}"
+                )
+            if isinstance(reference, str) and reference:
+                covered(reference)
+
+        final_artifacts: dict[str, dict[str, str]] = {}
+        validation = _mapping(result.get("final_validation"))
+        for stage in ("csim", "synth", "cosim"):
+            record = _mapping(validation.get(stage))
+            if status == "DONE" and (
+                str(record.get("status", "")).upper() not in _PASS_STATUSES
+                or record.get("cached") is not False
+                or record.get("validation_scope") != "final"
+            ):
+                raise BenchmarkExecutionError(
+                    f"successful REAL model row lacks fresh final {stage}"
+                )
+            reference = record.get("result_ref")
+            if reference is None or reference == "":
+                if status == "DONE":
+                    raise BenchmarkExecutionError(
+                        f"successful REAL model row lacks final {stage} result_ref"
+                    )
+                continue
+            action = validate_json_ref(
+                role=f"final_{stage}",
+                reference_value=reference,
+                required=True,
+            )
+            assert action is not None and isinstance(reference, str)
+            if (
+                action.get("kind") != stage
+                or action.get("validation_scope") != "final"
+                or action.get("action_id") != record.get("action_id")
+                or (
+                    status == "DONE"
+                    and action.get("ok") is not True
+                )
+            ):
+                raise BenchmarkExecutionError(
+                    f"final {stage} action does not match terminal provenance"
+                )
+            if final_source is not None and (
+                action.get("candidate_id") != final_source["candidate_id"]
+                or action.get("code_hash") != final_source["sha256"]
+            ):
+                raise BenchmarkExecutionError(
+                    f"final {stage} action is not bound to the final Candidate"
+                )
+            final_artifacts[stage] = {
+                "ref": reference,
+                "sha256": covered(reference),
+            }
+
+        return {
+            "schema_version": "v3d.real-provenance-receipt.v1",
+            "source_result": {"ref": source_ref, "sha256": source_sha256},
+            "package_manifest": {
+                "ref": manifest_ref,
+                "sha256": manifest_sha256,
+                "file_sha256": manifest_file_sha256,
+            },
+            "execution_binding": {
+                "ref": binding_ref,
+                "sha256": binding_sha256,
+            },
+            "executor_command": {
+                "ref": command_ref,
+                "sha256": command_sha256,
+            },
+            "run_config": {"ref": config_ref, "sha256": config_sha256},
+            "task_spec": {"ref": task_spec_ref, "sha256": task_spec_sha256},
+            "final_candidate_source": final_source,
+            "planner_artifacts": sorted(
+                hash_bound_refs, key=lambda item: (item["role"], item["ref"])
+            ),
+            "final_validation_artifacts": final_artifacts,
+            "model_outcomes": model_outcomes,
+            "token_ledger": {
+                "ref": "budget_ledger.jsonl",
+                "sha256": ledger_sha256,
+                "llm_calls": llm_calls,
+                "tokens_used": ledger_tokens,
+                "input_tokens": ledger_input,
+                "output_tokens": ledger_output,
+                "cached_input_tokens": ledger_cached,
+            },
+        }
+
+
+def default_executor(backend: str) -> BenchmarkExecutor:
+    if backend == "demo":
+        return SyntheticBenchmarkExecutor(EvidenceClass.DEMO)
+    if backend == "deterministic":
+        return SyntheticBenchmarkExecutor(EvidenceClass.DETERMINISTIC)
+    if backend == "vitis":
+        return V3PrototypeCLIExecutor()
+    raise ValueError(f"unsupported backend: {backend}")
+
+
+def _executor_fingerprint(executor: object) -> str:
+    method = getattr(executor, "fingerprint", None)
+    value = method() if callable(method) else None
+    if not isinstance(value, str) or not value.strip():
+        raise BenchmarkError("executor fingerprint must be a non-empty string")
+    return value.strip()
+
+
+def _executor_evidence_class(executor: object, backend: str) -> EvidenceClass:
+    raw = getattr(executor, "evidence_class", None)
+    if isinstance(raw, EvidenceClass):
+        declared = raw
+    else:
+        try:
+            declared = EvidenceClass(str(raw))
+        except ValueError:
+            declared = {
+                "demo": EvidenceClass.DEMO,
+                "deterministic": EvidenceClass.DETERMINISTIC,
+                "vitis": EvidenceClass.REAL,
+            }[backend]
+    expected = {
+        "demo": EvidenceClass.DEMO,
+        "deterministic": EvidenceClass.DETERMINISTIC,
+        "vitis": EvidenceClass.REAL,
+    }[backend]
+    if declared is not expected:
+        raise BenchmarkError(
+            f"executor evidence class {declared.value} conflicts with backend {backend}"
+        )
+    return declared
+
+
+def _execution_policy_fingerprint(config: BenchmarkConfig) -> str:
+    """Hash batch policy which can alter whether/how a slot is executed."""
+
+    return _sha256_json(
+        {
+            "schema_version": "v3d.execution-policy.v1",
+            "python_implementation": sys.implementation.name,
+            "python_version": sys.version.split()[0],
+            "max_runtime_seconds": config.max_runtime_seconds,
+            "per_run_timeout_policy": "remaining_batch_runtime",
+            "max_parallel_runs": 1,
+            "vitis_serialized": True,
+        }
+    )
+
+
+def _run_fingerprint(
+    descriptor: TaskDescriptor,
+    *,
+    model: str,
+    repeat_index: int,
+    backend: str,
+    executor_fingerprint: str,
+    execution_policy_fingerprint: str | None = None,
+) -> str:
+    return _sha256_json(
+        {
+            "schema": RUN_SCHEMA,
+            "runner": RUNNER_FINGERPRINT,
+            "implementation_fingerprint": _implementation_fingerprint(),
+            "task_fingerprint": descriptor.task_fingerprint,
+            "task_id": descriptor.task_id,
+            "split": descriptor.split,
+            "expected_mode": descriptor.expected_mode,
+            "model": model,
+            "repeat_index": repeat_index,
+            "backend": backend,
+            "executor_fingerprint": executor_fingerprint,
+            "execution_policy_fingerprint": execution_policy_fingerprint,
+        }
+    )
+
+
+def _make_run_id(
+    descriptor: TaskDescriptor, model: str, repeat_index: int, fingerprint: str
+) -> str:
+    return "--".join(
+        (
+            _safe_slug(descriptor.task_id, fallback="task"),
+            _safe_slug(model, fallback="model"),
+            f"r{repeat_index:03d}",
+            fingerprint[:12],
+        )
+    )
+
+
+def _mapping(value: object) -> Mapping[str, object]:
+    return value if isinstance(value, Mapping) else {}
+
+
+def _routed_mode(result: Mapping[str, object]) -> str | None:
+    direct = _normalise_mode(result.get("mode"))
+    if direct is not None:
+        return direct
+    return _normalise_mode(_mapping(result.get("phase_decision")).get("mode"))
+
+
+def _fresh_final(result: Mapping[str, object]) -> tuple[bool, bool]:
+    validation = _mapping(result.get("final_validation"))
+    records = [_mapping(validation.get(stage)) for stage in ("csim", "synth", "cosim")]
+    complete = all(
+        str(record.get("status", "")).upper() in _PASS_STATUSES for record in records
+    )
+    fresh = complete and all(record.get("cached") is False for record in records)
+    return complete, fresh
+
+
+def _acceleration(result: Mapping[str, object]) -> float | None:
+    for value in (
+        result.get("acceleration_vs_baseline"),
+        _mapping(result.get("metrics")).get("acceleration_vs_baseline"),
+    ):
+        parsed = _as_finite_float(value)
+        if parsed is not None and parsed > 0:
+            return parsed
+    rounds = result.get("candidate_rounds")
+    if not isinstance(rounds, list):
+        return None
+    baseline_id = str(result.get("baseline_candidate_id") or "candidate_000")
+    final_id = result.get("final_candidate_id")
+    baseline_latency: float | None = None
+    final_latency: float | None = None
+    declared: float | None = None
+    for raw in rounds:
+        row = _mapping(raw)
+        candidate_id = str(row.get("candidate_id", ""))
+        latency = _as_finite_float(row.get("latency_worst"))
+        if candidate_id == baseline_id and latency is not None and latency > 0:
+            baseline_latency = latency
+        if final_id is not None and candidate_id == str(final_id):
+            if latency is not None and latency > 0:
+                final_latency = latency
+            candidate_acceleration = _as_finite_float(
+                row.get("acceleration_vs_baseline")
+            )
+            if candidate_acceleration is not None and candidate_acceleration > 0:
+                declared = candidate_acceleration
+    if baseline_latency is not None and final_latency is not None:
+        return baseline_latency / final_latency
+    return declared
+
+
+def _patch_rejections(result: Mapping[str, object]) -> tuple[int, int, list[str]]:
+    rounds = result.get("candidate_rounds")
+    rounds = rounds if isinstance(rounds, list) else []
+    baseline_id = str(result.get("baseline_candidate_id") or "candidate_000")
+    candidates = 0
+    reasons: list[str] = []
+    for raw in rounds:
+        row = _mapping(raw)
+        if str(row.get("candidate_id", "")) == baseline_id:
+            continue
+        candidates += 1
+        decision = str(row.get("decision", row.get("status", ""))).upper()
+        if decision == "REJECTED" or "REJECT" in decision:
+            reasons.append(
+                str(
+                    row.get("decision_reason")
+                    or row.get("rejection_reason")
+                    or "UNSPECIFIED"
+                )
+            )
+    events = result.get("node_events")
+    if isinstance(events, list):
+        for raw in events:
+            event = _mapping(raw)
+            if event.get("node") != "record_rejected_proposal":
+                continue
+            candidates += 1
+            reasons.append(str(event.get("outcome") or "PATCH_POLICY_REJECTED"))
+    return len(reasons), candidates, reasons
+
+
+def _failure_stage(
+    result: Mapping[str, object] | None,
+    *,
+    error_type: str | None = None,
+    load_failure: bool = False,
+) -> str | None:
+    if load_failure:
+        return "TASK_LOAD"
+    if result is None:
+        return "EXECUTOR"
+    if str(result.get("status", "FAILED")).upper() == "DONE":
+        return None
+    validation = _mapping(result.get("final_validation"))
+    for stage in ("csim", "synth", "cosim"):
+        record = _mapping(validation.get(stage))
+        status = str(record.get("status", "NOT_RUN")).upper()
+        if status not in _PASS_STATUSES | {"", "NOT_RUN", "SKIPPED", "PENDING"}:
+            return f"FINAL_{stage.upper()}"
+    text = " ".join(
+        str(item).upper()
+        for item in (
+            result.get("stop_reason"),
+            result.get("last_tool_phase"),
+            result.get("last_tool_reason"),
+            error_type,
+        )
+        if item
+    )
+    for label, tokens in (
+        ("FINAL_COSIM", ("FINAL_COSIM",)),
+        ("FINAL_SYNTH", ("FINAL_SYNTH",)),
+        ("FINAL_CSIM", ("FINAL_CSIM",)),
+        ("PATCH", ("PATCH", "DIFF", "APPLY")),
+        ("PLANNER", ("PLANNER", "LLM", "MODEL")),
+        ("BASELINE_COSIM", ("BASELINE_COSIM",)),
+        ("BASELINE_SYNTH", ("BASELINE_SYNTH",)),
+        ("BASELINE_CSIM", ("BASELINE_CSIM",)),
+        ("COSIM", ("COSIM",)),
+        ("SYNTH", ("SYNTH",)),
+        ("CSIM", ("CSIM",)),
+        ("BUDGET", ("BUDGET", "CREDIT", "TOKEN", "RUNTIME")),
+    ):
+        if any(token in text for token in tokens):
+            return label
+    return "UNKNOWN"
+
+
+def _evidence_level(result: Mapping[str, object]) -> str:
+    return str(_mapping(result.get("backend")).get("evidence_level", "UNKNOWN"))
+
+
+def _is_orchestration_receipt(result: Mapping[str, object]) -> bool:
+    return result.get("result_schema") == "v3d.orchestration-receipt.v1"
+
+
+def _evidence_policy_valid(
+    evidence_class: EvidenceClass, evidence_level: str, raw_status: str
+) -> bool:
+    level = evidence_level.upper()
+    if evidence_class is EvidenceClass.DEMO:
+        return "DEMO" in level or "ORCHESTRATION_SMOKE" in level
+    if evidence_class is EvidenceClass.DETERMINISTIC:
+        return "DETERMINISTIC" in level or "TEST_OR_CUSTOM" in level
+    if level not in {"REAL_VITIS_VALIDATED", "REAL_VITIS_ATTEMPT_FAILED"}:
+        return False
+    if raw_status == "DONE":
+        return level == "REAL_VITIS_VALIDATED"
+    return level == "REAL_VITIS_ATTEMPT_FAILED"
+
+
+def _normalise_result(
+    spec: BenchmarkRunSpec,
+    result: Mapping[str, object],
+    *,
+    evidence_class: EvidenceClass,
+    real_evidence_authorized: bool,
+    executor_fingerprint: str,
+    provenance_receipt: Mapping[str, object] | None,
+    started_at: str,
+    finished_at: str,
+    wall_time_s: float,
+) -> dict[str, object]:
+    result_task_id = result.get("task_id")
+    if result_task_id is not None and str(result_task_id) != spec.task.id:
+        raise BenchmarkExecutionError(
+            "executor result task_id does not match the scheduled task"
+        )
+    raw_status = str(result.get("status", "FAILED")).upper()
+    status = raw_status
+    orchestration_only = _is_orchestration_receipt(result)
+    if orchestration_only:
+        if evidence_class is EvidenceClass.REAL:
+            raise BenchmarkExecutionError(
+                "REAL executor cannot return an orchestration-only receipt"
+            )
+        status = "ORCHESTRATION_ONLY"
+    elif status not in _TERMINAL_STATUSES:
+        status = "FAILED"
+    routed_mode = _routed_mode(result)
+    final_complete, fresh_final = _fresh_final(result)
+    level = _evidence_level(result)
+    policy_valid = _evidence_policy_valid(evidence_class, level, raw_status) and (
+        evidence_class is not EvidenceClass.REAL or real_evidence_authorized
+    )
+    e2e_success: bool | None = status == "DONE" and policy_valid
+    final_success: bool | None = final_complete and policy_valid
+    fresh_success: bool | None = fresh_final and policy_valid
+    if orchestration_only:
+        # A synthetic scheduling receipt is useful, but none of the benchmark
+        # outcome metrics have been observed.
+        routed_mode = None
+        e2e_success = None
+        final_success = None
+        fresh_success = None
+        final_complete = False
+        fresh_final = False
+    if not policy_valid:
+        status = "FAILED"
+        e2e_success = False
+        final_success = False
+        fresh_success = False
+        final_complete = False
+        fresh_final = False
+    budget = _mapping(result.get("budget"))
+    calls = {
+        str(key): _as_nonnegative_int(value)
+        for key, value in _mapping(budget.get("tool_used")).items()
+    }
+    rejection_count, patch_candidates, rejection_reasons = _patch_rejections(result)
+    expected_mode = spec.descriptor.expected_mode
+    routing_was_emitted = not orchestration_only and (
+        result.get("mode") is not None
+        or _mapping(result.get("phase_decision")).get("mode") is not None
+        or raw_status == "DONE"
+    )
+    router_correct = (
+        routed_mode == expected_mode
+        if expected_mode is not None and routing_was_emitted
+        else None
+    )
+    raw_result_path = spec.run_dir / "executor_result.json"
+    _atomic_json(raw_result_path, result)
+    executor_result_sha256 = _sha256_file(raw_result_path)
+    if (
+        evidence_class is EvidenceClass.REAL
+        and real_evidence_authorized
+        and provenance_receipt is None
+    ):
+        raise BenchmarkExecutionError(
+            "authorized REAL row lacks a provenance validation receipt"
+        )
+    source_receipt = _mapping(
+        _mapping(provenance_receipt).get("source_result")
+    )
+    record: dict[str, object] = {
+        "schema_version": RUN_SCHEMA,
+        "terminal": True,
+        "run_id": spec.run_id,
+        "run_fingerprint": spec.run_fingerprint,
+        "task_fingerprint": spec.descriptor.task_fingerprint,
+        "executor_fingerprint": executor_fingerprint,
+        "task_id": spec.descriptor.task_id,
+        "task_dir": str(spec.descriptor.directory),
+        "task_relative_path": spec.descriptor.relative_path,
+        "task_type": spec.descriptor.task_type,
+        "difficulty": spec.descriptor.difficulty,
+        "split": spec.descriptor.split,
+        "expected_mode": spec.descriptor.expected_mode,
+        "expected_mode_source": spec.descriptor.expected_mode_source,
+        "routed_mode": routed_mode,
+        "router_correct": router_correct,
+        "model": spec.model,
+        "repeat_index": spec.repeat_index,
+        "backend": spec.backend,
+        "evidence_class": evidence_class.value,
+        "evidence_level": level,
+        "evidence_policy_valid": policy_valid,
+        "real_evidence_eligible": (
+            not orchestration_only
+            and evidence_class is EvidenceClass.REAL
+            and real_evidence_authorized
+        ),
+        "execution_started": True,
+        "status": status,
+        "raw_status": raw_status,
+        "e2e_success": e2e_success,
+        "final_validation_success": final_success,
+        "fresh_final_success": fresh_success,
+        "stop_reason": (
+            "EVIDENCE_CLASS_MISMATCH"
+            if not policy_valid
+            else str(result.get("stop_reason", "UNKNOWN"))
+        ),
+        "failure_stage": (
+            None
+            if orchestration_only and policy_valid
+            else
+            "EVIDENCE_POLICY"
+            if not policy_valid
+            else _failure_stage(result)
+        ),
+        "acceleration_vs_baseline": (
+            None if orchestration_only else _acceleration(result)
+        ),
+        "credits_used": _as_nonnegative_int(budget.get("credits_used")),
+        "tokens_used": _as_nonnegative_int(budget.get("tokens_used")),
+        "input_tokens_used": _as_nonnegative_int(budget.get("input_tokens_used")),
+        "output_tokens_used": _as_nonnegative_int(budget.get("output_tokens_used")),
+        "cached_input_tokens_used": _as_nonnegative_int(
+            budget.get("cached_input_tokens_used")
+        ),
+        "tool_calls": calls,
+        "model_calls": calls.get("llm", 0),
+        "reported_runtime_s": _as_finite_float(budget.get("runtime_used_seconds")),
+        "wall_time_s": wall_time_s,
+        "patch_candidates": patch_candidates,
+        "patch_rejections": rejection_count,
+        "patch_rejection_reasons": rejection_reasons,
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "run_dir": str(spec.run_dir),
+        "result_ref": "executor_result.json",
+        "result_sha256": executor_result_sha256,
+        "source_result_ref": (
+            "v3_prototype_result.json"
+            if (spec.run_dir / "v3_prototype_result.json").is_file()
+            else None
+        ),
+        "source_result_sha256": source_receipt.get("sha256"),
+        "provenance_validation": (
+            dict(provenance_receipt) if provenance_receipt is not None else None
+        ),
+        "orchestration_receipt_ref": (
+            "executor_result.json" if orchestration_only else None
+        ),
+        "metric_applicability": (
+            dict(_mapping(result.get("metric_applicability")))
+            if orchestration_only
+            else {
+                "phase_router": "MEASURED" if router_correct is not None else "N/A",
+                "e2e_success": "MEASURED",
+                "fresh_final": "MEASURED",
+                "acceleration": (
+                    "MEASURED"
+                    if _acceleration(result) is not None
+                    else "N/A"
+                ),
+            }
+        ),
+        "resumed": False,
+    }
+    return record
+
+
+def _failure_record(
+    descriptor: TaskDescriptor,
+    *,
+    model: str,
+    repeat_index: int,
+    backend: str,
+    evidence_class: EvidenceClass,
+    executor_fingerprint: str,
+    run_id: str,
+    run_fingerprint: str,
+    run_dir: Path,
+    started_at: str,
+    finished_at: str,
+    wall_time_s: float,
+    error_type: str,
+    detail: str,
+    execution_started: bool,
+) -> dict[str, object]:
+    load_failure = not descriptor.loadable
+    return {
+        "schema_version": RUN_SCHEMA,
+        "terminal": True,
+        "run_id": run_id,
+        "run_fingerprint": run_fingerprint,
+        "task_fingerprint": descriptor.task_fingerprint,
+        "executor_fingerprint": executor_fingerprint,
+        "task_id": descriptor.task_id,
+        "task_dir": str(descriptor.directory),
+        "task_relative_path": descriptor.relative_path,
+        "task_type": descriptor.task_type,
+        "difficulty": descriptor.difficulty,
+        "split": descriptor.split,
+        "expected_mode": descriptor.expected_mode,
+        "expected_mode_source": descriptor.expected_mode_source,
+        "routed_mode": None,
+        "router_correct": None,
+        "model": model,
+        "repeat_index": repeat_index,
+        "backend": backend,
+        "evidence_class": evidence_class.value,
+        "evidence_level": "NO_TERMINAL_RESULT",
+        "evidence_policy_valid": True,
+        # Without a structured terminal result there is no proof that Vitis
+        # passed preflight or started.  Keep the configured REAL population for
+        # diagnostics, but exclude this row from the real-evidence headline.
+        "real_evidence_eligible": False,
+        "execution_started": execution_started,
+        "status": "ERROR",
+        "raw_status": "ERROR",
+        "e2e_success": False,
+        "final_validation_success": False,
+        "fresh_final_success": False,
+        "stop_reason": error_type,
+        "failure_stage": _failure_stage(
+            None, error_type=error_type, load_failure=load_failure
+        ),
+        "acceleration_vs_baseline": None,
+        "credits_used": 0,
+        "tokens_used": 0,
+        "input_tokens_used": 0,
+        "output_tokens_used": 0,
+        "cached_input_tokens_used": 0,
+        "tool_calls": {},
+        "model_calls": 0,
+        "reported_runtime_s": None,
+        "wall_time_s": wall_time_s,
+        "patch_candidates": 0,
+        "patch_rejections": 0,
+        "patch_rejection_reasons": [],
+        "error": {"type": error_type, "detail": detail},
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "run_dir": str(run_dir),
+        "result_ref": None,
+        "result_sha256": None,
+        "source_result_ref": None,
+        "source_result_sha256": None,
+        "provenance_validation": None,
+        "orchestration_receipt_ref": None,
+        "metric_applicability": {
+            "phase_router": "N/A_NO_TERMINAL_RESULT",
+            "e2e_success": "MEASURED_FAILURE",
+            "fresh_final": "MEASURED_FAILURE",
+            "acceleration": "N/A_NO_SUCCESSFUL_SYNTHESIS",
+        },
+        "resumed": False,
+    }
+
+
+def _load_previous_records(path: Path) -> list[dict[str, object]]:
+    if not path.is_file():
+        return []
+    records: list[dict[str, object]] = []
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError) as exc:
+        raise BenchmarkError(f"cannot read benchmark_results.jsonl: {exc}") from exc
+    for number, line in enumerate(lines, 1):
+        if not line.strip():
+            continue
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise BenchmarkError(
+                f"invalid benchmark_results.jsonl line {number}: {exc}"
+            ) from exc
+        if not isinstance(value, dict) or value.get("schema_version") != RUN_SCHEMA:
+            raise BenchmarkError(
+                f"benchmark_results.jsonl line {number} has an incompatible schema"
+            )
+        records.append(value)
+    return records
+
+
+def _resume_candidate(
+    output_dir: Path,
+    record: Mapping[str, object],
+    *,
+    spec: BenchmarkRunSpec | None = None,
+    executor: BenchmarkExecutor | None = None,
+) -> dict[str, object] | None:
+    run_dir_raw = record.get("run_dir")
+    if not isinstance(run_dir_raw, str):
+        return None
+    run_dir = Path(run_dir_raw).resolve()
+    try:
+        run_dir.relative_to(output_dir)
+    except ValueError:
+        return None
+    durable_path = run_dir / "benchmark_run.json"
+    if not durable_path.is_file():
+        return None
+    try:
+        durable = json.loads(durable_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(durable, dict):
+        return None
+    if (
+        durable.get("run_id") != record.get("run_id")
+        or durable.get("run_fingerprint") != record.get("run_fingerprint")
+        or durable.get("schema_version") != RUN_SCHEMA
+        or durable != record
+    ):
+        return None
+    result_ref = record.get("result_ref")
+    result_sha256 = record.get("result_sha256")
+    if isinstance(result_ref, str) and result_ref:
+        try:
+            result_path = V3PrototypeCLIExecutor._run_path(run_dir, result_ref)
+            result_bytes = result_path.read_bytes()
+            executor_result = json.loads(result_bytes.decode("utf-8"))
+        except (
+            BenchmarkExecutionError,
+            OSError,
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+        ):
+            return None
+        if (
+            not isinstance(executor_result, Mapping)
+            or not isinstance(result_sha256, str)
+            or _sha256_bytes(result_bytes) != result_sha256
+        ):
+            return None
+    elif result_ref is not None or result_sha256 is not None:
+        return None
+    else:
+        executor_result = None
+
+    if record.get("evidence_class") == EvidenceClass.REAL.value:
+        if (
+            spec is None
+            or type(executor) is not V3PrototypeCLIExecutor
+            or str(record.get("run_id")) != spec.run_id
+            or record.get("run_fingerprint") != spec.run_fingerprint
+            or record.get("task_fingerprint") != spec.descriptor.task_fingerprint
+            or record.get("task_id") != spec.task.id
+            or record.get("model") != spec.model
+            or record.get("repeat_index") != spec.repeat_index
+            or record.get("backend") != spec.backend
+        ):
+            return None
+        source_ref = record.get("source_result_ref")
+        source_digest = record.get("source_result_sha256")
+        if not isinstance(source_ref, str) or not isinstance(source_digest, str):
+            return None
+        try:
+            source_result, actual_source_digest, _ = (
+                V3PrototypeCLIExecutor._run_json_with_hash(run_dir, source_ref)
+            )
+            if (
+                actual_source_digest != source_digest
+                or executor_result is None
+                or dict(executor_result) != dict(source_result)
+            ):
+                return None
+            receipt = executor._validate_terminal_provenance(spec, source_result)
+        except (BenchmarkError, OSError, ValueError, TypeError):
+            return None
+        if receipt != record.get("provenance_validation"):
+            return None
+    resumed = dict(record)
+    resumed["resumed"] = True
+    return resumed
+
+
+@contextmanager
+def _exclusive_lock(path: Path) -> Iterator[None]:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a+b") as stream:
+        if os.name == "nt":
+            import msvcrt
+
+            if stream.seek(0, os.SEEK_END) == 0:
+                stream.write(b"0")
+                stream.flush()
+            stream.seek(0)
+            msvcrt.locking(stream.fileno(), msvcrt.LK_LOCK, 1)
+            try:
+                yield
+            finally:
+                stream.seek(0)
+                msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+
+
+def _metric_stats(values: Sequence[float]) -> dict[str, object]:
+    finite = [float(value) for value in values if math.isfinite(float(value))]
+    if not finite:
+        return {
+            "count": 0,
+            "total": 0.0,
+            "mean": None,
+            "median": None,
+            "min": None,
+            "max": None,
+        }
+    return {
+        "count": len(finite),
+        "total": sum(finite),
+        "mean": statistics.fmean(finite),
+        "median": statistics.median(finite),
+        "min": min(finite),
+        "max": max(finite),
+    }
+
+
+def _aggregate(records: Sequence[Mapping[str, object]]) -> dict[str, object]:
+    runs = len(records)
+    e2e_rows = [
+        record
+        for record in records
+        if isinstance(record.get("e2e_success"), bool)
+    ]
+    final_rows = [
+        record
+        for record in records
+        if isinstance(record.get("final_validation_success"), bool)
+    ]
+    fresh_rows = [
+        record
+        for record in records
+        if isinstance(record.get("fresh_final_success"), bool)
+    ]
+    e2e = sum(record.get("e2e_success") is True for record in e2e_rows)
+    final = sum(
+        record.get("final_validation_success") is True for record in final_rows
+    )
+    fresh = sum(record.get("fresh_final_success") is True for record in fresh_rows)
+    router_rows = [
+        record for record in records if record.get("router_correct") is not None
+    ]
+    router_correct = sum(bool(record.get("router_correct")) for record in router_rows)
+    accelerations = [
+        value
+        for record in records
+        if record.get("e2e_success") is True
+        and record.get("routed_mode") == "OPTIMIZE"
+        for value in [_as_finite_float(record.get("acceleration_vs_baseline"))]
+        if value is not None and value > 0
+    ]
+    tool_calls: Counter[str] = Counter()
+    for record in records:
+        for kind, count in _mapping(record.get("tool_calls")).items():
+            tool_calls[str(kind)] += _as_nonnegative_int(count)
+    rejection_count = sum(
+        _as_nonnegative_int(record.get("patch_rejections")) for record in records
+    )
+    patch_candidates = sum(
+        _as_nonnegative_int(record.get("patch_candidates")) for record in records
+    )
+    rejection_reasons = Counter(
+        str(reason)
+        for record in records
+        for reason in (
+            record.get("patch_rejection_reasons")
+            if isinstance(record.get("patch_rejection_reasons"), list)
+            else []
+        )
+    )
+    failures = [record for record in records if record.get("e2e_success") is False]
+    failure_stages = Counter(str(record.get("failure_stage") or "UNKNOWN") for record in failures)
+    failure_reasons = Counter(str(record.get("stop_reason") or "UNKNOWN") for record in failures)
+    credits = [_as_nonnegative_int(record.get("credits_used")) for record in records]
+    tokens = [_as_nonnegative_int(record.get("tokens_used")) for record in records]
+    model_calls = [_as_nonnegative_int(record.get("model_calls")) for record in records]
+    wall_times = [
+        value
+        for record in records
+        for value in [_as_finite_float(record.get("wall_time_s"))]
+        if value is not None and value >= 0
+    ]
+    return {
+        "runs": runs,
+        "e2e_eligible": len(e2e_rows),
+        "e2e_unknown": runs - len(e2e_rows),
+        "e2e_successes": e2e,
+        "e2e_success_rate": e2e / len(e2e_rows) if e2e_rows else None,
+        "final_validation_eligible": len(final_rows),
+        "final_validation_unknown": runs - len(final_rows),
+        "final_validation_successes": final,
+        "final_validation_success_rate": (
+            final / len(final_rows) if final_rows else None
+        ),
+        "fresh_final_eligible": len(fresh_rows),
+        "fresh_final_unknown": runs - len(fresh_rows),
+        "fresh_final_successes": fresh,
+        "fresh_final_success_rate": fresh / len(fresh_rows) if fresh_rows else None,
+        "router": {
+            "eligible": len(router_rows),
+            "correct": router_correct,
+            "accuracy": router_correct / len(router_rows) if router_rows else None,
+            "unknown": runs - len(router_rows),
+        },
+        "acceleration_vs_baseline": _metric_stats(accelerations),
+        "usage": {
+            "credits": _metric_stats(credits),
+            "tokens": _metric_stats(tokens),
+            "model_calls": _metric_stats(model_calls),
+            "wall_time_s": _metric_stats(wall_times),
+            "tool_calls": dict(sorted(tool_calls.items())),
+        },
+        "patch": {
+            "candidates": patch_candidates,
+            "rejections": rejection_count,
+            "rejection_rate": (
+                rejection_count / patch_candidates if patch_candidates else None
+            ),
+            "reasons": dict(sorted(rejection_reasons.items())),
+        },
+        "failures": {
+            "count": len(failures),
+            "by_stage": dict(sorted(failure_stages.items())),
+            "by_reason": dict(sorted(failure_reasons.items())),
+        },
+    }
+
+
+def _population_views(
+    records: Sequence[Mapping[str, object]],
+    selected_models: Sequence[str],
+) -> dict[str, object]:
+    rows = list(records)
+    modes = sorted(_MODES)
+    evidence = {
+        evidence_class.value: _aggregate(
+            [
+                record
+                for record in rows
+                if record.get("evidence_class") == evidence_class.value
+            ]
+        )
+        for evidence_class in EvidenceClass
+    }
+    real_rows = [
+        record
+        for record in rows
+        if record.get("evidence_class") == EvidenceClass.REAL.value
+        and record.get("real_evidence_eligible") is True
+    ]
+    expected_modes = {
+        mode: _aggregate(
+            [record for record in rows if record.get("expected_mode") == mode]
+        )
+        for mode in modes
+    }
+    routed_modes = {
+        mode: _aggregate(
+            [record for record in rows if record.get("routed_mode") == mode]
+        )
+        for mode in modes
+    }
+    by_model = {
+        model: _aggregate(
+            [record for record in rows if record.get("model") == model]
+        )
+        for model in selected_models
+    }
+    expected_mode_by_evidence = {
+        evidence_class.value: {
+            mode: _aggregate(
+                [
+                    record
+                    for record in rows
+                    if record.get("evidence_class") == evidence_class.value
+                    and record.get("expected_mode") == mode
+                ]
+            )
+            for mode in modes
+        }
+        for evidence_class in EvidenceClass
+    }
+    model_by_evidence = {
+        evidence_class.value: {
+            model: _aggregate(
+                [
+                    record
+                    for record in rows
+                    if record.get("evidence_class") == evidence_class.value
+                    and record.get("model") == model
+                ]
+            )
+            for model in selected_models
+        }
+        for evidence_class in EvidenceClass
+    }
+    return {
+        "records": len(rows),
+        "overall_all_evidence": _aggregate(rows),
+        "real_evidence_headline": _aggregate(real_rows),
+        "by_evidence_class": evidence,
+        "by_expected_mode": expected_modes,
+        "by_routed_mode": routed_modes,
+        "by_expected_mode_by_evidence": expected_mode_by_evidence,
+        "by_model": by_model,
+        "by_model_by_evidence": model_by_evidence,
+        "run_ids": [str(record.get("run_id")) for record in rows],
+    }
+
+
+def build_summary(
+    *,
+    config: BenchmarkConfig,
+    executor_fingerprint: str,
+    descriptors_found: int,
+    selected_tasks: Sequence[TaskDescriptor],
+    selected_models: Sequence[str],
+    planned_runs: int,
+    records: Sequence[Mapping[str, object]],
+    new_runs: int,
+    resumed_runs: int,
+    stopped_reason: str | None,
+    batch_elapsed_s: float,
+    all_attempt_records: Sequence[Mapping[str, object]] | None = None,
+    latest_slot_records: Sequence[Mapping[str, object]] | None = None,
+) -> dict[str, object]:
+    latest_rows = list(
+        records if latest_slot_records is None else latest_slot_records
+    )
+    attempt_rows = list(
+        records if all_attempt_records is None else all_attempt_records
+    )
+    all_views = _population_views(attempt_rows, selected_models)
+    latest_views = _population_views(latest_rows, selected_models)
+    fingerprint = _sha256_json(
+        {
+            "schema": SUMMARY_SCHEMA,
+            "runner": RUNNER_FINGERPRINT,
+            "implementation_fingerprint": _implementation_fingerprint(),
+            "executor_fingerprint": executor_fingerprint,
+            "execution_policy_fingerprint": _execution_policy_fingerprint(config),
+            "backend": config.backend,
+            "models": list(selected_models),
+            "repeats": config.repeats,
+            "tasks": [
+                {
+                    "task_id": item.task_id,
+                    "task_fingerprint": item.task_fingerprint,
+                    "split": item.split,
+                    "expected_mode": item.expected_mode,
+                }
+                for item in selected_tasks
+            ],
+        }
+    )
+    return {
+        "schema_version": SUMMARY_SCHEMA,
+        "runner_fingerprint": RUNNER_FINGERPRINT,
+        "implementation_fingerprint": _implementation_fingerprint(),
+        "implementation_facts": _implementation_facts(),
+        "execution_policy_fingerprint": _execution_policy_fingerprint(config),
+        "benchmark_fingerprint": fingerprint,
+        "generated_at": _utc_now(),
+        "configuration": config.public_dict(),
+        "selection": {
+            "descriptors_found": descriptors_found,
+            "tasks_selected": len(selected_tasks),
+            "task_ids": [item.task_id for item in selected_tasks],
+            "models_selected": list(selected_models),
+            "planned_runs": planned_runs,
+        },
+        "execution": {
+            # ``records`` remains the number of current plan slots for old
+            # consumers.  Attempt history is explicitly separate and is the
+            # denominator for scientific headline metrics.
+            "records": len(latest_rows),
+            "attempt_records": len(attempt_rows),
+            "latest_slot_records": len(latest_rows),
+            "completed_latest_slots": len(latest_rows),
+            "pending_latest_slots": max(0, planned_runs - len(latest_rows)),
+            "latest_slot_completion_rate": (
+                len(latest_rows) / planned_runs if planned_runs else None
+            ),
+            "new_runs": new_runs,
+            "resumed_runs": resumed_runs,
+            "stopped_reason": stopped_reason,
+            "batch_elapsed_s": batch_elapsed_s,
+            "max_parallel_runs": 1,
+            "vitis_serialized": True,
+        },
+        "evidence_policy": {
+            "demo": "orchestration only; excluded from real headline",
+            "deterministic": "fixture/test only; excluded from real headline",
+            "real": "structured Vitis terminal evidence only",
+            "mixed_populations_forbidden": True,
+            "headline_population": "all_attempts_for_current_plan_fingerprints",
+            "completion_population": "latest_slot",
+        },
+        "populations": {
+            "all_attempts": {
+                "definition": (
+                    "Every durable attempt whose run_fingerprint belongs to "
+                    "the current plan; retries do not erase failures."
+                ),
+                **all_views,
+            },
+            "latest_slots": {
+                "definition": (
+                    "The latest validated record for each completed current-plan "
+                    "slot; used only for resume completion."
+                ),
+                **latest_views,
+            },
+        },
+        "all_attempt_population": all_views["overall_all_evidence"],
+        "latest_slot_population": latest_views["overall_all_evidence"],
+        "latest_real_evidence": latest_views["real_evidence_headline"],
+        # Compatibility headlines deliberately point at all attempts, so a
+        # retry cannot make an earlier failed execution disappear.
+        "overall_all_evidence": all_views["overall_all_evidence"],
+        "real_evidence_headline": all_views["real_evidence_headline"],
+        "by_evidence_class": all_views["by_evidence_class"],
+        # ``by_mode`` remains as a compatibility alias, but now measures the
+        # scheduled/expected task category.  Misrouting is reported separately
+        # instead of moving a failure into the wrong category.
+        "by_mode": all_views["by_expected_mode"],
+        "by_expected_mode": all_views["by_expected_mode"],
+        "by_routed_mode": all_views["by_routed_mode"],
+        "by_expected_mode_by_evidence": all_views[
+            "by_expected_mode_by_evidence"
+        ],
+        "by_model": all_views["by_model"],
+        "by_model_by_evidence": all_views["by_model_by_evidence"],
+        "run_ids": all_views["run_ids"],
+        "latest_run_ids": latest_views["run_ids"],
+    }
+
+
+_CSV_FIELDS = (
+    "schema_version",
+    "run_id",
+    "run_fingerprint",
+    "task_id",
+    "split",
+    "task_type",
+    "difficulty",
+    "expected_mode",
+    "routed_mode",
+    "router_correct",
+    "model",
+    "repeat_index",
+    "backend",
+    "evidence_class",
+    "evidence_level",
+    "real_evidence_eligible",
+    "status",
+    "e2e_success",
+    "final_validation_success",
+    "fresh_final_success",
+    "acceleration_vs_baseline",
+    "credits_used",
+    "tokens_used",
+    "model_calls",
+    "csim_calls",
+    "synth_calls",
+    "cosim_calls",
+    "wall_time_s",
+    "patch_candidates",
+    "patch_rejections",
+    "failure_stage",
+    "stop_reason",
+    "resumed",
+    "run_dir",
+    "result_ref",
+    "result_sha256",
+    "source_result_ref",
+    "source_result_sha256",
+    "orchestration_receipt_ref",
+)
+
+
+def write_summary_csv(path: Path, records: Sequence[Mapping[str, object]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    with temporary.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=_CSV_FIELDS, extrasaction="ignore")
+        writer.writeheader()
+        for record in records:
+            row = dict(record)
+            calls = _mapping(record.get("tool_calls"))
+            row.update(
+                {
+                    "csim_calls": _as_nonnegative_int(calls.get("csim")),
+                    "synth_calls": _as_nonnegative_int(calls.get("synth")),
+                    "cosim_calls": _as_nonnegative_int(calls.get("cosim")),
+                }
+            )
+            writer.writerow(row)
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(temporary, path)
+
+
+def _percent(value: object) -> str:
+    parsed = _as_finite_float(value)
+    return "-" if parsed is None else f"{100.0 * parsed:.1f}%"
+
+
+def render_report(summary: Mapping[str, object]) -> str:
+    selection = _mapping(summary.get("selection"))
+    execution = _mapping(summary.get("execution"))
+    real = _mapping(summary.get("real_evidence_headline"))
+    latest = _mapping(summary.get("latest_slot_population"))
+    latest_real = _mapping(summary.get("latest_real_evidence"))
+    overall = _mapping(summary.get("overall_all_evidence"))
+    by_evidence = _mapping(summary.get("by_evidence_class"))
+    by_mode = _mapping(summary.get("by_expected_mode", summary.get("by_mode")))
+    by_mode_by_evidence = _mapping(summary.get("by_expected_mode_by_evidence"))
+    real_modes = _mapping(by_mode_by_evidence.get("REAL"))
+    lines = [
+        "# V3-D Batch Benchmark Report",
+        "",
+        f"- Benchmark fingerprint: `{summary.get('benchmark_fingerprint')}`",
+        f"- Selected tasks / planned runs: `{selection.get('tasks_selected')} / {selection.get('planned_runs')}`",
+        f"- Latest slots / all attempts / new / resumed: `"
+        f"{execution.get('latest_slot_records')} / {execution.get('attempt_records')} / "
+        f"{execution.get('new_runs')} / {execution.get('resumed_runs')}`",
+        f"- Stop reason: `{execution.get('stopped_reason') or 'COMPLETED'}`",
+        "",
+        "> Evidence rule: DEMO and DETERMINISTIC rows are fixture evidence only. "
+        "They are never included in the real-evidence headline below.",
+        "",
+        "## Real Vitis evidence headline (all current-plan attempts)",
+        "",
+        "> Retries remain in this population, so a later success cannot hide an "
+        "earlier failed attempt. Latest-slot rows are used only for completion.",
+        "",
+        "| Runs | E2E success | Fresh final | Router accuracy |",
+        "|---:|---:|---:|---:|",
+        f"| {real.get('runs', 0)} | {_percent(real.get('e2e_success_rate'))} | "
+        f"{_percent(real.get('fresh_final_success_rate'))} | "
+        f"{_percent(_mapping(real.get('router')).get('accuracy'))} |",
+        "",
+        "## Latest-slot completion population",
+        "",
+        "| Slots | E2E | Fresh final | Real slots | Real E2E |",
+        "|---:|---:|---:|---:|---:|",
+        f"| {latest.get('runs', 0)} | {_percent(latest.get('e2e_success_rate'))} | "
+        f"{_percent(latest.get('fresh_final_success_rate'))} | "
+        f"{latest_real.get('runs', 0)} | "
+        f"{_percent(latest_real.get('e2e_success_rate'))} |",
+        "",
+        "## Evidence populations",
+        "",
+        "| Evidence | Runs | E2E | Fresh final | Credits | Tokens | Calls C/S/Co/L | Time (s) |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    for name in ("REAL", "DETERMINISTIC", "DEMO"):
+        block = _mapping(by_evidence.get(name))
+        usage = _mapping(block.get("usage"))
+        credits = _mapping(usage.get("credits"))
+        tokens = _mapping(usage.get("tokens"))
+        calls = _mapping(usage.get("tool_calls"))
+        wall = _mapping(usage.get("wall_time_s"))
+        lines.append(
+            f"| {name} | {block.get('runs', 0)} | {_percent(block.get('e2e_success_rate'))} | "
+            f"{_percent(block.get('fresh_final_success_rate'))} | {credits.get('total', 0)} | "
+            f"{tokens.get('total', 0)} | "
+            f"{_as_nonnegative_int(calls.get('csim'))}/"
+            f"{_as_nonnegative_int(calls.get('synth'))}/"
+            f"{_as_nonnegative_int(calls.get('cosim'))}/"
+            f"{_as_nonnegative_int(calls.get('llm'))} | "
+            f"{wall.get('total', 0)} |"
+        )
+    lines.extend(
+        [
+            "",
+            "## Real expected-mode results",
+            "",
+            "| Expected mode | Runs | Success | Success rate | Fresh final |",
+            "|---|---:|---:|---:|---:|",
+        ]
+    )
+    for mode in sorted(by_mode):
+        block = _mapping(real_modes.get(mode))
+        lines.append(
+            f"| {mode} | {block.get('runs', 0)} | "
+            f"{block.get('e2e_successes', 0)} | "
+            f"{_percent(block.get('e2e_success_rate'))} | "
+            f"{_percent(block.get('fresh_final_success_rate'))} |"
+        )
+    lines.extend(
+        [
+            "",
+            "## Expected-mode diagnostics (all evidence populations)",
+            "",
+            "> This table can mix fixture populations. It is diagnostic only; "
+            "the REAL table above is the formal result.",
+            "",
+            "| Mode | Runs | Success | Success rate | Patch rejections | Failure stages |",
+            "|---|---:|---:|---:|---:|---|",
+        ]
+    )
+    for mode in sorted(by_mode):
+        block = _mapping(by_mode.get(mode))
+        patch = _mapping(block.get("patch"))
+        failures = _mapping(block.get("failures"))
+        lines.append(
+            f"| {mode} | {block.get('runs', 0)} | {block.get('e2e_successes', 0)} | "
+            f"{_percent(block.get('e2e_success_rate'))} | {patch.get('rejections', 0)} | "
+            f"`{_canonical_json(failures.get('by_stage', {}))}` |"
+        )
+    overall_acceleration = _mapping(overall.get("acceleration_vs_baseline"))
+    overall_patch = _mapping(overall.get("patch"))
+    overall_failures = _mapping(overall.get("failures"))
+    lines.extend(
+        [
+            "",
+            "## Cross-run diagnostics (all evidence, kept separate above)",
+            "",
+            f"- Acceleration mean / median / count: `{overall_acceleration.get('mean')} / {overall_acceleration.get('median')} / {overall_acceleration.get('count')}`",
+            f"- Patch rejection rate: `{_percent(overall_patch.get('rejection_rate'))}`",
+            f"- Patch rejection reasons: `{_canonical_json(overall_patch.get('reasons', {}))}`",
+            f"- Failure stages: `{_canonical_json(overall_failures.get('by_stage', {}))}`",
+            "",
+            "## Run IDs",
+            "",
+            *[f"- `{run_id}`" for run_id in summary.get("run_ids", [])],
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
+@dataclass
+class BenchmarkOutcome:
+    summary: dict[str, object]
+    records: list[dict[str, object]]
+
+
+class BatchBenchmarkRunner:
+    """Sequential, failure-isolating and resumable benchmark orchestrator."""
+
+    def __init__(
+        self,
+        config: BenchmarkConfig,
+        executor: BenchmarkExecutor | None = None,
+        *,
+        monotonic: Callable[[], float] = time.monotonic,
+        utc_now: Callable[[], str] = _utc_now,
+    ) -> None:
+        self.config = config
+        self.executor = executor or default_executor(config.backend)
+        self.monotonic = monotonic
+        self.utc_now = utc_now
+        self.executor_fingerprint = _executor_fingerprint(self.executor)
+        self.execution_policy_fingerprint = _execution_policy_fingerprint(config)
+        self.evidence_class = _executor_evidence_class(
+            self.executor, self.config.backend
+        )
+        self.real_evidence_authorized = (
+            type(self.executor) is V3PrototypeCLIExecutor
+            and self.config.backend == "vitis"
+            and self.evidence_class is EvidenceClass.REAL
+            and getattr(self.executor, "real_evidence_authority", None)
+            == REAL_EVIDENCE_AUTHORITY
+        )
+
+    def _plan(
+        self, descriptors: Sequence[TaskDescriptor], models: Sequence[str]
+    ) -> list[tuple[TaskDescriptor, str, int, str, str]]:
+        plan: list[tuple[TaskDescriptor, str, int, str, str]] = []
+        for descriptor in descriptors:
+            for model in models:
+                for repeat_index in range(1, self.config.repeats + 1):
+                    fingerprint = _run_fingerprint(
+                        descriptor,
+                        model=model,
+                        repeat_index=repeat_index,
+                        backend=self.config.backend,
+                        executor_fingerprint=self.executor_fingerprint,
+                        execution_policy_fingerprint=(
+                            self.execution_policy_fingerprint
+                        ),
+                    )
+                    run_id = _make_run_id(
+                        descriptor, model, repeat_index, fingerprint
+                    )
+                    plan.append(
+                        (descriptor, model, repeat_index, fingerprint, run_id)
+                    )
+        return plan
+
+    def run(self) -> BenchmarkOutcome:
+        output_dir = self.config.output_dir
+        results_path = output_dir / "benchmark_results.jsonl"
+        if results_path.exists() and results_path.stat().st_size and not self.config.resume:
+            raise BenchmarkError(
+                "output directory already contains benchmark results; use --resume "
+                "or choose a new --output-dir"
+            )
+        output_dir.mkdir(parents=True, exist_ok=True)
+        with _exclusive_lock(output_dir / ".benchmark.lock"):
+            if (
+                results_path.exists()
+                and results_path.stat().st_size
+                and not self.config.resume
+            ):
+                raise BenchmarkError(
+                    "output directory acquired by another completed runner; "
+                    "use --resume or choose a new --output-dir"
+                )
+            return self._run_locked(results_path)
+
+    def _run_locked(self, results_path: Path) -> BenchmarkOutcome:
+        start = self.monotonic()
+        descriptors = discover_tasks(self.config.corpus)
+        selected = select_tasks(descriptors, self.config)
+        models = select_models(self.config)
+        plan = self._plan(selected, models)
+        plan_payload = {
+            "schema_version": PLAN_SCHEMA,
+            "runner_fingerprint": RUNNER_FINGERPRINT,
+            "implementation_fingerprint": _implementation_fingerprint(),
+            "implementation_facts": _implementation_facts(),
+            "executor_fingerprint": self.executor_fingerprint,
+            "execution_policy_fingerprint": self.execution_policy_fingerprint,
+            "configuration": self.config.public_dict(),
+            "runs": [
+                {
+                    "task_id": descriptor.task_id,
+                    "task_fingerprint": descriptor.task_fingerprint,
+                    "model": model,
+                    "repeat_index": repeat_index,
+                    "run_fingerprint": fingerprint,
+                    "run_id": run_id,
+                }
+                for descriptor, model, repeat_index, fingerprint, run_id in plan
+            ],
+        }
+        _atomic_json(self.config.output_dir / "benchmark_plan.json", plan_payload)
+
+        previous = _load_previous_records(results_path) if self.config.resume else []
+        latest: dict[str, dict[str, object]] = {}
+        for record in previous:
+            fingerprint = record.get("run_fingerprint")
+            if isinstance(fingerprint, str):
+                latest[fingerprint] = record
+
+        records: list[dict[str, object]] = []
+        new_attempt_records: list[dict[str, object]] = []
+        new_runs = 0
+        resumed_runs = 0
+        invalidated_attempt_run_ids: set[str] = set()
+        validated_resume_run_ids: set[str] = set()
+        stopped_reason: str | None = None
+        for descriptor, model, repeat_index, fingerprint, run_id in plan:
+            elapsed = self.monotonic() - start
+            if (
+                self.config.max_runtime_seconds is not None
+                and elapsed >= self.config.max_runtime_seconds
+            ):
+                stopped_reason = "MAX_RUNTIME_REACHED"
+                break
+            prior = latest.get(fingerprint)
+            invalid_resume_record = False
+            retrying_prior_failure = bool(
+                prior is not None
+                and self.config.retry_failures
+                and prior.get("e2e_success") is not True
+            )
+            if prior is not None:
+                resume_spec: BenchmarkRunSpec | None = None
+                prior_run_dir = prior.get("run_dir")
+                prior_run_id = prior.get("run_id")
+                if (
+                    descriptor.task is not None
+                    and isinstance(prior_run_dir, str)
+                    and isinstance(prior_run_id, str)
+                ):
+                    resume_spec = BenchmarkRunSpec(
+                        task=descriptor.task,
+                        descriptor=descriptor,
+                        model=model,
+                        repeat_index=repeat_index,
+                        backend=self.config.backend,
+                        run_id=prior_run_id,
+                        run_fingerprint=fingerprint,
+                        run_dir=Path(prior_run_dir).resolve(),
+                    )
+                resumed = _resume_candidate(
+                    self.config.output_dir,
+                    prior,
+                    spec=resume_spec,
+                    executor=self.executor,
+                )
+                if resumed is not None and isinstance(prior.get("run_id"), str):
+                    validated_resume_run_ids.add(str(prior["run_id"]))
+                if resumed is not None and not retrying_prior_failure:
+                    records.append(resumed)
+                    resumed_runs += 1
+                    continue
+                if resumed is None:
+                    # The JSONL row and its complete durable provenance no
+                    # longer agree. Never trust or overwrite that directory,
+                    # but allow a clean independent recovery run.
+                    invalid_resume_record = True
+                    if isinstance(prior.get("run_id"), str):
+                        invalidated_attempt_run_ids.add(str(prior["run_id"]))
+
+            effective_run_id = run_id
+            if (
+                prior is not None
+                and self.config.retry_failures
+                and prior.get("e2e_success") is not True
+            ):
+                prior_attempts = sum(
+                    record.get("run_fingerprint") == fingerprint
+                    for record in previous
+                )
+                effective_run_id = f"{run_id}--retry{prior_attempts:03d}"
+            run_dir = self.config.output_dir / "runs" / effective_run_id
+            if invalid_resume_record:
+                recovery_index = 1
+                original_run_id = effective_run_id
+                while True:
+                    candidate_run_id = (
+                        f"{original_run_id}--recovery{recovery_index:03d}"
+                    )
+                    candidate_dir = self.config.output_dir / "runs" / candidate_run_id
+                    if not candidate_dir.exists():
+                        effective_run_id = candidate_run_id
+                        run_dir = candidate_dir
+                        break
+                    recovery_index += 1
+            preexisting_run_detail: str | None = None
+            if run_dir.exists() and any(run_dir.iterdir()):
+                preexisting_run_detail = (
+                    "scheduled run directory already existed and was non-empty; "
+                    "stale artifacts were not read or overwritten"
+                )
+                blocked_index = 1
+                original_run_id = effective_run_id
+                while True:
+                    candidate_run_id = (
+                        f"{original_run_id}--blocked{blocked_index:03d}"
+                    )
+                    candidate_dir = self.config.output_dir / "runs" / candidate_run_id
+                    if not candidate_dir.exists():
+                        effective_run_id = candidate_run_id
+                        run_dir = candidate_dir
+                        break
+                    blocked_index += 1
+            run_dir.mkdir(parents=True, exist_ok=True)
+            started_at = self.utc_now()
+            run_start = self.monotonic()
+            execution_started = False
+            if preexisting_run_detail is not None:
+                record = _failure_record(
+                    descriptor,
+                    model=model,
+                    repeat_index=repeat_index,
+                    backend=self.config.backend,
+                    evidence_class=self.evidence_class,
+                    executor_fingerprint=self.executor_fingerprint,
+                    run_id=effective_run_id,
+                    run_fingerprint=fingerprint,
+                    run_dir=run_dir,
+                    started_at=started_at,
+                    finished_at=self.utc_now(),
+                    wall_time_s=max(0.0, self.monotonic() - run_start),
+                    error_type="PreexistingRunDirectory",
+                    detail=preexisting_run_detail,
+                    execution_started=False,
+                )
+            elif not descriptor.loadable:
+                record = _failure_record(
+                    descriptor,
+                    model=model,
+                    repeat_index=repeat_index,
+                    backend=self.config.backend,
+                    evidence_class=self.evidence_class,
+                    executor_fingerprint=self.executor_fingerprint,
+                    run_id=effective_run_id,
+                    run_fingerprint=fingerprint,
+                    run_dir=run_dir,
+                    started_at=started_at,
+                    finished_at=self.utc_now(),
+                    wall_time_s=max(0.0, self.monotonic() - run_start),
+                    error_type=descriptor.load_error_type or "TaskPackageError",
+                    detail=descriptor.load_error_detail or "task package did not load",
+                    execution_started=False,
+                )
+            else:
+                assert descriptor.task is not None
+                spec = BenchmarkRunSpec(
+                    task=descriptor.task,
+                    descriptor=descriptor,
+                    model=model,
+                    repeat_index=repeat_index,
+                    backend=self.config.backend,
+                    run_id=effective_run_id,
+                    run_fingerprint=fingerprint,
+                    run_dir=run_dir,
+                )
+                remaining = (
+                    None
+                    if self.config.max_runtime_seconds is None
+                    else max(
+                        0.001,
+                        self.config.max_runtime_seconds
+                        - (self.monotonic() - start),
+                    )
+                )
+                try:
+                    execution_started = True
+                    if (
+                        self.config.backend == "vitis"
+                        or getattr(self.executor, "requires_vitis_lock", False)
+                    ):
+                        with _exclusive_lock(
+                            Path("/tmp/llm4hls-v3d-vitis-serial.lock")
+                        ):
+                            raw_result = self.executor.execute(
+                                spec, timeout_seconds=remaining
+                            )
+                    else:
+                        raw_result = self.executor.execute(
+                            spec, timeout_seconds=remaining
+                        )
+                    if not isinstance(raw_result, Mapping):
+                        raise BenchmarkExecutionError(
+                            "executor must return a mapping terminal result"
+                        )
+                    provenance_receipt: Mapping[str, object] | None = None
+                    if self.real_evidence_authorized:
+                        assert type(self.executor) is V3PrototypeCLIExecutor
+                        provenance_receipt = (
+                            self.executor._validate_terminal_provenance(
+                                spec, raw_result
+                            )
+                        )
+                    record = _normalise_result(
+                        spec,
+                        raw_result,
+                        evidence_class=self.evidence_class,
+                        real_evidence_authorized=self.real_evidence_authorized,
+                        executor_fingerprint=self.executor_fingerprint,
+                        provenance_receipt=provenance_receipt,
+                        started_at=started_at,
+                        finished_at=self.utc_now(),
+                        wall_time_s=max(0.0, self.monotonic() - run_start),
+                    )
+                except Exception as exc:
+                    record = _failure_record(
+                        descriptor,
+                        model=model,
+                        repeat_index=repeat_index,
+                        backend=self.config.backend,
+                        evidence_class=self.evidence_class,
+                        executor_fingerprint=self.executor_fingerprint,
+                        run_id=effective_run_id,
+                        run_fingerprint=fingerprint,
+                        run_dir=run_dir,
+                        started_at=started_at,
+                        finished_at=self.utc_now(),
+                        wall_time_s=max(0.0, self.monotonic() - run_start),
+                        error_type=type(exc).__name__,
+                        detail=str(exc),
+                        execution_started=execution_started,
+                    )
+            _atomic_json(run_dir / "benchmark_run.json", record)
+            if record.get("status") == "ERROR":
+                _atomic_json(run_dir / "failure.json", record.get("error", {}))
+            _append_jsonl(results_path, record)
+            records.append(record)
+            new_attempt_records.append(record)
+            new_runs += 1
+
+        elapsed = max(0.0, self.monotonic() - start)
+        current_fingerprints = {fingerprint for _, _, _, fingerprint, _ in plan}
+        plan_by_fingerprint = {
+            fingerprint: (descriptor, model, repeat_index)
+            for descriptor, model, repeat_index, fingerprint, _ in plan
+        }
+        # The headline retains every attempt, not just the latest slot.  Audit
+        # every historical REAL attempt before allowing it back into that
+        # population; otherwise tampering with an older retry could survive a
+        # resume merely because a newer slot record exists.
+        if self.config.resume and self.evidence_class is EvidenceClass.REAL:
+            for previous_record in previous:
+                fingerprint_value = previous_record.get("run_fingerprint")
+                planned = plan_by_fingerprint.get(str(fingerprint_value))
+                previous_run_id = previous_record.get("run_id")
+                previous_run_dir = previous_record.get("run_dir")
+                if (
+                    planned is None
+                    or not isinstance(previous_run_id, str)
+                    or not isinstance(previous_run_dir, str)
+                    or previous_run_id in invalidated_attempt_run_ids
+                    or previous_run_id in validated_resume_run_ids
+                ):
+                    continue
+                planned_descriptor, planned_model, planned_repeat = planned
+                if planned_descriptor.task is None:
+                    invalidated_attempt_run_ids.add(previous_run_id)
+                    continue
+                audit_spec = BenchmarkRunSpec(
+                    task=planned_descriptor.task,
+                    descriptor=planned_descriptor,
+                    model=planned_model,
+                    repeat_index=planned_repeat,
+                    backend=self.config.backend,
+                    run_id=previous_run_id,
+                    run_fingerprint=str(fingerprint_value),
+                    run_dir=Path(previous_run_dir).resolve(),
+                )
+                if (
+                    _resume_candidate(
+                        self.config.output_dir,
+                        previous_record,
+                        spec=audit_spec,
+                        executor=self.executor,
+                    )
+                    is None
+                ):
+                    invalidated_attempt_run_ids.add(previous_run_id)
+        all_attempt_records: list[dict[str, object]] = []
+        for previous_record in previous:
+            if previous_record.get("run_fingerprint") not in current_fingerprints:
+                continue
+            attempt = dict(previous_record)
+            if attempt.get("run_id") in invalidated_attempt_run_ids:
+                attempt.update(
+                    {
+                        "status": "ERROR",
+                        "e2e_success": False,
+                        "final_validation_success": False,
+                        "fresh_final_success": False,
+                        "acceleration_vs_baseline": None,
+                        "failure_stage": "PROVENANCE_RESUME",
+                        "stop_reason": "DURABLE_PROVENANCE_INVALIDATED",
+                        "resume_provenance_valid": False,
+                    }
+                )
+            all_attempt_records.append(attempt)
+        all_attempt_records.extend(new_attempt_records)
+        summary = build_summary(
+            config=self.config,
+            executor_fingerprint=self.executor_fingerprint,
+            descriptors_found=len(descriptors),
+            selected_tasks=selected,
+            selected_models=models,
+            planned_runs=len(plan),
+            records=records,
+            new_runs=new_runs,
+            resumed_runs=resumed_runs,
+            stopped_reason=stopped_reason,
+            batch_elapsed_s=elapsed,
+            all_attempt_records=all_attempt_records,
+            latest_slot_records=records,
+        )
+        # Keep the short V3-D prototype names for existing consumers while
+        # also publishing the exact filenames promised by the P5 benchmark
+        # contract.  Both names are generated from the same in-memory data so
+        # an alias can never describe a different population of runs.
+        _atomic_json(self.config.output_dir / "summary.json", summary)
+        _atomic_json(self.config.output_dir / "benchmark_summary.json", summary)
+        write_summary_csv(
+            self.config.output_dir / "summary.csv", all_attempt_records
+        )
+        write_summary_csv(
+            self.config.output_dir / "benchmark_summary.csv", all_attempt_records
+        )
+        report = render_report(summary)
+        _atomic_text(self.config.output_dir / "report.md", report)
+        _atomic_text(self.config.output_dir / "benchmark_report.md", report)
+        return BenchmarkOutcome(summary=summary, records=records)
+
+
+def _split_values(values: Sequence[str] | None) -> tuple[str, ...]:
+    if not values:
+        return ()
+    return tuple(
+        token.strip()
+        for value in values
+        for token in str(value).split(",")
+        if token.strip()
+    )
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="python -m llm4hls_agent.v3_batch_benchmark",
+        description=(
+            "Run a resumable V3-D corpus benchmark. Demo and deterministic "
+            "backends are fixture evidence and never count as real Vitis E2E."
+        ),
+    )
+    parser.add_argument(
+        "--corpus",
+        action="append",
+        required=True,
+        help="Corpus root or direct task.toml; repeat for multiple roots.",
+    )
+    parser.add_argument("--output-dir", required=True)
+    parser.add_argument(
+        "--split",
+        action="append",
+        default=[],
+        help="Split name(s), comma-separated or repeated; default is all.",
+    )
+    parser.add_argument(
+        "--models",
+        action="extend",
+        nargs="+",
+        default=[],
+        help="Model name(s), space/comma-separated or repeated.",
+    )
+    parser.add_argument("--repeats", type=int, default=1)
+    parser.add_argument(
+        "--backend",
+        choices=("demo", "deterministic", "vitis"),
+        default="deterministic",
+    )
+    parser.add_argument("--mode", dest="mode_filters", action="append", default=[])
+    parser.add_argument("--task", dest="task_filters", action="append", default=[])
+    parser.add_argument(
+        "--difficulty", dest="difficulty_filters", action="append", default=[]
+    )
+    parser.add_argument(
+        "--model",
+        "--model-filter",
+        dest="model_filters",
+        action="append",
+        default=[],
+        help="Filter the names supplied by --models (glob syntax accepted).",
+    )
+    parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--retry-failures", action="store_true")
+    parser.add_argument("--max-tasks", type=int)
+    parser.add_argument(
+        "--max-runtime",
+        "--max-runtime-seconds",
+        dest="max_runtime_seconds",
+        type=float,
+    )
+    return parser
+
+
+def main(argv: list[str] | None = None, *, stdout: TextIO | None = None) -> int:
+    stream = stdout or sys.stdout
+    args = _parser().parse_args(argv)
+    default_model = (
+        os.environ.get("LLM4HLS_MODEL", "deepseek-v4-pro")
+        if args.backend == "vitis"
+        else "deterministic-fixture-v1"
+    )
+    try:
+        config = BenchmarkConfig(
+            corpus=tuple(args.corpus),
+            output_dir=args.output_dir,
+            models=_split_values(args.models) or (default_model,),
+            repeats=args.repeats,
+            backend=args.backend,
+            splits=_split_values(args.split) or ("all",),
+            mode_filters=_split_values(args.mode_filters),
+            task_filters=_split_values(args.task_filters),
+            difficulty_filters=_split_values(args.difficulty_filters),
+            model_filters=_split_values(args.model_filters),
+            resume=args.resume,
+            retry_failures=args.retry_failures,
+            max_tasks=args.max_tasks,
+            max_runtime_seconds=args.max_runtime_seconds,
+        )
+        outcome = BatchBenchmarkRunner(config).run()
+    except Exception as exc:
+        print(
+            _canonical_json(
+                {
+                    "status": "ERROR",
+                    "error_type": type(exc).__name__,
+                    "detail": str(exc),
+                }
+            ),
+            file=sys.stderr,
+        )
+        return 3
+    real = _mapping(outcome.summary.get("real_evidence_headline"))
+    payload = {
+        "status": "DONE",
+        "schema_version": SUMMARY_SCHEMA,
+        "benchmark_fingerprint": outcome.summary.get("benchmark_fingerprint"),
+        "records": len(outcome.records),
+        "real_evidence_runs": real.get("runs", 0),
+        "real_e2e_success_rate": real.get("e2e_success_rate"),
+        "metric_status": (
+            "N/A_ORCHESTRATION_ONLY"
+            if outcome.records
+            and all(
+                record.get("status") == "ORCHESTRATION_ONLY"
+                for record in outcome.records
+            )
+            else "MEASURED"
+        ),
+        "output_dir": str(config.output_dir),
+        "results_ref": "benchmark_results.jsonl",
+        "summary_ref": "summary.json",
+        "csv_ref": "summary.csv",
+        "report_ref": "report.md",
+        "benchmark_summary_ref": "benchmark_summary.json",
+        "benchmark_csv_ref": "benchmark_summary.csv",
+        "benchmark_report_ref": "benchmark_report.md",
+    }
+    print(_canonical_json(payload), file=stream)
+    return (
+        0
+        if all(
+            record.get("e2e_success") is True
+            or record.get("status") == "ORCHESTRATION_ONLY"
+            for record in outcome.records
+        )
+        else 2
+    )
+
+
+def main_entry() -> None:
+    raise SystemExit(main())
+
+
+if __name__ == "__main__":
+    main_entry()
