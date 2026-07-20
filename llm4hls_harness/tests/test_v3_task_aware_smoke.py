@@ -299,7 +299,7 @@ def _assert_fresh_final_closure(test: unittest.TestCase, result: dict[str, objec
 @unittest.skipIf(run_v3_prototype is None, "V3 optional dependencies are not installed")
 class V3TaskAwareOfficialSmokeTests(unittest.TestCase):
     def _run(
-        self, task_id: str
+        self, task_id: str, proposal: PatchProposal | None = None
     ) -> tuple[
         dict[str, object], dict[str, object], dict[str, object], list[str]
     ]:
@@ -311,7 +311,7 @@ class V3TaskAwareOfficialSmokeTests(unittest.TestCase):
                 task,
                 run_root,
                 task_config(task),
-                proposal_for(task_id),
+                proposal or proposal_for(task_id),
                 backend=backend,
                 validation_profile="fast-experiment",
                 max_no_improvement_rounds=2,
@@ -369,6 +369,29 @@ class V3TaskAwareOfficialSmokeTests(unittest.TestCase):
             result["budget"]["tool_used"],
             {"csim": 3, "synth": 2, "cosim": 1, "llm": 0},
         )
+
+    def test_projection_repair_relocates_unique_model_hunk_start(self) -> None:
+        proposal = proposal_for("projection_bugfix")
+        misplaced = replace(
+            proposal,
+            patch=proposal.patch.replace(
+                "@@ -14,5 +14,5 @@", "@@ -12,5 +12,5 @@"
+            ),
+        )
+
+        result, registry, _planner_input, _calls = self._run(
+            "projection_bugfix", misplaced
+        )
+
+        candidate = registry["candidates"]["candidate_001"]
+        self.assertEqual(result["status"], "DONE")
+        self.assertTrue(candidate["patch_metadata_normalized"])
+        materialized = next(
+            event
+            for event in result["node_events"]
+            if event["node"] == "materialize_candidate"
+        )
+        self.assertTrue(materialized["details"]["patch_metadata_normalized"])
 
     def test_dot_product_keeps_existing_optimize_route(self) -> None:
         result, registry, planner_input, calls = self._run("dotProduct_optimize")

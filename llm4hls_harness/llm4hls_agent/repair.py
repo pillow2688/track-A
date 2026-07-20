@@ -409,16 +409,16 @@ def relocate_unified_diff_hunks(
     patch: str,
     *,
     kernel_name: str,
-    max_offset_lines: int = 8,
+    max_offset_lines: int | None = None,
 ) -> str:
-    """Repair a nearby hunk start only when its old body matches uniquely.
+    """Repair a hunk start only when its old body matches uniquely.
 
     This changes unified-diff location metadata only. Paths and every context,
     addition, and deletion line remain byte-for-byte identical, and the result
     must still pass :func:`apply_unified_diff`.
     """
 
-    if max_offset_lines < 0:
+    if max_offset_lines is not None and max_offset_lines < 0:
         raise ValueError("max_offset_lines must be non-negative")
     source_bytes = source.encode("utf-8") if isinstance(source, str) else bytes(source)
     try:
@@ -473,7 +473,10 @@ def relocate_unified_diff_hunks(
                     "patch hunk context is not a unique source match"
                 )
             actual_start = matches[0]
-            if abs(actual_start - declared_start) > max_offset_lines:
+            if (
+                max_offset_lines is not None
+                and abs(actual_start - declared_start) > max_offset_lines
+            ):
                 raise PatchValidationError("patch hunk start offset exceeds safety limit")
             closing = lines[index].find("@@", 2)
             suffix = lines[index][closing + 2 :] if closing >= 0 else ""

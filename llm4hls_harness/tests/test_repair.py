@@ -196,6 +196,77 @@ class RepairTests(unittest.TestCase):
             [line for line in relocated.splitlines() if not line.startswith("@@")],
         )
 
+    def test_patch_relocator_accepts_unique_exact_match_at_large_offset(self) -> None:
+        source = "".join(f"padding {index}\n" for index in range(32)) + "target\n"
+        misplaced = (
+            "--- kernel.cpp\n"
+            "+++ kernel.cpp\n"
+            "@@ -1,1 +1,1 @@\n"
+            "-target\n"
+            "+changed\n"
+        )
+
+        relocated = relocate_unified_diff_hunks(
+            source,
+            misplaced,
+            kernel_name="kernel.cpp",
+        )
+        application = apply_unified_diff(
+            source,
+            relocated,
+            kernel_name="kernel.cpp",
+        )
+
+        self.assertIn("@@ -33,1 +33,1 @@", relocated)
+        self.assertTrue(application.patched_bytes.endswith(b"changed\n"))
+
+    def test_patch_relocator_rejects_ambiguous_old_hunk(self) -> None:
+        source = "same\nmiddle\nsame\n"
+        misplaced = (
+            "--- kernel.cpp\n"
+            "+++ kernel.cpp\n"
+            "@@ -2,1 +2,1 @@\n"
+            "-same\n"
+            "+changed\n"
+        )
+
+        with self.assertRaisesRegex(
+            PatchValidationError, "not a unique source match"
+        ):
+            relocate_unified_diff_hunks(
+                source,
+                misplaced,
+                kernel_name="kernel.cpp",
+            )
+
+    def test_patch_relocator_rejects_missing_old_hunk(self) -> None:
+        missing = self.patch().replace("value - 1", "value - 2").replace(
+            "@@ -1,4 +1,4 @@", "@@ -2,4 +2,4 @@"
+        )
+
+        with self.assertRaisesRegex(
+            PatchValidationError, "not a unique source match"
+        ):
+            relocate_unified_diff_hunks(
+                self.task.kernel_bytes,
+                missing,
+                kernel_name="kernel.cpp",
+            )
+
+    def test_patch_relocator_still_rejects_non_kernel_target(self) -> None:
+        misplaced = self.patch().replace("kernel.cpp", "kernel.h").replace(
+            "@@ -1,4 +1,4 @@", "@@ -2,4 +2,4 @@"
+        )
+
+        with self.assertRaisesRegex(
+            PatchValidationError, "patch may modify only 'kernel.cpp'"
+        ):
+            relocate_unified_diff_hunks(
+                self.task.kernel_bytes,
+                misplaced,
+                kernel_name="kernel.cpp",
+            )
+
     def test_diagnosis_localizes_public_failure(self) -> None:
         run_root = self.root / "diagnostic-run"
         action = run_root / "actions" / "a"

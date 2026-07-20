@@ -32,6 +32,8 @@ from .repair import (
     PatchProposal,
     PatchValidationError,
     apply_unified_diff,
+    normalize_unified_diff_headers,
+    relocate_unified_diff_hunks,
 )
 from .scoring import (
     OFFICIAL_SCORE_SOURCE,
@@ -2060,9 +2062,50 @@ def _candidate_source(
         )
 
     proposal = _proposal_for_candidate(runtime, candidate_id)
-    if proposal is None or proposal.patch != patch_text:
+    try:
+        expected_patch = (
+            normalize_unified_diff_headers(proposal.patch)
+            if proposal is not None
+            else ""
+        )
+        expected_patch = (
+            relocate_unified_diff_hunks(
+                parent_source,
+                expected_patch,
+                kernel_name=runtime.task.kernel_name,
+            )
+            if proposal is not None
+            else ""
+        )
+    except PatchValidationError as exc:
+        raise RuntimeError(
+            f"Candidate Planner Patch cannot be normalized: {candidate_id}"
+        ) from exc
+    if proposal is None or expected_patch != patch_text:
         raise RuntimeError(
             f"Candidate Patch diverges from Planner output: {candidate_id}"
+        )
+    has_normalization_binding = any(
+        name in record
+        for name in ("planner_patch_sha256", "patch_metadata_normalized")
+    )
+    if has_normalization_binding:
+        planner_patch_sha256 = record.get("planner_patch_sha256")
+        if planner_patch_sha256 != hashlib.sha256(
+            proposal.patch.encode("utf-8")
+        ).hexdigest():
+            raise RuntimeError(
+                f"Candidate original Planner Patch binding mismatch: {candidate_id}"
+            )
+        if record.get("patch_metadata_normalized") != (
+            expected_patch != proposal.patch
+        ):
+            raise RuntimeError(
+                f"Candidate Patch normalization metadata mismatch: {candidate_id}"
+            )
+    elif proposal.patch != patch_text:
+        raise RuntimeError(
+            f"Legacy Candidate Patch diverges from Planner output: {candidate_id}"
         )
     _validate_live_planner_candidate_binding(
         runtime, registry, record, proposal
@@ -3302,7 +3345,43 @@ def _materialize_candidate(
     proposal = _current_proposal(runtime, state)
     manager = CandidateManager(runtime.run_root, runtime.task)
     registry = manager.load_registry()
-    patch_sha256 = hashlib.sha256(proposal.patch.encode("utf-8")).hexdigest()
+    source = _candidate_source(runtime, parent_id)
+    planner_patch_sha256 = hashlib.sha256(
+        proposal.patch.encode("utf-8")
+    ).hexdigest()
+    try:
+        applied_patch = normalize_unified_diff_headers(proposal.patch)
+        applied_patch = relocate_unified_diff_hunks(
+            source,
+            applied_patch,
+            kernel_name=runtime.task.kernel_name,
+        )
+        application = apply_unified_diff(
+            source,
+            applied_patch,
+            kernel_name=runtime.task.kernel_name,
+            limits=runtime.patch_limits,
+        )
+    except PatchValidationError as exc:
+        reason = "PATCH_POLICY_REJECTED"
+        event = _event(
+            runtime,
+            node="materialize_candidate",
+            phase=mode,
+            candidate_id=None,
+            action="validate_patch_before_candidate_allocation",
+            why=str(exc),
+            outcome=reason,
+            round_index=round_index,
+        )
+        return {
+            "active_candidate_id": None,
+            "last_tool_ok": False,
+            "last_tool_reason": reason,
+            "cosim_gate": {"eligible": False, "reason": reason},
+            "node_events": [event],
+        }
+    patch_sha256 = hashlib.sha256(applied_patch.encode("utf-8")).hexdigest()
     candidates = registry.get("candidates")
     duplicate_id = None
     duplicate_record: Mapping[str, object] | None = None
@@ -3365,37 +3444,10 @@ def _materialize_candidate(
             "cosim_gate": {"eligible": False, "reason": reason},
             "node_events": [event],
         }
-    source = _candidate_source(runtime, parent_id)
-    try:
-        application = apply_unified_diff(
-            source,
-            proposal.patch,
-            kernel_name=runtime.task.kernel_name,
-            limits=runtime.patch_limits,
-        )
-    except PatchValidationError as exc:
-        reason = "PATCH_POLICY_REJECTED"
-        event = _event(
-            runtime,
-            node="materialize_candidate",
-            phase=mode,
-            candidate_id=None,
-            action="validate_patch_before_candidate_allocation",
-            why=str(exc),
-            outcome=reason,
-            round_index=round_index,
-        )
-        return {
-            "active_candidate_id": None,
-            "last_tool_ok": False,
-            "last_tool_reason": reason,
-            "cosim_gate": {"eligible": False, "reason": reason},
-            "node_events": [event],
-        }
     materialized = manager.materialize(
         registry,
         parent_id=parent_id,
-        patch_text=proposal.patch,
+        patch_text=applied_patch,
         application=application,
         kind={
             PhaseMode.REPAIR.value: "repair",
@@ -3411,6 +3463,8 @@ def _materialize_candidate(
             "planner_output_ref": state["planner_output_ref"],
             "planner_output_sha256": state["planner_output_sha256"],
             "proposal_sha256": canonical_sha256(proposal_payload(proposal)),
+            "planner_patch_sha256": planner_patch_sha256,
+            "patch_metadata_normalized": applied_patch != proposal.patch,
             "round_index": round_index,
             "provider": proposal.provider,
             "model": proposal.model,
@@ -3465,6 +3519,11 @@ def _materialize_candidate(
         outcome=("MATERIALIZATION_REPLAYED" if replaying_materialization else "MATERIALIZED"),
         result_ref=f"candidates/{materialized.candidate_id}/candidate.json",
         round_index=round_index,
+        details={
+            "planner_patch_sha256": planner_patch_sha256,
+            "applied_patch_sha256": patch_sha256,
+            "patch_metadata_normalized": applied_patch != proposal.patch,
+        },
     )
     return {
         "active_candidate_id": materialized.candidate_id,
