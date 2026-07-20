@@ -47,6 +47,14 @@ def _parser() -> argparse.ArgumentParser:
             "OPENAI_BASE_URL and OPENAI_API_KEY must be set."
         ),
     )
+    mode.add_argument(
+        "--planner",
+        choices=("openai-compatible",),
+        help=(
+            "Select the real Planner backend. This is the explicit alias for "
+            "--live-openai used by V3-B experiments."
+        ),
+    )
     parser.add_argument("--run-dir", required=True)
     parser.add_argument("--thread-id", default="v3a0-prototype")
     parser.add_argument(
@@ -86,13 +94,13 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--llm-timeout",
         type=float,
-        default=120.0,
+        default=float(os.environ.get("LLM4HLS_LLM_TIMEOUT_S", "120")),
         help="OpenAI-compatible request timeout in seconds.",
     )
     parser.add_argument(
         "--llm-max-output-tokens",
         type=int,
-        default=1000,
+        default=int(os.environ.get("LLM4HLS_LLM_MAX_OUTPUT_TOKENS", "1000")),
         help="Maximum output tokens reserved for each live Planner call.",
     )
     parser.add_argument(
@@ -104,8 +112,10 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--max-planner-rounds",
         type=int,
-        default=1,
-        help="Maximum number of non-replayable live Planner calls.",
+        help=(
+            "Maximum number of live Planner calls. Defaults to 4 for "
+            "fast-experiment and 1 for strict compatibility."
+        ),
     )
     parser.add_argument(
         "--final-reserve-credits",
@@ -125,6 +135,15 @@ def _parser() -> argparse.ArgumentParser:
         help=(
             "Allow one additional fresh final CSim/Synth/CoSim attempt when "
             "credits remain. Disabled by default to preserve legacy run identity."
+        ),
+    )
+    parser.add_argument(
+        "--validation-profile",
+        choices=("strict", "fast-experiment"),
+        default="strict",
+        help=(
+            "strict preserves V3-A1 validation; fast-experiment skips ordinary "
+            "baseline/exploration CoSim while retaining a fresh final closure."
         ),
     )
     return parser
@@ -172,7 +191,17 @@ def main(argv: list[str] | None = None) -> int:
     try:
         task = load_public_task(args.task_dir)
         planner = None
-        if args.live_openai:
+        live_openai = bool(
+            args.live_openai or args.planner == "openai-compatible"
+        )
+        planned_rounds = (
+            args.max_planner_rounds
+            if args.max_planner_rounds is not None
+            else 4
+            if args.validation_profile == "fast-experiment"
+            else 1
+        )
+        if live_openai:
             base_url = os.environ.get("OPENAI_BASE_URL", "").strip()
             api_key = os.environ.get("OPENAI_API_KEY", "")
             if not base_url:
@@ -195,14 +224,26 @@ def main(argv: list[str] | None = None) -> int:
                     temperature=args.llm_temperature,
                 )
             )
-            planner = OpenAICompatibleV3PlannerAdapter(
-                Path(args.run_dir).resolve(),
-                provider,
-                final_reserve_credits=args.final_reserve_credits,
-                max_output_tokens=args.llm_max_output_tokens,
-            )
+            if args.validation_profile == "fast-experiment":
+                planner = OpenAICompatibleV3PlannerAdapter(
+                    Path(args.run_dir).resolve(),
+                    provider,
+                    final_reserve_credits=args.final_reserve_credits,
+                    max_output_tokens=args.llm_max_output_tokens,
+                    fast_experiment=True,
+                    read_only_headers={
+                        name: content.decode("utf-8")
+                        for name, content in task.headers.items()
+                    },
+                )
+            else:
+                planner = OpenAICompatibleV3PlannerAdapter(
+                    Path(args.run_dir).resolve(),
+                    provider,
+                    final_reserve_credits=args.final_reserve_credits,
+                    max_output_tokens=args.llm_max_output_tokens,
+                )
             proposals: tuple[PatchProposal, ...] = ()
-            planned_rounds = args.max_planner_rounds
             token_limit = 32768 if args.token_budget is None else args.token_budget
         else:
             proposals = tuple(
@@ -228,9 +269,13 @@ def main(argv: list[str] | None = None) -> int:
             )
             planned_rounds = len(proposals)
             token_limit = 4096 if args.token_budget is None else args.token_budget
-        validation_call_limit = planned_rounds + (
-            3 if args.enable_final_fallback else 2
+        max_final_attempts = (
+            2
+            if args.enable_final_fallback
+            or args.validation_profile == "fast-experiment"
+            else 1
         )
+        validation_call_limit = planned_rounds + 1 + max_final_attempts
         config = RunConfig(
             tool=ToolConfig(
                 vitis_root=str(vitis_root),
@@ -271,7 +316,8 @@ def main(argv: list[str] | None = None) -> int:
                 backend=backend,
                 thread_id=args.thread_id,
                 max_no_improvement_rounds=args.max_no_improvement_rounds,
-                max_final_attempts=2 if args.enable_final_fallback else 1,
+                max_final_attempts=max_final_attempts,
+                validation_profile=args.validation_profile,
             )
         else:
             result = run_v3_prototype(
@@ -280,10 +326,11 @@ def main(argv: list[str] | None = None) -> int:
                 config,
                 backend=backend,
                 planner=planner,
-                max_planner_rounds=args.max_planner_rounds,
+                max_planner_rounds=planned_rounds,
                 thread_id=args.thread_id,
                 max_no_improvement_rounds=args.max_no_improvement_rounds,
-                max_final_attempts=2 if args.enable_final_fallback else 1,
+                max_final_attempts=max_final_attempts,
+                validation_profile=args.validation_profile,
             )
     except Exception as exc:
         _print_error(type(exc).__name__, str(exc))
@@ -297,6 +344,7 @@ def main(argv: list[str] | None = None) -> int:
             else ("REAL_VITIS_VALIDATED" if done else "REAL_VITIS_ATTEMPT_FAILED")
         ),
         "task_id": result.get("task_id"),
+        "validation_profile": result.get("validation_profile"),
         "status": result.get("status"),
         "stop_reason": result.get("stop_reason"),
         "exploration_stop_reason": result.get("exploration_stop_reason"),
@@ -304,6 +352,8 @@ def main(argv: list[str] | None = None) -> int:
         "best_candidate_id": result.get("best_candidate_id"),
         "final_candidate_id": result.get("final_candidate_id"),
         "credits_used": result.get("budget", {}).get("credits_used"),
+        "tokens_used": result.get("budget", {}).get("tokens_used"),
+        "tool_calls": result.get("budget", {}).get("tool_used"),
         "run_dir": str(Path(args.run_dir).resolve()),
         "result_ref": "v3_prototype_result.json",
         "report_ref": "v3_team_report.md",

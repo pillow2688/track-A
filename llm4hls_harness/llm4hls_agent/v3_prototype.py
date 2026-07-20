@@ -90,6 +90,9 @@ STATE_SCHEMA_VERSION = 1
 CHECKPOINT_SCHEMA_VERSION = 3
 TERMINAL_RESULT_SCHEMA = "v3a.terminal-result.v1"
 _FULL_CLOSURE_CALLS = {"csim": 1, "synth": 1, "cosim": 1}
+STRICT_VALIDATION_PROFILE = "strict"
+FAST_EXPERIMENT_PROFILE = "fast-experiment"
+VALIDATION_PROFILES = (STRICT_VALIDATION_PROFILE, FAST_EXPERIMENT_PROFILE)
 
 
 class V3PrototypeState(TypedDict, total=False):
@@ -170,6 +173,7 @@ class _Runtime:
     max_final_attempts: int
     live_planner: LivePlanner | None = None
     max_planner_rounds: int = 1
+    validation_profile: str = STRICT_VALIDATION_PROFILE
 
     @property
     def proposal(self) -> PatchProposal:
@@ -179,11 +183,11 @@ class _Runtime:
 
     @property
     def planner_mode(self) -> str:
-        return (
-            "live_non_replayable_adapter"
-            if self.live_planner is not None
-            else "scripted_deterministic_adapter"
-        )
+        if self.live_planner is None:
+            return "scripted_deterministic_adapter"
+        if self.validation_profile == FAST_EXPERIMENT_PROFILE:
+            return "openai_compatible_fast_experiment"
+        return "live_non_replayable_adapter"
 
 
 def _utc_now() -> str:
@@ -272,6 +276,8 @@ def _run_config_snapshot(runtime: _Runtime) -> dict[str, object]:
         value["max_no_improvement_rounds"] = runtime.max_no_improvement_rounds
     if runtime.max_final_attempts != 1:
         value["max_final_attempts"] = runtime.max_final_attempts
+    if runtime.validation_profile != STRICT_VALIDATION_PROFILE:
+        value["validation_profile"] = runtime.validation_profile
     return value
 
 
@@ -740,6 +746,8 @@ def _build_round_planner_input(
             str(item.get("candidate_id", "")),
         )
     )
+    if runtime.validation_profile == FAST_EXPERIMENT_PROFILE:
+        history = history[-8:]
     budget_snapshot = BudgetLedger(
         runtime.run_root / "budget_ledger.jsonl", runtime.config.budget
     ).snapshot()
@@ -761,6 +769,12 @@ def _build_round_planner_input(
             "requires_cosim": runtime.task.requires_cosim,
             "candidate_gate": "strict_score_improvement_before_cosim",
             "final_validation": ["csim", "synth", "cosim"],
+            "validation_profile": runtime.validation_profile,
+            "max_optimization_rounds": (
+                runtime.max_planner_rounds
+                if runtime.live_planner is not None
+                else len(runtime.proposals)
+            ),
             "max_no_improvement_rounds": runtime.max_no_improvement_rounds,
             "scoring": runtime.scoring.to_dict(),
         },
@@ -1020,6 +1034,7 @@ def _build_package_manifest(
         "schema_version": "v3a.package-manifest.v1",
         "workflow": WORKFLOW_NAME,
         "task_id": runtime.task.id,
+        "validation_profile": runtime.validation_profile,
         "status": result.get("status"),
         "final_candidate_id": final_candidate_id,
         "registry_revision": int(registry.get("v3_revision", 0)),
@@ -2243,12 +2258,42 @@ def _validate_score_artifacts(
                 provisional_cosim=False,
             )
         else:
+            deferred_fast_cosim = False
+            if (
+                runtime.validation_profile == FAST_EXPERIMENT_PROFILE
+                and match.group("verified") is not None
+            ):
+                candidates = registry.get("candidates")
+                candidate = (
+                    candidates.get(candidate_id)
+                    if isinstance(candidates, Mapping)
+                    else None
+                )
+                candidate_validation = (
+                    candidate.get("validation")
+                    if isinstance(candidate, Mapping)
+                    else None
+                )
+                cosim_validation = (
+                    candidate_validation.get("cosim")
+                    if isinstance(candidate_validation, Mapping)
+                    else None
+                )
+                deferred_fast_cosim = not (
+                    isinstance(cosim_validation, Mapping)
+                    and (
+                        cosim_validation.get("status") == "PASS"
+                        or cosim_validation.get("ok") is True
+                    )
+                )
             expected = _recompute_exploration_score(
                 runtime,
                 registry,
                 candidate_id=candidate_id,
                 baseline_metrics=baseline_metrics,
-                provisional_cosim=match.group("pre") is not None,
+                provisional_cosim=(
+                    match.group("pre") is not None or deferred_fast_cosim
+                ),
                 include_proposal=(
                     match.group("pre") is not None
                     or match.group("verified") is not None
@@ -2272,9 +2317,19 @@ def _initialize(runtime: _Runtime, _state: V3PrototypeState) -> V3PrototypeState
     _baseline_path, baseline_ref = _snapshot_baseline(runtime.task, runtime.run_root)
     registry = _create_or_load_registry(runtime.task, runtime.run_root, baseline_ref)
     BudgetLedger(runtime.run_root / "budget_ledger.jsonl", runtime.config.budget)
+    baseline_calls = {"csim": 1, "synth": 1, "cosim": 0}
+    if (
+        runtime.validation_profile == STRICT_VALIDATION_PROFILE
+        or runtime.task.requires_cosim
+    ):
+        baseline_calls["cosim"] = 1
+    required_calls = {
+        kind: baseline_calls[kind] + _FULL_CLOSURE_CALLS[kind]
+        for kind in _FULL_CLOSURE_CALLS
+    }
     budget_gate = _budget_affordability(
         runtime,
-        required_calls={kind: count * 2 for kind, count in _FULL_CLOSURE_CALLS.items()},
+        required_calls=required_calls,
         policy="baseline_plus_final_closure",
     )
     if any(
@@ -2381,11 +2436,35 @@ def _baseline_synth(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeSt
         runtime.config.minimum_frequency_mhz,
     )
     ok = bool(result is not None and result.ok and metrics_ref and clock["passed"])
-    if synth_evidence_ref:
-        event["details"] = {
+    if (
+        ok
+        and runtime.validation_profile == FAST_EXPERIMENT_PROFILE
+        and not runtime.task.requires_cosim
+    ):
+        manager = CandidateManager(runtime.run_root, runtime.task)
+        registry = manager.load_registry()
+        registry["best_candidate_id"] = candidate_id
+        registry["candidates"][candidate_id]["status"] = (
+            "BASELINE_CSIM_SYNTH_VERIFIED"
+        )
+        manager.save_registry(registry)
+    event["details"] = {
+        "baseline_cosim": (
+            "REQUIRED_TASK"
+            if runtime.task.requires_cosim
+            else "REQUIRED_STRICT_PROFILE"
+            if runtime.validation_profile == STRICT_VALIDATION_PROFILE
+            else "SKIPPED_FAST_OPTIMIZE_TASK"
+        ),
+        **(
+            {
             "synth_evidence_ref": synth_evidence_ref,
             "synth_evidence_sha256": synth_evidence_sha256,
-        }
+            }
+            if synth_evidence_ref
+            else {}
+        ),
+    }
     return {
         "baseline_metrics_ref": metrics_ref or "",
         "best_metrics_ref": metrics_ref or "",
@@ -2465,7 +2544,13 @@ def _evaluate_round_budget(
         reason = "NO_IMPROVEMENT_LIMIT"
     else:
         required = {
-            kind: count * 2 for kind, count in _FULL_CLOSURE_CALLS.items()
+            "csim": 2,
+            "synth": 2,
+            "cosim": (
+                1
+                if runtime.validation_profile == FAST_EXPERIMENT_PROFILE
+                else 2
+            ),
         }
         required_tokens = 0
         if runtime.live_planner is not None:
@@ -2481,7 +2566,11 @@ def _evaluate_round_budget(
         gate = _budget_affordability(
             runtime,
             required_calls=required,
-            policy="candidate_exploration_plus_final_closure",
+            policy=(
+                "fast_candidate_csim_synth_plus_final_closure"
+                if runtime.validation_profile == FAST_EXPERIMENT_PROFILE
+                else "candidate_exploration_plus_final_closure"
+            ),
             required_tokens=required_tokens,
         )
         reason = (
@@ -2497,7 +2586,10 @@ def _evaluate_round_budget(
         candidate_id=state["best_candidate_id"],
         action="reserve_candidate_and_final_validation_budget",
         why=(
-            "Start optimization only when one full Candidate check and final "
+            "Start optimization only when Candidate CSim+Synth and the final "
+            "closure remain affordable. Exploration CoSim is risk-gated."
+            if runtime.validation_profile == FAST_EXPERIMENT_PROFILE
+            else "Start optimization only when one full Candidate check and final "
             "closure remain affordable."
         ),
         outcome=reason,
@@ -2786,15 +2878,32 @@ def _materialize_candidate(
     candidates = registry.get("candidates")
     duplicate_id = None
     duplicate_record: Mapping[str, object] | None = None
+    duplicate_reason = "DUPLICATE_PROPOSAL"
     if isinstance(candidates, Mapping):
         for candidate_id, candidate in candidates.items():
-            if (
-                isinstance(candidate, Mapping)
-                and candidate.get("parent_id") == parent_id
-                and candidate.get("patch_sha256") == patch_sha256
-            ):
+            if not isinstance(candidate, Mapping):
+                continue
+            same_patch = candidate.get("patch_sha256") == patch_sha256 and (
+                runtime.validation_profile == FAST_EXPERIMENT_PROFILE
+                or candidate.get("parent_id") == parent_id
+            )
+            same_bundle = (
+                runtime.validation_profile == FAST_EXPERIMENT_PROFILE
+                and candidate.get("kind") != "baseline"
+                and candidate.get("change_class") == proposal.change_class
+            )
+            if same_patch or same_bundle:
                 duplicate_id = str(candidate_id)
                 duplicate_record = candidate
+                duplicate_reason = (
+                    (
+                        "DUPLICATE_PATCH"
+                        if runtime.validation_profile == FAST_EXPERIMENT_PROFILE
+                        else "DUPLICATE_PROPOSAL"
+                    )
+                    if same_patch
+                    else "DUPLICATE_STRATEGY_BUNDLE"
+                )
                 break
     replaying_materialization = bool(
         duplicate_id is not None
@@ -2809,7 +2918,7 @@ def _materialize_candidate(
         and registry.get("active_candidate_id") == duplicate_id
     )
     if duplicate_id is not None and not replaying_materialization:
-        reason = "DUPLICATE_PROPOSAL"
+        reason = duplicate_reason
         event = _event(
             runtime,
             node="materialize_candidate",
@@ -3061,6 +3170,78 @@ def _candidate_synth(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeS
     return update
 
 
+def _worst_latency(report: Mapping[str, object], *, name: str) -> float:
+    latency = report.get("latency")
+    if not isinstance(latency, Mapping):
+        raise RuntimeError(f"{name} has no latency report")
+    value = latency.get("worst")
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(float(value))
+        or float(value) <= 0
+    ):
+        raise RuntimeError(f"{name} worst latency is invalid")
+    return float(value)
+
+
+def _fast_experiment_risk(
+    runtime: _Runtime, proposal: PatchProposal
+) -> dict[str, object]:
+    added = "\n".join(
+        line[1:]
+        for line in proposal.patch.splitlines()
+        if line.startswith("+") and not line.startswith("+++")
+    ).casefold()
+    bundle = {
+        item.strip().upper()
+        for item in str(proposal.change_class or "").split("+")
+        if item.strip()
+    }
+    try:
+        risk_payload = json.loads(str(proposal.risk or "{}"))
+    except json.JSONDecodeError:
+        risk_payload = {}
+    declared_level = (
+        str(risk_payload.get("level", "MEDIUM")).upper()
+        if isinstance(risk_payload, Mapping)
+        else "MEDIUM"
+    )
+    reasons: list[str] = []
+    if runtime.task.requires_cosim:
+        reasons.append("TASK_REQUIRES_COSIM")
+    if bundle.intersection({"DATAFLOW", "STREAMING", "BITWIDTH_OPTIMIZATION"}):
+        reasons.append("HIGH_RISK_STRATEGY")
+    structural_patterns = {
+        "#pragma hls dataflow": "DATAFLOW_CHANGE",
+        "hls::stream": "HLS_STREAM_CHANGE",
+        "#pragma hls stream": "FIFO_CHANGE",
+        "#pragma hls interface": "INTERFACE_CHANGE",
+        "ap_int<": "BITWIDTH_CHANGE",
+        "ap_uint<": "BITWIDTH_CHANGE",
+        "ap_fixed<": "BITWIDTH_CHANGE",
+        "ap_ufixed<": "BITWIDTH_CHANGE",
+    }
+    for token, reason in structural_patterns.items():
+        if token in added and reason not in reasons:
+            reasons.append(reason)
+    if declared_level == "HIGH":
+        reasons.append("PLANNER_DECLARED_HIGH_RISK")
+    requires_cosim = bool(reasons)
+    return {
+        "level": declared_level,
+        "dimensions": (
+            list(risk_payload.get("dimensions", []))
+            if isinstance(risk_payload, Mapping)
+            and isinstance(risk_payload.get("dimensions"), list)
+            else []
+        ),
+        "requires_cosim": requires_cosim,
+        "reasons": reasons or ["LOW_OR_MEDIUM_NON_STRUCTURAL_CHANGE"],
+        "strategy_bundle": sorted(bundle),
+    }
+
+
 def _candidate_score_gate(
     runtime: _Runtime, state: V3PrototypeState
 ) -> V3PrototypeState:
@@ -3118,11 +3299,44 @@ def _candidate_score_gate(
         if runtime.scoring.official_score_enabled
         else "ppa_gate"
     )
-    gate = evaluate_exploration_cosim_gate(
-        candidate_score,
-        incumbent_score,
-        policy=policy,
-    )
+    if runtime.validation_profile == FAST_EXPERIMENT_PROFILE:
+        incumbent_latency = _worst_latency(
+            incumbent_metrics, name="incumbent"
+        )
+        candidate_latency = _worst_latency(
+            candidate_metrics, name="candidate"
+        )
+        strictly_improved = candidate_latency < incumbent_latency
+        risk_decision = _fast_experiment_risk(runtime, proposal)
+        requires_cosim = risk_decision["requires_cosim"] is True
+        if not strictly_improved:
+            reason = "LATENCY_NOT_STRICTLY_IMPROVED"
+        elif requires_cosim:
+            reason = "STRICT_LATENCY_IMPROVEMENT_REQUIRES_COSIM"
+        else:
+            reason = "STRICT_LATENCY_IMPROVEMENT_COSIM_DEFERRED"
+        gate_value: dict[str, object] = {
+            "policy": FAST_EXPERIMENT_PROFILE,
+            "candidate_id": candidate_id,
+            "incumbent_id": incumbent_id,
+            "eligible": strictly_improved and requires_cosim,
+            "promote_without_cosim": strictly_improved and not requires_cosim,
+            "reason": reason,
+            "incumbent_latency_worst": incumbent_latency,
+            "candidate_latency_worst": candidate_latency,
+            "acceleration_vs_incumbent": (
+                incumbent_latency / candidate_latency
+            ),
+            "risk": risk_decision,
+        }
+    else:
+        gate = evaluate_exploration_cosim_gate(
+            candidate_score,
+            incumbent_score,
+            policy=policy,
+        )
+        gate_value = gate.to_dict()
+        reason = gate.reason
     event = _event(
         runtime,
         node="candidate_score_gate",
@@ -3130,7 +3344,7 @@ def _candidate_score_gate(
         candidate_id=candidate_id,
         action="compare_pre_cosim_score",
         why="Spend 20 CoSim credits only when CSim+Synth evidence beats the incumbent.",
-        outcome=gate.reason,
+        outcome=reason,
         result_ref=candidate_score_ref,
         round_index=round_index,
         details={
@@ -3142,13 +3356,17 @@ def _candidate_score_gate(
             "candidate_official_score": candidate_score.official_score,
             "incumbent_ppa_cost": incumbent_score.ppa_cost,
             "candidate_ppa_cost": candidate_score.ppa_cost,
-            "decision": gate.reason,
+            "decision": reason,
+            "risk": gate_value.get("risk"),
+            "promote_without_cosim": gate_value.get(
+                "promote_without_cosim", False
+            ),
         },
     )
     return {
         "baseline_score_ref": baseline_score_ref,
         "candidate_score_ref": candidate_score_ref,
-        "cosim_gate": gate.to_dict(),
+        "cosim_gate": gate_value,
         "node_events": [event],
     }
 
@@ -3238,16 +3456,28 @@ def _promote_candidate(runtime: _Runtime, state: V3PrototypeState) -> V3Prototyp
         candidate_id=candidate_id,
         validation_scope="exploration",
     )
+    validation = _registry_validation(runtime, candidate_id)
+    cosim_record = validation.get("cosim")
+    cosim_passed = isinstance(cosim_record, Mapping) and (
+        cosim_record.get("status") == "PASS" or cosim_record.get("ok") is True
+    )
+    deferred_cosim = (
+        runtime.validation_profile == FAST_EXPERIMENT_PROFILE
+        and not cosim_passed
+    )
     score = _score(
         runtime,
         candidate_id=candidate_id,
         baseline_metrics=baseline_metrics,
         candidate_metrics=candidate_metrics,
-        validation=_registry_validation(runtime, candidate_id),
+        validation=validation,
         clock=state["candidate_clock"],
         proposal=proposal,
-        provisional_cosim=False,
+        provisional_cosim=deferred_cosim,
     )
+    # Keep the established score artifact name so existing recovery and
+    # validation code can read an exploration-best candidate unchanged.  The
+    # payload itself records whether CoSim is deferred until final closure.
     score_ref = f"scores/{candidate_id}.verified.json"
     _atomic_json(runtime.run_root / score_ref, score.to_dict())
     decision_ref = _commit_registry_operation(
@@ -3271,7 +3501,11 @@ def _promote_candidate(runtime: _Runtime, state: V3PrototypeState) -> V3Prototyp
         candidate_id=candidate_id,
         action="promote_verified_candidate",
         why=str(state["cosim_gate"].get("reason", "STRICT_IMPROVEMENT")),
-        outcome="PROMOTED",
+        outcome=(
+            "PROMOTED_EXPLORATION_BEST_COSIM_DEFERRED"
+            if deferred_cosim
+            else "PROMOTED"
+        ),
         result_ref=decision_ref,
         round_index=int(state.get("round_index", 1)),
     )
@@ -3437,11 +3671,19 @@ def _evaluate_final_budget(
     }
 
 
-def _fallback_verified(candidate: Mapping[str, object]) -> bool:
+def _fallback_verified(
+    runtime: _Runtime, candidate: Mapping[str, object]
+) -> bool:
     validation = candidate.get("validation")
     if not isinstance(validation, Mapping):
         return False
-    for stage in ("csim", "synth", "cosim"):
+    stages = (
+        ("csim", "synth")
+        if runtime.validation_profile == FAST_EXPERIMENT_PROFILE
+        and not runtime.task.requires_cosim
+        else ("csim", "synth", "cosim")
+    )
+    for stage in stages:
         record = validation.get(stage)
         if not isinstance(record, Mapping) or not (
             record.get("status") == "PASS" or record.get("ok") is True
@@ -3470,20 +3712,24 @@ def _evaluate_final_fallback(
             if (
                 identifier in attempted
                 or not isinstance(candidate, Mapping)
-                or not _fallback_verified(candidate)
+                or not _fallback_verified(runtime, candidate)
             ):
                 continue
+            fast_provisional = (
+                runtime.validation_profile == FAST_EXPERIMENT_PROFILE
+                and not runtime.task.requires_cosim
+            )
             score = _recompute_exploration_score(
                 runtime,
                 registry,
                 candidate_id=identifier,
                 baseline_metrics=baseline_metrics,
-                provisional_cosim=False,
+                provisional_cosim=fast_provisional,
                 include_proposal=(identifier != state["baseline_candidate_id"]),
             )
             if score.candidate_id != identifier:
                 raise RuntimeError("fallback Candidate score identity mismatch")
-            if (
+            if not fast_provisional and (
                 not score.hard_constraints_passed
                 or score.verification_tier
                 < runtime.scoring.required_verification_tier
@@ -3743,6 +3989,94 @@ def _final_cosim(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeState
     }
 
 
+def _candidate_round_summaries(
+    runtime: _Runtime, state: Mapping[str, object]
+) -> list[dict[str, object]]:
+    registry = CandidateManager(runtime.run_root, runtime.task).load_registry()
+    candidates = registry.get("candidates")
+    if not isinstance(candidates, Mapping):
+        return []
+    baseline_latency: float | None = None
+    baseline_ref = state.get("baseline_metrics_ref")
+    if isinstance(baseline_ref, str) and baseline_ref:
+        baseline_report = _completed_synth_report(
+            runtime,
+            baseline_ref,
+            candidate_id=str(state.get("baseline_candidate_id")),
+            validation_scope="exploration",
+        )
+        baseline_latency = _worst_latency(baseline_report, name="baseline")
+    rows: list[dict[str, object]] = []
+    for candidate_id, raw_candidate in candidates.items():
+        if not isinstance(raw_candidate, Mapping) or raw_candidate.get("kind") == "baseline":
+            continue
+        candidate = dict(raw_candidate)
+        latency: float | None = None
+        metrics_ref = candidate.get("metrics_ref")
+        if isinstance(metrics_ref, str) and metrics_ref:
+            report = _completed_synth_report(
+                runtime,
+                metrics_ref,
+                candidate_id=str(candidate_id),
+                validation_scope="exploration",
+            )
+            latency = _worst_latency(report, name=str(candidate_id))
+        validation = candidate.get("validation")
+        validation = validation if isinstance(validation, Mapping) else {}
+        cosim_record = validation.get("cosim")
+        cosim_status = (
+            cosim_record.get("status", "NOT_RUN")
+            if isinstance(cosim_record, Mapping)
+            else "NOT_RUN"
+        )
+        try:
+            parsed_risk = json.loads(str(candidate.get("risk") or "{}"))
+        except json.JSONDecodeError:
+            parsed_risk = {"summary": candidate.get("risk")}
+        decision = candidate.get("status")
+        decision_reason = candidate.get("rejection_reason")
+        if decision == "PROMOTED":
+            decision_reason = (
+                "STRICT_LATENCY_IMPROVEMENT_COSIM_DEFERRED"
+                if cosim_status == "NOT_RUN"
+                else "STRICT_LATENCY_IMPROVEMENT_COSIM_PASS"
+            )
+        elif decision == "FINAL_VERIFIED" and cosim_status == "NOT_RUN":
+            decision_reason = (
+                "PROMOTED_EXPLORATION_BEST_COSIM_DEFERRED;FINAL_CLOSURE_PASS"
+            )
+        rows.append(
+            {
+                "round": candidate.get("round_index"),
+                "candidate_id": str(candidate_id),
+                "parent_id": candidate.get("parent_id"),
+                "strategy_bundle": str(candidate.get("change_class") or "").split("+"),
+                "patch_sha256": candidate.get("patch_sha256"),
+                "latency_worst": latency,
+                "acceleration_vs_baseline": (
+                    baseline_latency / latency
+                    if baseline_latency is not None and latency is not None
+                    else None
+                ),
+                "risk_decision": parsed_risk,
+                "cosim": cosim_status,
+                "cosim_reason": (
+                    "DEFERRED_LOW_RISK"
+                    if cosim_status == "NOT_RUN"
+                    and decision in {"PROMOTED", "FINAL_VERIFIED"}
+                    else decision_reason
+                ),
+                "decision": decision,
+                "decision_reason": decision_reason,
+                "input_tokens": candidate.get("input_tokens", 0),
+                "output_tokens": candidate.get("output_tokens", 0),
+                "credits": candidate.get("credits_used", 0),
+            }
+        )
+    rows.sort(key=lambda item: (int(item.get("round") or 0), str(item["candidate_id"])))
+    return rows
+
+
 def _render_team_report(
     runtime: _Runtime, result: Mapping[str, object]
 ) -> str:
@@ -3842,6 +4176,45 @@ def _render_team_report(
             )
             + " |"
         )
+    candidate_rows = [
+        "| Round | Candidate | Parent | Strategy bundle | Latency | Acceleration | Risk | CoSim | CoSim reason | Decision | Tokens in/out | Credits |",
+        "|---:|---|---|---|---:|---:|---|---|---|---|---:|---:|",
+    ]
+    raw_candidates = result.get("candidate_rounds")
+    for raw_candidate in raw_candidates if isinstance(raw_candidates, list) else []:
+        if not isinstance(raw_candidate, Mapping):
+            continue
+        risk = raw_candidate.get("risk_decision")
+        candidate_rows.append(
+            "| "
+            + " | ".join(
+                [
+                    report_cell(raw_candidate.get("round")),
+                    report_cell(raw_candidate.get("candidate_id")),
+                    report_cell(raw_candidate.get("parent_id")),
+                    report_cell(raw_candidate.get("strategy_bundle")),
+                    report_cell(raw_candidate.get("latency_worst")),
+                    report_cell(raw_candidate.get("acceleration_vs_baseline")),
+                    report_cell(risk),
+                    report_cell(raw_candidate.get("cosim")),
+                    report_cell(raw_candidate.get("cosim_reason")),
+                    report_cell(
+                        str(raw_candidate.get("decision"))
+                        + ":"
+                        + str(raw_candidate.get("decision_reason"))
+                    ),
+                    report_cell(
+                        str(raw_candidate.get("input_tokens", 0))
+                        + "/"
+                        + str(raw_candidate.get("output_tokens", 0))
+                    ),
+                    report_cell(raw_candidate.get("credits")),
+                ]
+            )
+            + " |"
+        )
+    calls = budget.get("tool_used")
+    calls = calls if isinstance(calls, Mapping) else {}
     planner_contract = result.get("planner_contract")
     a1_lines: list[str] = []
     if isinstance(planner_contract, Mapping):
@@ -3876,7 +4249,10 @@ def _render_team_report(
                     + "`",
                 ]
                 if planner_contract.get("mode")
-                == "live_non_replayable_adapter"
+                in {
+                    "live_non_replayable_adapter",
+                    "openai_compatible_fast_experiment",
+                }
                 else []
             ),
             "- Baseline synth evidence: `"
@@ -3895,18 +4271,22 @@ def _render_team_report(
     return "\n".join(
         [
             (
-                "# V3-B0 Live Planner 原型团队复盘报告"
-                if isinstance(planner_contract, Mapping)
-                and planner_contract.get("mode")
-                == "live_non_replayable_adapter"
+                "# V3-B Fast Experiment 团队复盘报告"
+                if result.get("validation_profile") == FAST_EXPERIMENT_PROFILE
                 else (
-                    "# V3-A1 原型团队复盘报告"
+                    "# V3-B0 Live Planner 原型团队复盘报告"
                     if isinstance(planner_contract, Mapping)
-                    else "# V3-A0 原型团队复盘报告"
+                    and planner_contract.get("mode") == "live_non_replayable_adapter"
+                    else (
+                        "# V3-A1 原型团队复盘报告"
+                        if isinstance(planner_contract, Mapping)
+                        else "# V3-A0 原型团队复盘报告"
+                    )
                 )
             ),
             "",
             f"- Task: `{runtime.task.id}`",
+            f"- Validation profile: `{result.get('validation_profile', 'strict')}`",
             f"- Status: `{result.get('status', 'FAILED')}`",
             f"- Stop reason: `{result.get('stop_reason', 'UNKNOWN')}`",
             f"- Exploration stop: `{result.get('exploration_stop_reason', 'UNKNOWN')}`",
@@ -3924,6 +4304,19 @@ def _render_team_report(
             f"- Final attempt count: `{result.get('final_attempt_count', 0)}`",
             f"- Final attempt limit: `{result.get('max_final_attempts', 1)}`",
             f"- Credits / Tokens: `{budget.get('credits_used')} / {budget.get('tokens_used')}`",
+            "- Tool calls CSim / Synth / CoSim / LLM: `"
+            + str(calls.get("csim", 0))
+            + " / "
+            + str(calls.get("synth", 0))
+            + " / "
+            + str(calls.get("cosim", 0))
+            + " / "
+            + str(calls.get("llm", 0))
+            + "`",
+            "",
+            "## Candidate 轮次",
+            "",
+            *candidate_rows,
             "",
             "## CoSim 晋升门控",
             "",
@@ -3995,6 +4388,7 @@ def _write_report(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeStat
             ),
         },
         "task_id": runtime.task.id,
+        "validation_profile": runtime.validation_profile,
         "status": state.get("status", "FAILED"),
         "stop_reason": state.get("stop_reason", "UNKNOWN"),
         "exploration_stop_reason": state.get(
@@ -4068,17 +4462,26 @@ def _write_report(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeStat
         "last_tool_reason": state.get("last_tool_reason"),
         "cosim_gate": state.get("cosim_gate", {}),
         "budget": budget,
+        "candidate_rounds": _candidate_round_summaries(runtime, state),
         "node_events": node_events,
         "prototype_limits": [
             (
-                "live Planner is transactionally bounded; native multi-strategy planning is not enabled"
+                "fast Planner proposes one bounded strategy bundle per round; beam search is not enabled"
+                if runtime.live_planner is not None
+                and runtime.validation_profile == FAST_EXPERIMENT_PROFILE
+                else "live Planner is transactionally bounded; native multi-strategy planning is not enabled"
                 if runtime.live_planner is not None
                 else "versioned deterministic Planner boundary; no autonomous LLM planner yet"
             ),
             "loop-level synth evidence is explicit; unavailable evidence is never fabricated",
             "Candidate decisions use recoverable compare-and-set operation journals",
             "final fallback is best-effort and runs only when one fresh closure remains affordable",
-            "A1 risk-gated provisional Candidates are not enabled",
+            (
+                "fast-experiment allows low-risk strictly faster exploration bests "
+                "to defer CoSim until final closure"
+                if runtime.validation_profile == FAST_EXPERIMENT_PROFILE
+                else "A1 risk-gated provisional Candidates are not enabled"
+            ),
         ],
         "artifacts": {
             "checkpoints": "graph_checkpoints.sqlite",
@@ -4155,8 +4558,24 @@ def _pass_or_finalize(state: V3PrototypeState) -> str:
     return "pass" if state.get("last_tool_ok") is True else "finalize"
 
 
+def _baseline_cosim_route(runtime: _Runtime, state: V3PrototypeState) -> str:
+    if state.get("last_tool_ok") is not True:
+        return "report"
+    if (
+        runtime.validation_profile == STRICT_VALIDATION_PROFILE
+        or runtime.task.requires_cosim
+    ):
+        return "cosim"
+    return "optimize"
+
+
 def _gate_route(state: V3PrototypeState) -> str:
-    return "cosim" if state.get("cosim_gate", {}).get("eligible") is True else "select"
+    gate = state.get("cosim_gate", {})
+    if gate.get("eligible") is True:
+        return "cosim"
+    if gate.get("promote_without_cosim") is True:
+        return "promote"
+    return "select"
 
 
 def _final_done_or_fallback(state: V3PrototypeState) -> str:
@@ -4223,8 +4642,12 @@ def build_v3_prototype_graph(runtime: _Runtime, checkpointer: SqliteSaver):
     )
     graph.add_conditional_edges(
         "baseline_synth",
-        _pass_or_report,
-        {"pass": "baseline_cosim", "report": "write_report"},
+        lambda state: _baseline_cosim_route(runtime, state),
+        {
+            "cosim": "baseline_cosim",
+            "optimize": "evaluate_round_budget",
+            "report": "write_report",
+        },
     )
     graph.add_conditional_edges(
         "baseline_cosim",
@@ -4256,12 +4679,20 @@ def build_v3_prototype_graph(runtime: _Runtime, checkpointer: SqliteSaver):
     graph.add_conditional_edges(
         "candidate_score_gate",
         _gate_route,
-        {"cosim": "candidate_cosim_budget_gate", "select": "reject_candidate"},
+        {
+            "cosim": "candidate_cosim_budget_gate",
+            "promote": "promote_candidate",
+            "select": "reject_candidate",
+        },
     )
     graph.add_conditional_edges(
         "candidate_cosim_budget_gate",
         _gate_route,
-        {"cosim": "candidate_cosim", "select": "reject_candidate"},
+        {
+            "cosim": "candidate_cosim",
+            "promote": "promote_candidate",
+            "select": "reject_candidate",
+        },
     )
     graph.add_conditional_edges(
         "candidate_cosim",
@@ -4315,6 +4746,7 @@ def run_v3_prototype(
     thread_id: str = "v3a0-prototype",
     max_no_improvement_rounds: int = 2,
     max_final_attempts: int = 1,
+    validation_profile: str = STRICT_VALIDATION_PROFILE,
 ) -> dict[str, object]:
     """Run the checkpointed V3-A1 graph and return its durable result.
 
@@ -4332,6 +4764,8 @@ def run_v3_prototype(
         raise ValueError("max_final_attempts must be positive")
     if max_planner_rounds <= 0:
         raise ValueError("max_planner_rounds must be positive")
+    if validation_profile not in VALIDATION_PROFILES:
+        raise ValueError("unsupported validation profile")
     if planner is not None and proposal is not None:
         raise ValueError("live planner and scripted proposals are mutually exclusive")
     if planner is None:
@@ -4368,6 +4802,7 @@ def run_v3_prototype(
         max_final_attempts=max_final_attempts,
         live_planner=planner,
         max_planner_rounds=max_planner_rounds,
+        validation_profile=validation_profile,
     )
     checkpoint_path = root / "graph_checkpoints.sqlite"
     graph_schema_path = root / "v3_graph_schema.json"

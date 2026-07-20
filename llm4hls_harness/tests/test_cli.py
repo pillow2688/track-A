@@ -562,6 +562,81 @@ class V3PrototypeCliTests(unittest.TestCase):
         self.assertIs(run.call_args.kwargs["planner"], planner)
         self.assertEqual(run.call_args.kwargs["max_planner_rounds"], 3)
 
+    def test_fast_experiment_cli_uses_explicit_planner_and_environment_defaults(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task_dir = root / "task"
+            task_dir.mkdir()
+            make_task(task_dir)
+            run_dir = root / "run"
+            stdout = io.StringIO()
+            provider = object()
+            planner = object()
+            backend = object()
+            run = Mock(return_value=self._done_result())
+            prototype_module = types.ModuleType("llm4hls_agent.v3_prototype")
+            prototype_module.DeterministicPrototypeBackend = Mock(
+                return_value=backend
+            )
+            prototype_module.run_v3_prototype = run
+
+            with patch.dict(
+                "os.environ",
+                {
+                    "OPENAI_BASE_URL": "https://fast.example/v1",
+                    "OPENAI_API_KEY": "secret-fast-test-key",
+                    "LLM4HLS_MODEL": "fixture-fast-model",
+                    "LLM4HLS_LLM_TIMEOUT_S": "17",
+                    "LLM4HLS_LLM_MAX_OUTPUT_TOKENS": "640",
+                },
+                clear=False,
+            ), patch(
+                "llm4hls_agent.openai_provider.OpenAICompatibleOptimizationProvider",
+                return_value=provider,
+            ) as provider_class, patch(
+                "llm4hls_agent.v3_openai_planner.OpenAICompatibleV3PlannerAdapter",
+                return_value=planner,
+            ) as adapter_class, patch.dict(
+                sys.modules,
+                {"llm4hls_agent.v3_prototype": prototype_module},
+            ), redirect_stdout(stdout):
+                return_code = v3_prototype_main(
+                    [
+                        "--task-dir",
+                        str(task_dir),
+                        "--planner",
+                        "openai-compatible",
+                        "--validation-profile",
+                        "fast-experiment",
+                        "--run-dir",
+                        str(run_dir),
+                    ]
+                )
+
+        self.assertEqual(return_code, 0)
+        provider_config = provider_class.call_args.args[0]
+        self.assertEqual(provider_config.model, "fixture-fast-model")
+        self.assertEqual(provider_config.timeout_seconds, 17.0)
+        self.assertEqual(provider_config.max_output_tokens, 640)
+        adapter_class.assert_called_once_with(
+            run_dir.resolve(),
+            provider,
+            final_reserve_credits=25,
+            max_output_tokens=640,
+            fast_experiment=True,
+            read_only_headers={"kernel.h": "void kernel();\n"},
+        )
+        _task, _called_run_dir, config = run.call_args.args
+        self.assertEqual(config.budget.tool_limits["llm"], 4)
+        self.assertEqual(config.budget.tool_limits["csim"], 7)
+        self.assertEqual(run.call_args.kwargs["max_planner_rounds"], 4)
+        self.assertEqual(run.call_args.kwargs["max_final_attempts"], 2)
+        self.assertEqual(
+            run.call_args.kwargs["validation_profile"], "fast-experiment"
+        )
+
     def test_live_openai_mode_requires_endpoint_environment(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

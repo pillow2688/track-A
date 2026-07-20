@@ -1,4 +1,4 @@
-"""OpenAI-compatible V2 provider adapter for the durable V3-B Planner boundary.
+"""OpenAI-compatible provider adapter for the durable V3-B Planner boundary.
 
 The adapter is deliberately narrow.  It resolves only hash-bound run artifacts,
 uses the deterministic V2 selector to choose one optimization class, and then
@@ -30,6 +30,7 @@ from .v3_evidence import SYNTH_EVIDENCE_SCHEMA
 
 
 OPENAI_V3_ADAPTER_REQUEST_SCHEMA = "v3b.openai-v2-adapter-request.v1"
+OPENAI_V3_FAST_REQUEST_SCHEMA = "v3b.openai-fast-experiment-request.v1"
 OPENAI_V3_ADAPTER_VERSION = "openai-v2-compat-planner-adapter-v1"
 
 
@@ -47,6 +48,14 @@ class AuditableOptimizationProvider(Protocol):
     ) -> Mapping[str, object]: ...
 
     def propose_optimization(self, context: OptimizationContext) -> PatchProposal: ...
+
+    def describe_fast_experiment_request(
+        self, context: Mapping[str, object]
+    ) -> Mapping[str, object]: ...
+
+    def propose_fast_experiment(
+        self, context: Mapping[str, object]
+    ) -> PatchProposal: ...
 
 
 @dataclass(frozen=True)
@@ -341,6 +350,33 @@ def _history_state(
     return tuple(attempted), tuple(failed)
 
 
+def _fast_history_state(
+    history: object,
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    if not isinstance(history, list):
+        raise V3OpenAIPlannerError("Planner input history must be a list")
+    attempts: list[dict[str, object]] = []
+    failures: list[dict[str, object]] = []
+    for item in history:
+        if not isinstance(item, Mapping):
+            raise V3OpenAIPlannerError("Planner input history item is invalid")
+        strategy = item.get("change_class")
+        patch_digest = item.get("patch_sha256")
+        if isinstance(strategy, str) and strategy:
+            attempt = {
+                "round_index": item.get("round_index"),
+                "strategy_bundle": strategy.split("+"),
+                "patch_sha256": patch_digest if isinstance(patch_digest, str) else None,
+                "metrics_digest": item.get("selection_metrics_digest"),
+                "status": item.get("status"),
+            }
+            attempts.append(attempt)
+            reason = item.get("rejection_reason") or item.get("reason")
+            if reason or item.get("status") == "REJECTED":
+                failures.append(attempt | {"reason": reason})
+    return attempts[-8:], failures[-3:]
+
+
 def _official_policy(policy: Mapping[str, object]) -> tuple[bool, float]:
     scoring = _mapping(policy.get("scoring"), "policy.scoring")
     official = _mapping(scoring.get("official_score"), "policy.scoring.official_score")
@@ -357,7 +393,7 @@ def _official_policy(policy: Mapping[str, object]) -> tuple[bool, float]:
 
 
 class OpenAICompatibleV3PlannerAdapter:
-    """Project one V3 round into the existing single-class OpenAI provider."""
+    """Project one V3 round into strict or autonomous fast Planner prompts."""
 
     replay_policy = "NON_REPLAYABLE"
 
@@ -368,12 +404,19 @@ class OpenAICompatibleV3PlannerAdapter:
         *,
         final_reserve_credits: int = 25,
         max_output_tokens: int | None = None,
+        fast_experiment: bool = False,
+        read_only_headers: Mapping[str, str] | None = None,
     ) -> None:
         self.run_root = Path(run_root).resolve()
         self.provider = provider
         if final_reserve_credits < 0:
             raise ValueError("final_reserve_credits must be non-negative")
         self.final_reserve_credits = int(final_reserve_credits)
+        self.fast_experiment = bool(fast_experiment)
+        self.read_only_headers = {
+            str(name): str(content)
+            for name, content in (read_only_headers or {}).items()
+        }
         inferred = getattr(getattr(provider, "config", None), "max_output_tokens", None)
         selected_max = inferred if max_output_tokens is None else max_output_tokens
         if (
@@ -409,7 +452,13 @@ class OpenAICompatibleV3PlannerAdapter:
             "provider_fingerprint": self._provider_fingerprint,
             "final_reserve_credits": self.final_reserve_credits,
             "max_output_tokens": self.max_output_tokens,
-            "selector": "v2-deterministic-selection-v1",
+            "selector": (
+                "autonomous-strategy-bundle-v1"
+                if self.fast_experiment
+                else "v2-deterministic-selection-v1"
+            ),
+            "fast_experiment": self.fast_experiment,
+            "read_only_headers_sha256": canonical_sha256(self.read_only_headers),
         }
         return f"{OPENAI_V3_ADAPTER_VERSION}:{canonical_sha256(identity)}"
 
@@ -433,6 +482,101 @@ class OpenAICompatibleV3PlannerAdapter:
         current_metrics = _metrics_with_evidence(
             incumbent_report, incumbent_evidence
         )
+        if self.fast_experiment:
+            attempts, recent_failures = _fast_history_state(value.get("history"))
+            context: dict[str, object] = {
+                "objective": (
+                    "Minimize worst-case synthesis latency under the configured "
+                    "Token, Credit, time, interface and correctness constraints."
+                ),
+                "task": {
+                    "task_id": task.get("task_id"),
+                    "task_type": task.get("task_type"),
+                    "top": task.get("top"),
+                    "kernel_file": task.get("kernel_file"),
+                    "difficulty": task.get("difficulty"),
+                    "initial_condition": task.get("initial_condition"),
+                    "requires_cosim": task.get("requires_cosim"),
+                    "part": task.get("part"),
+                    "clock_ns": task.get("clock_ns"),
+                },
+                "current_kernel": source,
+                "description": str(task.get("description") or ""),
+                "read_only_headers": dict(self.read_only_headers),
+                "synth_evidence": {
+                    "top_latency": incumbent_report.get("latency"),
+                    "top_transaction_interval": incumbent_report.get("interval"),
+                    "estimated_clock_period_ns": incumbent_report.get(
+                        "estimated_clock_period_ns"
+                    ),
+                    "loops": current_metrics.get("loop_evidence"),
+                    "scheduling_or_memory_evidence": current_metrics.get("evidence"),
+                    "resources": incumbent_report.get("resources"),
+                    "available_resources": incumbent_report.get(
+                        "available_resources"
+                    ),
+                },
+                "recent_failures": recent_failures,
+                "attempted_strategies": attempts,
+                "budget": {
+                    "remaining_tokens": budget.get("tokens_remaining"),
+                    "remaining_credits": budget.get("credits_remaining"),
+                    "round_index": round_state.get("round_index"),
+                    "rounds_completed": round_state.get("rounds_completed"),
+                    "max_optimization_rounds": policy.get(
+                        "max_optimization_rounds"
+                    ),
+                    "max_no_improvement_rounds": policy.get(
+                        "max_no_improvement_rounds"
+                    ),
+                    "final_reserve_credits": self.final_reserve_credits,
+                },
+                "constraints": {
+                    "allowed_files": [task.get("kernel_file")],
+                    "read_only_files": [
+                        *sorted(self.read_only_headers),
+                        task.get("public_tb"),
+                        "task.toml",
+                        "description.md",
+                    ],
+                    "preserve_top": task.get("top"),
+                    "preserve_interface": True,
+                    "preserve_numerical_semantics": True,
+                    "planner_cannot_choose_tools_or_final": True,
+                },
+            }
+            provider_request = self.provider.describe_fast_experiment_request(context)
+            if not isinstance(provider_request, Mapping):
+                raise V3OpenAIPlannerError(
+                    "fast optimization provider request audit must be an object"
+                )
+            encoded_provider_request = canonical_json(provider_request)
+            if (
+                self._configured_secret is not None
+                and self._configured_secret.encode("utf-8") in encoded_provider_request
+            ):
+                raise V3OpenAIPlannerError(
+                    "fast optimization provider request audit contains its API key"
+                )
+            metrics_digest = canonical_sha256(current_metrics)
+            request = {
+                "schema_version": OPENAI_V3_FAST_REQUEST_SCHEMA,
+                "adapter_version": OPENAI_V3_ADAPTER_VERSION,
+                "provider_fingerprint": self._provider_fingerprint,
+                "selection": {
+                    "mode": "autonomous_strategy_bundle",
+                    "metrics_digest": metrics_digest,
+                    "attempted": attempts,
+                },
+                "context_sha256": canonical_sha256(context),
+                "provider_request": dict(provider_request),
+            }
+            return PreparedPlannerCall(
+                request=request,
+                estimated_input_tokens=max(1, len(encoded_provider_request)),
+                max_output_tokens=self.max_output_tokens,
+                dispatch_context=context,
+            )
         attempted, failed_actions = _history_state(value.get("history"))
         decision = select_optimization(
             current_metrics,
@@ -565,6 +709,26 @@ class OpenAICompatibleV3PlannerAdapter:
 
     def invoke(self, prepared: PreparedPlannerCall) -> PatchProposal:
         context = prepared.dispatch_context
+        if self.fast_experiment:
+            if not isinstance(context, Mapping):
+                raise V3OpenAIPlannerError(
+                    "prepared fast Planner request has no bound context"
+                )
+            request = prepared.request
+            if (
+                request.get("schema_version") != OPENAI_V3_FAST_REQUEST_SCHEMA
+                or request.get("provider_fingerprint") != self._provider_fingerprint
+                or request.get("context_sha256") != canonical_sha256(context)
+            ):
+                raise V3OpenAIPlannerError(
+                    "prepared fast Planner request binding is invalid"
+                )
+            proposal = self.provider.propose_fast_experiment(context)
+            if not isinstance(proposal, PatchProposal):
+                raise V3OpenAIPlannerError(
+                    "fast optimization provider returned an invalid proposal"
+                )
+            return proposal
         if not isinstance(context, OptimizationContext):
             raise V3OpenAIPlannerError(
                 "prepared Planner request has no bound OptimizationContext"

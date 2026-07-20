@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -16,6 +17,68 @@ from .repair import PatchProposal, RepairContext, RepairProviderError
 
 
 DEFAULT_MODEL = "deepseek-v4-pro"
+FAST_EXPERIMENT_RESPONSE_SCHEMA = "v3b.fast-planner-response.v1"
+FAST_EXPERIMENT_STRATEGIES = (
+    "ARRAY_PARTITION",
+    "MEMORY_PARTITION",
+    "LOOP_UNROLL",
+    "PAR_FACTOR_TUNING",
+    "MULTI_PARTIAL_SUM",
+    "PARALLEL_REDUCTION",
+    "MEMORY_BANKING",
+    "LOCAL_LOOP_RESTRUCTURE",
+    "LOOP_PIPELINE",
+    "DATAFLOW",
+    "STREAMING",
+    "BITWIDTH_OPTIMIZATION",
+)
+FAST_EXPERIMENT_SYSTEM_PROMPT = (
+    "You are an AMD Vitis HLS optimization Planner. Use only the supplied public "
+    "kernel, read-only headers, task description, and structured synthesis evidence. "
+    "Propose exactly one Candidate that preserves numerical semantics, the top function "
+    "signature, and all interfaces. Never use or modify tests, hidden/reference files, "
+    "headers, metadata, budgets, tool policy, Candidate promotion, or final selection. "
+    "Return strict JSON only. Its patch must be a directly applicable single-file unified "
+    "diff for the current kernel, with exact hunk start positions and exact old/new line "
+    "counts. Never claim that a tool ran or that a Candidate passed validation."
+)
+_UNIFIED_HUNK_HEADER = re.compile(
+    r"^@@ -(?P<old_start>\d+)(?:,\d+)? "
+    r"\+(?P<new_start>\d+)(?:,\d+)? @@(?P<suffix>.*)$"
+)
+
+
+def _normalize_unified_diff_hunk_counts(patch: str) -> str:
+    """Repair only hunk counts; the existing Patch Validator remains authoritative."""
+
+    lines = patch.splitlines()
+    index = 0
+    changed = False
+    while index < len(lines):
+        match = _UNIFIED_HUNK_HEADER.fullmatch(lines[index])
+        if match is None:
+            index += 1
+            continue
+        end = index + 1
+        old_count = 0
+        new_count = 0
+        while end < len(lines) and not lines[end].startswith("@@ "):
+            line = lines[end]
+            if line.startswith((" ", "-")):
+                old_count += 1
+            if line.startswith((" ", "+")):
+                new_count += 1
+            end += 1
+        normalized = (
+            f"@@ -{match.group('old_start')},{old_count} "
+            f"+{match.group('new_start')},{new_count} @@{match.group('suffix')}"
+        )
+        changed = changed or normalized != lines[index]
+        lines[index] = normalized
+        index = end
+    if not changed:
+        return patch
+    return "\n".join(lines) + ("\n" if patch.endswith("\n") else "")
 
 
 @dataclass(frozen=True)
@@ -201,6 +264,148 @@ def build_optimization_prompt(context: OptimizationContext) -> str:
     )
 
 
+def build_fast_experiment_prompt(context: Mapping[str, object]) -> str:
+    """Build one bounded autonomous optimization request for V3-B experiments."""
+
+    required = {
+        "objective",
+        "task",
+        "current_kernel",
+        "description",
+        "read_only_headers",
+        "synth_evidence",
+        "recent_failures",
+        "attempted_strategies",
+        "budget",
+        "constraints",
+    }
+    if set(context) != required:
+        raise ValueError("fast Planner context has an invalid field set")
+    objective = {
+        "goal": context["objective"],
+        "task": context["task"],
+        "synth_evidence": context["synth_evidence"],
+        "recent_failures": context["recent_failures"],
+        "attempted_strategies": context["attempted_strategies"],
+        "budget": context["budget"],
+    }
+    response_contract = {
+        "hypothesis": "non-empty string",
+        "primary_bottleneck": "non-empty string",
+        "evidence_used": ["one or more concise evidence facts"],
+        "strategy_bundle": ["one to three allowed strategies"],
+        "expected_effect": "non-empty string",
+        "risk": {
+            "level": "LOW|MEDIUM|HIGH",
+            "dimensions": ["zero or more concise risk dimensions"],
+        },
+        "patch": "one unified diff",
+    }
+    return "\n".join(
+        [
+            "ROLE\nYou are an autonomous AMD Vitis HLS optimization Planner.",
+            (
+                "OBJECTIVE\nPropose one evidence-backed strategy bundle and one "
+                "minimal unified diff that strictly reduces worst-case synthesis "
+                "latency while preserving numerical semantics and the public interface."
+            ),
+            "STRUCTURED STATE\n"
+            + json.dumps(objective, ensure_ascii=False, sort_keys=True),
+            "CURRENT BEST KERNEL\n" + str(context["current_kernel"]),
+            "PUBLIC TASK DESCRIPTION\n" + str(context["description"]),
+            "READ-ONLY HEADERS\n"
+            + json.dumps(
+                context["read_only_headers"], ensure_ascii=False, sort_keys=True
+            ),
+            "CONSTRAINTS\n"
+            + json.dumps(context["constraints"], ensure_ascii=False, sort_keys=True),
+            "ALLOWED STRATEGIES\n" + json.dumps(FAST_EXPERIMENT_STRATEGIES),
+            (
+                "HLS EVIDENCE RULES\nTop-level transaction interval is the interval "
+                "between complete top-function transactions; it is not loop achieved "
+                "II. Use loop.pipeline_ii only for loop II. When the critical loop is "
+                "already pipelined with achieved II=1, do not return a PIPELINE-only "
+                "patch. For dotProduct, prioritize memory banking/ARRAY_PARTITION, "
+                "bounded LOOP_UNROLL or PAR_FACTOR parallelism, multiple partial sums, "
+                "and tree/parallel reduction to remove serial accumulation."
+            ),
+            (
+                "AUTHORITY\nYou may propose strategies and a Patch only. You may not "
+                "approve tools, change budgets, promote a Candidate, select final, or "
+                "modify headers/tests/metadata/interfaces."
+            ),
+            (
+                "PATCH VALIDITY\nThe unified diff must apply directly to the supplied "
+                "current kernel. Before returning, recount every hunk: context and '-' "
+                "lines equal the old count; context and '+' lines equal the new count. "
+                "Use only the kernel filename in ---/+++ headers."
+            ),
+            "OUTPUT SCHEMA\n"
+            + json.dumps(response_contract, ensure_ascii=False, sort_keys=True)
+            + "\nReturn exactly this JSON object and no Markdown fences or commentary.",
+        ]
+    )
+
+
+def _strict_fast_experiment_response(content: object) -> dict[str, object]:
+    if not isinstance(content, str) or not content.strip():
+        raise RepairProviderError("fast Planner response content is empty")
+    try:
+        value = json.loads(content.strip())
+    except json.JSONDecodeError as exc:
+        raise RepairProviderError("fast Planner response is not strict JSON") from exc
+    required = {
+        "hypothesis",
+        "primary_bottleneck",
+        "evidence_used",
+        "strategy_bundle",
+        "expected_effect",
+        "risk",
+        "patch",
+    }
+    if not isinstance(value, dict) or set(value) != required:
+        raise RepairProviderError("fast Planner response has an invalid field set")
+    for name in (
+        "hypothesis",
+        "primary_bottleneck",
+        "expected_effect",
+        "patch",
+    ):
+        if not isinstance(value[name], str) or not str(value[name]).strip():
+            raise RepairProviderError(f"fast Planner field {name} is empty")
+    evidence = value["evidence_used"]
+    if (
+        not isinstance(evidence, list)
+        or not 1 <= len(evidence) <= 12
+        or any(not isinstance(item, str) or not item.strip() for item in evidence)
+    ):
+        raise RepairProviderError("fast Planner evidence_used must contain 1-12 strings")
+    bundle = value["strategy_bundle"]
+    if (
+        not isinstance(bundle, list)
+        or not 1 <= len(bundle) <= 3
+        or any(item not in FAST_EXPERIMENT_STRATEGIES for item in bundle)
+        or len(bundle) != len(set(bundle))
+    ):
+        raise RepairProviderError(
+            "fast Planner strategy_bundle must contain 1-3 unique allowed strategies"
+        )
+    risk = value["risk"]
+    if not isinstance(risk, dict) or set(risk) != {"level", "dimensions"}:
+        raise RepairProviderError("fast Planner risk has an invalid field set")
+    dimensions = risk.get("dimensions")
+    if risk.get("level") not in {"LOW", "MEDIUM", "HIGH"} or (
+        not isinstance(dimensions, list)
+        or len(dimensions) > 8
+        or any(not isinstance(item, str) or not item.strip() for item in dimensions)
+    ):
+        raise RepairProviderError("fast Planner risk is invalid")
+    patch = str(value["patch"])
+    if "```" in patch or "--- " not in patch or "+++ " not in patch:
+        raise RepairProviderError("fast Planner patch must be one unified diff")
+    return value
+
+
 def _strict_response(
     content: object, *, class_field: str = "change_class"
 ) -> dict[str, object]:
@@ -303,14 +508,18 @@ class _Completion:
 
 
 def _completion_body(
-    config: OpenAICompatibleConfig, *, prompt: str
+    config: OpenAICompatibleConfig,
+    *,
+    prompt: str,
+    system_prompt: str | None = None,
 ) -> dict[str, object]:
     body: dict[str, object] = {
         "model": config.model,
         "messages": [
             {
                 "role": "system",
-                "content": "Follow the response schema exactly. Never modify tests or interfaces.",
+                "content": system_prompt
+                or "Follow the response schema exactly. Never modify tests or interfaces.",
             },
             {"role": "user", "content": prompt},
         ],
@@ -328,8 +537,11 @@ def _request_completion(
     transport: Transport,
     *,
     prompt: str,
+    system_prompt: str | None = None,
 ) -> _Completion:
-    body = _completion_body(config, prompt=prompt)
+    body = _completion_body(
+        config, prompt=prompt, system_prompt=system_prompt
+    )
     encoded = json.dumps(body, separators=(",", ":"), ensure_ascii=False).encode(
         "utf-8"
     )
@@ -499,6 +711,63 @@ class OpenAICompatibleOptimizationProvider:
             "endpoint": self.config.chat_completions_url,
             "http_body": _completion_body(self.config, prompt=prompt),
         }
+
+    def describe_fast_experiment_request(
+        self, context: Mapping[str, object]
+    ) -> dict[str, object]:
+        prompt = build_fast_experiment_prompt(context)
+        return {
+            "schema_version": FAST_EXPERIMENT_RESPONSE_SCHEMA,
+            "provider": "openai-compatible",
+            "model": self.config.model,
+            "endpoint": self.config.chat_completions_url,
+            "http_body": _completion_body(
+                self.config,
+                prompt=prompt,
+                system_prompt=FAST_EXPERIMENT_SYSTEM_PROMPT,
+            ),
+        }
+
+    def propose_fast_experiment(
+        self, context: Mapping[str, object]
+    ) -> PatchProposal:
+        completion = _request_completion(
+            self.config,
+            self._transport,
+            prompt=build_fast_experiment_prompt(context),
+            system_prompt=FAST_EXPERIMENT_SYSTEM_PROMPT,
+        )
+        try:
+            parsed = _strict_fast_experiment_response(completion.content)
+        except RepairProviderError as exc:
+            raise RepairProviderError(
+                str(exc),
+                input_tokens=completion.input_tokens,
+                output_tokens=completion.output_tokens,
+                cached_input_tokens=completion.cached_input_tokens,
+                duration_seconds=completion.duration_seconds,
+                request_id=completion.request_id,
+                response_excerpt=completion.content[:2000],
+            ) from exc
+        strategy_bundle = tuple(str(item) for item in parsed["strategy_bundle"])
+        risk = dict(parsed["risk"])
+        risk["primary_bottleneck"] = str(parsed["primary_bottleneck"])
+        risk["evidence_used"] = [str(item) for item in parsed["evidence_used"]]
+        return PatchProposal(
+            patch=_normalize_unified_diff_hunk_counts(str(parsed["patch"])),
+            provider="openai-compatible-fast-experiment",
+            model=self.config.model,
+            input_tokens=completion.input_tokens,
+            output_tokens=completion.output_tokens,
+            cached_input_tokens=completion.cached_input_tokens,
+            request_id=completion.request_id,
+            duration_seconds=completion.duration_seconds,
+            hypothesis=str(parsed["hypothesis"]),
+            change_class="+".join(strategy_bundle),
+            expected_effect=str(parsed["expected_effect"]),
+            risk=json.dumps(risk, ensure_ascii=False, sort_keys=True),
+            required_validation=("csim", "synth"),
+        )
 
     def propose_optimization(self, context: OptimizationContext) -> PatchProposal:
         completion = _request_completion(
