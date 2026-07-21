@@ -17,9 +17,11 @@ from pathlib import Path
 from typing import Mapping, Sequence
 
 from .v3_experience import canonical_json, canonical_sha256, normalize_strategy_bundle
+from .v3_experience_normalizer import StrategyNormalizer
+from .v3_experience_v2 import MODES
 
 
-ATTRIBUTION_SCHEMA = "v3e.recommendation-attribution.v1"
+ATTRIBUTION_SCHEMA = "v3e.recommendation-attribution.v2"
 ATTRIBUTION_SUMMARY_SCHEMA = "v3e.recommendation-attribution-summary.v1"
 ADHERENCE = frozenset(
     {"FOLLOWED", "PARTIALLY_FOLLOWED", "IGNORED", "CONTRADICTED"}
@@ -178,6 +180,74 @@ def _candidate_record(
     return _mapping(_mapping(registry.get("candidates")).get(candidate_id))
 
 
+def _relative_text(root: Path, reference: object) -> str:
+    if not isinstance(reference, str) or not reference:
+        return ""
+    relative = Path(reference)
+    if relative.is_absolute() or ".." in relative.parts:
+        return ""
+    path = (root / relative).resolve()
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return ""
+    if not path.is_file():
+        return ""
+    try:
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return ""
+
+
+def _candidate_observed_strategy(
+    root: Path,
+    terminal: Mapping[str, object],
+    candidate: Mapping[str, object],
+    declared: tuple[str, ...],
+) -> tuple[tuple[str, ...], float, tuple[str, ...]]:
+    mode = str(terminal.get("mode") or "")
+    if mode not in MODES:
+        mode = "OPTIMIZE"
+    patch = _relative_text(root, candidate.get("patch_ref"))
+    candidate_source = _relative_text(root, candidate.get("source_ref"))
+    parent_id = candidate.get("parent_id")
+    parent_source = ""
+    if isinstance(parent_id, str) and parent_id != "candidate_000":
+        parent = _candidate_record(_read_json(root / "candidate_registry.json"), parent_id)
+        parent_source = _relative_text(root, parent.get("source_ref"))
+    if not parent_source:
+        baseline_sources = sorted((root / "baseline" / "source").glob("*.cpp"))
+        if baseline_sources:
+            try:
+                parent_source = baseline_sources[0].read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                parent_source = ""
+    normalized = StrategyNormalizer().normalize(
+        mode=mode,
+        declared_strategy=declared,
+        parent_source=parent_source,
+        candidate_source=candidate_source,
+        patch=patch,
+        validation={"patch_valid": bool(candidate)},
+    )
+    return (
+        normalized.observed_strategy_atoms,
+        normalized.confidence,
+        normalized.reason_codes,
+    )
+
+
+def _same_family_support(recommendation: Mapping[str, object]) -> bool:
+    guidance = _mapping(recommendation.get("guidance"))
+    cases = _sequence(guidance.get("similar_successes")) + _sequence(
+        guidance.get("similar_failures")
+    )
+    return any(
+        str(_mapping(item).get("family_relation") or "").upper() == "SAME"
+        for item in cases
+    )
+
+
 def _atomic_json(path: Path, value: Mapping[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
@@ -252,6 +322,7 @@ def build_recommendation_attributions(
     }
     records: list[dict[str, object]] = []
     run_identity = str(terminal.get("run_id") or root.name)
+    previous_acceleration = 1.0
     for recommendation in recommendations:
         recommendation_id = str(recommendation.get("recommendation_id") or "")
         if _SHA256.fullmatch(recommendation_id) is None:
@@ -271,6 +342,9 @@ def build_recommendation_attributions(
         recommended = _recommendation_strategies(recommendation, "recommended")
         discouraged = _recommendation_strategies(recommendation, "discouraged")
         candidate = _candidate_record(registry, candidate_id)
+        observed, observed_confidence, observed_reasons = (
+            _candidate_observed_strategy(root, terminal, candidate, selected)
+        )
         validation = _mapping(candidate.get("validation"))
         actions = _actions(root, candidate_id)
         proposal_tokens = _nonnegative_int(proposal.get("input_tokens")) + _nonnegative_int(
@@ -296,6 +370,26 @@ def build_recommendation_attributions(
             }
         )
         quality = _mapping(recommendation.get("quality_decision"))
+        declared_relation = _adherence(selected, recommended, discouraged)
+        observed_relation = _adherence(observed, recommended, discouraged)
+        recommended_atoms = {atom for bundle in recommended for atom in bundle}
+        declared_hits = sorted(set(selected).intersection(recommended_atoms))
+        observed_hits = sorted(set(observed).intersection(recommended_atoms))
+        marginal_gain = (
+            round(acceleration - previous_acceleration, 8)
+            if acceleration is not None
+            else None
+        )
+        if acceleration is not None:
+            previous_acceleration = max(previous_acceleration, acceleration)
+        query_features = _mapping(recommendation.get("query_features"))
+        attempted = {
+            bundle
+            for item in _sequence(query_features.get("attempted_strategy_bundles"))
+            for bundle in [_bundle(item)]
+            if bundle
+        }
+        quality_confidence = _number(quality.get("confidence")) or 0.0
         records.append(
             {
                 "schema_version": ATTRIBUTION_SCHEMA,
@@ -304,7 +398,17 @@ def build_recommendation_attributions(
                 "round_index": round_index,
                 "quality_decision": str(quality.get("decision") or "UNKNOWN"),
                 "planner_strategy_bundle": list(selected),
-                "adherence": _adherence(selected, recommended, discouraged),
+                "observed_strategy_atoms": list(observed),
+                "declared_strategy_relation": declared_relation,
+                "observed_strategy_relation": observed_relation,
+                "adherence": observed_relation,
+                "recommended_atom_hits": {
+                    "declared": declared_hits,
+                    "observed": observed_hits,
+                },
+                "recommendation_same_task_family_support": _same_family_support(
+                    recommendation
+                ),
                 "patch_valid": bool(candidate_id),
                 "validation": {
                     "csim": _status(validation.get("csim")),
@@ -314,10 +418,28 @@ def build_recommendation_attributions(
                 },
                 "promoted": promoted,
                 "acceleration": acceleration,
+                "marginal_acceleration_gain": marginal_gain,
+                "attribution_confidence": round(
+                    min(observed_confidence, quality_confidence), 6
+                ),
+                "planner_may_have_chosen_without_guidance": bool(
+                    quality.get("decision") != "INJECT"
+                ),
+                "avoided_repeated_failed_strategy": bool(
+                    selected and selected not in attempted
+                ),
+                "causal_claim": False,
                 "usage": {
                     "tokens": proposal_tokens,
+                    "guidance_tokens": _nonnegative_int(
+                        quality.get("guidance_tokens")
+                    ),
                     "credits": _nonnegative_int(row.get("credits")),
                     "wall_time_seconds": round(planner_wall + tool_wall, 6),
+                },
+                "normalization": {
+                    "confidence": observed_confidence,
+                    "reason_codes": list(observed_reasons),
                 },
                 "candidate_id": candidate_id,
                 "decision": decision,

@@ -7,6 +7,7 @@ from pathlib import Path
 
 from llm4hls_agent.v3_experience import estimated_guidance_tokens
 from llm4hls_agent.v3_experience_attribution import (
+    _adherence,
     build_recommendation_attributions,
     persist_recommendation_attributions,
 )
@@ -53,6 +54,28 @@ def outcome(*, success: bool) -> dict[str, object]:
 
 
 class GuidanceQualityTests(unittest.TestCase):
+    def test_attribution_covers_all_four_adherence_relations(self) -> None:
+        recommended = {("ARRAY_PARTITION", "LOOP_UNROLL")}
+        discouraged = {("DATAFLOW",)}
+        self.assertEqual(
+            _adherence(
+                ("ARRAY_PARTITION", "LOOP_UNROLL"), recommended, discouraged
+            ),
+            "FOLLOWED",
+        )
+        self.assertEqual(
+            _adherence(("ARRAY_PARTITION",), recommended, discouraged),
+            "PARTIALLY_FOLLOWED",
+        )
+        self.assertEqual(
+            _adherence(("LOOP_PIPELINE",), recommended, discouraged),
+            "IGNORED",
+        )
+        self.assertEqual(
+            _adherence(("DATAFLOW",), recommended, discouraged),
+            "CONTRADICTED",
+        )
+
     def setUp(self) -> None:
         self.extractor = ExperienceFeatureExtractor()
 
@@ -335,6 +358,16 @@ class GuidanceQualityTests(unittest.TestCase):
             )
             attribution = build_recommendation_attributions(root, result)[0]
             self.assertEqual(attribution["adherence"], "PARTIALLY_FOLLOWED")
+            self.assertEqual(
+                attribution["declared_strategy_relation"],
+                "PARTIALLY_FOLLOWED",
+            )
+            self.assertEqual(
+                attribution["observed_strategy_relation"],
+                "PARTIALLY_FOLLOWED",
+            )
+            self.assertFalse(attribution["causal_claim"])
+            self.assertIn("guidance_tokens", attribution["usage"])
             self.assertEqual(attribution["validation"]["final"], "PASS")
 
             recommendation["recommendation_id"] = "b" * 64
