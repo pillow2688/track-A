@@ -5,10 +5,11 @@
 
 ## Must Read
 
-1. [当前系统说明与团队月度进展（首次发布 2026-07-20，更新至 2026-07-21）](2026-07-20-current-system-and-team-progress.md)
-2. [V3-D 昨夜至今日执行总结](../../llm4hls_harness/releases/v3d-overnight-daytime-summary-2026-07-21.md)
-3. [Track A 比赛总览](track-a-competition-overview.md)
-4. [Track A 0 基础入门手册](track-a-zero-foundation-guide.md)
+1. [V3 当前组件、模型控制链与参考信息报告](2026-07-21-current-components-and-model-context.md)
+2. [当前系统说明与团队月度进展（首次发布 2026-07-20，更新至 2026-07-21）](2026-07-20-current-system-and-team-progress.md)
+3. [V3-D 昨夜至今日执行总结](../../llm4hls_harness/releases/v3d-overnight-daytime-summary-2026-07-21.md)
+4. [Track A 比赛总览](track-a-competition-overview.md)
+5. [Track A 0 基础入门手册](track-a-zero-foundation-guide.md)
 
 ## Related Material Notes
 
@@ -25,15 +26,16 @@
 建议新队友按这个顺序读：
 
 ```text
-1. 当前系统说明与团队月度进展
-2. V3-D 昨夜至今日执行总结
-3. Track A 比赛总览
-4. Track A 0 基础入门手册
-5. 官方规则快照和 Track-A Submission Guidelines
-6. reference harness 分析
-7. hls-generator 资源笔记
-8. Datawhale Hello-Agents 映射笔记
-9. LangGraph 混合架构和预算停止策略
-10. materials/README.md
-11. 按需进入 HLS、环境、模型和实验目录
+1. V3 当前组件、模型控制链与参考信息报告
+2. 当前系统说明与团队月度进展
+3. V3-D 昨夜至今日执行总结
+4. Track A 比赛总览
+5. Track A 0 基础入门手册
+6. 官方规则快照和 Track-A Submission Guidelines
+7. reference harness 分析
+8. hls-generator 资源笔记
+9. Datawhale Hello-Agents 映射笔记
+10. LangGraph 混合架构和预算停止策略
+11. materials/README.md
+12. 按需进入 HLS、环境、模型和实验目录
 ```
