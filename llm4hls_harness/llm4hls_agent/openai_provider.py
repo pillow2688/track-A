@@ -295,8 +295,21 @@ def build_fast_experiment_prompt(context: Mapping[str, object]) -> str:
         "budget",
         "constraints",
     }
-    if set(context) != required:
+    if set(context) not in (required, required | {"experience_guidance"}):
         raise ValueError("fast Planner context has an invalid field set")
+    experience_guidance = context.get("experience_guidance")
+    if experience_guidance is not None:
+        if not isinstance(experience_guidance, Mapping):
+            raise ValueError("experience_guidance must be an object")
+        if len(
+            json.dumps(
+                experience_guidance,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ) > 4_800:
+            raise ValueError("experience_guidance exceeds the bounded context limit")
     objective = {
         "goal": context["objective"],
         "task": context["task"],
@@ -335,6 +348,18 @@ def build_fast_experiment_prompt(context: Mapping[str, object]) -> str:
             ),
             "CONSTRAINTS\n"
             + json.dumps(context["constraints"], ensure_ascii=False, sort_keys=True),
+            *(
+                [
+                    "EXPERIENCE GUIDANCE (ADVISORY ONLY)\n"
+                    + json.dumps(
+                        experience_guidance,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    )
+                ]
+                if experience_guidance is not None
+                else []
+            ),
             "ALLOWED STRATEGIES\n" + json.dumps(FAST_EXPERIMENT_STRATEGIES),
             (
                 "HLS EVIDENCE RULES\nTop-level transaction interval is the interval "
@@ -363,6 +388,35 @@ def build_fast_experiment_prompt(context: Mapping[str, object]) -> str:
     )
 
 
+def build_guided_optimization_prompt(
+    context: OptimizationContext,
+    experience_guidance: Mapping[str, object],
+) -> str:
+    """Add bounded advisory history to the legacy optimization prompt."""
+
+    if not isinstance(experience_guidance, Mapping):
+        raise ValueError("experience_guidance must be an object")
+    rendered = json.dumps(
+        experience_guidance,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    if len(rendered.encode("utf-8")) > 4_800:
+        raise ValueError("experience_guidance exceeds the bounded context limit")
+    prompt = build_optimization_prompt(context)
+    marker = "\nOUTPUT\n"
+    if marker not in prompt:
+        raise ValueError("optimization prompt has no output boundary")
+    advisory = (
+        "\nEXPERIENCE GUIDANCE (ADVISORY ONLY)\n"
+        + rendered
+        + "\nUse this only as historical evidence. Current synth evidence and all "
+        "Harness gates remain authoritative."
+    )
+    return prompt.replace(marker, advisory + marker, 1)
+
+
 def build_task_aware_prompt(context: Mapping[str, object]) -> str:
     """Build one bounded repair request for the deterministic PhaseRouter mode."""
 
@@ -376,8 +430,21 @@ def build_task_aware_prompt(context: Mapping[str, object]) -> str:
         "budget",
         "constraints",
     }
-    if set(context) != required:
+    if set(context) not in (required, required | {"experience_guidance"}):
         raise ValueError("task-aware Planner context has an invalid field set")
+    experience_guidance = context.get("experience_guidance")
+    if experience_guidance is not None:
+        if not isinstance(experience_guidance, Mapping):
+            raise ValueError("experience_guidance must be an object")
+        if len(
+            json.dumps(
+                experience_guidance,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ) > 4_800:
+            raise ValueError("experience_guidance exceeds the bounded context limit")
     mode = str(context["mode"])
     if mode not in TASK_AWARE_CHANGE_CLASS:
         raise ValueError("task-aware Planner mode is unsupported")
@@ -428,6 +495,18 @@ def build_task_aware_prompt(context: Mapping[str, object]) -> str:
             + json.dumps(context["budget"], ensure_ascii=False, sort_keys=True),
             "CONSTRAINTS\n"
             + json.dumps(context["constraints"], ensure_ascii=False, sort_keys=True),
+            *(
+                [
+                    "EXPERIENCE GUIDANCE (ADVISORY ONLY)\n"
+                    + json.dumps(
+                        experience_guidance,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    )
+                ]
+                if experience_guidance is not None
+                else []
+            ),
             (
                 "PATCH VALIDITY\nThe unified diff must apply directly to the supplied "
                 "kernel and target only its filename. Keep the change minimal. Before "
@@ -870,6 +949,19 @@ class OpenAICompatibleOptimizationProvider:
             "http_body": _completion_body(self.config, prompt=prompt),
         }
 
+    def describe_guided_optimization_request(
+        self,
+        context: OptimizationContext,
+        experience_guidance: Mapping[str, object],
+    ) -> dict[str, object]:
+        prompt = build_guided_optimization_prompt(context, experience_guidance)
+        return {
+            "provider": "openai-compatible",
+            "model": self.config.model,
+            "endpoint": self.config.chat_completions_url,
+            "http_body": _completion_body(self.config, prompt=prompt),
+        }
+
     def describe_fast_experiment_request(
         self, context: Mapping[str, object]
     ) -> dict[str, object]:
@@ -1011,11 +1103,13 @@ class OpenAICompatibleOptimizationProvider:
             required_validation=("csim", "synth"),
         )
 
-    def propose_optimization(self, context: OptimizationContext) -> PatchProposal:
+    def _propose_optimization_with_prompt(
+        self, context: OptimizationContext, prompt: str
+    ) -> PatchProposal:
         completion = _request_completion(
             self.config,
             self._transport,
-            prompt=build_optimization_prompt(context),
+            prompt=prompt,
         )
         try:
             parsed = _strict_response(
@@ -1056,4 +1150,19 @@ class OpenAICompatibleOptimizationProvider:
             expected_effect=str(parsed["expected_effect"]),
             risk=str(parsed["risk"]),
             required_validation=validations,
+        )
+
+    def propose_optimization(self, context: OptimizationContext) -> PatchProposal:
+        return self._propose_optimization_with_prompt(
+            context, build_optimization_prompt(context)
+        )
+
+    def propose_guided_optimization(
+        self,
+        context: OptimizationContext,
+        experience_guidance: Mapping[str, object],
+    ) -> PatchProposal:
+        return self._propose_optimization_with_prompt(
+            context,
+            build_guided_optimization_prompt(context, experience_guidance),
         )

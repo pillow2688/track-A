@@ -602,6 +602,218 @@ class V3BatchBenchmarkTests(unittest.TestCase):
             self.assertEqual([item.task_id for item in selected], ["repair_easy"])
             self.assertEqual(select_models(config), ("model-b",))
 
+    def test_manifest_does_not_expose_family_mutation_labels(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "corpus"
+            write_task(root, "pilot")
+            (root / "corpus_manifest.json").write_text(
+                json.dumps(
+                    {
+                        "tasks": [
+                            {
+                                "path": "pilot",
+                                "family": "stencil_2d",
+                                "split": "dev",
+                                "mode": "OPTIMIZE",
+                                "operator": "answer_bearing_operator",
+                                "seed": 719,
+                                "mutation_summary": "private answer",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            descriptor = discover_tasks(root)[0]
+            self.assertIsNone(descriptor.algorithm_family)
+            self.assertIsNone(descriptor.algorithm_family_source)
+            self.assertEqual(descriptor.split, "dev")
+            self.assertEqual(descriptor.expected_mode, "OPTIMIZE")
+            self.assertNotIn("operator", descriptor.__dict__)
+            self.assertNotIn("seed", descriptor.__dict__)
+            assert descriptor.task is not None
+            spec = BenchmarkRunSpec(
+                task=descriptor.task,
+                descriptor=descriptor,
+                model="scheduled-model",
+                repeat_index=1,
+                backend="vitis",
+                run_id="safe-labels",
+                run_fingerprint="a" * 64,
+                run_dir=Path(directory) / "run",
+            )
+            command = V3PrototypeCLIExecutor()._command(spec)
+            self.assertEqual(
+                command[command.index("--experience-task-split") + 1], "dev"
+            )
+            self.assertNotIn("answer_bearing_operator", command)
+            self.assertNotIn("private answer", command)
+            self.assertNotIn("--operator", command)
+            self.assertNotIn("--seed", command)
+
+    def test_experience_policy_is_forwarded_and_content_bound(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "corpus"
+            write_task(root, "pilot")
+            descriptor = discover_tasks(root)[0]
+            assert descriptor.task is not None
+            store = Path(directory) / "experience.jsonl"
+            store.write_text('{"experience_id":"exp-1"}\n', encoding="utf-8")
+            copied_store = Path(directory) / "copied-experience.jsonl"
+            copied_store.write_bytes(store.read_bytes())
+            executor = V3PrototypeCLIExecutor(
+                validation_profile="fast-experiment",
+                experience_mode="guided",
+                experience_store=store,
+                experience_task_split="dev",
+            )
+            spec = BenchmarkRunSpec(
+                task=descriptor.task,
+                descriptor=descriptor,
+                model="scheduled-model",
+                repeat_index=1,
+                backend="vitis",
+                run_id="experience-policy",
+                run_fingerprint="b" * 64,
+                run_dir=Path(directory) / "run",
+            )
+
+            command = executor._command(spec)
+            expected_values = {
+                "--validation-profile": "fast-experiment",
+                "--experience-mode": "guided",
+                "--experience-store": str(store.resolve()),
+                "--experience-task-split": "dev",
+            }
+            for option, expected in expected_values.items():
+                with self.subTest(option=option):
+                    self.assertEqual(command[command.index(option) + 1], expected)
+
+            self.assertEqual(
+                executor.fingerprint(),
+                V3PrototypeCLIExecutor(
+                    validation_profile="fast-experiment",
+                    experience_mode="guided",
+                    experience_store=copied_store,
+                    experience_task_split="dev",
+                ).fingerprint(),
+            )
+            self.assertNotEqual(
+                executor.fingerprint(),
+                V3PrototypeCLIExecutor(
+                    validation_profile="fast-experiment",
+                    experience_mode="shadow",
+                    experience_store=copied_store,
+                    experience_task_split="dev",
+                ).fingerprint(),
+            )
+            self.assertNotEqual(
+                executor.fingerprint(),
+                V3PrototypeCLIExecutor(
+                    validation_profile="strict",
+                    experience_mode="guided",
+                    experience_store=copied_store,
+                    experience_task_split="dev",
+                ).fingerprint(),
+            )
+
+            store.write_text('{"experience_id":"exp-2"}\n', encoding="utf-8")
+            with self.assertRaisesRegex(
+                BenchmarkExecutionError, "snapshot was frozen"
+            ):
+                executor._command(spec)
+
+            config = BenchmarkConfig(
+                corpus=root,
+                output_dir=Path(directory) / "out",
+                backend="vitis",
+                experience_store=store,
+            )
+            store.write_text('{"experience_id":"exp-3"}\n', encoding="utf-8")
+            with self.assertRaisesRegex(
+                BenchmarkError, "BenchmarkConfig snapshot was frozen"
+            ):
+                BatchBenchmarkRunner(config)
+
+    def test_restricted_descriptor_cannot_be_relabelled_for_experience(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "corpus"
+            write_task(root, "pilot")
+            (root / "corpus_manifest.json").write_text(
+                json.dumps({"tasks": [{"path": "pilot", "split": "hidden_like"}]}),
+                encoding="utf-8",
+            )
+            descriptor = discover_tasks(root)[0]
+            assert descriptor.task is not None
+            spec = BenchmarkRunSpec(
+                task=descriptor.task,
+                descriptor=descriptor,
+                model="scheduled-model",
+                repeat_index=1,
+                backend="vitis",
+                run_id="restricted-split",
+                run_fingerprint="c" * 64,
+                run_dir=Path(directory) / "run",
+            )
+            with self.assertRaisesRegex(
+                BenchmarkExecutionError, "cannot be relabelled"
+            ):
+                V3PrototypeCLIExecutor(
+                    experience_task_split="dev"
+                )._command(spec)
+
+    def test_run_fingerprint_binds_experience_policy_and_store_digest(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "corpus"
+            write_task(root, "pilot")
+            descriptor = discover_tasks(root)[0]
+            store_a = Path(directory) / "store-a.jsonl"
+            store_b = Path(directory) / "store-b.jsonl"
+            store_a.write_text('{"experience_id":"exp-a"}\n', encoding="utf-8")
+            store_b.write_text('{"experience_id":"exp-b"}\n', encoding="utf-8")
+
+            def planned_fingerprint(
+                *,
+                output_name: str,
+                mode: str = "shadow",
+                profile: str = "strict",
+                store: Path | None = None,
+            ) -> str:
+                config = BenchmarkConfig(
+                    corpus=root,
+                    output_dir=Path(directory) / output_name,
+                    backend="deterministic",
+                    validation_profile=profile,
+                    experience_mode=mode,
+                    experience_store=store,
+                    experience_task_split="dev",
+                )
+                runner = BatchBenchmarkRunner(config, FakeExecutor())
+                return runner._plan([descriptor], select_models(config))[0][3]
+
+            baseline = planned_fingerprint(output_name="baseline", store=store_a)
+            self.assertNotEqual(
+                baseline,
+                planned_fingerprint(
+                    output_name="guided", mode="guided", store=store_a
+                ),
+            )
+            self.assertNotEqual(
+                baseline,
+                planned_fingerprint(
+                    output_name="fast",
+                    profile="fast-experiment",
+                    store=store_a,
+                ),
+            )
+            self.assertNotEqual(
+                baseline,
+                planned_fingerprint(output_name="other-store", store=store_b),
+            )
+            defaults = BenchmarkConfig(root, Path(directory) / "defaults")
+            self.assertEqual(defaults.experience_mode, "shadow")
+
     def test_batch_continues_after_failure_and_aggregates_every_required_metric(
         self,
     ) -> None:
@@ -984,6 +1196,10 @@ class V3BatchBenchmarkTests(unittest.TestCase):
             "--live-openai",
             "--patch-file",
             "--model",
+            "--validation-profile",
+            "--experience-mode",
+            "--experience-store",
+            "--experience-task-split",
         )
         for option in forbidden:
             with self.subTest(option=option, spelling="separate"):
@@ -1083,6 +1299,10 @@ class V3BatchBenchmarkTests(unittest.TestCase):
             root = Path(directory) / "corpus"
             write_task(root, "repair", task_type="repair", difficulty=2)
             write_task(root, "optimize", task_type="optimize", difficulty=3)
+            experience_store = Path(directory) / "experience.jsonl"
+            experience_store.write_text(
+                '{"experience_id":"exp-cli"}\n', encoding="utf-8"
+            )
             output = Path(directory) / "out"
             stdout = io.StringIO()
             code = main(
@@ -1093,6 +1313,14 @@ class V3BatchBenchmarkTests(unittest.TestCase):
                     str(output),
                     "--backend",
                     "deterministic",
+                    "--validation-profile",
+                    "fast-experiment",
+                    "--experience-mode",
+                    "guided",
+                    "--experience-store",
+                    str(experience_store),
+                    "--experience-task-split",
+                    "dev",
                     "--models",
                     "fixture-a,fixture-b",
                     "--model",
@@ -1115,6 +1343,24 @@ class V3BatchBenchmarkTests(unittest.TestCase):
             self.assertEqual(payload["benchmark_csv_ref"], "benchmark_summary.csv")
             self.assertEqual(payload["benchmark_report_ref"], "benchmark_report.md")
             self.assertEqual(summary["real_evidence_headline"]["runs"], 0)
+            self.assertEqual(
+                summary["configuration"]["validation_profile"],
+                "fast-experiment",
+            )
+            self.assertEqual(
+                summary["configuration"]["experience_mode"], "guided"
+            )
+            self.assertEqual(
+                summary["configuration"]["experience_task_split"], "dev"
+            )
+            self.assertEqual(
+                summary["configuration"]["experience_store_snapshot"]["sha256"],
+                hashlib.sha256(experience_store.read_bytes()).hexdigest(),
+            )
+            self.assertEqual(
+                summary["configuration"]["experience_store_snapshot"]["role"],
+                "READ_ONLY_SEED",
+            )
             self.assertEqual(
                 summary["by_evidence_class"]["DETERMINISTIC"]["runs"], 2
             )
@@ -1168,6 +1414,7 @@ class V3BatchBenchmarkTests(unittest.TestCase):
                     "batch_and_task_parsing",
                     "phase_router",
                     "planner_and_prompts",
+                    "experience_layer",
                     "backend_and_accounting",
                 },
             )

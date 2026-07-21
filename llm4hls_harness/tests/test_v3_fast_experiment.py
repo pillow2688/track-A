@@ -18,6 +18,7 @@ from llm4hls_agent.task import load_public_task
 from llm4hls_agent.v3_openai_planner import (
     OPENAI_V3_FAST_REQUEST_SCHEMA,
     OpenAICompatibleV3PlannerAdapter,
+    _guidance_actionable,
 )
 from llm4hls_agent.v3_prototype import run_v3_prototype
 
@@ -205,6 +206,194 @@ def official_dot_task() -> object:
 
 
 class V3FastExperimentTests(unittest.TestCase):
+    def test_experience_off_keeps_legacy_adapter_fingerprint(self) -> None:
+        provider = OpenAICompatibleOptimizationProvider(
+            OpenAICompatibleConfig(
+                base_url="https://llm.example/v1",
+                api_key="secret",
+                model="fixture-fast-model",
+            ),
+            transport=lambda _request, _timeout: (200, {}, envelope(fast_response())),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "off-equivalence"
+            legacy = OpenAICompatibleV3PlannerAdapter(
+                root, provider, fast_experiment=True
+            )
+            explicit = OpenAICompatibleV3PlannerAdapter(
+                root,
+                provider,
+                fast_experiment=True,
+                experience_mode="off",
+            )
+        self.assertEqual(legacy.fingerprint(), explicit.fingerprint())
+        self.assertIsNone(explicit.experience_summary())
+
+    def test_shadow_does_not_change_prompt_but_guided_does(self) -> None:
+        class Coordinator:
+            recommendation_path = None
+
+            def __init__(self) -> None:
+                self.persisted: list[int] = []
+
+            def snapshot_metadata(self):
+                return {
+                    "schema_version": "v3e.experience-snapshot.v1",
+                    "byte_offset": 0,
+                    "prefix_sha256": "0" * 64,
+                    "record_count": 0,
+                }
+
+            def fingerprint(self):
+                return {"prefix_sha256": "0" * 64, "record_count": 0}
+
+            def build_guidance(self, **_facts):
+                return {
+                    "schema_version": "v3e.experience-guidance.v1",
+                    "similar_successes": [],
+                    "similar_failures": [],
+                    "recommended_strategy_bundles": [
+                        {
+                            "strategy_bundle": ["ARRAY_PARTITION"],
+                            "utility": 0.5,
+                        }
+                    ],
+                    "discouraged_strategy_bundles": [],
+                    "confidence": 0.25,
+                    "supporting_record_ids": [],
+                    "fallback_reason": None,
+                    "notice": "Historical advice only.",
+                }
+
+            def persist_recommendation(self, round_index, _guidance):
+                self.persisted.append(round_index)
+                return {"persisted": True}
+
+        task = official_dot_task()
+        base = prototype_config(task, credit_limit=40)
+        config = replace(
+            base,
+            budget=BudgetConfig(
+                credit_limit=40,
+                costs=base.budget.costs,
+                tool_limits=base.budget.tool_limits,
+                token_limit=100_000,
+                runtime_limit_seconds=300.0,
+            ),
+        )
+        prompts: dict[str, str] = {}
+        with tempfile.TemporaryDirectory() as directory:
+            for mode in ("off", "shadow", "guided"):
+                def transport(request, _timeout, *, mode=mode):
+                    body = json.loads(request.data.decode("utf-8"))
+                    prompts[mode] = body["messages"][1]["content"]
+                    return 200, {}, envelope(
+                        fast_response(),
+                        usage={"prompt_tokens": 800, "completion_tokens": 200},
+                    )
+
+                provider = OpenAICompatibleOptimizationProvider(
+                    OpenAICompatibleConfig(
+                        base_url="https://llm.example/v1",
+                        api_key="secret",
+                        model="fixture-fast-model",
+                        max_output_tokens=800,
+                    ),
+                    transport=transport,
+                )
+                coordinator = Coordinator() if mode != "off" else None
+                root = Path(directory) / mode
+                planner = OpenAICompatibleV3PlannerAdapter(
+                    root,
+                    provider,
+                    fast_experiment=True,
+                    read_only_headers={
+                        name: content.decode("utf-8")
+                        for name, content in task.headers.items()
+                    },
+                    experience_mode=mode,
+                    experience_coordinator=coordinator,
+                    experience_task_split="train",
+                )
+                result = run_v3_prototype(
+                    task,
+                    root,
+                    config,
+                    backend=PrototypeBackend(),
+                    planner=planner,
+                    max_planner_rounds=1,
+                    validation_profile="fast-experiment",
+                    thread_id=f"experience-{mode}",
+                )
+                self.assertEqual(result["status"], "DONE")
+
+        self.assertEqual(prompts["off"], prompts["shadow"])
+        self.assertNotIn("EXPERIENCE GUIDANCE", prompts["shadow"])
+        self.assertIn("EXPERIENCE GUIDANCE", prompts["guided"])
+
+    def test_shadow_advisory_failure_disables_itself_without_aborting(self) -> None:
+        class BrokenCoordinator:
+            recommendation_path = None
+
+            def snapshot_metadata(self):
+                return {
+                    "schema_version": "v3e.experience-snapshot.v1",
+                    "byte_offset": 0,
+                    "prefix_sha256": "0" * 64,
+                    "record_count": 0,
+                }
+
+            def fingerprint(self):
+                return {"prefix_sha256": "0" * 64, "record_count": 0}
+
+            def build_guidance(self, **_facts):
+                raise OSError("simulated advisory store failure")
+
+            def persist_recommendation(self, _round_index, _guidance):
+                raise AssertionError("must not persist after build failure")
+
+        provider = OpenAICompatibleOptimizationProvider(
+            OpenAICompatibleConfig(
+                base_url="https://llm.example/v1",
+                api_key="secret",
+                model="fixture-fast-model",
+            ),
+            transport=lambda _request, _timeout: (200, {}, envelope(fast_response())),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            adapter = OpenAICompatibleV3PlannerAdapter(
+                Path(directory),
+                provider,
+                fast_experiment=True,
+                experience_mode="shadow",
+                experience_coordinator=BrokenCoordinator(),
+                experience_task_split="unknown",
+            )
+            guidance = adapter._build_experience_guidance(
+                {
+                    "task": {"description": "public task", "difficulty": 1},
+                    "round": {"round_index": 0, "no_improvement_rounds": 0},
+                    "budget": {"tokens_remaining": 100, "credits_remaining": 30},
+                    "history": [],
+                },
+                mode="OPTIMIZE",
+                source="float acc = 0;",
+            )
+            self.assertIsNone(guidance)
+            self.assertEqual(adapter.experience_summary()["status"], "DISABLED")
+
+    def test_empty_guidance_is_not_injected_into_guided_prompt(self) -> None:
+        self.assertFalse(
+            _guidance_actionable(
+                {
+                    "similar_successes": [],
+                    "similar_failures": [],
+                    "recommended_strategy_bundles": [],
+                    "discouraged_strategy_bundles": [],
+                }
+            )
+        )
+
     def test_fast_schema_prompt_and_usage_are_strict_and_bounded(self) -> None:
         prompt = build_fast_experiment_prompt(fast_context())
         self.assertIn("transaction interval", prompt)

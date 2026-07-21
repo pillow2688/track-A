@@ -4948,6 +4948,25 @@ def _render_team_report(
     calls = budget.get("tool_used")
     calls = calls if isinstance(calls, Mapping) else {}
     planner_contract = result.get("planner_contract")
+    experience = result.get("experience")
+    experience_lines: list[str] = []
+    if isinstance(experience, Mapping):
+        experience_lines = [
+            "## V3-E 经验建议层",
+            "",
+            f"- Mode: `{experience.get('mode', '-')}`",
+            f"- Task split: `{experience.get('task_split', '-')}`",
+            f"- Authority: `{experience.get('authority', 'ADVISORY_ONLY')}`",
+            "- Seed snapshot: `"
+            + report_cell(experience.get("seed_snapshot", {}))
+            + "`",
+            "- Recommendation trace: `"
+            + str(experience.get("recommendations_ref") or "-")
+            + "`",
+            "- Risk/Continue 只提供建议；Budget、PhaseRouter、Patch Validator、"
+            "Candidate gate 与 fresh final closure 仍由 Harness 决定。",
+            "",
+        ]
     a1_lines: list[str] = []
     if isinstance(planner_contract, Mapping):
         a1_lines = [
@@ -5074,6 +5093,7 @@ def _render_team_report(
             f"- Final score: `{result.get('final_score_ref') or '-'}`",
             "",
             *a1_lines,
+            *experience_lines,
             "## 数据与控制流",
             "",
             *rows,
@@ -5104,6 +5124,15 @@ def _write_report(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeStat
     budget = BudgetLedger(
         runtime.run_root / "budget_ledger.jsonl", runtime.config.budget
     ).snapshot()
+    experience_summary: dict[str, object] | None = None
+    if runtime.live_planner is not None:
+        summary_method = getattr(runtime.live_planner, "experience_summary", None)
+        if callable(summary_method):
+            raw_summary = summary_method()
+            if raw_summary is not None:
+                if not isinstance(raw_summary, Mapping):
+                    raise RuntimeError("Planner experience summary must be an object")
+                experience_summary = dict(raw_summary)
     result: dict[str, object] = {
         "schema_version": 1,
         "result_schema": TERMINAL_RESULT_SCHEMA,
@@ -5247,6 +5276,8 @@ def _write_report(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeStat
             "result": "v3_prototype_result.json",
         },
     }
+    if experience_summary is not None:
+        result["experience"] = experience_summary
     if runtime.live_planner is not None:
         result.update(
             {

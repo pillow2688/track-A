@@ -146,6 +146,34 @@ def _parser() -> argparse.ArgumentParser:
             "baseline/exploration CoSim while retaining a fresh final closure."
         ),
     )
+    parser.add_argument(
+        "--experience-mode",
+        choices=("off", "shadow", "guided"),
+        default="shadow",
+        help=(
+            "off preserves V3-D exactly; shadow records bounded advice without "
+            "changing the model request; guided adds that advice to Planner context."
+        ),
+    )
+    parser.add_argument(
+        "--experience-store",
+        help=(
+            "Read-only JSONL seed store used for retrieval. New Candidate "
+            "experience is written under the run directory, never back here."
+        ),
+    )
+    parser.add_argument(
+        "--experience-task-split",
+        choices=("train", "dev", "hidden_like", "unknown"),
+        default="unknown",
+        help="Public split label used by experience leakage controls.",
+    )
+    parser.add_argument(
+        "--experience-max-guidance-tokens",
+        type=int,
+        default=1100,
+        help="Conservative upper bound for the serialized advisory summary.",
+    )
     return parser
 
 
@@ -162,6 +190,10 @@ def _print_error(error_type: str, detail: str, **extra: object) -> None:
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     vitis_root = Path(args.vitis_root).expanduser()
+    experience_ingest: dict[str, object] = {
+        "planner_status": "NOT_REQUESTED",
+        "postprocess_status": "NOT_REQUESTED",
+    }
 
     if args.backend == "vitis":
         settings_path = vitis_root / "settings64.sh"
@@ -213,6 +245,44 @@ def main(argv: list[str] | None = None) -> int:
                 OpenAICompatibleOptimizationProvider,
             )
             from .v3_openai_planner import OpenAICompatibleV3PlannerAdapter
+            from .v3_experience_guidance import ExperienceCoordinator
+            from .v3_experience_store import JsonlExperienceRepository
+
+            run_root = Path(args.run_dir).resolve()
+            seed_store = (
+                Path(args.experience_store).expanduser().resolve()
+                if args.experience_store
+                else run_root / "experience" / "empty_seed.jsonl"
+            )
+            if args.experience_store and not seed_store.is_file():
+                raise ValueError(
+                    "--experience-store must name an existing JSONL file"
+                )
+            experience_coordinator = None
+            if args.experience_mode != "off":
+                try:
+                    experience_coordinator = ExperienceCoordinator(
+                        JsonlExperienceRepository(seed_store),
+                        recommendation_path=(
+                            run_root
+                            / "experience"
+                            / "experience_recommendations.jsonl"
+                        ),
+                        max_guidance_tokens=args.experience_max_guidance_tokens,
+                    )
+                except Exception as exc:
+                    if args.experience_mode == "guided":
+                        raise
+                    # Shadow is observational and must never prevent the
+                    # pre-V3-E Planner from running.
+                    experience_ingest.update(
+                        {
+                            "planner_status": "SHADOW_DISABLED",
+                            "planner_error_type": type(exc).__name__,
+                        }
+                    )
+                else:
+                    experience_ingest["planner_status"] = "ACTIVE"
 
             provider = OpenAICompatibleOptimizationProvider(
                 OpenAICompatibleConfig(
@@ -235,6 +305,9 @@ def main(argv: list[str] | None = None) -> int:
                         name: content.decode("utf-8")
                         for name, content in task.headers.items()
                     },
+                    experience_mode=args.experience_mode,
+                    experience_coordinator=experience_coordinator,
+                    experience_task_split=args.experience_task_split,
                 )
             else:
                 planner = OpenAICompatibleV3PlannerAdapter(
@@ -246,6 +319,9 @@ def main(argv: list[str] | None = None) -> int:
                         name: content.decode("utf-8")
                         for name, content in task.headers.items()
                     },
+                    experience_mode=args.experience_mode,
+                    experience_coordinator=experience_coordinator,
+                    experience_task_split=args.experience_task_split,
                 )
             proposals: tuple[PatchProposal, ...] = ()
             token_limit = 32768 if args.token_budget is None else args.token_budget
@@ -336,6 +412,46 @@ def main(argv: list[str] | None = None) -> int:
                 max_final_attempts=max_final_attempts,
                 validation_profile=args.validation_profile,
             )
+        if args.experience_mode != "off":
+            # Rebuild Candidate-level records from terminal, hash-bound run
+            # artifacts.  This is idempotent across CLI retries/checkpoint
+            # resumes and intentionally writes to a run-local store so a
+            # frozen pilot seed cannot learn from earlier tasks in the batch.
+            try:
+                from .v3_experience_importer import (
+                    ImportPolicy,
+                    import_historical_runs,
+                    write_import_artifacts,
+                )
+                from .v3_experience_store import JsonlExperienceRepository
+
+                experience_dir = Path(args.run_dir).resolve() / "experience"
+                local_repository = JsonlExperienceRepository(
+                    experience_dir / "experience_records.jsonl"
+                )
+                imported = import_historical_runs(
+                    [Path(args.run_dir).resolve() / "v3_prototype_result.json"],
+                    local_repository,
+                    policy=ImportPolicy(task_split=args.experience_task_split),
+                )
+                write_import_artifacts(imported, experience_dir)
+                experience_ingest.update(
+                    {
+                        "postprocess_status": "COMPLETE",
+                        "records": len(imported.records),
+                        "inserted": len(imported.inserted_record_ids),
+                        "duplicates": len(imported.duplicate_record_ids),
+                    }
+                )
+            except Exception as exc:
+                # Experience export is post-terminal advisory work.  Its
+                # failure cannot turn a successful HLS run into CLI failure.
+                experience_ingest.update(
+                    {
+                        "postprocess_status": "FAILED_OPEN",
+                        "postprocess_error_type": type(exc).__name__,
+                    }
+                )
     except Exception as exc:
         _print_error(type(exc).__name__, str(exc))
         return 3
@@ -349,6 +465,8 @@ def main(argv: list[str] | None = None) -> int:
         ),
         "task_id": result.get("task_id"),
         "validation_profile": result.get("validation_profile"),
+        "experience_mode": args.experience_mode,
+        "experience_ingest": experience_ingest,
         "status": result.get("status"),
         "stop_reason": result.get("stop_reason"),
         "exploration_stop_reason": result.get("exploration_stop_reason"),

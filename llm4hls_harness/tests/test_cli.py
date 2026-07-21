@@ -8,7 +8,7 @@ import types
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import ANY, Mock, patch
 
 try:
     from llm4hls_agent.cli import main
@@ -552,6 +552,9 @@ class V3PrototypeCliTests(unittest.TestCase):
             final_reserve_credits=25,
             max_output_tokens=512,
             read_only_headers={"kernel.h": "void kernel();\n"},
+            experience_mode="shadow",
+            experience_coordinator=ANY,
+            experience_task_split="unknown",
         )
         task, called_run_dir, config = run.call_args.args
         self.assertEqual(task.id, "cli_fixture")
@@ -628,6 +631,9 @@ class V3PrototypeCliTests(unittest.TestCase):
             max_output_tokens=640,
             fast_experiment=True,
             read_only_headers={"kernel.h": "void kernel();\n"},
+            experience_mode="shadow",
+            experience_coordinator=ANY,
+            experience_task_split="unknown",
         )
         _task, _called_run_dir, config = run.call_args.args
         self.assertEqual(config.budget.tool_limits["llm"], 4)

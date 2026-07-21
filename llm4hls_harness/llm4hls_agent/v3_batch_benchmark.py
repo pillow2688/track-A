@@ -51,6 +51,10 @@ _CRITICAL_IMPLEMENTATION_MODULES = (
     "v3_batch_benchmark.py",
     "v3_prototype_cli.py",
     "v3_prototype.py",
+    "v3_experience.py",
+    "v3_experience_store.py",
+    "v3_experience_guidance.py",
+    "v3_experience_importer.py",
     "v3_phase_router.py",
     "v3_planner.py",
     "v3_planner_action.py",
@@ -64,6 +68,9 @@ _CRITICAL_IMPLEMENTATION_MODULES = (
 )
 
 _MODES = {"REPAIR", "SYNTH_FIX", "STRUCTURAL_FIX", "OPTIMIZE"}
+_VALIDATION_PROFILES = {"strict", "fast-experiment"}
+_EXPERIENCE_MODES = {"off", "shadow", "guided"}
+_EXPERIENCE_TASK_SPLITS = {"train", "dev", "hidden_like"}
 _MODE_ALIASES = {
     "REPAIR": "REPAIR",
     "BUGFIX": "REPAIR",
@@ -135,6 +142,37 @@ def _sha256_file(path: Path) -> str:
         raise BenchmarkError(f"cannot hash benchmark implementation file: {path}") from exc
 
 
+def _experience_store_snapshot(
+    path: Path | str | None,
+    *,
+    error_type: type[Exception] = BenchmarkError,
+) -> tuple[Path | None, dict[str, object]]:
+    """Resolve and content-bind one immutable retrieval-store snapshot."""
+
+    if path is None:
+        return None, {
+            "role": "READ_ONLY_SEED",
+            "present": False,
+            "size_bytes": 0,
+            "sha256": None,
+        }
+    resolved = Path(path).expanduser().resolve()
+    if not resolved.is_file():
+        raise error_type(
+            f"experience_store must be an existing regular file: {resolved}"
+        )
+    try:
+        data = resolved.read_bytes()
+    except OSError as exc:
+        raise error_type(f"cannot snapshot experience_store: {resolved}") from exc
+    return resolved, {
+        "role": "READ_ONLY_SEED",
+        "present": True,
+        "size_bytes": len(data),
+        "sha256": _sha256_bytes(data),
+    }
+
+
 @lru_cache(maxsize=1)
 def _implementation_facts() -> dict[str, object]:
     """Return secret-free, content-addressed facts for run identity.
@@ -162,6 +200,12 @@ def _implementation_facts() -> dict[str, object]:
             modules["v3_openai_planner.py"],
             modules["openai_provider.py"],
             modules["repair.py"],
+        ),
+        "experience_layer": (
+            modules["v3_experience.py"],
+            modules["v3_experience_store.py"],
+            modules["v3_experience_guidance.py"],
+            modules["v3_experience_importer.py"],
         ),
         "backend_and_accounting": (
             modules["vitis.py"],
@@ -272,6 +316,8 @@ class TaskDescriptor:
     expected_mode_source: str | None
     task_fingerprint: str
     task: PublicTask | None = field(compare=False, repr=False)
+    algorithm_family: str | None = None
+    algorithm_family_source: str | None = None
     load_error_type: str | None = None
     load_error_detail: str | None = None
 
@@ -328,6 +374,16 @@ class BenchmarkConfig:
     retry_failures: bool = False
     max_tasks: int | None = None
     max_runtime_seconds: float | None = None
+    validation_profile: str = "strict"
+    experience_mode: str = "shadow"
+    experience_store: Path | str | None = None
+    experience_task_split: str | None = None
+    experience_store_sha256: str | None = field(
+        init=False, default=None, repr=False
+    )
+    experience_store_size_bytes: int = field(
+        init=False, default=0, repr=False
+    )
 
     def __post_init__(self) -> None:
         raw_corpus = self.corpus
@@ -348,6 +404,30 @@ class BenchmarkConfig:
         backend = str(self.backend).strip().casefold()
         if backend not in {"demo", "deterministic", "vitis"}:
             raise ValueError("backend must be demo, deterministic, or vitis")
+        validation_profile = str(self.validation_profile).strip().casefold()
+        if validation_profile not in _VALIDATION_PROFILES:
+            raise ValueError(
+                "validation_profile must be strict or fast-experiment"
+            )
+        experience_mode = str(self.experience_mode).strip().casefold()
+        if experience_mode not in _EXPERIENCE_MODES:
+            raise ValueError("experience_mode must be off, shadow, or guided")
+        experience_task_split = self.experience_task_split
+        if experience_task_split is not None:
+            experience_task_split = (
+                str(experience_task_split)
+                .strip()
+                .casefold()
+                .replace("-", "_")
+            )
+            if experience_task_split not in _EXPERIENCE_TASK_SPLITS:
+                raise ValueError(
+                    "experience_task_split must be train, dev, or hidden_like"
+                )
+        experience_store, experience_snapshot = _experience_store_snapshot(
+            self.experience_store,
+            error_type=ValueError,
+        )
         max_tasks = self.max_tasks
         if max_tasks is not None and int(max_tasks) <= 0:
             raise ValueError("max_tasks must be positive when provided")
@@ -371,6 +451,22 @@ class BenchmarkConfig:
         object.__setattr__(self, "models", models)
         object.__setattr__(self, "repeats", repeats)
         object.__setattr__(self, "backend", backend)
+        object.__setattr__(self, "validation_profile", validation_profile)
+        object.__setattr__(self, "experience_mode", experience_mode)
+        object.__setattr__(self, "experience_store", experience_store)
+        object.__setattr__(
+            self, "experience_task_split", experience_task_split
+        )
+        object.__setattr__(
+            self,
+            "experience_store_sha256",
+            experience_snapshot["sha256"],
+        )
+        object.__setattr__(
+            self,
+            "experience_store_size_bytes",
+            experience_snapshot["size_bytes"],
+        )
         object.__setattr__(
             self,
             "splits",
@@ -399,6 +495,20 @@ class BenchmarkConfig:
             "retry_failures": self.retry_failures,
             "max_tasks": self.max_tasks,
             "max_runtime_seconds": self.max_runtime_seconds,
+            "validation_profile": self.validation_profile,
+            "experience_mode": self.experience_mode,
+            "experience_store": (
+                str(self.experience_store)
+                if self.experience_store is not None
+                else None
+            ),
+            "experience_task_split": self.experience_task_split,
+            "experience_store_snapshot": {
+                "role": "READ_ONLY_SEED",
+                "present": self.experience_store is not None,
+                "size_bytes": self.experience_store_size_bytes,
+                "sha256": self.experience_store_sha256,
+            },
         }
 
 
@@ -460,6 +570,28 @@ def _expected_mode(
     return inferred, "task_type" if inferred is not None else None
 
 
+def _algorithm_family(
+    spec: Mapping[str, object],
+    external_labels: Sequence[tuple[str, Mapping[str, object]]] = (),
+) -> tuple[str | None, str | None]:
+    """Read only an explicitly safe, high-level family label."""
+
+    benchmark = _benchmark_metadata(spec)
+    for source, raw in (
+        ("benchmark.algorithm_family", benchmark.get("algorithm_family")),
+        ("benchmark.family", benchmark.get("family")),
+        ("task.algorithm_family", spec.get("algorithm_family")),
+    ):
+        if isinstance(raw, str) and re.fullmatch(
+            r"[a-z][a-z0-9_]*", raw.strip()
+        ):
+            return raw.strip(), source
+    # Evaluator/corpus-manifest family labels can encode the injected mutation
+    # or expected solution.  They are intentionally never exposed to the
+    # experience layer; only explicit public task metadata is accepted.
+    return None, None
+
+
 def _read_label_sidecar(path: Path, *, task_id: str | None = None) -> Mapping[str, object]:
     """Read only evaluator labels from an optional JSON sidecar.
 
@@ -510,9 +642,17 @@ def _manifest_labels(corpus: Path) -> dict[Path, Mapping[str, object]]:
             candidate.relative_to(resolved_root)
         except ValueError:
             continue
+        # This is an intentional allowlist.  In particular, mutation operator,
+        # seed, mutation summary and answer-bearing fields never cross into a
+        # TaskDescriptor or executor command.
         labels[candidate] = {
             field: raw[field]
-            for field in ("expected_mode", "expected_router_mode", "mode", "split")
+            for field in (
+                "expected_mode",
+                "expected_router_mode",
+                "mode",
+                "split",
+            )
             if field in raw
         }
     return labels
@@ -590,6 +730,9 @@ def discover_tasks(corpora: Path | str | Sequence[Path | str]) -> list[TaskDescr
             expected_mode, mode_source = _expected_mode(
                 spec, task_type, external_labels
             )
+            algorithm_family, family_source = _algorithm_family(
+                spec, external_labels
+            )
             split = _inferred_split(relative, spec, external_labels)
             try:
                 task = load_public_task(resolved)
@@ -610,6 +753,8 @@ def discover_tasks(corpora: Path | str | Sequence[Path | str]) -> list[TaskDescr
                         expected_mode_source=mode_source,
                         task_fingerprint=raw_hash,
                         task=None,
+                        algorithm_family=algorithm_family,
+                        algorithm_family_source=family_source,
                         load_error_type=type(exc).__name__,
                         load_error_detail=str(exc),
                     )
@@ -627,6 +772,8 @@ def discover_tasks(corpora: Path | str | Sequence[Path | str]) -> list[TaskDescr
                     expected_mode_source=mode_source,
                     task_fingerprint=_task_fingerprint(task),
                     task=task,
+                    algorithm_family=algorithm_family,
+                    algorithm_family_source=family_source,
                 )
             )
     return sorted(
@@ -790,9 +937,21 @@ class V3PrototypeCLIExecutor:
         "--live-openai",
         "--patch-file",
         "--model",
+        "--validation-profile",
+        "--experience-mode",
+        "--experience-store",
+        "--experience-task-split",
     }
 
-    def __init__(self, extra_args: Sequence[str] = ()) -> None:
+    def __init__(
+        self,
+        extra_args: Sequence[str] = (),
+        *,
+        validation_profile: str = "strict",
+        experience_mode: str = "shadow",
+        experience_store: Path | str | None = None,
+        experience_task_split: str | None = None,
+    ) -> None:
         self.extra_args = tuple(str(item) for item in extra_args)
         for item in self.extra_args:
             option = item.split("=", 1)[0]
@@ -800,6 +959,48 @@ class V3PrototypeCLIExecutor:
                 raise BenchmarkError(
                     f"real benchmark executor cannot override {option}"
                 )
+        self.validation_profile = str(validation_profile).strip().casefold()
+        if self.validation_profile not in _VALIDATION_PROFILES:
+            raise BenchmarkError(
+                "validation_profile must be strict or fast-experiment"
+            )
+        self.experience_mode = str(experience_mode).strip().casefold()
+        if self.experience_mode not in _EXPERIENCE_MODES:
+            raise BenchmarkError(
+                "experience_mode must be off, shadow, or guided"
+            )
+        if experience_task_split is None:
+            self.experience_task_split = None
+        else:
+            normalised_split = (
+                str(experience_task_split)
+                .strip()
+                .casefold()
+                .replace("-", "_")
+            )
+            if normalised_split not in _EXPERIENCE_TASK_SPLITS:
+                raise BenchmarkError(
+                    "experience_task_split must be train, dev, or hidden_like"
+                )
+            self.experience_task_split = normalised_split
+        self.experience_store, self.experience_store_snapshot = (
+            _experience_store_snapshot(experience_store)
+        )
+
+    def _verify_experience_store_snapshot(self) -> None:
+        if self.experience_store is None:
+            return
+        try:
+            _path, current = _experience_store_snapshot(self.experience_store)
+        except BenchmarkError as exc:
+            raise BenchmarkExecutionError(
+                "experience_store is unavailable after the batch snapshot "
+                "was frozen"
+            ) from exc
+        if current != self.experience_store_snapshot:
+            raise BenchmarkExecutionError(
+                "experience_store changed after the batch snapshot was frozen"
+            )
 
     def fingerprint(self) -> str:
         # Only hashes of environment-derived values are retained.  The API key
@@ -823,6 +1024,10 @@ class V3PrototypeCLIExecutor:
                 "executor": "v3-prototype-cli:v2",
                 "python": sys.version.split()[0],
                 "extra_args": self.extra_args,
+                "validation_profile": self.validation_profile,
+                "experience_mode": self.experience_mode,
+                "experience_task_split": self.experience_task_split,
+                "experience_store_snapshot": self.experience_store_snapshot,
                 "implementation_fingerprint": _implementation_fingerprint(),
                 "effective_environment_sha256": _sha256_json(
                     effective_environment
@@ -831,7 +1036,8 @@ class V3PrototypeCLIExecutor:
         )
 
     def _command(self, spec: BenchmarkRunSpec) -> list[str]:
-        return [
+        self._verify_experience_store_snapshot()
+        command = [
             sys.executable,
             "-m",
             "llm4hls_agent.v3_prototype_cli",
@@ -847,8 +1053,28 @@ class V3PrototypeCLIExecutor:
             "openai-compatible",
             "--model",
             spec.model,
-            *self.extra_args,
+            "--validation-profile",
+            self.validation_profile,
+            "--experience-mode",
+            self.experience_mode,
         ]
+        if self.experience_store is not None:
+            command.extend(("--experience-store", str(self.experience_store)))
+        task_split = self.experience_task_split
+        descriptor_split = spec.descriptor.split.replace("-", "_")
+        if descriptor_split in {"hidden_like", "test", "holdout"}:
+            if task_split is not None and task_split != "hidden_like":
+                raise BenchmarkExecutionError(
+                    "restricted task split is authoritative and cannot be relabelled"
+                )
+            task_split = "hidden_like"
+        elif task_split is None:
+            if descriptor_split in _EXPERIENCE_TASK_SPLITS:
+                task_split = descriptor_split
+        if task_split is not None:
+            command.extend(("--experience-task-split", task_split))
+        command.extend(self.extra_args)
+        return command
 
     def execute(
         self,
@@ -1584,13 +1810,25 @@ class V3PrototypeCLIExecutor:
         }
 
 
-def default_executor(backend: str) -> BenchmarkExecutor:
+def default_executor(
+    backend: str,
+    *,
+    validation_profile: str = "strict",
+    experience_mode: str = "shadow",
+    experience_store: Path | str | None = None,
+    experience_task_split: str | None = None,
+) -> BenchmarkExecutor:
     if backend == "demo":
         return SyntheticBenchmarkExecutor(EvidenceClass.DEMO)
     if backend == "deterministic":
         return SyntheticBenchmarkExecutor(EvidenceClass.DETERMINISTIC)
     if backend == "vitis":
-        return V3PrototypeCLIExecutor()
+        return V3PrototypeCLIExecutor(
+            validation_profile=validation_profile,
+            experience_mode=experience_mode,
+            experience_store=experience_store,
+            experience_task_split=experience_task_split,
+        )
     raise ValueError(f"unsupported backend: {backend}")
 
 
@@ -1636,6 +1874,15 @@ def _execution_policy_fingerprint(config: BenchmarkConfig) -> str:
             "python_implementation": sys.implementation.name,
             "python_version": sys.version.split()[0],
             "max_runtime_seconds": config.max_runtime_seconds,
+            "validation_profile": config.validation_profile,
+            "experience_mode": config.experience_mode,
+            "experience_task_split": config.experience_task_split,
+            "experience_store_snapshot": {
+                "role": "READ_ONLY_SEED",
+                "present": config.experience_store is not None,
+                "size_bytes": config.experience_store_size_bytes,
+                "sha256": config.experience_store_sha256,
+            },
             "per_run_timeout_policy": "remaining_batch_runtime",
             "max_parallel_runs": 1,
             "vitis_serialized": True,
@@ -1660,6 +1907,7 @@ def _run_fingerprint(
             "task_fingerprint": descriptor.task_fingerprint,
             "task_id": descriptor.task_id,
             "split": descriptor.split,
+            "algorithm_family": descriptor.algorithm_family,
             "expected_mode": descriptor.expected_mode,
             "model": model,
             "repeat_index": repeat_index,
@@ -1937,6 +2185,8 @@ def _normalise_result(
         "task_type": spec.descriptor.task_type,
         "difficulty": spec.descriptor.difficulty,
         "split": spec.descriptor.split,
+        "algorithm_family": spec.descriptor.algorithm_family,
+        "algorithm_family_source": spec.descriptor.algorithm_family_source,
         "expected_mode": spec.descriptor.expected_mode,
         "expected_mode_source": spec.descriptor.expected_mode_source,
         "routed_mode": routed_mode,
@@ -2056,6 +2306,8 @@ def _failure_record(
         "task_type": descriptor.task_type,
         "difficulty": descriptor.difficulty,
         "split": descriptor.split,
+        "algorithm_family": descriptor.algorithm_family,
+        "algorithm_family_source": descriptor.algorithm_family_source,
         "expected_mode": descriptor.expected_mode,
         "expected_mode_source": descriptor.expected_mode_source,
         "routed_mode": None,
@@ -2511,6 +2763,7 @@ def build_summary(
                     "task_id": item.task_id,
                     "task_fingerprint": item.task_fingerprint,
                     "split": item.split,
+                    "algorithm_family": item.algorithm_family,
                     "expected_mode": item.expected_mode,
                 }
                 for item in selected_tasks
@@ -2530,6 +2783,9 @@ def build_summary(
             "descriptors_found": descriptors_found,
             "tasks_selected": len(selected_tasks),
             "task_ids": [item.task_id for item in selected_tasks],
+            "algorithm_families": {
+                item.task_id: item.algorithm_family for item in selected_tasks
+            },
             "models_selected": list(selected_models),
             "planned_runs": planned_runs,
         },
@@ -2608,6 +2864,7 @@ _CSV_FIELDS = (
     "split",
     "task_type",
     "difficulty",
+    "algorithm_family",
     "expected_mode",
     "routed_mode",
     "router_correct",
@@ -2814,7 +3071,43 @@ class BatchBenchmarkRunner:
         utc_now: Callable[[], str] = _utc_now,
     ) -> None:
         self.config = config
-        self.executor = executor or default_executor(config.backend)
+        self.executor = executor or default_executor(
+            config.backend,
+            validation_profile=config.validation_profile,
+            experience_mode=config.experience_mode,
+            experience_store=config.experience_store,
+            experience_task_split=config.experience_task_split,
+        )
+        if type(self.executor) is V3PrototypeCLIExecutor:
+            executor_policy = (
+                self.executor.validation_profile,
+                self.executor.experience_mode,
+                self.executor.experience_task_split,
+            )
+            config_policy = (
+                config.validation_profile,
+                config.experience_mode,
+                config.experience_task_split,
+            )
+            if executor_policy != config_policy:
+                raise BenchmarkError(
+                    "real executor experience/validation policy conflicts with "
+                    "BenchmarkConfig"
+                )
+            configured_store_snapshot = {
+                "role": "READ_ONLY_SEED",
+                "present": config.experience_store is not None,
+                "size_bytes": config.experience_store_size_bytes,
+                "sha256": config.experience_store_sha256,
+            }
+            if (
+                self.executor.experience_store_snapshot
+                != configured_store_snapshot
+            ):
+                raise BenchmarkError(
+                    "experience_store changed after the BenchmarkConfig "
+                    "snapshot was frozen"
+                )
         self.monotonic = monotonic
         self.utc_now = utc_now
         self.executor_fingerprint = _executor_fingerprint(self.executor)
@@ -2894,6 +3187,7 @@ class BatchBenchmarkRunner:
                 {
                     "task_id": descriptor.task_id,
                     "task_fingerprint": descriptor.task_fingerprint,
+                    "algorithm_family": descriptor.algorithm_family,
                     "model": model,
                     "repeat_index": repeat_index,
                     "run_fingerprint": fingerprint,
@@ -3287,6 +3581,30 @@ def _parser() -> argparse.ArgumentParser:
         choices=("demo", "deterministic", "vitis"),
         default="deterministic",
     )
+    parser.add_argument(
+        "--validation-profile",
+        choices=("strict", "fast-experiment"),
+        default="strict",
+        help="Validation policy forwarded to each V3 single-task run.",
+    )
+    parser.add_argument(
+        "--experience-mode",
+        choices=("off", "shadow", "guided"),
+        default="shadow",
+        help="Experience policy forwarded to each V3 single-task run.",
+    )
+    parser.add_argument(
+        "--experience-store",
+        help=(
+            "Existing frozen experience-store file; its content digest is "
+            "bound into batch and run identities."
+        ),
+    )
+    parser.add_argument(
+        "--experience-task-split",
+        choices=("train", "dev", "hidden_like"),
+        help="Optional task split forwarded to each V3 single-task run.",
+    )
     parser.add_argument("--mode", dest="mode_filters", action="append", default=[])
     parser.add_argument("--task", dest="task_filters", action="append", default=[])
     parser.add_argument(
@@ -3336,6 +3654,10 @@ def main(argv: list[str] | None = None, *, stdout: TextIO | None = None) -> int:
             retry_failures=args.retry_failures,
             max_tasks=args.max_tasks,
             max_runtime_seconds=args.max_runtime_seconds,
+            validation_profile=args.validation_profile,
+            experience_mode=args.experience_mode,
+            experience_store=args.experience_store,
+            experience_task_split=args.experience_task_split,
         )
         outcome = BatchBenchmarkRunner(config).run()
     except Exception as exc:

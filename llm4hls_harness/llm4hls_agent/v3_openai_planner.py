@@ -27,6 +27,7 @@ from .scoring import estimate_official_score_proxy
 from .v3_planner import canonical_json, canonical_sha256, validate_planner_input
 from .v3_planner_action import PreparedPlannerCall
 from .v3_evidence import SYNTH_EVIDENCE_SCHEMA
+from .v3_experience import ExperienceMode, validate_guidance
 
 
 OPENAI_V3_ADAPTER_REQUEST_SCHEMA = "v3b.openai-v2-adapter-request.v1"
@@ -43,6 +44,20 @@ class V3OpenAIPlannerError(RuntimeError):
     """The V3 input cannot be projected safely into the V2 provider contract."""
 
 
+def _guidance_actionable(value: Mapping[str, object] | None) -> bool:
+    if value is None:
+        return False
+    return any(
+        isinstance(value.get(name), list) and bool(value.get(name))
+        for name in (
+            "similar_successes",
+            "similar_failures",
+            "recommended_strategy_bundles",
+            "discouraged_strategy_bundles",
+        )
+    )
+
+
 class AuditableOptimizationProvider(Protocol):
     """Existing provider surface required by the compatibility adapter."""
 
@@ -53,6 +68,18 @@ class AuditableOptimizationProvider(Protocol):
     ) -> Mapping[str, object]: ...
 
     def propose_optimization(self, context: OptimizationContext) -> PatchProposal: ...
+
+    def describe_guided_optimization_request(
+        self,
+        context: OptimizationContext,
+        experience_guidance: Mapping[str, object],
+    ) -> Mapping[str, object]: ...
+
+    def propose_guided_optimization(
+        self,
+        context: OptimizationContext,
+        experience_guidance: Mapping[str, object],
+    ) -> PatchProposal: ...
 
     def describe_fast_experiment_request(
         self, context: Mapping[str, object]
@@ -76,6 +103,20 @@ class _BoundArtifact:
     reference: str
     digest: str
     data: bytes
+
+
+@dataclass(frozen=True)
+class _GuidedOptimizationDispatch:
+    """Bind legacy OptimizationContext to bounded V3-E guidance."""
+
+    context: OptimizationContext
+    guidance: Mapping[str, object]
+
+    def binding(self) -> dict[str, object]:
+        return {
+            "optimization_context": self.context.to_dict(),
+            "experience_guidance": dict(self.guidance),
+        }
 
 
 def _mapping(value: object, name: str) -> Mapping[str, object]:
@@ -495,6 +536,10 @@ class OpenAICompatibleV3PlannerAdapter:
         max_output_tokens: int | None = None,
         fast_experiment: bool = False,
         read_only_headers: Mapping[str, str] | None = None,
+        experience_mode: str = "off",
+        experience_coordinator: object | None = None,
+        experience_task_split: str = "unknown",
+        experience_algorithm_family: str | None = None,
     ) -> None:
         self.run_root = Path(run_root).resolve()
         self.provider = provider
@@ -533,6 +578,76 @@ class OpenAICompatibleV3PlannerAdapter:
             if isinstance(configured_secret, str) and configured_secret
             else None
         )
+        self.experience_mode = ExperienceMode.parse(experience_mode)
+        self._experience_error_type: str | None = None
+        self._experience_disabled = False
+        if self.experience_mode is not ExperienceMode.OFF:
+            if experience_coordinator is None:
+                if self.experience_mode is ExperienceMode.GUIDED:
+                    raise ValueError(
+                        "guided experience mode requires an ExperienceCoordinator"
+                    )
+                self._experience_disabled = True
+                self._experience_error_type = "ExperienceCoordinatorUnavailable"
+            for method_name in (
+                "build_guidance",
+                "persist_recommendation",
+                "snapshot_metadata",
+                "fingerprint",
+            ):
+                if experience_coordinator is not None and not callable(
+                    getattr(experience_coordinator, method_name, None)
+                ):
+                    if self.experience_mode is ExperienceMode.GUIDED:
+                        raise ValueError(
+                            f"experience coordinator is missing {method_name}()"
+                        )
+                    self._experience_disabled = True
+                    self._experience_error_type = "ExperienceCoordinatorContractError"
+        self._experience_coordinator = experience_coordinator
+        self._experience_task_split = str(experience_task_split).strip().casefold()
+        if self._experience_task_split not in {
+            "train",
+            "dev",
+            "validation",
+            "hidden_like",
+            "test",
+            "holdout",
+            "unknown",
+            "unspecified",
+        }:
+            raise ValueError("unsupported experience task split")
+        self._experience_algorithm_family = (
+            str(experience_algorithm_family).strip()
+            if experience_algorithm_family
+            else None
+        )
+        self._experience_run_id = canonical_sha256(
+            {
+                "adapter": OPENAI_V3_ADAPTER_VERSION,
+                "provider": self._provider_fingerprint,
+                "run_label": self.run_root.name,
+            }
+        )
+        self._experience_snapshot = None
+        self._experience_fingerprint = None
+        if (
+            self.experience_mode is not ExperienceMode.OFF
+            and not self._experience_disabled
+            and experience_coordinator is not None
+        ):
+            try:
+                self._experience_snapshot = dict(
+                    experience_coordinator.snapshot_metadata()
+                )
+                self._experience_fingerprint = dict(
+                    experience_coordinator.fingerprint()
+                )
+            except Exception as exc:
+                if self.experience_mode is ExperienceMode.GUIDED:
+                    raise
+                self._experience_disabled = True
+                self._experience_error_type = type(exc).__name__
 
     def fingerprint(self) -> str:
         identity = {
@@ -549,7 +664,139 @@ class OpenAICompatibleV3PlannerAdapter:
             "fast_experiment": self.fast_experiment,
             "read_only_headers_sha256": canonical_sha256(self.read_only_headers),
         }
+        # `off` deliberately hashes the exact pre-V3-E identity.  This is the
+        # compatibility contract used to resume old V3-D checkpoints.
+        if self.experience_mode is not ExperienceMode.OFF:
+            identity["experience"] = {
+                "mode": self.experience_mode.value,
+                "task_split": self._experience_task_split,
+                "algorithm_family": self._experience_algorithm_family,
+                "seed": self._experience_fingerprint,
+            }
         return f"{OPENAI_V3_ADAPTER_VERSION}:{canonical_sha256(identity)}"
+
+    def experience_summary(self) -> dict[str, object] | None:
+        """Return path-free audit metadata for terminal reports."""
+
+        if self.experience_mode is ExperienceMode.OFF:
+            return None
+        summary: dict[str, object] = {
+            "schema_version": "v3e.planner-experience-binding.v1",
+            "mode": self.experience_mode.value,
+            "task_split": self._experience_task_split,
+            "seed_snapshot": self._experience_snapshot,
+            "seed_fingerprint": self._experience_fingerprint,
+            "authority": "ADVISORY_ONLY",
+            "status": "DISABLED" if self._experience_disabled else "ACTIVE",
+        }
+        if self._experience_error_type is not None:
+            summary["error_type"] = self._experience_error_type
+        recommendation_path = getattr(
+            self._experience_coordinator, "recommendation_path", None
+        )
+        if recommendation_path is not None:
+            try:
+                path = Path(recommendation_path).resolve()
+                relative = path.relative_to(self.run_root).as_posix()
+                if relative is not None and path.is_file():
+                    summary["recommendations_ref"] = relative
+                    summary["recommendations_sha256"] = hashlib.sha256(
+                        path.read_bytes()
+                    ).hexdigest()
+            except (OSError, ValueError) as exc:
+                relative = None
+                summary["recommendation_audit_status"] = "UNAVAILABLE"
+                summary["recommendation_audit_error_type"] = type(exc).__name__
+        return summary
+
+    def _build_experience_guidance(
+        self,
+        planner_input: Mapping[str, object],
+        *,
+        mode: str,
+        source: str,
+        failure_evidence: object = None,
+        synth_report: object = None,
+        synth_evidence: object = None,
+    ) -> dict[str, object] | None:
+        if self.experience_mode is ExperienceMode.OFF:
+            return None
+        if self._experience_disabled:
+            return None
+        coordinator = self._experience_coordinator
+        assert coordinator is not None
+        task = _mapping(planner_input.get("task"), "task")
+        round_state = _mapping(planner_input.get("round"), "round")
+        budget = _mapping(planner_input.get("budget"), "budget")
+        history = planner_input.get("history")
+        if not isinstance(history, list):
+            raise V3OpenAIPlannerError("Planner input history must be a list")
+        attempted_bundles: list[list[str]] = []
+        attempted_hashes: list[str] = []
+        for raw in history[-8:]:
+            if not isinstance(raw, Mapping):
+                continue
+            change_class = raw.get("change_class")
+            if isinstance(change_class, str) and change_class:
+                bundle = [item for item in change_class.split("+") if item]
+                if bundle and bundle not in attempted_bundles:
+                    attempted_bundles.append(bundle[:3])
+            digest = raw.get("patch_sha256")
+            if (
+                isinstance(digest, str)
+                and re.fullmatch(r"[0-9a-f]{64}", digest)
+                and digest not in attempted_hashes
+            ):
+                attempted_hashes.append(digest)
+        parent_candidate_id = round_state.get("parent_candidate_id")
+        try:
+            guidance = coordinator.build_guidance(
+                mode=mode,
+                source=source,
+                failure_evidence=failure_evidence,
+                synth_report=synth_report,
+                synth_evidence=synth_evidence,
+                task_split=self._experience_task_split,
+                algorithm_family=self._experience_algorithm_family,
+                current_run_id=self._experience_run_id,
+                current_candidate_id=(
+                    str(parent_candidate_id) if parent_candidate_id else None
+                ),
+                description=str(task.get("description") or ""),
+                task_id=str(task.get("task_id") or "unknown-task"),
+                difficulty=int(task.get("difficulty") or 1),
+                attempted_strategy_bundles=attempted_bundles,
+                attempted_patch_hashes=attempted_hashes,
+                remaining_credits=(
+                    int(budget["credits_remaining"])
+                    if isinstance(budget.get("credits_remaining"), int)
+                    and not isinstance(budget.get("credits_remaining"), bool)
+                    else None
+                ),
+                remaining_tokens=int(budget.get("tokens_remaining") or 0),
+                no_improvement_rounds=int(
+                    round_state.get("no_improvement_rounds") or 0
+                ),
+            )
+            if not isinstance(guidance, Mapping):
+                raise V3OpenAIPlannerError("experience guidance must be an object")
+            safe_guidance = validate_guidance(guidance)
+            round_index = round_state.get("round_index")
+            if isinstance(round_index, bool) or not isinstance(round_index, int):
+                raise V3OpenAIPlannerError(
+                    "round index is invalid for experience audit"
+                )
+            coordinator.persist_recommendation(round_index, safe_guidance)
+            return safe_guidance
+        except Exception as exc:
+            if self.experience_mode is ExperienceMode.GUIDED:
+                raise
+            # Shadow advice is observational.  Any schema/repository/I/O error
+            # disables it for the rest of this run without changing the old
+            # Planner request or graph route.
+            self._experience_disabled = True
+            self._experience_error_type = type(exc).__name__
+            return None
 
     def prepare(
         self, planner_input: Mapping[str, object]
@@ -626,6 +873,17 @@ class OpenAICompatibleV3PlannerAdapter:
                     "planner_cannot_choose_tools_or_final": True,
                 },
             }
+            guidance = self._build_experience_guidance(
+                value,
+                mode=mode_value,
+                source=source,
+                failure_evidence=failure_evidence,
+            )
+            if (
+                _guidance_actionable(guidance)
+                and self.experience_mode is ExperienceMode.GUIDED
+            ):
+                context["experience_guidance"] = guidance
             provider_request = self.provider.describe_task_aware_request(context)
             if not isinstance(provider_request, Mapping):
                 raise V3OpenAIPlannerError(
@@ -732,6 +990,18 @@ class OpenAICompatibleV3PlannerAdapter:
                     "planner_cannot_choose_tools_or_final": True,
                 },
             }
+            guidance = self._build_experience_guidance(
+                value,
+                mode="OPTIMIZE",
+                source=source,
+                synth_report=incumbent_report,
+                synth_evidence=incumbent_evidence,
+            )
+            if (
+                _guidance_actionable(guidance)
+                and self.experience_mode is ExperienceMode.GUIDED
+            ):
+                context["experience_guidance"] = guidance
             provider_request = self.provider.describe_fast_experiment_request(context)
             if not isinstance(provider_request, Mapping):
                 raise V3OpenAIPlannerError(
@@ -850,7 +1120,21 @@ class OpenAICompatibleV3PlannerAdapter:
             current_official_score=current_official_score,
             official_acceleration_cap=official_cap,
         )
-        provider_request = self.provider.describe_optimization_request(context)
+        guidance = self._build_experience_guidance(
+            value,
+            mode="OPTIMIZE",
+            source=source,
+            synth_report=incumbent_report,
+            synth_evidence=incumbent_evidence,
+        )
+        guided_dispatch: _GuidedOptimizationDispatch | None = None
+        if _guidance_actionable(guidance) and self.experience_mode is ExperienceMode.GUIDED:
+            guided_dispatch = _GuidedOptimizationDispatch(context, guidance)
+            provider_request = self.provider.describe_guided_optimization_request(
+                context, guidance
+            )
+        else:
+            provider_request = self.provider.describe_optimization_request(context)
         if not isinstance(provider_request, Mapping):
             raise V3OpenAIPlannerError(
                 "optimization provider request audit must be an object"
@@ -883,6 +1167,10 @@ class OpenAICompatibleV3PlannerAdapter:
             "context_sha256": canonical_sha256(context.to_dict()),
             "provider_request": dict(provider_request),
         }
+        if guided_dispatch is not None:
+            request["context_sha256"] = canonical_sha256(
+                guided_dispatch.binding()
+            )
         # A byte-for-token reservation is intentionally conservative for
         # OpenAI-compatible tokenizers and prevents actual usage from silently
         # exceeding the durable reservation.
@@ -891,7 +1179,7 @@ class OpenAICompatibleV3PlannerAdapter:
             request=request,
             estimated_input_tokens=estimated_input_tokens,
             max_output_tokens=self.max_output_tokens,
-            dispatch_context=context,
+            dispatch_context=guided_dispatch or context,
         )
 
     def invoke(self, prepared: PreparedPlannerCall) -> PatchProposal:
@@ -944,6 +1232,33 @@ class OpenAICompatibleV3PlannerAdapter:
             if not isinstance(proposal, PatchProposal):
                 raise V3OpenAIPlannerError(
                     "fast optimization provider returned an invalid proposal"
+                )
+            return proposal
+        if isinstance(context, _GuidedOptimizationDispatch):
+            request = prepared.request
+            if (
+                request.get("schema_version") != OPENAI_V3_ADAPTER_REQUEST_SCHEMA
+                or request.get("provider_fingerprint")
+                != self._provider_fingerprint
+                or request.get("context_sha256")
+                != canonical_sha256(context.binding())
+            ):
+                raise V3OpenAIPlannerError(
+                    "prepared guided optimization request binding is invalid"
+                )
+            proposal = self.provider.propose_guided_optimization(
+                context.context, context.guidance
+            )
+            if not isinstance(proposal, PatchProposal):
+                raise V3OpenAIPlannerError(
+                    "guided optimization provider returned an invalid proposal"
+                )
+            if (
+                proposal.change_class
+                != context.context.allowed_optimization_class
+            ):
+                raise V3OpenAIPlannerError(
+                    "guided optimization proposal class diverges from the selected class"
                 )
             return proposal
         if not isinstance(context, OptimizationContext):
