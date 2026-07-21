@@ -113,6 +113,30 @@ def sample_body() -> dict[str, object]:
             "cosim_calls": 1,
             "wall_time_seconds": 90.0,
         },
+        "token_policy": {
+            "run_token_limit": 12000,
+            "tokens_remaining_before_call": 9000,
+            "estimated_base_prompt_tokens": 1800,
+            "estimated_guidance_tokens": 200,
+            "estimated_input_tokens": 2000,
+            "configured_max_output_tokens": 2400,
+            "effective_max_output_tokens": 1400,
+            "actual_input_tokens": 1000,
+            "actual_output_tokens": 200,
+            "actual_total_tokens": 1200,
+            "context_window_tokens": 32768,
+            "future_round_token_reserve": 1800,
+            "guidance_token_cap": 300,
+            "guidance_actual_tokens": 200,
+            "rounds_remaining": 2,
+            "token_pressure": "MEDIUM",
+            "finish_reason": "stop",
+            "output_truncated": False,
+            "truncation_reason": None,
+            "estimator_name": "fixture-tokenizer",
+            "estimator_version": "test-v1",
+            "token_policy_version": "v3.token-policy.v1",
+        },
         "provenance": {
             "artifact_refs": [
                 {"role": "candidate_synth_result", "ref": "actions/a/result.json", "sha256": "d" * 64}
@@ -163,6 +187,24 @@ class ExperienceV2SchemaTests(unittest.TestCase):
         tampered["performance"]["latency_after"] = 39.0
         with self.assertRaisesRegex(ValueError, "record_id"):
             validate_experience_v2(tampered)
+
+    def test_token_policy_fields_are_strict_but_legacy_records_remain_readable(self) -> None:
+        record = seal_experience_v2(sample_body())
+        self.assertEqual(record["token_policy"]["token_pressure"], "MEDIUM")
+        self.assertEqual(
+            record["token_policy"]["actual_total_tokens"],
+            record["token_policy"]["actual_input_tokens"]
+            + record["token_policy"]["actual_output_tokens"],
+        )
+
+        malformed = sample_body()
+        malformed["token_policy"]["actual_total_tokens"] = 999
+        with self.assertRaisesRegex(ValueError, "actual total"):
+            seal_experience_v2(malformed)
+
+        legacy = sample_body()
+        legacy.pop("token_policy")
+        self.assertNotIn("token_policy", seal_experience_v2(legacy))
 
 
 if __name__ == "__main__":

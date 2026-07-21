@@ -24,7 +24,7 @@ from typing import Annotated, Mapping, TypedDict
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
 
-from .budget import BudgetLedger
+from .budget import BudgetExceeded, BudgetLedger
 from .candidate import CandidateManager
 from .optimization import evaluate_exploration_cosim_gate
 from .repair import (
@@ -73,6 +73,7 @@ from .v3_planner_action import (
     LIVE_PLANNER_OUTCOME_SCHEMA,
     LivePlanner,
     PlannerActionJournal,
+    PlannerActionRejected,
     PlannerActionResult,
     PreparedPlannerCall,
 )
@@ -801,6 +802,7 @@ def _build_round_planner_input(
             "credits_remaining": budget_snapshot.get("credits_remaining"),
             "tool_used": budget_snapshot.get("tool_used"),
             "tool_pending": budget_snapshot.get("tool_pending"),
+            "run_token_limit": budget_snapshot.get("run_token_limit"),
             "token_limit": budget_snapshot.get("token_limit"),
             "tokens_used": budget_snapshot.get("tokens_used"),
             "tokens_remaining": budget_snapshot.get("tokens_remaining"),
@@ -819,6 +821,7 @@ def _planner_recovery_projection(
         raise RuntimeError("Planner recovery budget is invalid")
     validated["budget"] = {
         "credit_limit": budget.get("credit_limit"),
+        "run_token_limit": budget.get("run_token_limit", budget.get("token_limit")),
         "token_limit": budget.get("token_limit"),
     }
     return validated
@@ -2940,25 +2943,43 @@ def _evaluate_task_round_budget(
             for stage in _FULL_CLOSURE_CALLS
         }
         required_tokens = 0
+        token_policy_blocker: str | None = None
         if runtime.live_planner is not None:
-            prepared = runtime.live_planner.prepare(
-                _build_round_planner_input(runtime, state)
+            try:
+                prepared = runtime.live_planner.prepare(
+                    _build_round_planner_input(runtime, state)
+                )
+            except BudgetExceeded as exc:
+                token_policy_blocker = str(exc)
+            else:
+                if not isinstance(prepared, PreparedPlannerCall):
+                    raise RuntimeError(
+                        "live Planner prepare() returned an invalid request"
+                    )
+                required["llm"] = 1
+                required_tokens = prepared.estimated_tokens
+        if token_policy_blocker is not None:
+            gate = {
+                "policy": f"{mode.lower()}_token_budget_policy",
+                "allowed": False,
+                "required_calls": required,
+                "required_credits": 0,
+                "required_tokens": 0,
+                "blockers": [token_policy_blocker],
+            }
+            reason = "TASK_REPAIR_TOKEN_POLICY_BLOCKED"
+        else:
+            gate = _budget_affordability(
+                runtime,
+                required_calls=required,
+                policy=f"{mode.lower()}_candidate_plus_final_closure",
+                required_tokens=required_tokens,
             )
-            if not isinstance(prepared, PreparedPlannerCall):
-                raise RuntimeError("live Planner prepare() returned an invalid request")
-            required["llm"] = 1
-            required_tokens = prepared.estimated_tokens
-        gate = _budget_affordability(
-            runtime,
-            required_calls=required,
-            policy=f"{mode.lower()}_candidate_plus_final_closure",
-            required_tokens=required_tokens,
-        )
-        reason = (
-            "TASK_REPAIR_BUDGET_AVAILABLE"
-            if gate["allowed"] is True
-            else "TASK_REPAIR_SKIPPED_FINAL_RESERVE"
-        )
+            reason = (
+                "TASK_REPAIR_BUDGET_AVAILABLE"
+                if gate["allowed"] is True
+                else "TASK_REPAIR_SKIPPED_FINAL_RESERVE"
+            )
     allowed = gate["allowed"] is True
     event = _event(
         runtime,
@@ -3023,31 +3044,47 @@ def _evaluate_round_budget(
             ),
         }
         required_tokens = 0
+        token_policy_blocker: str | None = None
         if runtime.live_planner is not None:
-            prepared = runtime.live_planner.prepare(
-                _build_round_planner_input(runtime, state)
-            )
-            if not isinstance(prepared, PreparedPlannerCall):
-                raise RuntimeError(
-                    "live Planner prepare() returned an invalid request"
+            try:
+                prepared = runtime.live_planner.prepare(
+                    _build_round_planner_input(runtime, state)
                 )
-            required["llm"] = 1
-            required_tokens = prepared.estimated_tokens
-        gate = _budget_affordability(
-            runtime,
-            required_calls=required,
-            policy=(
-                "fast_candidate_csim_synth_plus_final_closure"
-                if runtime.validation_profile == FAST_EXPERIMENT_PROFILE
-                else "candidate_exploration_plus_final_closure"
-            ),
-            required_tokens=required_tokens,
-        )
-        reason = (
-            "ROUND_BUDGET_AVAILABLE"
-            if gate["allowed"] is True
-            else "ROUND_SKIPPED_FINAL_RESERVE"
-        )
+            except BudgetExceeded as exc:
+                token_policy_blocker = str(exc)
+            else:
+                if not isinstance(prepared, PreparedPlannerCall):
+                    raise RuntimeError(
+                        "live Planner prepare() returned an invalid request"
+                    )
+                required["llm"] = 1
+                required_tokens = prepared.estimated_tokens
+        if token_policy_blocker is not None:
+            gate = {
+                "policy": "token_budget_policy",
+                "allowed": False,
+                "required_calls": required,
+                "required_credits": 0,
+                "required_tokens": 0,
+                "blockers": [token_policy_blocker],
+            }
+            reason = "ROUND_TOKEN_POLICY_BLOCKED"
+        else:
+            gate = _budget_affordability(
+                runtime,
+                required_calls=required,
+                policy=(
+                    "fast_candidate_csim_synth_plus_final_closure"
+                    if runtime.validation_profile == FAST_EXPERIMENT_PROFILE
+                    else "candidate_exploration_plus_final_closure"
+                ),
+                required_tokens=required_tokens,
+            )
+            reason = (
+                "ROUND_BUDGET_AVAILABLE"
+                if gate["allowed"] is True
+                else "ROUND_SKIPPED_FINAL_RESERVE"
+            )
     allowed = gate["allowed"] is True
     event = _event(
         runtime,
@@ -3143,16 +3180,69 @@ def _plan_candidate(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeSt
         budget = BudgetLedger(
             runtime.run_root / "budget_ledger.jsonl", runtime.config.budget
         )
-        live_result = PlannerActionJournal(
-            runtime.run_root, budget
-        ).execute_or_recover(
-            runtime.live_planner,
-            planner_input,
-            input_ref=input_ref,
-            input_sha256=input_sha256,
-            candidate_id=state["best_candidate_id"],
-            code_hash=str(incumbent["code_hash"]),
-        )
+        try:
+            live_result = PlannerActionJournal(
+                runtime.run_root, budget
+            ).execute_or_recover(
+                runtime.live_planner,
+                planner_input,
+                input_ref=input_ref,
+                input_sha256=input_sha256,
+                candidate_id=state["best_candidate_id"],
+                code_hash=str(incumbent["code_hash"]),
+            )
+        except PlannerActionRejected as exc:
+            rejection_ref = (
+                f"control/proposal_rejections/round_{round_index:03d}.json"
+            )
+            record = {
+                "schema_version": "v3a.proposal-rejection.v1",
+                "round_index": round_index,
+                "parent_candidate_id": state["best_candidate_id"],
+                "planner_ref": None,
+                "planner_action_id": exc.action_id,
+                "planner_input_ref": input_ref,
+                "planner_input_sha256": input_sha256,
+                "planner_output_ref": exc.failure_ref,
+                "planner_output_sha256": exc.failure_sha256,
+                "change_class": None,
+                "selection_metrics_digest": None,
+                "reason": "PROVIDER_OUTPUT_REJECTED:" + exc.reason,
+            }
+            _write_once_or_verify(runtime.run_root / rejection_ref, record)
+            event = _event(
+                runtime,
+                node="plan_candidate",
+                phase=mode,
+                candidate_id=None,
+                action="reject_incomplete_or_invalid_provider_output",
+                why=(
+                    "The provider response was charged and persisted, but no "
+                    "Candidate or Vitis action may be created from it."
+                ),
+                outcome=str(record["reason"]),
+                result_ref=exc.failure_ref,
+                round_index=round_index,
+                cached=exc.cached,
+                details={
+                    "planner_action_id": exc.action_id,
+                    "provider_failure_ref": exc.failure_ref,
+                    "provider_failure_sha256": exc.failure_sha256,
+                },
+            )
+            return {
+                "phase": mode,
+                "last_tool_ok": False,
+                "last_tool_reason": str(record["reason"]),
+                "last_round_improved": False,
+                "decision_ref": rejection_ref,
+                "planner_action_id": exc.action_id,
+                "planner_input_ref": input_ref,
+                "planner_input_sha256": input_sha256,
+                "planner_output_ref": exc.failure_ref,
+                "planner_output_sha256": exc.failure_sha256,
+                "node_events": [event],
+            }
         proposal = live_result.proposal
         request_audit = _read_json_object(
             _safe_run_ref(runtime, live_result.request_ref)
@@ -4809,6 +4899,167 @@ def _candidate_round_summaries(
     return rows
 
 
+def _planner_token_rounds(runtime: _Runtime) -> list[dict[str, object]]:
+    """Project hash-bound live action artifacts into a bounded token table."""
+
+    rows: list[dict[str, object]] = []
+    action_root = runtime.run_root / "control" / "live_planner_actions"
+    for started_path in sorted(action_root.glob("*.started.json")):
+        started = _read_json_object(started_path)
+        action_id = started.get("action_id")
+        request = started.get("request")
+        if not isinstance(action_id, str) or not isinstance(request, Mapping):
+            continue
+        request_ref = request.get("request_ref")
+        input_ref = request.get("input_ref")
+        if not isinstance(request_ref, str) or not isinstance(input_ref, str):
+            continue
+        request_audit = _read_json_object(_safe_run_ref(runtime, request_ref))
+        adapter_request = request_audit.get("request")
+        envelope = (
+            adapter_request.get("token_envelope")
+            if isinstance(adapter_request, Mapping)
+            else None
+        )
+        if not isinstance(envelope, Mapping):
+            continue
+        planner_input = _read_json_object(_safe_run_ref(runtime, input_ref))
+        round_state = planner_input.get("round")
+        round_state = round_state if isinstance(round_state, Mapping) else {}
+        actual_input: int | None = None
+        actual_output: int | None = None
+        finish_reason: object = None
+        truncated = False
+        truncation_reason: object = None
+        outcome_ref = f"planner/live_outcomes/{action_id}.json"
+        failure_ref = f"planner/provider_failures/{action_id}.json"
+        if (runtime.run_root / outcome_ref).is_file():
+            outcome = _read_json_object(_safe_run_ref(runtime, outcome_ref))
+            proposal = outcome.get("proposal")
+            if isinstance(proposal, Mapping):
+                actual_input = (
+                    int(proposal["input_tokens"])
+                    if isinstance(proposal.get("input_tokens"), int)
+                    else None
+                )
+                actual_output = (
+                    int(proposal["output_tokens"])
+                    if isinstance(proposal.get("output_tokens"), int)
+                    else None
+                )
+                finish_reason = proposal.get("finish_reason")
+                truncated = bool(proposal.get("output_truncated", False))
+                truncation_reason = proposal.get("truncation_reason")
+        elif (runtime.run_root / failure_ref).is_file():
+            failure = _read_json_object(_safe_run_ref(runtime, failure_ref))
+            usage = failure.get("usage")
+            if isinstance(usage, Mapping):
+                actual_input = (
+                    int(usage["actual_input_tokens"])
+                    if isinstance(usage.get("actual_input_tokens"), int)
+                    else None
+                )
+                actual_output = (
+                    int(usage["actual_output_tokens"])
+                    if isinstance(usage.get("actual_output_tokens"), int)
+                    else None
+                )
+            finish_reason = failure.get("finish_reason")
+            truncated = bool(failure.get("output_truncated", False))
+            truncation_reason = failure.get("truncation_reason")
+        rows.append(
+            {
+                "round": round_state.get("round_index"),
+                "mode": round_state.get("mode"),
+                "base_input_estimate": envelope.get(
+                    "estimated_base_prompt_tokens"
+                ),
+                "guidance_tokens": envelope.get("estimated_guidance_tokens"),
+                "guidance_token_cap": envelope.get("guidance_token_cap"),
+                "final_input_estimate": envelope.get("estimated_input_tokens"),
+                "actual_input_tokens": actual_input,
+                "configured_max_output_tokens": envelope.get(
+                    "configured_max_output_tokens"
+                ),
+                "effective_max_output_tokens": envelope.get(
+                    "effective_max_output_tokens"
+                ),
+                "actual_output_tokens": actual_output,
+                "tokens_remaining_before_call": envelope.get("tokens_remaining"),
+                "future_round_token_reserve": envelope.get(
+                    "future_round_token_reserve"
+                ),
+                "token_pressure": envelope.get("token_pressure"),
+                "finish_reason": finish_reason,
+                "output_truncated": truncated,
+                "truncation_reason": truncation_reason,
+                "estimator_name": envelope.get("estimator_name"),
+                "action_id": action_id,
+            }
+        )
+    return rows
+
+
+def _planner_token_summary(
+    rows: list[dict[str, object]], budget: Mapping[str, object]
+) -> dict[str, object]:
+    def numbers(name: str) -> list[float]:
+        return [
+            float(row[name])
+            for row in rows
+            if isinstance(row.get(name), (int, float))
+            and not isinstance(row.get(name), bool)
+        ]
+
+    estimates = numbers("final_input_estimate")
+    actual_inputs = numbers("actual_input_tokens")
+    actual_outputs = numbers("actual_output_tokens")
+    effective = numbers("effective_max_output_tokens")
+    errors = [
+        float(row["actual_input_tokens"]) - float(row["final_input_estimate"])
+        for row in rows
+        if isinstance(row.get("actual_input_tokens"), (int, float))
+        and isinstance(row.get("final_input_estimate"), (int, float))
+    ]
+    return {
+        "run_token_limit": budget.get("run_token_limit", budget.get("token_limit")),
+        "tokens_used": budget.get("tokens_used"),
+        "planner_calls": len(rows),
+        "average_estimated_input_tokens": (
+            sum(estimates) / len(estimates) if estimates else None
+        ),
+        "average_actual_input_tokens": (
+            sum(actual_inputs) / len(actual_inputs) if actual_inputs else None
+        ),
+        "average_actual_output_tokens": (
+            sum(actual_outputs) / len(actual_outputs) if actual_outputs else None
+        ),
+        "average_effective_max_output_tokens": (
+            sum(effective) / len(effective) if effective else None
+        ),
+        "max_output_utilization": (
+            sum(actual_outputs) / sum(effective)
+            if actual_outputs and effective and sum(effective) > 0
+            else None
+        ),
+        "truncation_count": sum(
+            1 for row in rows if row.get("output_truncated") is True
+        ),
+        "json_incomplete_count": sum(
+            1 for row in rows if row.get("truncation_reason") == "JSON_INCOMPLETE"
+        ),
+        "patch_incomplete_count": sum(
+            1 for row in rows if row.get("truncation_reason") == "PATCH_INCOMPLETE"
+        ),
+        "average_estimator_error_tokens": (
+            sum(errors) / len(errors) if errors else None
+        ),
+        "guidance_tokens_total": sum(numbers("guidance_tokens")),
+        "search_token_cost_is_separate_from_final_vitis_credit": True,
+        "main_graph_nodes_added": 0,
+    }
+
+
 def _render_team_report(
     runtime: _Runtime, result: Mapping[str, object]
 ) -> str:
@@ -4941,6 +5192,40 @@ def _render_team_report(
                         + str(raw_candidate.get("output_tokens", 0))
                     ),
                     report_cell(raw_candidate.get("credits")),
+                ]
+            )
+            + " |"
+        )
+    token_rows = [
+        "| Round | Mode | Base Input Est. | Guidance | Final Input Est. | Actual Input | Max Output | Actual Output | Remaining | Pressure | Finish | Truncated |",
+        "|---:|---|---:|---:|---:|---:|---:|---:|---:|---|---|---|",
+    ]
+    raw_token_rounds = result.get("token_policy_rounds")
+    for token_round in (
+        raw_token_rounds if isinstance(raw_token_rounds, list) else []
+    ):
+        if not isinstance(token_round, Mapping):
+            continue
+        token_rows.append(
+            "| "
+            + " | ".join(
+                [
+                    report_cell(token_round.get("round")),
+                    report_cell(token_round.get("mode")),
+                    report_cell(token_round.get("base_input_estimate")),
+                    report_cell(token_round.get("guidance_tokens")),
+                    report_cell(token_round.get("final_input_estimate")),
+                    report_cell(token_round.get("actual_input_tokens")),
+                    report_cell(token_round.get("effective_max_output_tokens")),
+                    report_cell(token_round.get("actual_output_tokens")),
+                    report_cell(token_round.get("tokens_remaining_before_call")),
+                    report_cell(token_round.get("token_pressure")),
+                    report_cell(token_round.get("finish_reason")),
+                    report_cell(
+                        str(token_round.get("output_truncated"))
+                        + ":"
+                        + str(token_round.get("truncation_reason"))
+                    ),
                 ]
             )
             + " |"
@@ -5094,6 +5379,14 @@ def _render_team_report(
             "",
             *a1_lines,
             *experience_lines,
+            "## Token Budget Policy",
+            "",
+            *token_rows,
+            "",
+            "- 汇总：`" + report_cell(result.get("token_policy_summary", {})) + "`",
+            "- Search/Planner Token 与 final CSim/Synth/CoSim Credit 分开记账。",
+            "- Token Policy 属于 Budget 横向组件内部能力；主 Graph 新增节点数：`0`。",
+            "",
             "## 数据与控制流",
             "",
             *rows,
@@ -5124,6 +5417,8 @@ def _write_report(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeStat
     budget = BudgetLedger(
         runtime.run_root / "budget_ledger.jsonl", runtime.config.budget
     ).snapshot()
+    token_rounds = _planner_token_rounds(runtime)
+    token_policy_summary = _planner_token_summary(token_rounds, budget)
     experience_summary: dict[str, object] | None = None
     if runtime.live_planner is not None:
         summary_method = getattr(runtime.live_planner, "experience_summary", None)
@@ -5240,6 +5535,8 @@ def _write_report(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeStat
         "last_tool_reason": state.get("last_tool_reason"),
         "cosim_gate": state.get("cosim_gate", {}),
         "budget": budget,
+        "token_policy_rounds": token_rounds,
+        "token_policy_summary": token_policy_summary,
         "candidate_rounds": _candidate_round_summaries(runtime, state),
         "node_events": node_events,
         "prototype_limits": [
@@ -5337,6 +5634,10 @@ def _pass_or_select(state: V3PrototypeState) -> str:
 
 def _pass_or_finalize(state: V3PrototypeState) -> str:
     return "pass" if state.get("last_tool_ok") is True else "finalize"
+
+
+def _plan_or_advance(state: V3PrototypeState) -> str:
+    return "materialize" if state.get("last_tool_ok") is not False else "advance"
 
 
 def _baseline_cosim_route(runtime: _Runtime, state: V3PrototypeState) -> str:
@@ -5514,7 +5815,11 @@ def build_v3_prototype_graph(runtime: _Runtime, checkpointer: SqliteSaver):
         _pass_or_finalize,
         {"pass": "plan_candidate", "finalize": "select_final_attempt"},
     )
-    graph.add_edge("plan_candidate", "materialize_candidate")
+    graph.add_conditional_edges(
+        "plan_candidate",
+        _plan_or_advance,
+        {"materialize": "materialize_candidate", "advance": "advance_round"},
+    )
     graph.add_conditional_edges(
         "materialize_candidate",
         _pass_or_select,

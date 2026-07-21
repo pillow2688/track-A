@@ -338,8 +338,10 @@ class GuidanceQualityGate:
             if prompt_token_limit is None
             else prompt_token_limit
         )
-        if token_limit < 200:
-            raise ValueError("prompt_token_limit is too small for safe guidance")
+        # A pressure-derived cap may legitimately be smaller than the minimum
+        # useful schema.  That is an ABSTAIN condition, not a configuration
+        # error: the original Planner must remain available without guidance.
+        token_limit = max(0, token_limit)
         query_mode = str(validated_query["mode"])
         query_evidence = _mapping(validated_query["evidence_features"])
 

@@ -122,6 +122,21 @@ def build_ml_datasets(
         validation = record["validation"]
         performance = record["performance"]
         cost = record["cost"]
+        token_policy = record.get("token_policy")
+        if not isinstance(token_policy, Mapping):
+            token_policy = {
+                "token_pressure": "LOW",
+                "effective_max_output_tokens": 0,
+                "estimated_input_tokens": 0,
+                "guidance_actual_tokens": 0,
+                "actual_output_tokens": None,
+                "tokens_remaining_before_call": 0,
+                "future_round_token_reserve": 0,
+                "rounds_remaining": 0,
+                "output_truncated": False,
+                "estimated_base_prompt_tokens": 0,
+                "estimated_guidance_tokens": 0,
+            }
         split = splits[str(source["task_family_hash"])]
         success = _success(record)
         acceleration = performance["acceleration"]
@@ -142,6 +157,19 @@ def build_ml_datasets(
             "structure": structure,
             "patch_complexity": strategy["patch_complexity"],
             "normalization_confidence": strategy["strategy_normalization_confidence"],
+            "token_cost_context": {
+                "token_pressure": token_policy["token_pressure"],
+                "effective_max_output_tokens": token_policy[
+                    "effective_max_output_tokens"
+                ],
+                "estimated_input_tokens": token_policy[
+                    "estimated_input_tokens"
+                ],
+                "guidance_actual_tokens": token_policy[
+                    "guidance_actual_tokens"
+                ],
+                "actual_output_tokens": token_policy["actual_output_tokens"],
+            },
         }
         for atom in strategy["observed_strategy_atoms"]:
             strategy_rows.append(
@@ -178,6 +206,12 @@ def build_ml_datasets(
                         "strategy_atoms": strategy["observed_strategy_atoms"],
                         "patch_complexity": strategy["patch_complexity"],
                         "synth_status": validation["synth_status"],
+                        "token_context": {
+                            "token_pressure": token_policy["token_pressure"],
+                            "effective_max_output_tokens": token_policy[
+                                "effective_max_output_tokens"
+                            ],
+                        },
                     },
                     {"cosim_status": validation["cosim_status"]},
                 )
@@ -202,6 +236,21 @@ def build_ml_datasets(
                     },
                     "declared_strategy_bundle": strategy["declared_strategy_bundle"],
                     "observed_strategy_atoms": strategy["observed_strategy_atoms"],
+                    "context_token_profile": {
+                        "estimated_base_prompt_tokens": token_policy[
+                            "estimated_base_prompt_tokens"
+                        ],
+                        "estimated_guidance_tokens": token_policy[
+                            "estimated_guidance_tokens"
+                        ],
+                        "estimated_input_tokens": token_policy[
+                            "estimated_input_tokens"
+                        ],
+                        "guidance_actual_tokens": token_policy[
+                            "guidance_actual_tokens"
+                        ],
+                        "output_truncated": token_policy["output_truncated"],
+                    },
                 },
                 {
                     "strategy_succeeded": success,
@@ -226,6 +275,16 @@ def build_ml_datasets(
         for current, following in zip(run_records, run_records[1:]):
             current_performance = current["performance"]
             following_performance = following["performance"]
+            current_token_policy = current.get("token_policy")
+            if not isinstance(current_token_policy, Mapping):
+                current_token_policy = {
+                    "tokens_remaining_before_call": 0,
+                    "effective_max_output_tokens": 0,
+                    "future_round_token_reserve": 0,
+                    "rounds_remaining": 0,
+                    "token_pressure": "LOW",
+                    "actual_total_tokens": None,
+                }
             if current_performance["strict_improvement"]:
                 no_improvement = 0
             else:
@@ -246,6 +305,26 @@ def build_ml_datasets(
                         "no_improvement_count": no_improvement,
                         "current_strategy_atoms": current["strategy"]["observed_strategy_atoms"],
                         "current_cost": current["cost"],
+                        "token_policy": {
+                            "tokens_remaining_before_call": current_token_policy[
+                                "tokens_remaining_before_call"
+                            ],
+                            "effective_max_output_tokens": current_token_policy[
+                                "effective_max_output_tokens"
+                            ],
+                            "future_round_token_reserve": current_token_policy[
+                                "future_round_token_reserve"
+                            ],
+                            "rounds_remaining": current_token_policy[
+                                "rounds_remaining"
+                            ],
+                            "token_pressure": current_token_policy[
+                                "token_pressure"
+                            ],
+                            "actual_total_tokens": current_token_policy[
+                                "actual_total_tokens"
+                            ],
+                        },
                     },
                     {
                         "next_round_improved": next_improved,

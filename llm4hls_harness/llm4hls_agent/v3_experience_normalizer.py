@@ -69,6 +69,7 @@ class MigrationContext:
     input_tokens: int | None = None
     output_tokens: int | None = None
     round_index: int | None = None
+    token_policy: Mapping[str, object] | None = None
 
 
 _DECLARED_ALIASES = {
@@ -767,6 +768,38 @@ def migrate_v1_to_v2(
             "synth_calls": int(outcome.get("synth_pass") is not None) + int(final_pass is True),
             "cosim_calls": int(outcome.get("cosim_status") in {"PASS", "FAIL"}),
             "wall_time_seconds": float(outcome.get("wall_time_seconds") or 0.0),
+        },
+        "token_policy": {
+            **{
+                "run_token_limit": 0,
+                "tokens_remaining_before_call": 0,
+                "estimated_base_prompt_tokens": 0,
+                "estimated_guidance_tokens": 0,
+                "estimated_input_tokens": 0,
+                "configured_max_output_tokens": 0,
+                "effective_max_output_tokens": 0,
+                "actual_input_tokens": ctx.input_tokens,
+                "actual_output_tokens": ctx.output_tokens,
+                "actual_total_tokens": (
+                    ctx.input_tokens + ctx.output_tokens
+                    if ctx.input_tokens is not None
+                    and ctx.output_tokens is not None
+                    else None
+                ),
+                "context_window_tokens": 0,
+                "future_round_token_reserve": 0,
+                "guidance_token_cap": 0,
+                "guidance_actual_tokens": 0,
+                "rounds_remaining": 0,
+                "token_pressure": "LOW",
+                "finish_reason": None,
+                "output_truncated": False,
+                "truncation_reason": None,
+                "estimator_name": "legacy-artifact-unavailable",
+                "estimator_version": "v1",
+                "token_policy_version": "v3.token-policy.v1",
+            },
+            **dict(ctx.token_policy or {}),
         },
         "provenance": {
             "artifact_refs": refs,

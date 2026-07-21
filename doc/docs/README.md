@@ -5,7 +5,7 @@
 
 ## Must Read
 
-1. [V3-E 经验知识库：当前真实架构与组员上手说明](2026-07-21-v3e-experience-kb-hardening.md)
+1. [V3-E 经验知识库与 Token Budget Policy：当前真实架构和验收](2026-07-21-v3e-experience-kb-hardening.md)
 2. [V3 当前组件、模型控制链与参考信息报告](2026-07-21-current-components-and-model-context.md)
 3. [当前系统说明与团队月度进展（首次发布 2026-07-20，更新至 2026-07-21）](2026-07-20-current-system-and-team-progress.md)
 4. [V3-D 昨夜至今日执行总结](../../llm4hls_harness/releases/v3d-overnight-daytime-summary-2026-07-21.md)
@@ -27,7 +27,7 @@
 建议新队友按这个顺序读：
 
 ```text
-1. V3-E 经验知识库真实架构与组员上手说明
+1. V3-E 经验知识库、Token Budget Policy 真实架构与组员上手说明
 2. V3 当前组件、模型控制链与参考信息报告
 3. 当前系统说明与团队月度进展
 4. V3-D 昨夜至今日执行总结

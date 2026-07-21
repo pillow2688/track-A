@@ -11,6 +11,7 @@ from llm4hls_agent.openai_provider import (
     build_optimization_prompt,
     build_repair_prompt,
     build_task_aware_prompt,
+    classify_output_truncation,
 )
 from llm4hls_agent.optimization import OptimizationContext
 from llm4hls_agent.repair import RepairContext, RepairProviderError
@@ -422,6 +423,109 @@ class OpenAICompatibleProviderTests(unittest.TestCase):
         self.assertEqual(raised.exception.output_tokens, 87)
         self.assertEqual(raised.exception.request_id, "req_fixture")
         self.assertEqual(raised.exception.response_excerpt, "not json")
+
+    def test_length_json_and_patch_truncation_are_classified_without_retry(self) -> None:
+        valid = json.loads(self.task_aware_response_content("REPAIR"))
+        cases = (
+            (
+                self.task_aware_response_content("REPAIR"),
+                "length",
+                "PROVIDER_LENGTH_LIMIT",
+            ),
+            ('{"hypothesis":"cut off"', "stop", "JSON_INCOMPLETE"),
+            (
+                json.dumps({**valid, "patch": "--- a/kernel.cpp\n+++ b/kernel.cpp\n"}),
+                "stop",
+                "PATCH_INCOMPLETE",
+            ),
+            (
+                json.dumps(
+                    {
+                        key: value
+                        for key, value in valid.items()
+                        if key != "expected_effect"
+                    }
+                ),
+                "stop",
+                "UNKNOWN_TRUNCATION",
+            ),
+        )
+        for content, finish_reason, expected in cases:
+            with self.subTest(expected=expected):
+                calls = 0
+
+                def transport(_request, _timeout):
+                    nonlocal calls
+                    calls += 1
+                    return 200, {}, json.dumps(
+                        {
+                            "id": "truncation-fixture",
+                            "choices": [
+                                {
+                                    "finish_reason": finish_reason,
+                                    "message": {"content": content},
+                                }
+                            ],
+                            "usage": {
+                                "prompt_tokens": 321,
+                                "completion_tokens": 87,
+                            },
+                        }
+                    ).encode()
+
+                provider = OpenAICompatibleOptimizationProvider(
+                    self.config(), transport=transport
+                )
+                with self.assertRaises(RepairProviderError) as raised:
+                    provider.propose_task_aware(task_aware_context("REPAIR"))
+                self.assertEqual(calls, 1)
+                self.assertTrue(raised.exception.output_truncated)
+                self.assertEqual(raised.exception.truncation_reason, expected)
+                self.assertEqual(raised.exception.input_tokens, 321)
+                self.assertEqual(raised.exception.output_tokens, 87)
+
+    def test_valid_insertion_only_diff_is_not_misclassified_as_truncated(self) -> None:
+        response = json.loads(self.task_aware_response_content("REPAIR"))
+        response["patch"] = (
+            "--- a/kernel.cpp\n"
+            "+++ b/kernel.cpp\n"
+            "@@ -1,0 +1,1 @@\n"
+            "+#pragma HLS PIPELINE II=1\n"
+        )
+        self.assertEqual(
+            classify_output_truncation(json.dumps(response), "stop"),
+            "NOT_TRUNCATED",
+        )
+
+    def test_context_limit_http_error_is_classified_without_fabricated_usage(self) -> None:
+        provider = OpenAICompatibleRepairProvider(
+            self.config(),
+            transport=lambda _request, _timeout: (
+                400,
+                {},
+                b'{"error":{"message":"maximum context length exceeded"}}',
+            ),
+        )
+        with self.assertRaises(RepairProviderError) as raised:
+            provider.propose_patch(context())
+        self.assertTrue(raised.exception.output_truncated)
+        self.assertEqual(raised.exception.truncation_reason, "CONTEXT_LIMIT")
+        self.assertFalse(raised.exception.usage_complete)
+
+    def test_missing_usage_remains_unknown_not_estimated_as_actual(self) -> None:
+        provider = OpenAICompatibleOptimizationProvider(
+            self.config(),
+            transport=lambda _request, _timeout: (
+                200,
+                {},
+                envelope(self.task_aware_response_content("REPAIR"), usage={}),
+            ),
+        )
+        with self.assertRaises(RepairProviderError) as raised:
+            provider.propose_task_aware(task_aware_context("REPAIR"))
+        self.assertFalse(raised.exception.usage_complete)
+        self.assertEqual(raised.exception.input_tokens, 0)
+        self.assertEqual(raised.exception.output_tokens, 0)
 
     def test_http_failure_does_not_expose_api_key(self) -> None:
         provider = OpenAICompatibleRepairProvider(

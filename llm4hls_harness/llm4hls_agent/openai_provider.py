@@ -12,6 +12,7 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Callable, Mapping
 
+from .budget import validate_token_envelope
 from .optimization import OptimizationContext
 from .repair import PatchProposal, RepairContext, RepairProviderError
 
@@ -62,6 +63,125 @@ _UNIFIED_HUNK_HEADER = re.compile(
     r"^@@ -(?P<old_start>\d+)(?:,\d+)? "
     r"\+(?P<new_start>\d+)(?:,\d+)? @@(?P<suffix>.*)$"
 )
+TRUNCATION_REASONS = frozenset(
+    {
+        "NOT_TRUNCATED",
+        "PROVIDER_LENGTH_LIMIT",
+        "JSON_INCOMPLETE",
+        "PATCH_INCOMPLETE",
+        "CONTEXT_LIMIT",
+        "UNKNOWN_TRUNCATION",
+    }
+)
+
+
+def _token_budget_prompt(value: object) -> str:
+    if not isinstance(value, Mapping):
+        return ""
+    envelope = validate_token_envelope(value)
+    pressure = str(envelope["token_pressure"])
+    focus = {
+        "LOW": "Use the strongest evidence-backed strategy bundle permitted by the task.",
+        "MEDIUM": "Focus on one or two strongly supported strategies and keep explanations concise.",
+        "HIGH": "Use at most one high-confidence local strategy; do not perform an unsupported large rewrite.",
+        "CRITICAL": "Do not expand scope; the Harness normally blocks this call unless a viable output remains.",
+    }[pressure]
+    return "\n".join(
+        [
+            "TOKEN BUDGET",
+            f"- Remaining run tokens: {envelope['tokens_remaining']}",
+            "- Estimated input tokens for this request: "
+            + str(envelope["estimated_input_tokens"]),
+            "- Maximum output for this request: "
+            + str(envelope["effective_max_output_tokens"]),
+            f"- Remaining Planner rounds: {envelope['rounds_remaining']}",
+            "- Reserved tokens for later rounds: "
+            + str(envelope["future_round_token_reserve"]),
+            f"- Token pressure: {pressure}",
+            "OUTPUT GUIDANCE",
+            "- Return one valid JSON object.",
+            "- Keep hypothesis and expected_effect concise.",
+            "- Prefer one focused and locally applicable patch.",
+            "- Do not rewrite the full kernel when a local diff is sufficient.",
+            "- The output may be rejected if JSON or unified diff is incomplete.",
+            "- " + focus,
+        ]
+    )
+
+
+def _diff_looks_complete(patch: object) -> bool:
+    if not isinstance(patch, str) or not patch.strip():
+        return False
+    lines = patch.splitlines()
+    if not any(line.startswith("--- ") for line in lines) or not any(
+        line.startswith("+++ ") for line in lines
+    ):
+        return False
+    index = 0
+    found_hunk = False
+    while index < len(lines):
+        match = _UNIFIED_HUNK_HEADER.fullmatch(lines[index])
+        if match is None:
+            index += 1
+            continue
+        found_hunk = True
+        header = re.fullmatch(
+            r"@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@.*",
+            lines[index],
+        )
+        if header is None:
+            return False
+        expected_old = int(header.group(2) or 1)
+        expected_new = int(header.group(4) or 1)
+        old_count = 0
+        new_count = 0
+        changed_count = 0
+        index += 1
+        while index < len(lines) and not lines[index].startswith("@@ "):
+            line = lines[index]
+            if line.startswith((" ", "-")) and not line.startswith("--- "):
+                old_count += 1
+            if line.startswith((" ", "+")) and not line.startswith("+++ "):
+                new_count += 1
+            if (
+                line.startswith(("-", "+"))
+                and not line.startswith(("--- ", "+++ "))
+            ):
+                changed_count += 1
+            index += 1
+        # Wrong hunk counts are a common, fully recoverable model formatting
+        # error handled by _normalize_unified_diff_hunk_counts.  Treat only an
+        # empty/abrupt hunk as truncation here; Patch policy remains the final
+        # authority for all other malformed diffs.
+        if (old_count == 0 and new_count == 0) or changed_count == 0:
+            return False
+    return found_hunk
+
+
+def classify_output_truncation(
+    content: str,
+    finish_reason: str | None,
+    *,
+    required_fields: tuple[str, ...] = ("patch",),
+) -> str:
+    """Classify incomplete model output before Candidate materialization."""
+
+    if finish_reason == "length":
+        return "PROVIDER_LENGTH_LIMIT"
+    try:
+        value = json.loads(content)
+    except json.JSONDecodeError:
+        stripped = content.rstrip()
+        if stripped.startswith("{") and not stripped.endswith("}"):
+            return "JSON_INCOMPLETE"
+        return "UNKNOWN_TRUNCATION"
+    if not isinstance(value, Mapping):
+        return "UNKNOWN_TRUNCATION"
+    if any(field not in value for field in required_fields):
+        return "UNKNOWN_TRUNCATION"
+    if "patch" in value and not _diff_looks_complete(value.get("patch")):
+        return "PATCH_INCOMPLETE"
+    return "NOT_TRUNCATED"
 
 
 def _normalize_unified_diff_hunk_counts(patch: str) -> str:
@@ -295,7 +415,8 @@ def build_fast_experiment_prompt(context: Mapping[str, object]) -> str:
         "budget",
         "constraints",
     }
-    if set(context) not in (required, required | {"experience_guidance"}):
+    optional = {"experience_guidance", "token_budget"}
+    if not required.issubset(context) or set(context).difference(required | optional):
         raise ValueError("fast Planner context has an invalid field set")
     experience_guidance = context.get("experience_guidance")
     if experience_guidance is not None:
@@ -375,6 +496,11 @@ def build_fast_experiment_prompt(context: Mapping[str, object]) -> str:
                 "approve tools, change budgets, promote a Candidate, select final, or "
                 "modify headers/tests/metadata/interfaces."
             ),
+            *(
+                [_token_budget_prompt(context["token_budget"])]
+                if "token_budget" in context
+                else []
+            ),
             (
                 "PATCH VALIDITY\nThe unified diff must apply directly to the supplied "
                 "current kernel. Before returning, recount every hunk: context and '-' "
@@ -417,6 +543,23 @@ def build_guided_optimization_prompt(
     return prompt.replace(marker, advisory + marker, 1)
 
 
+def build_budgeted_optimization_prompt(
+    context: OptimizationContext,
+    token_envelope: Mapping[str, object],
+    *,
+    experience_guidance: Mapping[str, object] | None = None,
+) -> str:
+    prompt = (
+        build_guided_optimization_prompt(context, experience_guidance)
+        if experience_guidance is not None
+        else build_optimization_prompt(context)
+    )
+    marker = "\nOUTPUT\n"
+    if marker not in prompt:
+        raise ValueError("optimization prompt has no output boundary")
+    return prompt.replace(marker, "\n" + _token_budget_prompt(token_envelope) + marker, 1)
+
+
 def build_task_aware_prompt(context: Mapping[str, object]) -> str:
     """Build one bounded repair request for the deterministic PhaseRouter mode."""
 
@@ -430,7 +573,8 @@ def build_task_aware_prompt(context: Mapping[str, object]) -> str:
         "budget",
         "constraints",
     }
-    if set(context) not in (required, required | {"experience_guidance"}):
+    optional = {"experience_guidance", "token_budget"}
+    if not required.issubset(context) or set(context).difference(required | optional):
         raise ValueError("task-aware Planner context has an invalid field set")
     experience_guidance = context.get("experience_guidance")
     if experience_guidance is not None:
@@ -505,6 +649,11 @@ def build_task_aware_prompt(context: Mapping[str, object]) -> str:
                     )
                 ]
                 if experience_guidance is not None
+                else []
+            ),
+            *(
+                [_token_budget_prompt(context["token_budget"])]
+                if "token_budget" in context
                 else []
             ),
             (
@@ -742,6 +891,9 @@ class _Completion:
     cached_input_tokens: int
     request_id: str | None
     duration_seconds: float
+    finish_reason: str | None
+    requested_max_output_tokens: int
+    effective_max_output_tokens: int
 
 
 def _completion_body(
@@ -749,7 +901,17 @@ def _completion_body(
     *,
     prompt: str,
     system_prompt: str | None = None,
+    effective_max_output_tokens: int | None = None,
 ) -> dict[str, object]:
+    selected_max = (
+        config.max_output_tokens
+        if effective_max_output_tokens is None
+        else int(effective_max_output_tokens)
+    )
+    if selected_max <= 0 or selected_max > config.max_output_tokens:
+        raise ValueError(
+            "effective_max_output_tokens must be positive and no greater than the provider cap"
+        )
     body: dict[str, object] = {
         "model": config.model,
         "messages": [
@@ -761,7 +923,7 @@ def _completion_body(
             {"role": "user", "content": prompt},
         ],
         "temperature": config.temperature,
-        "max_tokens": config.max_output_tokens,
+        "max_tokens": selected_max,
         "response_format": {"type": "json_object"},
     }
     if "api.deepseek.com" in config.base_url and config.model.startswith("deepseek-"):
@@ -775,9 +937,13 @@ def _request_completion(
     *,
     prompt: str,
     system_prompt: str | None = None,
+    effective_max_output_tokens: int | None = None,
 ) -> _Completion:
     body = _completion_body(
-        config, prompt=prompt, system_prompt=system_prompt
+        config,
+        prompt=prompt,
+        system_prompt=system_prompt,
+        effective_max_output_tokens=effective_max_output_tokens,
     )
     encoded = json.dumps(body, separators=(",", ":"), ensure_ascii=False).encode(
         "utf-8"
@@ -796,46 +962,43 @@ def _request_completion(
     status, headers, raw = transport(request, config.timeout_seconds)
     duration = time.monotonic() - started
     if status < 200 or status >= 300:
-        raise RepairProviderError(f"OpenAI-compatible API returned HTTP {status}")
+        response_excerpt = raw.decode("utf-8", errors="replace")[:2000]
+        context_limit = bool(
+            re.search(
+                r"(?:context(?: length| window)?|maximum context).{0,80}(?:exceed|limit|too long)",
+                response_excerpt,
+                flags=re.IGNORECASE | re.DOTALL,
+            )
+        )
+        raise RepairProviderError(
+            f"OpenAI-compatible API returned HTTP {status}",
+            response_excerpt=response_excerpt,
+            output_truncated=context_limit,
+            truncation_reason="CONTEXT_LIMIT" if context_limit else None,
+            usage_complete=False,
+        )
     try:
         envelope = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise RepairProviderError("OpenAI-compatible API returned invalid JSON") from exc
-    usage = envelope.get("usage", {})
-    if not isinstance(usage, dict):
-        raise RepairProviderError(
-            "OpenAI-compatible API usage is invalid", duration_seconds=duration
-        )
-    try:
-        input_tokens = int(usage["prompt_tokens"])
-        output_tokens = int(usage["completion_tokens"])
-    except (KeyError, TypeError, ValueError) as exc:
-        raise RepairProviderError(
-            "OpenAI-compatible API did not report token usage",
-            duration_seconds=duration,
-        ) from exc
-    cached_input_tokens = int(usage.get("prompt_cache_hit_tokens", 0) or 0)
-    if input_tokens < 0 or output_tokens < 0 or cached_input_tokens < 0:
-        raise RepairProviderError(
-            "OpenAI-compatible API reported negative token usage",
-            duration_seconds=duration,
-        )
     request_id = (
         envelope.get("id")
         or headers.get("x-request-id")
         or headers.get("X-Request-Id")
     )
     try:
-        message = envelope["choices"][0]["message"]
+        choice = envelope["choices"][0]
+        message = choice["message"]
     except (KeyError, IndexError, TypeError) as exc:
         raise RepairProviderError(
             "OpenAI-compatible API response has no assistant content",
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            cached_input_tokens=cached_input_tokens,
             duration_seconds=duration,
             request_id=str(request_id) if request_id else None,
+            usage_complete=False,
         ) from exc
+    finish_reason = choice.get("finish_reason") if isinstance(choice, dict) else None
+    if finish_reason is not None and not isinstance(finish_reason, str):
+        finish_reason = str(finish_reason)
     content = message.get("content") if isinstance(message, dict) else None
     if isinstance(content, list):
         content = "".join(
@@ -845,11 +1008,43 @@ def _request_completion(
     if not isinstance(content, str) or not content.strip():
         raise RepairProviderError(
             "provider response content is empty",
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            cached_input_tokens=cached_input_tokens,
             duration_seconds=duration,
             request_id=str(request_id) if request_id else None,
+            finish_reason=finish_reason,
+            response_excerpt=content[:2000] if isinstance(content, str) else None,
+            usage_complete=False,
+        )
+    usage = envelope.get("usage", {})
+    if not isinstance(usage, dict):
+        raise RepairProviderError(
+            "OpenAI-compatible API usage is invalid",
+            duration_seconds=duration,
+            request_id=str(request_id) if request_id else None,
+            response_excerpt=content[:2000],
+            finish_reason=finish_reason,
+            usage_complete=False,
+        )
+    try:
+        input_tokens = int(usage["prompt_tokens"])
+        output_tokens = int(usage["completion_tokens"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise RepairProviderError(
+            "OpenAI-compatible API did not report token usage",
+            duration_seconds=duration,
+            request_id=str(request_id) if request_id else None,
+            response_excerpt=content[:2000],
+            finish_reason=finish_reason,
+            usage_complete=False,
+        ) from exc
+    cached_input_tokens = int(usage.get("prompt_cache_hit_tokens", 0) or 0)
+    if input_tokens < 0 or output_tokens < 0 or cached_input_tokens < 0:
+        raise RepairProviderError(
+            "OpenAI-compatible API reported negative token usage",
+            duration_seconds=duration,
+            request_id=str(request_id) if request_id else None,
+            response_excerpt=content[:2000],
+            finish_reason=finish_reason,
+            usage_complete=False,
         )
     return _Completion(
         content=content,
@@ -858,7 +1053,59 @@ def _request_completion(
         cached_input_tokens=cached_input_tokens,
         request_id=str(request_id) if request_id else None,
         duration_seconds=duration,
+        finish_reason=finish_reason,
+        requested_max_output_tokens=config.max_output_tokens,
+        effective_max_output_tokens=int(body["max_tokens"]),
     )
+
+
+def _raise_if_truncated(
+    completion: _Completion,
+    *,
+    required_fields: tuple[str, ...] = ("patch",),
+) -> None:
+    reason = classify_output_truncation(
+        completion.content,
+        completion.finish_reason,
+        required_fields=required_fields,
+    )
+    if reason == "NOT_TRUNCATED":
+        return
+    raise RepairProviderError(
+        "provider output is incomplete and cannot create a Candidate",
+        input_tokens=completion.input_tokens,
+        output_tokens=completion.output_tokens,
+        cached_input_tokens=completion.cached_input_tokens,
+        duration_seconds=completion.duration_seconds,
+        request_id=completion.request_id,
+        response_excerpt=completion.content[:2000],
+        finish_reason=completion.finish_reason,
+        output_truncated=True,
+        truncation_reason=reason,
+    )
+
+
+def _completion_proposal_metadata(completion: _Completion) -> dict[str, object]:
+    return {
+        "finish_reason": completion.finish_reason,
+        "output_truncated": False,
+        "truncation_reason": None,
+        "provider_parameter_name": "max_tokens",
+        "requested_max_output_tokens": completion.requested_max_output_tokens,
+        "effective_max_output_tokens": completion.effective_max_output_tokens,
+    }
+
+
+def _context_effective_max_output(context: Mapping[str, object]) -> int | None:
+    raw = context.get("token_budget")
+    if raw is None:
+        return None
+    if not isinstance(raw, Mapping):
+        raise ValueError("token_budget must be a TokenEnvelope object")
+    envelope = validate_token_envelope(raw)
+    if envelope["planner_call_allowed"] is not True:
+        raise ValueError("TokenEnvelope does not allow a Planner call")
+    return int(envelope["effective_max_output_tokens"])
 
 
 class OpenAICompatibleRepairProvider:
@@ -888,6 +1135,17 @@ class OpenAICompatibleRepairProvider:
             self._transport,
             prompt=build_repair_prompt(context),
         )
+        _raise_if_truncated(
+            completion,
+            required_fields=(
+                "hypothesis",
+                "change_class",
+                "expected_effect",
+                "risk",
+                "required_validation",
+                "patch",
+            ),
+        )
         try:
             parsed = _strict_response(completion.content)
         except RepairProviderError as exc:
@@ -899,6 +1157,7 @@ class OpenAICompatibleRepairProvider:
                 duration_seconds=completion.duration_seconds,
                 request_id=completion.request_id,
                 response_excerpt=completion.content[:2000],
+                finish_reason=completion.finish_reason,
             ) from exc
         return PatchProposal(
             patch=str(parsed["patch"]),
@@ -914,6 +1173,7 @@ class OpenAICompatibleRepairProvider:
             expected_effect=str(parsed["expected_effect"]),
             risk=str(parsed["risk"]),
             required_validation=tuple(str(item) for item in parsed["required_validation"]),
+            **_completion_proposal_metadata(completion),
         )
 
 
@@ -962,6 +1222,34 @@ class OpenAICompatibleOptimizationProvider:
             "http_body": _completion_body(self.config, prompt=prompt),
         }
 
+    def describe_optimization_request_budgeted(
+        self,
+        context: OptimizationContext,
+        token_envelope: Mapping[str, object],
+        *,
+        experience_guidance: Mapping[str, object] | None = None,
+    ) -> dict[str, object]:
+        envelope = validate_token_envelope(token_envelope)
+        if envelope["planner_call_allowed"] is not True:
+            raise ValueError("TokenEnvelope does not allow a Planner call")
+        prompt = build_budgeted_optimization_prompt(
+            context,
+            envelope,
+            experience_guidance=experience_guidance,
+        )
+        return {
+            "provider": "openai-compatible",
+            "model": self.config.model,
+            "endpoint": self.config.chat_completions_url,
+            "http_body": _completion_body(
+                self.config,
+                prompt=prompt,
+                effective_max_output_tokens=int(
+                    envelope["effective_max_output_tokens"]
+                ),
+            ),
+        }
+
     def describe_fast_experiment_request(
         self, context: Mapping[str, object]
     ) -> dict[str, object]:
@@ -975,6 +1263,7 @@ class OpenAICompatibleOptimizationProvider:
                 self.config,
                 prompt=prompt,
                 system_prompt=FAST_EXPERIMENT_SYSTEM_PROMPT,
+                effective_max_output_tokens=_context_effective_max_output(context),
             ),
         }
 
@@ -991,6 +1280,7 @@ class OpenAICompatibleOptimizationProvider:
                 self.config,
                 prompt=prompt,
                 system_prompt=TASK_AWARE_SYSTEM_PROMPT,
+                effective_max_output_tokens=_context_effective_max_output(context),
             ),
         }
 
@@ -1011,6 +1301,19 @@ class OpenAICompatibleOptimizationProvider:
             self._transport,
             prompt=build_task_aware_prompt(context),
             system_prompt=TASK_AWARE_SYSTEM_PROMPT,
+            effective_max_output_tokens=_context_effective_max_output(context),
+        )
+        _raise_if_truncated(
+            completion,
+            required_fields=(
+                "hypothesis",
+                "primary_failure",
+                "evidence_used",
+                "change_class",
+                "expected_effect",
+                "risk",
+                "patch",
+            ),
         )
         try:
             parsed = _strict_task_aware_response(completion.content, mode=mode)
@@ -1023,6 +1326,7 @@ class OpenAICompatibleOptimizationProvider:
                 duration_seconds=completion.duration_seconds,
                 request_id=completion.request_id,
                 response_excerpt=completion.content[:2000],
+                finish_reason=completion.finish_reason,
             ) from exc
         if mode == "REPAIR":
             required_validation = (
@@ -1060,6 +1364,7 @@ class OpenAICompatibleOptimizationProvider:
             expected_effect=str(parsed["expected_effect"]),
             risk=json.dumps(risk, ensure_ascii=False, sort_keys=True),
             required_validation=required_validation,
+            **_completion_proposal_metadata(completion),
         )
 
     def propose_fast_experiment(
@@ -1070,6 +1375,19 @@ class OpenAICompatibleOptimizationProvider:
             self._transport,
             prompt=build_fast_experiment_prompt(context),
             system_prompt=FAST_EXPERIMENT_SYSTEM_PROMPT,
+            effective_max_output_tokens=_context_effective_max_output(context),
+        )
+        _raise_if_truncated(
+            completion,
+            required_fields=(
+                "hypothesis",
+                "primary_bottleneck",
+                "evidence_used",
+                "strategy_bundle",
+                "expected_effect",
+                "risk",
+                "patch",
+            ),
         )
         try:
             parsed = _strict_fast_experiment_response(completion.content)
@@ -1082,6 +1400,7 @@ class OpenAICompatibleOptimizationProvider:
                 duration_seconds=completion.duration_seconds,
                 request_id=completion.request_id,
                 response_excerpt=completion.content[:2000],
+                finish_reason=completion.finish_reason,
             ) from exc
         strategy_bundle = tuple(str(item) for item in parsed["strategy_bundle"])
         risk = dict(parsed["risk"])
@@ -1101,15 +1420,32 @@ class OpenAICompatibleOptimizationProvider:
             expected_effect=str(parsed["expected_effect"]),
             risk=json.dumps(risk, ensure_ascii=False, sort_keys=True),
             required_validation=("csim", "synth"),
+            **_completion_proposal_metadata(completion),
         )
 
     def _propose_optimization_with_prompt(
-        self, context: OptimizationContext, prompt: str
+        self,
+        context: OptimizationContext,
+        prompt: str,
+        *,
+        effective_max_output_tokens: int | None = None,
     ) -> PatchProposal:
         completion = _request_completion(
             self.config,
             self._transport,
             prompt=prompt,
+            effective_max_output_tokens=effective_max_output_tokens,
+        )
+        _raise_if_truncated(
+            completion,
+            required_fields=(
+                "hypothesis",
+                "optimization_class",
+                "expected_effect",
+                "risk",
+                "required_validation",
+                "patch",
+            ),
         )
         try:
             parsed = _strict_response(
@@ -1135,6 +1471,7 @@ class OpenAICompatibleOptimizationProvider:
                 duration_seconds=completion.duration_seconds,
                 request_id=completion.request_id,
                 response_excerpt=completion.content[:2000],
+                finish_reason=completion.finish_reason,
             ) from exc
         return PatchProposal(
             patch=str(parsed["patch"]),
@@ -1150,11 +1487,32 @@ class OpenAICompatibleOptimizationProvider:
             expected_effect=str(parsed["expected_effect"]),
             risk=str(parsed["risk"]),
             required_validation=validations,
+            **_completion_proposal_metadata(completion),
         )
 
     def propose_optimization(self, context: OptimizationContext) -> PatchProposal:
         return self._propose_optimization_with_prompt(
             context, build_optimization_prompt(context)
+        )
+
+    def propose_optimization_budgeted(
+        self,
+        context: OptimizationContext,
+        token_envelope: Mapping[str, object],
+        *,
+        experience_guidance: Mapping[str, object] | None = None,
+    ) -> PatchProposal:
+        envelope = validate_token_envelope(token_envelope)
+        return self._propose_optimization_with_prompt(
+            context,
+            build_budgeted_optimization_prompt(
+                context,
+                envelope,
+                experience_guidance=experience_guidance,
+            ),
+            effective_max_output_tokens=int(
+                envelope["effective_max_output_tokens"]
+            ),
         )
 
     def propose_guided_optimization(

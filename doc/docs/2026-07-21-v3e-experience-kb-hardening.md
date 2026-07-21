@@ -1,7 +1,7 @@
 # V3-E 经验知识库：当前真实架构与组员上手说明
 
 更新时间：2026-07-21
-分支：`feat/v3e-experience-kb-hardening`
+分支：`feat/v3e-token-budget-policy`
 
 ## 1. 这一阶段究竟在做什么
 
@@ -51,6 +51,11 @@ Recommendation Attribution（相关性记录，不宣称因果）
 | 泛化评估 | `llm4hls_agent/v3_experience_evaluation.py` | 做 Leave-One-Run/Task/Task-Family/Algorithm-Family-Out，确保被留出的组不进入支持集。 |
 | ML 数据导出 | `llm4hls_agent/v3_experience_ml.py` | 按 task family 分组切分，导出 Strategy、CoSim Risk、Continue Value、Evidence Selection 四类数据。 |
 | 操作 CLI | `llm4hls_agent/v3_experience_kb_cli.py` | 提供 import、migrate、validate、snapshot、stats、coverage、retrieve、rank、evaluate、plan-collection、export-ml、readiness。 |
+| Budget Ledger | `llm4hls_agent/budget.py` | 只记录真实 Token、Credit、工具次数和时间，并执行硬预算检查；原有记账口径未改变。 |
+| TokenEstimator | `llm4hls_agent/budget.py` | 按 kernel、header、description、Evidence、history、Guidance 和固定模板估算 Planner 输入，不保存原文或秘密。 |
+| TokenBudgetPolicy / TokenEnvelope | `llm4hls_agent/budget.py` | 在每轮 Planner 调用前计算可用输出、后续轮次预留、动态 Guidance cap 和 Token pressure；不是新 Agent 或 Graph 节点。 |
+| 两阶段 Planner Adapter | `llm4hls_agent/v3_openai_planner.py` | 先估算无 Guidance Prompt，再限长生成 Guidance，最后重新估算实际 Provider 请求并生成不可变 Envelope。 |
+| Provider 与截断处理 | `llm4hls_agent/openai_provider.py`、`v3_planner_action.py` | 确保 Prompt 与 API 使用同一个输出上限；识别 length、JSON/Patch incomplete 和 context limit，截断时不创建 Candidate、不运行 Vitis。 |
 
 ## 4. v2 一条经验包含什么
 
@@ -63,6 +68,7 @@ Recommendation Attribution（相关性记录，不宣称因果）
 - `validation`：Patch/interface guard、CSim/Synth/CoSim/final、promote/reject；
 - `performance`：前后 latency/interval、acceleration、resource delta；
 - `cost`：Token、Credit、工具次数和 wall time；
+- `token_policy`：调用前剩余 Token、分项估算、configured/effective 输出上限、Provider 实际 usage、Guidance、pressure、finish reason 和截断原因；
 - `provenance`：相对 Artifact 引用、hash、检索/排序资格和排除原因。
 
 完整源码、完整 Patch、完整 Prompt、完整日志、API key、Authorization、本机绝对路径和 task ID 都不进入 v2 Store。task ID 只允许留在独立审计 Artifact 中，不能参与相似度或排序。
@@ -187,3 +193,149 @@ Leave-One-Run、Task、Task-Family、Algorithm-Family-Out 都评估了 76 个 qu
 - Evidence Selector：76 个可归因 Planner round，低于 100。
 
 因此当前不得训练复杂模型。下一轮应优先按 collection queue 补真实 STRUCTURAL_FIX、CoSim FAIL/TIMEOUT 和跨 family 正负例。
+
+## Token Budget Policy 正式增补：统一报告第 23～35 项
+
+下面编号沿用 V3-E 最终统一报告的编号，不代表本文缺少第 11～22 章。
+
+### 23. Budget 组件内部结构
+
+Token Policy 没有成为新 Agent、Controller 大组件或 LangGraph 节点，而是留在现有 Budget 横向组件内部：
+
+```text
+budget.py
+├─ BudgetLedger          真实发生量、硬预算、append-only 与幂等
+├─ BudgetConfig          Run Token/Credit/工具次数/时间硬上限
+├─ TokenEstimator        当前 Planner 请求的保守分项估算
+├─ TokenBudgetLimits     mode cap、context、reserve、Guidance 配置
+├─ TokenBudgetPolicy     本轮配额与 pressure 的确定性计算
+└─ TokenEnvelope         v3.token-envelope.v1，不可变、可 hash 的本轮结果
+```
+
+`BudgetLedger.total_tokens` 继续等于 Provider 报告的 `input_tokens + output_tokens`。Estimator 数值只用于调用前 reserve，绝不冒充实际 usage。Token 和 Vitis Credit 始终分别报告。
+
+### 24. TokenEstimator 实现方式
+
+`TokenEstimator.for_model()` 优先使用模型对应的 `tiktoken` encoding；模型未知时使用 `cl100k_base` 并记录误差来源；环境没有 tokenizer 时回退到确定性的 `unicode-codepoint-upper-bound/v1`。Fallback 按 Unicode code point 计数，方向偏保守，不保存 kernel、Prompt、Guidance 或 API key，只输出每个组件的整数计数和 estimator 身份。
+
+Planner Adapter 对最终实际 `messages` 再估算一次，并把总数分解到：kernel、headers、description、Evidence、history、Experience Guidance、Token Budget 与固定模板。分项之和必须严格等于总估算。
+
+### 25. TokenBudgetPolicy 分配公式
+
+当前实现采用：
+
+```text
+remaining = run_token_limit - tokens_used
+
+run_output = remaining
+  - estimated_input_tokens
+  - future_round_token_reserve
+  - final_token_reserve
+  - token_safety_margin
+
+context_output = context_window_tokens
+  - estimated_input_tokens
+  - context_safety_margin_tokens
+
+effective_max_output_tokens = min(
+  mode configured cap,
+  global configured cap（若设置），
+  Provider hard cap,
+  max(0, run_output),
+  max(0, context_output)
+)
+```
+
+如果有效输出低于 minimum viable、输入越过 context、只剩 final token reserve，或原有 Budget gate 已禁止继续，则 `planner_call_allowed=false`。系统复用现有预算条件边进入 final/FAILED，没有新增 Graph 节点。
+
+### 26. 各 mode configured/effective max output
+
+| Mode | 默认 configured cap | 默认 minimum viable | 实际 effective 还受什么限制 |
+|---|---:|---:|---|
+| REPAIR | 1,400 | 700 | Provider、Context、Run 剩余、future/final reserve |
+| SYNTH_FIX | 1,800 | 800 | 同上 |
+| STRUCTURAL_FIX | 2,200 | 1,000 | 同上 |
+| OPTIMIZE | 2,400 | 1,000 | 同上 |
+
+CLI 兼容入口默认仍是 `--token-budget-policy fixed`。启用动态策略使用 `--token-budget-policy dynamic`。Live Run 默认 `run_token_limit=32768`，scripted 默认 4096；`--run-token-limit` 的优先级高于旧 `--token-budget`。当前 Provider hard cap 默认来自 `--llm-max-output-tokens=1000`，因此在预算充足且未覆盖该参数时，各 mode 的 effective 上限最多为 1000。
+
+测试中的动态 REPAIR 请求配置上限为 400、Provider hard cap 为 512，最终 Prompt、Prepared action 和真实 HTTP body 三处均为 400。这里是 mock Provider 工程证据，不冒充真实外部模型运行。
+
+### 27. Prompt 与 Provider max output 一致性
+
+最终 `TokenEnvelope` 会进入 Prompt 的 `TOKEN BUDGET` 区块；`Maximum output for this request` 与 Provider HTTP body 的 `max_tokens` 都直接读取同一个 `effective_max_output_tokens`。Planner request Artifact 另外保存 configured、effective 和 Provider 参数名。
+
+因为 Envelope 自身也会改变 Prompt 长度，Adapter 最多进行 8 次确定性 fixed-point 计算；只有“最终请求的估算值”和“该请求携带的 Envelope”完全稳定才允许 dispatch，否则在 Provider 调用前失败。不会出现 Prompt 告诉模型 1800、API 实际只给 900 的情况。
+
+### 28. Experience Guidance 动态 Token cap
+
+Guidance 硬上限仍为 600，但每轮实际 cap 还受到可用 Context、Run Token、默认 15% ratio 和 Token pressure 限制：MEDIUM 再减半，HIGH 再缩到四分之一，CRITICAL 为 0；Quality Gate ABSTAIN 或 Experience off 时为 0。Guidance 生成后必须重建 Prompt、重新估算并重新分配输出预算。
+
+动态 cap 小于可用 Guidance 最小结构时，Quality Gate 返回 `ABSTAIN/PROMPT_TOKEN_LIMIT`，原 Planner fail-open 继续，不会因为经验不足阻塞 HLS 主流程。`shadow` 仍不向模型注入建议，`guided` 也只能在 cap 内注入。
+
+### 29. Token Estimator 误差
+
+运行报告已经按轮计算 `actual_input_tokens - estimated_input_tokens`，并汇总平均误差。当前分支还没有新的真实外部模型 dynamic run，因此没有足够样本给出真实误差分布；不能用 mock usage 宣称 estimator 准确。Provider usage 缺失时 actual 字段保持 `null/UNKNOWN`，不会用估算值补写。
+
+### 30. 截断率和截断原因
+
+Provider 层当前识别：`PROVIDER_LENGTH_LIMIT`、`JSON_INCOMPLETE`、`PATCH_INCOMPLETE`、`CONTEXT_LIMIT` 和 `UNKNOWN_TRUNCATION`。本次工程测试覆盖了五种路径；真实 dynamic run 样本数为 0，所以真实截断率暂不可计算。
+
+疑似截断时系统会保存原始 Provider excerpt、finish reason、精确 usage（若 Provider 提供）和失败分类；不创建 Candidate、不运行 CSim/Synth/CoSim，也不静默重试。已有精确 usage 的失败可安全 checkpoint replay 且不重复调用；usage 缺失则按既有非重放协议记作 ambiguous conservative。
+
+### 31. 各 mode 成功运行所需输出 Token 分布
+
+Experience v2 和 ML schema 已具备按 mode 统计 `actual_output_tokens` 的字段，但历史 103 条记录生成时尚未启用 `v3.token-policy.v1`，不能把旧 `total_tokens` 伪装成动态策略结果。因此当前四个 mode 的“真实 dynamic 成功输出分布”均标记为 `NOT_YET_COLLECTED`。后续公开 train/dev collection 会直接从 hash-bound Planner request/outcome 解析 Envelope 与实际 usage。
+
+### 32. Token Policy 是否减少无效调用
+
+确定性测试已证明两类无效调用会被提前消除：低于 minimum viable 时不 dispatch Planner；Provider 输出截断/Schema incomplete 时不物化 Candidate，也不调用 Vitis。尚未运行同模型、同题、同配置的 A/B/C 真实对照，因此不能宣称 Token、Credit 或比赛分数获得统计改善。
+
+本阶段工程验收口径如下：
+
+| 组 | 配置 | 覆盖 | 工程结果 | 不能据此宣称的内容 |
+|---|---|---|---|---|
+| A | fixed max output | 原有 task-aware/optimize/Experience 回归 | PASS，默认入口参数级兼容 | 动态策略优于固定策略 |
+| B | dynamic + Experience off | 四 mode cap/pressure、两阶段 REPAIR 请求、Prompt/API 一致性 | PASS | 真实模型成功率或 PPA 提升 |
+| C | dynamic + shadow/guided 约束 | 动态 Guidance cap、ABSTAIN、off/shadow/guided 权限边界 | PASS | Guidance 有因果收益 |
+
+这些是公开 fixture/mock 的工程验收，不使用 hidden-like 外部模型，不产生新的 Vitis 成绩结论。
+
+### 33. Token 字段是否进入 Experience v2
+
+已进入。`token_policy` 保存 Run/Context/reserve、base/guidance/final estimate、configured/effective/actual、pressure、finish/truncation 和 estimator/version。新 Run 的 v1 Candidate 仍保持不可变；派生 v2 时，Resolver 通过 proposal round 找到 hash-bound Planner started/request/outcome，读取真实 Envelope 和 usage。旧 v2 记录继续兼容读取，不重写旧 record hash。
+
+### 34. Token 数据是否满足 Continue Predictor 准备条件
+
+字段准备已经完成：Continue 数据包含调用前剩余 Token、effective output、future reserve、remaining rounds、pressure、本轮实际 Token，以及下一轮是否 improvement 和后续 Token/Credit 成本。Strategy、CoSim Risk、Evidence Selection 也分别获得成本/辅助/Context 占比字段。
+
+数据准备不等于模型 READY。当前 Continue Value 仍只有 12 个可识别决策，低于 50 条门槛；新的 dynamic policy 真实样本还是 0，因此 Continue Predictor 仍为 `NOT_READY`。
+
+### 35. Token Policy 测试结果
+
+截至本次分支验收：
+
+- Token Policy/Provider/Planner/Experience/ML 聚焦测试：78 项通过；
+- Experience Resolver 与 schema/ML 增补聚焦测试：43 项通过；
+- package-aware 完整 unittest：506 项通过；
+- 默认 fixed、Experience off/shadow/guided、Candidate promote、CoSim gate、Checkpoint、fresh final 均保留原回归结果；
+- Token Policy 新增主 Graph 节点数：0；
+- `compileall`：通过；`git diff --check`：通过。
+
+可复现命令：
+
+```bash
+cd llm4hls_harness
+PYTHONPATH=. ../.venv/bin/python -m unittest discover
+
+# 同时兼容 tests 中两种 package import 的仓库根目录命令
+cd ..
+PYTHONPATH=.:llm4hls_harness .venv/bin/python -m unittest discover \
+  -s llm4hls_harness/tests -t .
+
+PYTHONPATH=llm4hls_harness .venv/bin/python -m compileall -q \
+  llm4hls_harness/llm4hls_agent llm4hls_harness/tests
+git diff --check
+```
+
+最终结论：Token Policy 没有改变主 Graph；它是现有 Budget 横向组件内部能力。它只决定“这一轮 Planner 最多可以看/写多少 Token”，不能提高预算、选择 HLS 策略、批准工具、晋升 Candidate 或绕过 fresh final。

@@ -8,7 +8,12 @@ import os
 import sys
 from pathlib import Path
 
-from .budget import BudgetConfig
+from .budget import (
+    BudgetConfig,
+    TokenBudgetLimits,
+    TokenBudgetPolicy,
+    TokenEstimator,
+)
 from .repair import PatchProposal
 from .task import load_public_task
 from .tools import ToolConfig
@@ -92,6 +97,17 @@ def _parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--run-token-limit",
+        type=int,
+        help="Unambiguous alias for the total run Token limit; overrides --token-budget.",
+    )
+    parser.add_argument(
+        "--token-budget-policy",
+        choices=("fixed", "dynamic"),
+        default="fixed",
+        help="fixed preserves V3-D behavior; dynamic enables v3.token-policy.v1.",
+    )
+    parser.add_argument(
         "--llm-timeout",
         type=float,
         default=float(os.environ.get("LLM4HLS_LLM_TIMEOUT_S", "120")),
@@ -103,6 +119,22 @@ def _parser() -> argparse.ArgumentParser:
         default=int(os.environ.get("LLM4HLS_LLM_MAX_OUTPUT_TOKENS", "1000")),
         help="Maximum output tokens reserved for each live Planner call.",
     )
+    parser.add_argument(
+        "--max-output-tokens",
+        type=int,
+        help="Optional global configured output cap below mode/provider limits.",
+    )
+    parser.add_argument("--repair-max-output-tokens", type=int, default=1400)
+    parser.add_argument("--synth-fix-max-output-tokens", type=int, default=1800)
+    parser.add_argument("--structural-fix-max-output-tokens", type=int, default=2200)
+    parser.add_argument("--optimize-max-output-tokens", type=int, default=2400)
+    parser.add_argument("--minimum-viable-output-tokens", type=int)
+    parser.add_argument("--context-window-tokens", type=int, default=32768)
+    parser.add_argument("--context-safety-margin-tokens", type=int, default=256)
+    parser.add_argument("--token-safety-margin", type=int, default=128)
+    parser.add_argument("--future-round-token-reserve", type=int, default=1800)
+    parser.add_argument("--final-token-reserve", type=int, default=0)
+    parser.add_argument("--guidance-ratio", type=float, default=0.15)
     parser.add_argument(
         "--llm-temperature",
         type=float,
@@ -170,6 +202,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--experience-max-guidance-tokens",
+        "--guidance-token-cap",
         type=int,
         default=600,
         help="Conservative upper bound for the serialized advisory summary.",
@@ -234,6 +267,13 @@ def main(argv: list[str] | None = None) -> int:
             else 1
         )
         if live_openai:
+            live_token_limit = (
+                args.run_token_limit
+                if args.run_token_limit is not None
+                else 32768
+                if args.token_budget is None
+                else args.token_budget
+            )
             base_url = os.environ.get("OPENAI_BASE_URL", "").strip()
             api_key = os.environ.get("OPENAI_API_KEY", "")
             if not base_url:
@@ -294,6 +334,46 @@ def main(argv: list[str] | None = None) -> int:
                     temperature=args.llm_temperature,
                 )
             )
+            token_policy = None
+            token_estimator = None
+            if args.token_budget_policy == "dynamic":
+                token_policy = TokenBudgetPolicy(
+                    TokenBudgetLimits(
+                        mode_output_caps={
+                            "REPAIR": args.repair_max_output_tokens,
+                            "SYNTH_FIX": args.synth_fix_max_output_tokens,
+                            "STRUCTURAL_FIX": args.structural_fix_max_output_tokens,
+                            "OPTIMIZE": args.optimize_max_output_tokens,
+                        },
+                        configured_max_output_tokens=args.max_output_tokens,
+                        minimum_viable_output_tokens=(
+                            args.minimum_viable_output_tokens
+                        ),
+                        provider_hard_output_cap=args.llm_max_output_tokens,
+                        context_window_tokens=args.context_window_tokens,
+                        context_safety_margin_tokens=(
+                            args.context_safety_margin_tokens
+                        ),
+                        token_budget_safety_margin=args.token_safety_margin,
+                        future_round_token_reserve=(
+                            args.future_round_token_reserve
+                        ),
+                        final_token_reserve=args.final_token_reserve,
+                        configured_guidance_cap=(
+                            args.experience_max_guidance_tokens
+                        ),
+                        guidance_ratio=args.guidance_ratio,
+                    )
+                )
+                token_estimator = TokenEstimator.for_model(str(args.model))
+            token_policy_kwargs = (
+                {
+                    "token_budget_policy": token_policy,
+                    "token_estimator": token_estimator,
+                }
+                if token_policy is not None
+                else {}
+            )
             if args.validation_profile == "fast-experiment":
                 planner = OpenAICompatibleV3PlannerAdapter(
                     Path(args.run_dir).resolve(),
@@ -308,6 +388,7 @@ def main(argv: list[str] | None = None) -> int:
                     experience_mode=args.experience_mode,
                     experience_coordinator=experience_coordinator,
                     experience_task_split=args.experience_task_split,
+                    **token_policy_kwargs,
                 )
             else:
                 planner = OpenAICompatibleV3PlannerAdapter(
@@ -322,9 +403,10 @@ def main(argv: list[str] | None = None) -> int:
                     experience_mode=args.experience_mode,
                     experience_coordinator=experience_coordinator,
                     experience_task_split=args.experience_task_split,
+                    **token_policy_kwargs,
                 )
             proposals: tuple[PatchProposal, ...] = ()
-            token_limit = 32768 if args.token_budget is None else args.token_budget
+            token_limit = live_token_limit
         else:
             proposals = tuple(
                 PatchProposal(
@@ -348,7 +430,13 @@ def main(argv: list[str] | None = None) -> int:
                 for index, patch_file in enumerate(args.patch_file, 1)
             )
             planned_rounds = len(proposals)
-            token_limit = 4096 if args.token_budget is None else args.token_budget
+            token_limit = (
+                args.run_token_limit
+                if args.run_token_limit is not None
+                else 4096
+                if args.token_budget is None
+                else args.token_budget
+            )
         max_final_attempts = (
             2
             if args.enable_final_fallback

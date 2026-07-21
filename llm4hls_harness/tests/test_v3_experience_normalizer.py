@@ -157,6 +157,30 @@ class MigrationTests(unittest.TestCase):
             patch="--- a/kernel.cpp\n+++ b/kernel.cpp\n+#pragma HLS UNROLL factor=4\n",
             provider="deepseek",
             model="deepseek-v4-pro",
+            token_policy={
+                "run_token_limit": 12000,
+                "tokens_remaining_before_call": 8800,
+                "estimated_base_prompt_tokens": 1700,
+                "estimated_guidance_tokens": 180,
+                "estimated_input_tokens": 1880,
+                "configured_max_output_tokens": 2400,
+                "effective_max_output_tokens": 1500,
+                "actual_input_tokens": 1000,
+                "actual_output_tokens": 200,
+                "actual_total_tokens": 1200,
+                "context_window_tokens": 32768,
+                "future_round_token_reserve": 1800,
+                "guidance_token_cap": 240,
+                "guidance_actual_tokens": 180,
+                "rounds_remaining": 2,
+                "token_pressure": "MEDIUM",
+                "finish_reason": "stop",
+                "output_truncated": False,
+                "truncation_reason": None,
+                "estimator_name": "fixture-tokenizer",
+                "estimator_version": "test-v1",
+                "token_policy_version": "v3.token-policy.v1",
+            },
         )
         first = migrate_v1_to_v2(v1, context)
         second = migrate_v1_to_v2(v1, context)
@@ -165,6 +189,8 @@ class MigrationTests(unittest.TestCase):
         self.assertEqual(first["strategy"]["observed_strategy_atoms"], ["LOOP_UNROLL"])
         self.assertNotIn("task_id", str(first))
         self.assertNotIn("public-task-name", str(first))
+        self.assertEqual(first["token_policy"]["effective_max_output_tokens"], 1500)
+        self.assertEqual(first["token_policy"]["guidance_actual_tokens"], 180)
 
 
 if __name__ == "__main__":

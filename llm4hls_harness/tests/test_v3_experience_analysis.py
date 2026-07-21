@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from llm4hls_agent.budget import TokenBudgetPolicy
 from llm4hls_agent.v3_experience_analysis import (
     PublicRunArtifactResolver,
     build_coverage_matrix,
@@ -138,6 +139,102 @@ class ExperienceAnalysisTests(unittest.TestCase):
             rendered = json.dumps(result["records"])
             self.assertNotIn("#pragma", rendered)
             self.assertIn("LOOP_UNROLL", rendered)
+
+    def test_public_artifact_resolver_carries_real_token_envelope_into_v2(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run = root / "run"
+            proposal_path = run / "planner" / "proposal_001.json"
+            request_path = run / "planner" / "requests" / "request.json"
+            outcome_path = run / "planner" / "live_outcomes" / "action-001.json"
+            started_path = (
+                run
+                / "control"
+                / "live_planner_actions"
+                / "action-001.started.json"
+            )
+            for path in (proposal_path, request_path, outcome_path, started_path):
+                path.parent.mkdir(parents=True, exist_ok=True)
+            (run / "v3_run_config.json").write_text(
+                json.dumps({"tool": {"toolchain_id": "Vitis 2025.2"}}),
+                encoding="utf-8",
+            )
+            patch = "--- a/kernel.cpp\n+++ b/kernel.cpp\n+#pragma HLS UNROLL factor=4\n"
+            proposal = {
+                "round_index": 1,
+                "patch": patch,
+                "provider": "openai-compatible",
+                "model": "public-model",
+                "input_tokens": 900,
+                "output_tokens": 180,
+                "finish_reason": "stop",
+                "output_truncated": False,
+                "truncation_reason": None,
+            }
+            proposal_path.write_text(json.dumps(proposal), encoding="utf-8")
+            envelope = TokenBudgetPolicy().allocate(
+                budget_snapshot={
+                    "run_token_limit": 12000,
+                    "tokens_used": 2000,
+                    "tokens_remaining": 10000,
+                },
+                mode="OPTIMIZE",
+                estimated_base_prompt_tokens=1600,
+                estimated_guidance_tokens=120,
+                estimated_input_tokens=1720,
+                rounds_remaining=2,
+            ).to_dict()
+            request_path.write_text(
+                json.dumps({"request": {"token_envelope": envelope}}),
+                encoding="utf-8",
+            )
+            outcome_path.write_text(
+                json.dumps({"proposal": proposal}), encoding="utf-8"
+            )
+            started_path.write_text(
+                json.dumps(
+                    {"request": {"request_ref": "planner/requests/request.json"}}
+                ),
+                encoding="utf-8",
+            )
+            (run / "v3_prototype_result.json").write_text(
+                json.dumps(
+                    {
+                        "token_policy_rounds": [
+                            {"round": 1, "action_id": "action-001"}
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            digest = __import__("hashlib").sha256(proposal_path.read_bytes()).hexdigest()
+            source = ExperienceFeatureExtractor().build_record(
+                run_id="token-run",
+                candidate_id="candidate_001",
+                task_id="public-task",
+                task_split="train",
+                mode="OPTIMIZE",
+                source="void kernel(float a[32]){}",
+                patch=patch,
+                execution_class="REAL_LLM_VITIS",
+                eligible_for_ranking=True,
+                artifact_refs=[
+                    {
+                        "role": "planner_proposal",
+                        "ref": "planner/proposal_001.json",
+                        "sha256": digest,
+                    }
+                ],
+                strategy_bundle=["LOOP_UNROLL"],
+                outcome=v1_record()["outcome"],
+            )
+            result = derive_v2_backfill(
+                [source], resolver=PublicRunArtifactResolver([root])
+            )
+            token_policy = result["records"][0]["token_policy"]
+            self.assertEqual(token_policy["estimated_input_tokens"], 1720)
+            self.assertEqual(token_policy["actual_total_tokens"], 1080)
+            self.assertEqual(token_policy["guidance_actual_tokens"], 120)
 
     def test_data_quality_and_coverage_are_deterministic(self) -> None:
         records = [v2_record(1), v2_record(2, success=False)]

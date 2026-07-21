@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Mapping, Protocol
 
 from .budget import BudgetExceeded, BudgetLedger
-from .repair import PatchProposal
+from .repair import PatchProposal, RepairProviderError
 from .v3_planner import (
     canonical_json,
     canonical_sha256,
@@ -26,6 +26,7 @@ LIVE_PLANNER_ACTION_SCHEMA = "v3b.planner-action.v1"
 LIVE_PLANNER_OUTCOME_SCHEMA = "v3b.planner-outcome.v1"
 LIVE_PLANNER_STARTED_SCHEMA = "v3b.planner-started.v1"
 LIVE_PLANNER_COMPLETED_SCHEMA = "v3b.planner-completed.v1"
+LIVE_PLANNER_FAILURE_SCHEMA = "v3.token-provider-failure.v1"
 
 
 class PlannerActionError(RuntimeError):
@@ -34,6 +35,29 @@ class PlannerActionError(RuntimeError):
 
 class PlannerActionAmbiguous(PlannerActionError):
     """A non-replayable Planner may have run without a durable outcome."""
+
+
+class PlannerActionRejected(PlannerActionError):
+    """A durable provider response was charged but cannot create a Candidate."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        action_id: str,
+        request_ref: str,
+        failure_ref: str,
+        failure_sha256: str,
+        reason: str,
+        cached: bool,
+    ) -> None:
+        super().__init__(message)
+        self.action_id = action_id
+        self.request_ref = request_ref
+        self.failure_ref = failure_ref
+        self.failure_sha256 = failure_sha256
+        self.reason = reason
+        self.cached = cached
 
 
 @dataclass(frozen=True)
@@ -63,6 +87,10 @@ class PreparedPlannerCall:
     @property
     def estimated_tokens(self) -> int:
         return self.estimated_input_tokens + self.max_output_tokens
+
+    @property
+    def effective_max_output_tokens(self) -> int:
+        return self.max_output_tokens
 
 
 class LivePlanner(Protocol):
@@ -388,6 +416,16 @@ class PlannerActionJournal:
             "planner_fingerprint": planner_fingerprint,
             "input_sha256": input_sha256,
             "estimated_input_tokens": prepared.estimated_input_tokens,
+            "configured_max_output_tokens": (
+                prepared.request.get("token_envelope", {}).get(
+                    "configured_max_output_tokens", prepared.max_output_tokens
+                )
+                if isinstance(prepared.request.get("token_envelope"), Mapping)
+                else prepared.max_output_tokens
+            ),
+            "effective_max_output_tokens": prepared.max_output_tokens,
+            "provider_parameter_name": "max_tokens",
+            # Compatibility alias for pre-policy readers.
             "max_output_tokens": prepared.max_output_tokens,
             "request": dict(prepared.request),
         }
@@ -417,10 +455,12 @@ class PlannerActionJournal:
             f"control/live_planner_actions/{action_id}.completed.json"
         )
         output_ref = f"planner/live_outcomes/{action_id}.json"
+        failure_ref = f"planner/provider_failures/{action_id}.json"
         started_path = self.run_root / started_ref
         completed_path = self.run_root / completed_ref
         output_path = self.run_root / output_ref
-        for destination in (started_path, completed_path, output_path):
+        failure_path = self.run_root / failure_ref
+        for destination in (started_path, completed_path, output_path, failure_path):
             _assert_safe_destination(self.run_root, destination)
 
         expected_started = {
@@ -442,6 +482,56 @@ class PlannerActionJournal:
                 or completed_path.exists()
             ),
         )
+        if output_path.exists() and failure_path.exists():
+            raise PlannerActionError(
+                "live Planner has both proposal and failure outcomes"
+            )
+        if failure_path.exists():
+            if failure_path.is_symlink():
+                raise PlannerActionError("live Planner failure is a symbolic link")
+            self._verify_started(started_path, expected_started)
+            failure = self._load_failure(
+                failure_path,
+                action_id=action_id,
+                input_sha256=input_sha256,
+                planner_fingerprint=planner_fingerprint,
+            )
+            failure_sha256 = _sha256_file(failure_path)
+            usage = failure.get("usage")
+            if isinstance(usage, Mapping) and usage.get("usage_complete") is True:
+                self._reconcile_failure_ledger(
+                    action_id=action_id,
+                    failure_ref=failure_ref,
+                    failure_sha256=failure_sha256,
+                    failure=failure,
+                )
+                _write_once_or_verify(
+                    completed_path,
+                    self._failure_completed_record(
+                        action_id=action_id,
+                        action_request=action_request,
+                        failure_ref=failure_ref,
+                        failure_sha256=failure_sha256,
+                        failure=failure,
+                    ),
+                )
+                raise PlannerActionRejected(
+                    "live Planner provider output was durably rejected",
+                    action_id=action_id,
+                    request_ref=request_ref,
+                    failure_ref=failure_ref,
+                    failure_sha256=failure_sha256,
+                    reason=str(failure.get("truncation_reason") or failure.get("error_type")),
+                    cached=True,
+                )
+            if self.budget.has_pending(action_id):
+                self.budget.mark_ambiguous_conservative(
+                    action_id,
+                    reason="provider failure has UNKNOWN token usage and cannot be replayed",
+                )
+            raise PlannerActionAmbiguous(
+                "live Planner failure has unknown usage and will not be replayed"
+            )
         if output_path.exists():
             if output_path.is_symlink():
                 raise PlannerActionError("live Planner outcome is a symbolic link")
@@ -525,6 +615,59 @@ class PlannerActionJournal:
         _after_started(action_id)
         try:
             proposal = planner.invoke(prepared)
+        except RepairProviderError as exc:
+            failure = self._provider_failure_record(
+                action_id=action_id,
+                input_sha256=input_sha256,
+                planner_fingerprint=planner_fingerprint,
+                prepared=prepared,
+                error=exc,
+            )
+            _atomic_json(failure_path, failure)
+            failure_sha256 = _sha256_file(failure_path)
+            if exc.usage_complete:
+                self.budget.complete(
+                    action_id=action_id,
+                    result_ref=failure_ref,
+                    result_sha256=failure_sha256,
+                    elapsed_s=exc.duration_seconds,
+                    tokens_used=exc.input_tokens + exc.output_tokens,
+                    input_tokens=exc.input_tokens,
+                    output_tokens=exc.output_tokens,
+                    cached_input_tokens=exc.cached_input_tokens,
+                )
+                _write_once_or_verify(
+                    completed_path,
+                    self._failure_completed_record(
+                        action_id=action_id,
+                        action_request=action_request,
+                        failure_ref=failure_ref,
+                        failure_sha256=failure_sha256,
+                        failure=failure,
+                    ),
+                )
+                raise PlannerActionRejected(
+                    "live Planner provider output was durably rejected",
+                    action_id=action_id,
+                    request_ref=request_ref,
+                    failure_ref=failure_ref,
+                    failure_sha256=failure_sha256,
+                    reason=str(
+                        exc.truncation_reason or type(exc).__name__
+                    ),
+                    cached=False,
+                ) from exc
+            if self.budget.has_pending(action_id):
+                self.budget.mark_ambiguous_conservative(
+                    action_id,
+                    reason=(
+                        "live Planner provider failure has UNKNOWN usage and "
+                        "cannot be replayed"
+                    ),
+                )
+            raise PlannerActionAmbiguous(
+                "live Planner failed with unknown usage after non-replayable dispatch"
+            ) from exc
         except Exception as exc:
             if self.budget.has_pending(action_id):
                 self.budget.mark_ambiguous_conservative(
@@ -593,6 +736,148 @@ class PlannerActionJournal:
             completed_ref=completed_ref,
             cached=False,
         )
+
+    @staticmethod
+    def _provider_failure_record(
+        *,
+        action_id: str,
+        input_sha256: str,
+        planner_fingerprint: str,
+        prepared: PreparedPlannerCall,
+        error: RepairProviderError,
+    ) -> dict[str, object]:
+        envelope = prepared.request.get("token_envelope")
+        configured = (
+            envelope.get("configured_max_output_tokens")
+            if isinstance(envelope, Mapping)
+            else prepared.max_output_tokens
+        )
+        reason = error.truncation_reason
+        usage_complete = bool(error.usage_complete)
+        actual_input = error.input_tokens if usage_complete else None
+        actual_output = error.output_tokens if usage_complete else None
+        return {
+            "schema_version": LIVE_PLANNER_FAILURE_SCHEMA,
+            "action_id": action_id,
+            "input_sha256": input_sha256,
+            "planner_fingerprint": planner_fingerprint,
+            "outcome": "PROVIDER_OUTPUT_REJECTED",
+            "error_type": type(error).__name__,
+            "error_message": str(error),
+            "response_excerpt": error.response_excerpt,
+            "requested_max_output_tokens": configured,
+            "effective_max_output_tokens": prepared.max_output_tokens,
+            "provider_parameter_name": "max_tokens",
+            "finish_reason": error.finish_reason,
+            "output_truncated": bool(error.output_truncated),
+            "truncation_reason": reason,
+            "json_incomplete": reason == "JSON_INCOMPLETE",
+            "patch_incomplete": reason == "PATCH_INCOMPLETE",
+            "usage": {
+                "actual_input_tokens": actual_input,
+                "actual_output_tokens": actual_output,
+                "actual_total_tokens": (
+                    error.input_tokens + error.output_tokens
+                    if usage_complete
+                    else None
+                ),
+                "cached_input_tokens": (
+                    error.cached_input_tokens if usage_complete else None
+                ),
+                "duration_seconds": error.duration_seconds,
+                "request_id": error.request_id,
+                "usage_complete": usage_complete,
+            },
+        }
+
+    @staticmethod
+    def _load_failure(
+        path: Path,
+        *,
+        action_id: str,
+        input_sha256: str,
+        planner_fingerprint: str,
+    ) -> dict[str, object]:
+        value = _read_json_object(path)
+        if (
+            value.get("schema_version") != LIVE_PLANNER_FAILURE_SCHEMA
+            or value.get("action_id") != action_id
+            or value.get("input_sha256") != input_sha256
+            or value.get("planner_fingerprint") != planner_fingerprint
+            or value.get("outcome") != "PROVIDER_OUTPUT_REJECTED"
+            or not isinstance(value.get("usage"), Mapping)
+        ):
+            raise PlannerActionError("live Planner failure identity is invalid")
+        return value
+
+    def _reconcile_failure_ledger(
+        self,
+        *,
+        action_id: str,
+        failure_ref: str,
+        failure_sha256: str,
+        failure: Mapping[str, object],
+    ) -> None:
+        usage = failure.get("usage")
+        if not isinstance(usage, Mapping) or usage.get("usage_complete") is not True:
+            raise PlannerActionError("provider failure usage is incomplete")
+        input_tokens = int(usage.get("actual_input_tokens") or 0)
+        output_tokens = int(usage.get("actual_output_tokens") or 0)
+        cached_input_tokens = int(usage.get("cached_input_tokens") or 0)
+        completed = self.budget.completed_event(action_id)
+        if completed is not None:
+            if (
+                completed.get("result_ref") != failure_ref
+                or completed.get("result_sha256") != failure_sha256
+                or completed.get("input_tokens") != input_tokens
+                or completed.get("output_tokens") != output_tokens
+                or completed.get("tokens_used") != input_tokens + output_tokens
+            ):
+                raise PlannerActionError("provider failure Ledger mismatch")
+            return
+        if self.budget.is_ambiguous(action_id):
+            raise PlannerActionError(
+                "provider failure appeared after an ambiguous close"
+            )
+        if not self.budget.has_pending(action_id):
+            raise PlannerActionError("provider failure has no pending Ledger action")
+        self.budget.complete(
+            action_id=action_id,
+            result_ref=failure_ref,
+            result_sha256=failure_sha256,
+            elapsed_s=float(usage.get("duration_seconds") or 0.0),
+            tokens_used=input_tokens + output_tokens,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cached_input_tokens=cached_input_tokens,
+        )
+
+    @staticmethod
+    def _failure_completed_record(
+        *,
+        action_id: str,
+        action_request: Mapping[str, object],
+        failure_ref: str,
+        failure_sha256: str,
+        failure: Mapping[str, object],
+    ) -> dict[str, object]:
+        usage = failure.get("usage")
+        assert isinstance(usage, Mapping)
+        return {
+            "schema_version": LIVE_PLANNER_COMPLETED_SCHEMA,
+            "action_id": action_id,
+            "status": "COMPLETED",
+            "request": dict(action_request),
+            "outcome": "PROVIDER_OUTPUT_REJECTED",
+            "result_ref": failure_ref,
+            "result_sha256": failure_sha256,
+            "truncation_reason": failure.get("truncation_reason"),
+            "finish_reason": failure.get("finish_reason"),
+            "tokens_used": usage.get("actual_total_tokens"),
+            "input_tokens": usage.get("actual_input_tokens"),
+            "output_tokens": usage.get("actual_output_tokens"),
+            "cached_input_tokens": usage.get("cached_input_tokens"),
+        }
 
     @staticmethod
     def _load_outcome(

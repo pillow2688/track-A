@@ -65,6 +65,10 @@ class RepairProviderError(V1Error):
         duration_seconds: float = 0.0,
         request_id: str | None = None,
         response_excerpt: str | None = None,
+        finish_reason: str | None = None,
+        output_truncated: bool = False,
+        truncation_reason: str | None = None,
+        usage_complete: bool = True,
     ) -> None:
         super().__init__(message)
         self.input_tokens = input_tokens
@@ -73,6 +77,10 @@ class RepairProviderError(V1Error):
         self.duration_seconds = duration_seconds
         self.request_id = request_id
         self.response_excerpt = response_excerpt
+        self.finish_reason = finish_reason
+        self.output_truncated = bool(output_truncated)
+        self.truncation_reason = truncation_reason
+        self.usage_complete = bool(usage_complete)
 
 
 _HUNK = re.compile(
@@ -112,6 +120,12 @@ class PatchProposal:
     expected_effect: str | None = None
     risk: str | None = None
     required_validation: tuple[str, ...] = ("csim", "synth", "cosim")
+    finish_reason: str | None = None
+    output_truncated: bool = False
+    truncation_reason: str | None = None
+    provider_parameter_name: str | None = None
+    requested_max_output_tokens: int | None = None
+    effective_max_output_tokens: int | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.patch, str) or not self.patch.strip():
@@ -124,6 +138,16 @@ class PatchProposal:
             raise ValueError("provider duration must be finite and non-negative")
         if any(stage not in {"csim", "synth", "cosim"} for stage in self.required_validation):
             raise ValueError("required validation contains an unsupported stage")
+        if not isinstance(self.output_truncated, bool):
+            raise ValueError("output_truncated must be boolean")
+        for name in ("requested_max_output_tokens", "effective_max_output_tokens"):
+            value = getattr(self, name)
+            if value is not None and (
+                isinstance(value, bool) or not isinstance(value, int) or value <= 0
+            ):
+                raise ValueError(f"{name} must be a positive integer or null")
+        if self.output_truncated and not self.truncation_reason:
+            raise ValueError("truncated provider output requires a reason")
 
     @property
     def tokens_used(self) -> int:
@@ -151,8 +175,24 @@ class PatchProposal:
             "expected_effect",
             "risk",
             "required_validation",
+            "finish_reason",
+            "output_truncated",
+            "truncation_reason",
+            "provider_parameter_name",
+            "requested_max_output_tokens",
+            "effective_max_output_tokens",
         }
-        if set(value) != expected:
+        legacy = expected.difference(
+            {
+                "finish_reason",
+                "output_truncated",
+                "truncation_reason",
+                "provider_parameter_name",
+                "requested_max_output_tokens",
+                "effective_max_output_tokens",
+            }
+        )
+        if frozenset(value) not in {frozenset(expected), frozenset(legacy)}:
             missing = sorted(expected.difference(value))
             extra = sorted(set(value).difference(expected))
             raise ValueError(
@@ -192,6 +232,10 @@ class PatchProposal:
             not isinstance(item, str) for item in validations
         ):
             raise ValueError("proposal required_validation must be a string list")
+        if "output_truncated" in value and not isinstance(
+            value["output_truncated"], bool
+        ):
+            raise ValueError("proposal output_truncated must be boolean")
         return cls(
             patch=required_text("patch"),
             provider=required_text("provider"),
@@ -207,6 +251,34 @@ class PatchProposal:
             expected_effect=optional_text("expected_effect"),
             risk=optional_text("risk"),
             required_validation=tuple(validations),
+            finish_reason=(
+                optional_text("finish_reason") if "finish_reason" in value else None
+            ),
+            output_truncated=(
+                value["output_truncated"]
+                if isinstance(value.get("output_truncated"), bool)
+                else False
+            ),
+            truncation_reason=(
+                optional_text("truncation_reason")
+                if "truncation_reason" in value
+                else None
+            ),
+            provider_parameter_name=(
+                optional_text("provider_parameter_name")
+                if "provider_parameter_name" in value
+                else None
+            ),
+            requested_max_output_tokens=(
+                token_count("requested_max_output_tokens")
+                if value.get("requested_max_output_tokens") is not None
+                else None
+            ),
+            effective_max_output_tokens=(
+                token_count("effective_max_output_tokens")
+                if value.get("effective_max_output_tokens") is not None
+                else None
+            ),
         )
 
 

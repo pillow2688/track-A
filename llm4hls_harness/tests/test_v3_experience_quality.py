@@ -257,6 +257,21 @@ class GuidanceQualityTests(unittest.TestCase):
             self.assertEqual(saved["quality_decision"]["decision"], "INJECT")
             self.assertLessEqual(saved["quality_decision"]["guidance_tokens"], 600)
 
+    def test_dynamic_cap_below_minimum_abstains_instead_of_blocking_planner(self) -> None:
+        query = self.query()
+        records = [self.record(1), self.record(2)]
+        retrieval = WeightedKNNRetriever().retrieve(query, records)
+        ranking = BayesianStrategyRanker().rank(query, retrieval.considered)
+        result = GuidanceQualityGate().evaluate(
+            query,
+            retrieval,
+            ranking,
+            prompt_token_limit=120,
+        )
+        self.assertEqual(result.decision["decision"], "ABSTAIN")
+        self.assertEqual(result.decision["abstain_reason"], "PROMPT_TOKEN_LIMIT")
+        self.assertEqual(result.decision["guidance_tokens"], 0)
+
     def test_loro_reports_required_metrics_without_task_identity(self) -> None:
         records = [
             self.record(1),

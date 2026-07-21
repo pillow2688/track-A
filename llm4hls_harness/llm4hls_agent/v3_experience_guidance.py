@@ -887,6 +887,7 @@ class ExperienceCoordinator:
         query: Mapping[str, object],
         *,
         snapshot: ExperienceSnapshot | None = None,
+        prompt_token_limit: int | None = None,
     ) -> GuidanceResult:
         validated = validate_experience_query(query)
         frozen = snapshot or self._snapshot
@@ -901,7 +902,11 @@ class ExperienceCoordinator:
             validated,
             retrieval,
             ranking,
-            prompt_token_limit=self.max_guidance_tokens,
+            prompt_token_limit=(
+                self.max_guidance_tokens
+                if prompt_token_limit is None
+                else min(self.max_guidance_tokens, max(0, int(prompt_token_limit)))
+            ),
         )
         guidance = quality.prompt_guidance
         if not records and quality.decision.get("decision") == "ABSTAIN":
@@ -936,6 +941,7 @@ class ExperienceCoordinator:
         remaining_credits: int | None = None,
         remaining_tokens: int = 1,
         no_improvement_rounds: int = 0,
+        prompt_token_limit: int | None = None,
     ) -> dict[str, object]:
         """Stable Planner-adapter API returning only bounded guidance."""
 
@@ -958,7 +964,10 @@ class ExperienceCoordinator:
             remaining_tokens=remaining_tokens,
             no_improvement_rounds=no_improvement_rounds,
         )
-        return self.recommend(query).guidance
+        return self.recommend(
+            query,
+            prompt_token_limit=prompt_token_limit,
+        ).guidance
 
     def persist_recommendation(
         self, round_index: int, guidance: Mapping[str, object]

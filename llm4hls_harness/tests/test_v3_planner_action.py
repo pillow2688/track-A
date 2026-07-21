@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import llm4hls_agent.v3_planner_action as planner_action_module
 from llm4hls_agent.budget import BudgetConfig, BudgetExceeded, BudgetLedger
-from llm4hls_agent.repair import PatchProposal
+from llm4hls_agent.repair import PatchProposal, RepairProviderError
 from llm4hls_agent.v3_planner import (
     build_planner_input,
     canonical_json,
@@ -17,6 +17,7 @@ from llm4hls_agent.v3_planner import (
 from llm4hls_agent.v3_planner_action import (
     PlannerActionAmbiguous,
     PlannerActionJournal,
+    PlannerActionRejected,
     PreparedPlannerCall,
 )
 
@@ -399,6 +400,47 @@ class V3PlannerActionJournalTests(unittest.TestCase):
         self.assertEqual(snapshot["tokens_used"], 50)
         self.assertFalse(snapshot["token_usage_complete"])
         self.assertEqual(snapshot["tool_used"]["llm"], 1)
+        self.assertEqual(
+            list((self.run_root / "planner" / "live_outcomes").glob("*.json")),
+            [],
+        )
+
+    def test_truncated_provider_output_is_durable_charged_and_not_replayed(self) -> None:
+        class TruncatedPlanner(FakeLivePlanner):
+            def invoke(self, prepared: PreparedPlannerCall) -> PatchProposal:
+                self.invoke_calls += 1
+                raise RepairProviderError(
+                    "provider output is incomplete",
+                    input_tokens=17,
+                    output_tokens=30,
+                    cached_input_tokens=2,
+                    duration_seconds=0.2,
+                    request_id="truncated-request",
+                    response_excerpt='{"hypothesis":"cut off",',
+                    finish_reason="length",
+                    output_truncated=True,
+                    truncation_reason="PROVIDER_LENGTH_LIMIT",
+                    usage_complete=True,
+                )
+
+        planner = TruncatedPlanner()
+        with self.assertRaises(PlannerActionRejected) as first:
+            self.execute(self.journal(), planner)
+        with self.assertRaises(PlannerActionRejected) as second:
+            self.execute(self.journal(), planner)
+
+        self.assertFalse(first.exception.cached)
+        self.assertTrue(second.exception.cached)
+        self.assertEqual(first.exception.failure_ref, second.exception.failure_ref)
+        self.assertEqual(planner.invoke_calls, 1)
+        failure = self.run_root / first.exception.failure_ref
+        self.assertTrue(failure.is_file())
+        self.assertIn("PROVIDER_LENGTH_LIMIT", failure.read_text(encoding="utf-8"))
+        snapshot = self.ledger().snapshot()
+        self.assertEqual(snapshot["tokens_used"], 47)
+        self.assertEqual(snapshot["input_tokens_used"], 17)
+        self.assertEqual(snapshot["output_tokens_used"], 30)
+        self.assertTrue(snapshot["token_usage_complete"])
         self.assertEqual(
             list((self.run_root / "planner" / "live_outcomes").glob("*.json")),
             [],

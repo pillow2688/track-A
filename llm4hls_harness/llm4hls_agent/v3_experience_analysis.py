@@ -13,6 +13,7 @@ import io
 import json
 import math
 import os
+import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -75,6 +76,8 @@ class PublicRunArtifactResolver:
         patterns = (
             "**/candidates/*/patch.diff",
             "**/planner/proposal_*.json",
+            "**/planner/requests/*.json",
+            "**/planner/live_outcomes/*.json",
             "**/control/package_manifest.json",
         )
         for root_value in roots:
@@ -109,6 +112,8 @@ class PublicRunArtifactResolver:
         run_root: Path | None = None
         candidate_source = ""
         parent_source = ""
+        token_envelope: dict[str, object] = {}
+        proposal_round_index: int | None = None
         for path in matched:
             run_root = run_root or self._run_root(path)
             if path.name == "patch.diff":
@@ -125,8 +130,26 @@ class PublicRunArtifactResolver:
                     )
             elif path.parent.name == "planner" and path.suffix == ".json":
                 proposal = _read_json(path)
+                round_match = re.fullmatch(r"proposal_(\d+)\.json", path.name)
+                if round_match:
+                    proposal_round_index = int(round_match.group(1))
                 if not patch and isinstance(proposal.get("patch"), str):
                     patch = str(proposal["patch"])
+            elif path.parent.name == "requests" and path.suffix == ".json":
+                request_audit = _read_json(path)
+                adapter_request = request_audit.get("request")
+                raw_envelope = (
+                    adapter_request.get("token_envelope")
+                    if isinstance(adapter_request, Mapping)
+                    else None
+                )
+                if isinstance(raw_envelope, Mapping):
+                    token_envelope = dict(raw_envelope)
+            elif path.parent.name == "live_outcomes" and path.suffix == ".json":
+                live_outcome = _read_json(path)
+                raw_proposal = live_outcome.get("proposal")
+                if isinstance(raw_proposal, Mapping):
+                    proposal = dict(raw_proposal)
         config: dict[str, object] = {}
         task_spec: dict[str, object] = {}
         if run_root is not None:
@@ -144,7 +167,146 @@ class PublicRunArtifactResolver:
                 parent_source = baseline_sources[0].read_text(
                     encoding="utf-8", errors="replace"
                 )
+            # Candidate v1 records normally bind the round proposal, not every
+            # Planner journal artifact.  Resolve the corresponding action from
+            # the terminal token table so new real runs carry their exact
+            # TokenEnvelope into derived Experience v2 without expanding v1.
+            if not token_envelope and proposal_round_index is not None:
+                result_path = run_root / "v3_prototype_result.json"
+                terminal = _read_json(result_path) if result_path.is_file() else {}
+                token_rows = terminal.get("token_policy_rounds")
+                token_rows = token_rows if isinstance(token_rows, list) else []
+                token_row = next(
+                    (
+                        item
+                        for item in token_rows
+                        if isinstance(item, Mapping)
+                        and item.get("round") == proposal_round_index
+                        and isinstance(item.get("action_id"), str)
+                    ),
+                    None,
+                )
+                if isinstance(token_row, Mapping):
+                    action_id = str(token_row["action_id"])
+                    started_path = (
+                        run_root
+                        / "control"
+                        / "live_planner_actions"
+                        / f"{action_id}.started.json"
+                    )
+                    started = _read_json(started_path) if started_path.is_file() else {}
+                    action_request = started.get("request")
+                    request_ref = (
+                        action_request.get("request_ref")
+                        if isinstance(action_request, Mapping)
+                        else None
+                    )
+                    request_path: Path | None = None
+                    if (
+                        isinstance(request_ref, str)
+                        and request_ref
+                        and not Path(request_ref).is_absolute()
+                        and ".." not in Path(request_ref).parts
+                    ):
+                        candidate_request_path = (run_root / request_ref).resolve()
+                        try:
+                            candidate_request_path.relative_to(run_root.resolve())
+                        except ValueError:
+                            pass
+                        else:
+                            if _safe_public_path(candidate_request_path):
+                                request_path = candidate_request_path
+                    request_audit = (
+                        _read_json(request_path)
+                        if request_path is not None and request_path.is_file()
+                        else {}
+                    )
+                    adapter_request = request_audit.get("request")
+                    raw_envelope = (
+                        adapter_request.get("token_envelope")
+                        if isinstance(adapter_request, Mapping)
+                        else None
+                    )
+                    if isinstance(raw_envelope, Mapping):
+                        token_envelope = dict(raw_envelope)
+                    outcome_path = (
+                        run_root / "planner" / "live_outcomes" / f"{action_id}.json"
+                    )
+                    outcome = _read_json(outcome_path) if outcome_path.is_file() else {}
+                    raw_proposal = outcome.get("proposal")
+                    if isinstance(raw_proposal, Mapping):
+                        proposal = dict(raw_proposal)
         tool = config.get("tool") if isinstance(config.get("tool"), Mapping) else {}
+        token_policy = None
+        if token_envelope:
+            actual_input = (
+                int(proposal["input_tokens"])
+                if isinstance(proposal.get("input_tokens"), int)
+                else None
+            )
+            actual_output = (
+                int(proposal["output_tokens"])
+                if isinstance(proposal.get("output_tokens"), int)
+                else None
+            )
+            token_policy = {
+                "run_token_limit": int(token_envelope.get("run_token_limit") or 0),
+                "tokens_remaining_before_call": int(
+                    token_envelope.get("tokens_remaining") or 0
+                ),
+                "estimated_base_prompt_tokens": int(
+                    token_envelope.get("estimated_base_prompt_tokens") or 0
+                ),
+                "estimated_guidance_tokens": int(
+                    token_envelope.get("estimated_guidance_tokens") or 0
+                ),
+                "estimated_input_tokens": int(
+                    token_envelope.get("estimated_input_tokens") or 0
+                ),
+                "configured_max_output_tokens": int(
+                    token_envelope.get("configured_max_output_tokens") or 0
+                ),
+                "effective_max_output_tokens": int(
+                    token_envelope.get("effective_max_output_tokens") or 0
+                ),
+                "actual_input_tokens": actual_input,
+                "actual_output_tokens": actual_output,
+                "actual_total_tokens": (
+                    actual_input + actual_output
+                    if actual_input is not None and actual_output is not None
+                    else None
+                ),
+                "context_window_tokens": int(
+                    token_envelope.get("context_window_tokens") or 0
+                ),
+                "future_round_token_reserve": int(
+                    token_envelope.get("future_round_token_reserve") or 0
+                ),
+                "guidance_token_cap": int(
+                    token_envelope.get("guidance_token_cap") or 0
+                ),
+                "guidance_actual_tokens": int(
+                    token_envelope.get("estimated_guidance_tokens") or 0
+                ),
+                "rounds_remaining": int(
+                    token_envelope.get("rounds_remaining") or 0
+                ),
+                "token_pressure": str(
+                    token_envelope.get("token_pressure") or "LOW"
+                ),
+                "finish_reason": proposal.get("finish_reason"),
+                "output_truncated": bool(proposal.get("output_truncated", False)),
+                "truncation_reason": proposal.get("truncation_reason"),
+                "estimator_name": str(
+                    token_envelope.get("estimator_name") or "UNKNOWN"
+                ),
+                "estimator_version": str(
+                    token_envelope.get("estimator_version") or "UNKNOWN"
+                ),
+                "token_policy_version": str(
+                    token_envelope.get("policy_version") or "v3.token-policy.v1"
+                ),
+            }
         return ArtifactResolution(
             MigrationContext(
                 parent_source=parent_source,
@@ -173,6 +335,7 @@ class PublicRunArtifactResolver:
                 round_index=int(proposal["round_index"])
                 if isinstance(proposal.get("round_index"), int)
                 else None,
+                token_policy=token_policy,
             ),
             matched_hashes,
         )

@@ -236,8 +236,10 @@ _TOP_FIELDS = {
     "validation",
     "performance",
     "cost",
+    "token_policy",
     "provenance",
 }
+_LEGACY_TOP_FIELDS = _TOP_FIELDS - {"token_policy"}
 _SOURCE_FIELDS = {
     "run_id",
     "candidate_id",
@@ -321,6 +323,30 @@ _COST_FIELDS = {
     "synth_calls",
     "cosim_calls",
     "wall_time_seconds",
+}
+_TOKEN_POLICY_FIELDS = {
+    "run_token_limit",
+    "tokens_remaining_before_call",
+    "estimated_base_prompt_tokens",
+    "estimated_guidance_tokens",
+    "estimated_input_tokens",
+    "configured_max_output_tokens",
+    "effective_max_output_tokens",
+    "actual_input_tokens",
+    "actual_output_tokens",
+    "actual_total_tokens",
+    "context_window_tokens",
+    "future_round_token_reserve",
+    "guidance_token_cap",
+    "guidance_actual_tokens",
+    "rounds_remaining",
+    "token_pressure",
+    "finish_reason",
+    "output_truncated",
+    "truncation_reason",
+    "estimator_name",
+    "estimator_version",
+    "token_policy_version",
 }
 _PROVENANCE_FIELDS = {
     "artifact_refs",
@@ -456,7 +482,11 @@ def v2_identity_key(record: Mapping[str, object]) -> tuple[str, str, int]:
 def validate_experience_v2(value: Mapping[str, object]) -> dict[str, object]:
     """Validate and canonical-copy one immutable v2 derived record."""
 
-    if set(value) != _TOP_FIELDS or value.get("schema_version") != EXPERIENCE_V2_SCHEMA:
+    fields = set(value)
+    if (
+        fields != _TOP_FIELDS
+        and fields != _LEGACY_TOP_FIELDS
+    ) or value.get("schema_version") != EXPERIENCE_V2_SCHEMA:
         raise ExperienceValidationError("v2 experience top-level fields mismatch")
     source = _object(value.get("source"), _SOURCE_FIELDS, "source")
     problem = _object(value.get("problem"), _PROBLEM_FIELDS, "problem")
@@ -465,6 +495,11 @@ def validate_experience_v2(value: Mapping[str, object]) -> dict[str, object]:
     validation = _object(value.get("validation"), _VALIDATION_FIELDS, "validation")
     performance = _object(value.get("performance"), _PERFORMANCE_FIELDS, "performance")
     cost = _object(value.get("cost"), _COST_FIELDS, "cost")
+    token_policy = (
+        _object(value.get("token_policy"), _TOKEN_POLICY_FIELDS, "token_policy")
+        if "token_policy" in value
+        else None
+    )
     provenance = _object(value.get("provenance"), _PROVENANCE_FIELDS, "provenance")
 
     taxonomy = value.get("taxonomy_versions")
@@ -601,6 +636,59 @@ def validate_experience_v2(value: Mapping[str, object]) -> dict[str, object]:
     assert wall is not None
     if wall < 0:
         raise ExperienceValidationError("wall time cannot be negative")
+
+    if token_policy is not None:
+        for name in (
+            "run_token_limit",
+            "tokens_remaining_before_call",
+            "estimated_base_prompt_tokens",
+            "estimated_guidance_tokens",
+            "estimated_input_tokens",
+            "configured_max_output_tokens",
+            "effective_max_output_tokens",
+            "context_window_tokens",
+            "future_round_token_reserve",
+            "guidance_token_cap",
+            "guidance_actual_tokens",
+            "rounds_remaining",
+        ):
+            _nonnegative_int(token_policy.get(name), f"token_policy.{name}")
+        for name in (
+            "actual_input_tokens",
+            "actual_output_tokens",
+            "actual_total_tokens",
+        ):
+            item = token_policy.get(name)
+            if item is not None:
+                _nonnegative_int(item, f"token_policy.{name}")
+        actual_input = token_policy.get("actual_input_tokens")
+        actual_output = token_policy.get("actual_output_tokens")
+        actual_total = token_policy.get("actual_total_tokens")
+        if (
+            actual_input is not None
+            and actual_output is not None
+            and actual_total != actual_input + actual_output
+        ):
+            raise ExperienceValidationError("token policy actual total mismatch")
+        if token_policy.get("token_pressure") not in {
+            "LOW",
+            "MEDIUM",
+            "HIGH",
+            "CRITICAL",
+        }:
+            raise ExperienceValidationError("token policy pressure is invalid")
+        _bool(token_policy.get("output_truncated"), "token_policy.output_truncated")
+        for name in (
+            "finish_reason",
+            "truncation_reason",
+        ):
+            _text(token_policy.get(name), f"token_policy.{name}", nullable=True)
+        for name in (
+            "estimator_name",
+            "estimator_version",
+            "token_policy_version",
+        ):
+            _text(token_policy.get(name), f"token_policy.{name}")
 
     refs = provenance.get("artifact_refs")
     if not isinstance(refs, list) or len(refs) > 32:

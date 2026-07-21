@@ -92,6 +92,23 @@ class ExperienceMLTests(unittest.TestCase):
         self.assertEqual(len(continues), 1)
         self.assertFalse(continues[0]["labels"]["next_round_improved"])
 
+    def test_token_policy_is_exported_as_cost_and_feasibility_context(self) -> None:
+        export = build_ml_datasets(self.records)
+        strategy = export["datasets"]["strategy_ranking"][0]["features"]
+        self.assertEqual(strategy["patch_complexity"], "SMALL")
+        self.assertEqual(strategy["token_cost_context"]["token_pressure"], "MEDIUM")
+        self.assertEqual(
+            strategy["token_cost_context"]["effective_max_output_tokens"], 1400
+        )
+        cosim = export["datasets"]["cosim_risk"][0]["features"]
+        self.assertEqual(cosim["token_context"]["token_pressure"], "MEDIUM")
+        evidence = export["datasets"]["evidence_selection"][0]["features"]
+        self.assertEqual(
+            evidence["context_token_profile"]["guidance_actual_tokens"], 200
+        )
+        continuation = export["datasets"]["continue_value"][0]["features"]
+        self.assertIn("future_round_token_reserve", continuation["token_policy"])
+
     def test_dataset_rows_have_no_task_identity_or_forbidden_content(self) -> None:
         export = build_ml_datasets(self.records)
         rendered = json.dumps(export["datasets"], sort_keys=True).casefold()
