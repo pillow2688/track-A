@@ -17,6 +17,7 @@ from .v3_experience_v2 import (
     BOTTLENECK_SUBTYPES_BY_MODE,
     FAILURE_SUBTYPES_BY_MODE,
     MODES,
+    STRATEGIES_BY_MODE,
     TASK_SPLITS_V2,
     v2_identity_key,
     validate_experience_v2,
@@ -356,6 +357,8 @@ _QUERY_FIELDS = {
     "current_candidate_id",
     "current_patch_digest",
     "toolchain",
+    "backend_fingerprint",
+    "prompt_version",
     "exclude_same_task_family",
 }
 
@@ -374,6 +377,8 @@ def build_kb_query(
     current_candidate_id: str | None = None,
     current_patch_digest: str | None = None,
     toolchain: str = "Vitis 2025.2",
+    backend_fingerprint: str = "UNKNOWN",
+    prompt_version: str = "UNKNOWN",
     exclude_same_task_family: bool = False,
 ) -> dict[str, object]:
     value: dict[str, object] = {
@@ -391,6 +396,8 @@ def build_kb_query(
         "current_candidate_id": current_candidate_id,
         "current_patch_digest": current_patch_digest,
         "toolchain": toolchain,
+        "backend_fingerprint": backend_fingerprint,
+        "prompt_version": prompt_version,
         "exclude_same_task_family": exclude_same_task_family,
     }
     value["query_id"] = canonical_sha256({**value, "query_id": ""})
@@ -419,6 +426,27 @@ def validate_kb_query(value: Mapping[str, object]) -> dict[str, object]:
         raise ValueError("query structure features must be an object")
     if not isinstance(value.get("strategy_context"), list):
         raise ValueError("query strategy context must be a list")
+    allowed_strategies = STRATEGIES_BY_MODE[str(mode)]
+    if any(item not in allowed_strategies for item in value["strategy_context"]):
+        raise ValueError("query strategy context is invalid for mode")
+    for name in ("toolchain", "backend_fingerprint", "prompt_version"):
+        item = value.get(name)
+        if not isinstance(item, str) or not item or len(item) > 160:
+            raise ValueError(f"query {name} is invalid")
+        folded = item.casefold()
+        if "/home/" in folded or "api_key" in folded or "authorization" in folded:
+            raise ValueError(f"query {name} contains unsafe data")
+    for name in ("current_run_id", "current_candidate_id"):
+        item = value.get(name)
+        if item is not None and (not isinstance(item, str) or not item or len(item) > 160):
+            raise ValueError(f"query {name} is invalid")
+    patch_digest = value.get("current_patch_digest")
+    if patch_digest is not None and (
+        not isinstance(patch_digest, str)
+        or len(patch_digest) != 64
+        or any(character not in "0123456789abcdef" for character in patch_digest)
+    ):
+        raise ValueError("query current_patch_digest is invalid")
     if not isinstance(value.get("exclude_same_task_family"), bool):
         raise ValueError("query family exclusion must be boolean")
     expected = canonical_sha256({**dict(value), "query_id": ""})
@@ -492,6 +520,8 @@ class ExplainableSimilarCaseRetriever:
         compare("algorithm_family", query["algorithm_family"], source["algorithm_family"], 2.0)
         compare("requires_cosim", query["structure_features"].get("requires_cosim"), problem["requires_cosim"], 1.5)
         compare("toolchain", query["toolchain"], source["toolchain"], 1.0)
+        compare("backend_fingerprint", query["backend_fingerprint"], source["backend_fingerprint"], 0.5)
+        compare("prompt_version", query["prompt_version"], source["prompt_version"], 0.25)
         for name, weight in (
             ("has_dataflow", 1.5),
             ("has_stream", 1.5),
