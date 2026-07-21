@@ -171,7 +171,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--experience-max-guidance-tokens",
         type=int,
-        default=1100,
+        default=600,
         help="Conservative upper bound for the serialized advisory summary.",
     )
     return parser
@@ -417,6 +417,7 @@ def main(argv: list[str] | None = None) -> int:
             # artifacts.  This is idempotent across CLI retries/checkpoint
             # resumes and intentionally writes to a run-local store so a
             # frozen pilot seed cannot learn from earlier tasks in the batch.
+            experience_dir = Path(args.run_dir).resolve() / "experience"
             try:
                 from .v3_experience_importer import (
                     ImportPolicy,
@@ -425,7 +426,6 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 from .v3_experience_store import JsonlExperienceRepository
 
-                experience_dir = Path(args.run_dir).resolve() / "experience"
                 local_repository = JsonlExperienceRepository(
                     experience_dir / "experience_records.jsonl"
                 )
@@ -450,6 +450,32 @@ def main(argv: list[str] | None = None) -> int:
                     {
                         "postprocess_status": "FAILED_OPEN",
                         "postprocess_error_type": type(exc).__name__,
+                    }
+                )
+            # Recommendation attribution has an independent fail-open boundary:
+            # a Candidate import problem must not hide whether the Planner
+            # followed the frozen recommendation, and vice versa.
+            try:
+                from .v3_experience_attribution import (
+                    persist_recommendation_attributions,
+                )
+
+                attribution = persist_recommendation_attributions(
+                    Path(args.run_dir).resolve(), result
+                )
+                experience_ingest.update(
+                    {
+                        "attribution_status": "COMPLETE",
+                        "attribution_records": attribution["record_count"],
+                        "attribution_inserted": attribution["inserted"],
+                        "attribution_duplicates": attribution["duplicates"],
+                    }
+                )
+            except Exception as exc:
+                experience_ingest.update(
+                    {
+                        "attribution_status": "FAILED_OPEN",
+                        "attribution_error_type": type(exc).__name__,
                     }
                 )
     except Exception as exc:

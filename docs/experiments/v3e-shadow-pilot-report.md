@@ -4,19 +4,23 @@
 
 ## 状态
 
-`BLOCKED / NOT_RUN`。12 个计划 slot 全部保留在机器结果中，没有启动任何真实模型请求，也没有启动对应的 Vitis run，因此不能计算 shadow 成功率、建议一致率或 Token/Credit/时间均值。
+`BLOCKED / INCOMPLETE`。本轮确实启动了一个新的 A01 批次，但它运行在禁止网络 socket 的沙箱中。前 6 题完成了真实 Vitis baseline 并在 Planner HTTP dispatch 后失败，第 7 题完成 baseline CSim/Synth 后被主动中断；剩余 5 题未启动。没有任何题形成 terminal result，因此不能计算 shadow 成功率、建议一致率或最终 Token/Credit/时间均值。
 
 计划任务：`001, 002, 003, 009, 010, 011, 015, 016, 017, 021, 022, 028`。
 
 ## 阻塞原因
 
-本地已有模型配置，Vitis 2025.2 也可用；但当前运行平台拒绝把标记为 `hidden_like` 的工作区任务内容发送给外部 OpenAI-compatible 模型。该限制发生在进程启动前。我们没有把 split 改成 train/dev 绕过，也没有生成伪造 run。
+本地模型配置和 Vitis 2025.2 均可用。独立的最小 DeepSeek 探测在允许网络后返回 HTTP 200，证明 endpoint、key 和 `deepseek-v4-pro` 有效。A01 的失败原因是沙箱禁止网络 socket，不是模型配置或 Quality Gate。
+
+随后计划使用全新 A02 目录在允许网络的执行环境重跑，但平台拒绝把标记为 `hidden_like` 的本地派生任务上下文发送给外部模型。A02 在创建 run 目录前被拦截。我们没有修改 split 绕过，也没有伪造结果。
 
 因此：
 
-- `experience_recommendations.jsonl` 当前为 0 条真实推荐；
-- `pilot_results.jsonl` 中 12 个 shadow slot 都是 `execution_started=false`、`attempt_status=NOT_RUN`；
-- 0 Token、0 Credit、0 工具调用不是实验结果，只表示未执行。
+- A01 保留 7 个独立 run 目录：6 个 `PlannerActionAmbiguous` 失败，1 个中断；
+- 前 6 题的 Quality Gate 均为 `ABSTAIN`，所以模型 Prompt 没有注入经验；
+- 失败的 6 次 LLM ledger 各按非重放动作保守预留 8428–9485 tokens，这不是 provider 返回的实际 usage；
+- A01 共完成 7 次 CSim、4 次 Synth、0 次 CoSim，消耗 19 credits；
+- A02 没有创建，因此不存在可误解为成功的空 run。
 
 ## 已验证的 shadow 工程性质
 

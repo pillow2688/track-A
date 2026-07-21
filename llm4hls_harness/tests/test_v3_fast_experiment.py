@@ -326,6 +326,15 @@ class V3FastExperimentTests(unittest.TestCase):
                     thread_id=f"experience-{mode}",
                 )
                 self.assertEqual(result["status"], "DONE")
+                if mode == "guided":
+                    self.assertEqual(
+                        {
+                            stage: result["final_validation"][stage]["status"]
+                            for stage in ("csim", "synth", "cosim")
+                        },
+                        {"csim": "PASS", "synth": "PASS", "cosim": "PASS"},
+                    )
+                    self.assertLessEqual(result["budget"]["credits_used"], 40)
 
         self.assertEqual(prompts["off"], prompts["shadow"])
         self.assertNotIn("EXPERIENCE GUIDANCE", prompts["shadow"])

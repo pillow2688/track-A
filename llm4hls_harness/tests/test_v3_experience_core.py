@@ -205,13 +205,17 @@ class ExperienceCoreTests(unittest.TestCase):
     def test_guidance_rejects_extra_answer_bearing_fields(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             repository = JsonlExperienceRepository(Path(directory) / "experience.jsonl")
-            repository.put_if_absent(self.record(1))
+            for index in (1, 2):
+                record = self.record(index)
+                record["evidence_features"]["primary_bottleneck"] = "MEMORY_SCHEDULING"
+                repository.put_if_absent(record)
             guidance = ExperienceCoordinator(repository).build_guidance(
                 mode="OPTIMIZE",
                 source=self.dot_source,
                 description="Compute a dot product reduction.",
                 current_run_id="query-run",
                 remaining_tokens=100,
+                synth_evidence={"primary_bottleneck": "MEMORY_SCHEDULING"},
             )
         guidance["recommended_strategy_bundles"][0]["golden_patch"] = (
             "/home/user/private.cpp"
@@ -295,7 +299,7 @@ class ExperienceCoreTests(unittest.TestCase):
                         success=index % 3 != 0,
                     )
                 )
-            coordinator = ExperienceCoordinator(repository, max_guidance_tokens=1100)
+            coordinator = ExperienceCoordinator(repository, max_guidance_tokens=600)
             guidance = coordinator.build_guidance(
                 mode="OPTIMIZE",
                 source=self.dot_source,
@@ -305,7 +309,7 @@ class ExperienceCoreTests(unittest.TestCase):
                 remaining_tokens=100,
             )
             rendered = json.dumps(guidance, sort_keys=True)
-            self.assertLessEqual(estimated_guidance_tokens(guidance), 1100)
+            self.assertLessEqual(estimated_guidance_tokens(guidance), 600)
             self.assertNotIn("sensitive-public-task-name", rendered)
             self.assertIn("recommended_strategy_bundles", guidance)
 

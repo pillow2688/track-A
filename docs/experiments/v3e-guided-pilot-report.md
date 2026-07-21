@@ -4,16 +4,16 @@
 
 ## 状态
 
-`BLOCKED / NOT_RUN`。guided 必须在 shadow 完成后，使用相同 12 题、模型、validation profile、预算和冻结 seed，在独立目录重新请求模型。由于 shadow 的外部模型请求被平台数据边界拦截，guided 未启动，也没有可比较的建议帮助/误导案例。
+`SKIPPED BY QUALITY GATE / NOT_RUN`。guided 未启动有两个独立原因：真实 shadow 没有完成；更重要的是 Leave-One-Run-Out 离线门槛明确给出 `SKIP_GUIDED`，因为 18 条真实经验中没有达到阈值的高置信注入案例。此时继续运行 guided 不符合本阶段预先规定的启动条件。
 
-机器汇总明确记录：
+离线汇总明确记录：
 
-- expected tasks：12
-- scheduled guided slots：12
-- actual attempts：0
-- final successes：不可测
-- Token/Credit/wall time：不可测
-- comparison status：`NOT_RUN`
+- coverage：22.22%
+- harmful recommendation rate：0%
+- duplicate-failure suppression：100%
+- average injected guidance：108.17 tokens（ABSTAIN 按实际 Prompt 计 0）
+- high-confidence injections：0
+- guided decision：`SKIP_GUIDED`
 
 不得把上述缺失值解释为 0% 成功率。
 
@@ -30,7 +30,7 @@
 
 ## 可直接运行的本地命令
 
-先完成 shadow，再执行：
+只有离线门槛和 shadow 都通过后，才允许执行：
 
 ```bash
 set -a

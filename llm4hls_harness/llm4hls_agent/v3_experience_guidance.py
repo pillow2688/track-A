@@ -18,7 +18,6 @@ from typing import Mapping, Sequence
 
 from .v3_experience import (
     CONTINUE_ADVISORY_SCHEMA,
-    EXPERIENCE_GUIDANCE_SCHEMA,
     EXPERIENCE_QUERY_SCHEMA,
     EXPERIENCE_SCHEMA,
     RISK_ADVISORY_SCHEMA,
@@ -28,7 +27,6 @@ from .v3_experience import (
     canonical_json,
     canonical_sha256,
     changed_patch_lines,
-    estimated_guidance_tokens,
     normalize_strategy_bundle,
     normalized_patch_hash,
     numeric_bucket,
@@ -37,6 +35,7 @@ from .v3_experience import (
     validate_experience_record,
     validate_guidance,
 )
+from .v3_experience_quality import GuidanceQualityGate, validate_quality_decision
 
 
 def _mapping(value: object) -> Mapping[str, object]:
@@ -837,30 +836,6 @@ class HeuristicContinueAdvisor:
         }
 
 
-def _case_summary(record: Mapping[str, object], *, success: bool) -> dict[str, object]:
-    evidence = _mapping(record["evidence_features"])
-    proposal = _mapping(record["proposal_features"])
-    outcome = _mapping(record["outcome"])
-    before, after = outcome.get("latency_before"), outcome.get("latency_after")
-    if success:
-        result = f"PASS; latency {before}->{after}" if before is not None else "PASS"
-    else:
-        result = f"FAIL:{outcome.get('failure_stage') or 'VALIDATION_OR_NO_GAIN'}"
-    return {
-        "record_id": record["record_id"],
-        "similarity": record.get("_similarity", 0.0),
-        "features": {
-            "failure_type": evidence.get("failure_type"),
-            "primary_bottleneck": evidence.get("primary_bottleneck"),
-            "algorithm_family": record.get("algorithm_family"),
-            "loop_ii": evidence.get("loop_ii"),
-            "trip_count_bucket": evidence.get("trip_count_bucket"),
-        },
-        "strategy_bundle": proposal.get("strategy_bundle"),
-        "outcome": result,
-    }
-
-
 class ExperienceCoordinator:
     """Freeze, retrieve, rank and emit bounded Planner guidance."""
 
@@ -873,7 +848,8 @@ class ExperienceCoordinator:
         ranker: BayesianStrategyRanker | None = None,
         risk_advisor: EmpiricalRiskAdvisor | None = None,
         continue_advisor: HeuristicContinueAdvisor | None = None,
-        max_guidance_tokens: int = 1100,
+        quality_gate: GuidanceQualityGate | None = None,
+        max_guidance_tokens: int = 600,
         recommendation_path: str | Path | None = None,
     ) -> None:
         if max_guidance_tokens < 200:
@@ -884,6 +860,7 @@ class ExperienceCoordinator:
         self.ranker = ranker or BayesianStrategyRanker()
         self.risk_advisor = risk_advisor or EmpiricalRiskAdvisor()
         self.continue_advisor = continue_advisor or HeuristicContinueAdvisor()
+        self.quality_gate = quality_gate or GuidanceQualityGate()
         self.max_guidance_tokens = int(max_guidance_tokens)
         self.recommendation_path = Path(recommendation_path) if recommendation_path else None
         # One coordinator corresponds to one run-local seed view.  Freezing here
@@ -892,6 +869,7 @@ class ExperienceCoordinator:
         self._snapshot = self.repository.snapshot()
         self._last_result: GuidanceResult | None = None
         self._last_query: dict[str, object] | None = None
+        self._last_quality_decision: dict[str, object] | None = None
 
     def snapshot_metadata(self) -> dict[str, object]:
         return self._snapshot.to_dict()
@@ -919,44 +897,23 @@ class ExperienceCoordinator:
         continuation = self.continue_advisor.advise(
             validated, retrieval.considered, ranking
         )
-        guidance: dict[str, object] = {
-            "schema_version": EXPERIENCE_GUIDANCE_SCHEMA,
-            "similar_successes": [
-                _case_summary(item, success=True) for item in retrieval.successes
-            ],
-            "similar_failures": [
-                _case_summary(item, success=False) for item in retrieval.failures
-            ],
-            "recommended_strategy_bundles": list(
-                ranking["recommended_strategy_bundles"]
-            ),
-            "discouraged_strategy_bundles": list(
-                ranking["discouraged_strategy_bundles"]
-            ),
-            "confidence": ranking["confidence"],
-            "supporting_record_ids": list(ranking["supporting_record_ids"]),
-            "fallback_reason": ranking["fallback_reason"]
-            if records
-            else "NO_ELIGIBLE_EXPERIENCE",
-            "notice": "Historical advice only; current evidence and all harness gates remain authoritative.",
-        }
-        # Keep the most valuable content first, trimming deterministically.
-        while estimated_guidance_tokens(guidance) > self.max_guidance_tokens:
-            if guidance["similar_failures"]:
-                guidance["similar_failures"].pop()
-            elif guidance["similar_successes"]:
-                guidance["similar_successes"].pop()
-            elif guidance["discouraged_strategy_bundles"]:
-                guidance["discouraged_strategy_bundles"].pop()
-            elif guidance["recommended_strategy_bundles"]:
-                guidance["recommended_strategy_bundles"].pop()
-            elif guidance["supporting_record_ids"]:
-                guidance["supporting_record_ids"].pop()
-            else:
-                raise ValueError("guidance limit cannot fit the minimum safe schema")
+        quality = self.quality_gate.evaluate(
+            validated,
+            retrieval,
+            ranking,
+            prompt_token_limit=self.max_guidance_tokens,
+        )
+        guidance = quality.prompt_guidance
+        if not records and quality.decision.get("decision") == "ABSTAIN":
+            # Preserve the established empty-store reason for old reports while
+            # the quality decision records the more detailed gate outcome.
+            guidance = dict(guidance)
+            guidance["fallback_reason"] = "NO_ELIGIBLE_EXPERIENCE"
+            guidance = validate_guidance(guidance)
         result = GuidanceResult(validate_guidance(guidance), risk, continuation, frozen)
         self._last_result = result
         self._last_query = validated
+        self._last_quality_decision = quality.decision
         return result
 
     def build_guidance(
@@ -1012,19 +969,24 @@ class ExperienceCoordinator:
             raise ValueError("round_index must be non-negative")
         if self.recommendation_path is None:
             return {"persisted": False, "reason": "RECOMMENDATION_STORE_DISABLED"}
-        if self._last_result is None or self._last_query is None:
+        if (
+            self._last_result is None
+            or self._last_query is None
+            or self._last_quality_decision is None
+        ):
             raise ValueError("build_guidance/recommend must run before persistence")
         validated = validate_guidance(guidance)
         if canonical_json(validated) != canonical_json(self._last_result.guidance):
             raise ValueError("guidance does not match the coordinator's frozen result")
         payload: dict[str, object] = {
-            "schema_version": "v3e.recommendation.v1",
+            "schema_version": "v3e.recommendation.v2",
             "recommendation_id": canonical_sha256(
                 {
                     "query_id": self._last_query["query_id"],
                     "round_index": int(round_index),
                     "snapshot": self._last_result.snapshot.to_dict(),
                     "guidance": validated,
+                    "quality_decision": self._last_quality_decision,
                 }
             ),
             "round_index": int(round_index),
@@ -1044,6 +1006,9 @@ class ExperienceCoordinator:
             },
             "snapshot": self._last_result.snapshot.to_dict(),
             "guidance": validated,
+            "quality_decision": validate_quality_decision(
+                self._last_quality_decision
+            ),
             "risk_advisory": self._last_result.risk_advisory,
             "continue_advisory": self._last_result.continue_advisory,
         }

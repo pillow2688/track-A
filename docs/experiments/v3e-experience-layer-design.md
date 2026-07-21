@@ -28,6 +28,9 @@ V3-E 已作为一层可插拔建议系统接到现有 V3-D 上。它不会改变
                  v
       贝叶斯策略排序 + 风险/继续建议
                  |
+          Guidance Quality Gate
+          INJECT / ABSTAIN
+                 |
           off / shadow / guided
                  |
                  v
@@ -49,7 +52,10 @@ V3-E 已作为一层可插拔建议系统接到现有 V3-D 上。它不会改变
 | `llm4hls_agent/v3_experience.py` | 经验记录、查询、建议、Protocol 和安全校验的版本化契约 |
 | `llm4hls_agent/v3_experience_store.py` | append-only JSONL、文件锁、幂等写入、崩溃尾部恢复、冻结快照 |
 | `llm4hls_agent/v3_experience_guidance.py` | 固定特征提取、加权 kNN、贝叶斯排序、Risk/Continue advisory |
+| `llm4hls_agent/v3_experience_quality.py` | 判断历史建议是否达到注入门槛；冲突或证据不足时 ABSTAIN，默认上限 600 tokens |
 | `llm4hls_agent/v3_experience_importer.py` | 从历史真实 run 提取 Candidate 记录，排除 fixture/oracle |
+| `llm4hls_agent/v3_experience_attribution.py` | 在 run 结束后幂等重建“模型是否采用建议、采用后结果如何” |
+| `llm4hls_agent/v3_experience_loro.py` | Leave-One-Run-Out 离线评估覆盖率、命中率、有害建议率和失败抑制率 |
 | `llm4hls_agent/v3_openai_planner.py` | 把经验层接入 Planner；保证 off 等价、shadow fail-open、guided 有界注入 |
 | `llm4hls_agent/openai_provider.py` | 在三类 Planner Prompt 中渲染可选经验摘要 |
 | `llm4hls_agent/v3_prototype_cli.py` | `--experience-mode/store/task-split` 入口和 run-local 经验导出 |
@@ -72,8 +78,14 @@ V3-E 已作为一层可插拔建议系统接到现有 V3-D 上。它不会改变
 - 非完整 `Final CSim + Synth + CoSim PASS` 不记作 final success。
 - 只有真实、已物化 Candidate 进入默认统计；Patch rejection 只进入审计。
 
+## Guidance Quality Gate
+
+Gate 只允许同 mode、同已知 failure type 或 bottleneck、来自 train split 的真实 `REAL_LLM_VITIS` Candidate 提供支持。默认至少需要两条支持记录；当前轮已尝试策略、纯失败策略和与当前 Evidence 冲突的策略不能再次推荐。Oracle、golden、scripted、deterministic/demo fixture 都不能成为成功证据。
+
+`ABSTAIN` 是正常安全结果，不是报错。此时 Planner 收到原始 Prompt，经验层只留下审计记录。`INJECT` 时也只加入不超过 600 tokens 的策略摘要，不加入源码、Patch、完整日志、task ID 或隐藏信息。
+
 ## 当前限制
 
 完整 Candidate 经验目前在 run 终止后从哈希绑定 artifacts 重建；因此进程在终局前被强杀时，已完成 Candidate 的结构化经验可能要靠后续 importer 恢复。它不影响原有 Candidate/工具证据，但这是下一步最值得补的可靠性缺口。
 
-真实 12 题外部模型 pilot 本次被运行平台的数据边界阻止，尚无 shadow/guided 效果结论；详见两份 pilot 报告。
+当前只有 18 条可训练真实 Candidate。离线回放中只有 STRUCTURAL_FIX 达到注入门槛，且没有高置信度案例；因此最主要缺口不是继续增加算法，而是积累更多相同语义上下文下的真实成功和失败 Candidate。真实 12 题 shadow 仍被运行平台的外部数据边界阻止；详见 Quality Gate 与 pilot 报告。
