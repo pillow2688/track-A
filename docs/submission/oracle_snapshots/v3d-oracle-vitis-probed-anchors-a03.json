@@ -1,0 +1,50 @@
+{
+  "backend": {
+    "disclaimer": "structured real Vitis evidence",
+    "evidence_class": "real_vitis",
+    "fingerprint": "b84f5ebdb7e1f50cfa3c159f3f8d3bbe76a5cbf22c4dcca0c7c3375ae5b3489c",
+    "name": "vitis",
+    "real_anchor_authorized": true
+  },
+  "corpus": {
+    "manifest_sha256": "9e374fa49e4c68315080ab93ba2f395deea5ae682dd145b791e1db52c2198691",
+    "schema_version": "v3d.fast-corpus.v1",
+    "selected_tasks": 4
+  },
+  "counts": {
+    "accepted": 4,
+    "fixture_acceptances": 0,
+    "pending": 0,
+    "real_vitis_anchors": 4,
+    "rejected": 0
+  },
+  "execution": {
+    "attempted_this_run": 4,
+    "elapsed_seconds": 328.6016154940007,
+    "resumed_tasks": 0,
+    "serial": true,
+    "state_counts": {
+      "ACCEPTED": 4,
+      "PENDING": 0,
+      "REJECTED": 0,
+      "RUNNING": 0
+    },
+    "stopped_reason": null
+  },
+  "generated_at": "2026-07-21T03:00:50.278683+00:00",
+  "oracle_pass": true,
+  "real_anchor": {
+    "authorized": true,
+    "count": 4,
+    "task_ids": [
+      "v3d_fast_015",
+      "v3d_fast_016",
+      "v3d_fast_017",
+      "v3d_fast_028"
+    ]
+  },
+  "runner_version": "v3d.corpus-oracle-runner.v2",
+  "schema_version": "v3d.submission-oracle-snapshot.v1",
+  "source_sha256": "75666d6f851125258ce6743867d871501214eb10b6e5d3999a64ac5df361bac5",
+  "status": "COMPLETE"
+}
