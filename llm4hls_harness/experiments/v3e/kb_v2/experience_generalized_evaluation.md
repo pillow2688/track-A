@@ -1,6 +1,6 @@
 # V3-E Experience 泛化离线评估
 
-评估真实可排名 Candidate：18。
+评估真实可排名 Candidate：76。
 
 | Holdout | Coverage | 成功策略命中 | 有害建议率 | 重复失败抑制 | 泄漏率 | 平均 Guidance Token |
 |---|---:|---:|---:|---:|---:|---:|

@@ -8,6 +8,7 @@ from llm4hls_agent.v3_experience_normalizer import (
     MigrationContext,
     StrategyNormalizer,
     classify_algorithm_family,
+    infer_failure_subtype_from_observed,
     migrate_v1_to_v2,
     task_family_hash,
 )
@@ -70,6 +71,25 @@ float partial_sum[4]; for(int lane=0;lane<4;lane++) partial_sum[lane]=0;
         right = self.normalizer.normalize(mode="REPAIR", declared_strategy=None, patch="")
         self.assertEqual(left, right)
         self.assertEqual(left.observed_strategy_atoms, ("OTHER_FUNCTIONAL_REPAIR",))
+
+    def test_unambiguous_observed_fix_refines_only_coarse_failure(self) -> None:
+        self.assertEqual(
+            infer_failure_subtype_from_observed(
+                "FUNCTIONAL_MISMATCH_OTHER", ("FIX_ARRAY_INDEX",)
+            ),
+            "WRONG_ARRAY_INDEX",
+        )
+        self.assertEqual(
+            infer_failure_subtype_from_observed(
+                "SYNTHESIS_ERROR_OTHER",
+                ("REPLACE_UNSUPPORTED_STL", "REMOVE_RECURSION"),
+            ),
+            "SYNTHESIS_ERROR_OTHER",
+        )
+        self.assertEqual(
+            infer_failure_subtype_from_observed("OFF_BY_ONE", ("FIX_LOOP_BOUND",)),
+            "OFF_BY_ONE",
+        )
 
     def test_algorithm_and_task_family_ignore_mutation_constants(self) -> None:
         first = "void kernel(int a[16], int o[16]) { for(int i=0;i<15;i++) o[i]=a[i]*3+7; }"

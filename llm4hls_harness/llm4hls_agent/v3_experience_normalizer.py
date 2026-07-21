@@ -119,6 +119,37 @@ _FAILURE_TO_STRATEGY = {
     "RTL_C_MISMATCH": "FIX_RTL_C_SEMANTICS",
 }
 
+_OBSERVED_STRATEGY_TO_FAILURE = {
+    "FIX_LOOP_BOUND": "WRONG_LOOP_BOUND",
+    "FIX_ARRAY_INDEX": "WRONG_ARRAY_INDEX",
+    "RESTORE_OMITTED_TERM": "OMITTED_TERM",
+    "FIX_BRANCH_CONDITION": "WRONG_BRANCH_CONDITION",
+    "FIX_SIGN": "WRONG_SIGN",
+    "FIX_COEFFICIENT": "WRONG_COEFFICIENT",
+    "FIX_INITIALIZATION": "BAD_INITIALIZATION",
+    "FIX_ACCUMULATION": "BAD_ACCUMULATION",
+    "FIX_NUMERIC_CAST": "NUMERIC_CAST_OR_TRUNCATION",
+    "FIX_OUT_OF_BOUNDS": "OUT_OF_BOUNDS",
+    "REMOVE_DYNAMIC_ALLOCATION": "DYNAMIC_ALLOCATION",
+    "REPLACE_UNSUPPORTED_STL": "UNSUPPORTED_STL",
+    "REWRITE_UNSUPPORTED_CALL": "UNSUPPORTED_CALL",
+    "REMOVE_RECURSION": "RECURSION",
+    "STATICIZE_LOOP_BOUND": "NON_STATIC_LOOP_BOUND",
+    "REPLACE_UNSYNTHESIZABLE_TYPE": "UNSYNTHESIZABLE_TYPE",
+    "REDUCE_RESOURCE_PRESSURE": "RESOURCE_LIMIT",
+    "FIX_CLOCK_CONSTRAINT": "CLOCK_CONSTRAINT",
+    "REWRITE_DEPENDENCY": "DEPENDENCY_PREVENTS_SYNTHESIS",
+    "BALANCE_STREAM_COUNTS": "STREAM_COUNT_MISMATCH",
+    "INTERLEAVE_STREAM_WRITES": "PRODUCER_BURST_DEADLOCK",
+    "REORDER_STREAM_OPERATIONS": "STREAM_ORDER_MISMATCH",
+    "INCREASE_FIFO_DEPTH": "FIFO_DEPTH_INSUFFICIENT",
+    "BREAK_DATAFLOW_CYCLE": "DATAFLOW_DEPENDENCY_CYCLE",
+    "REBALANCE_PRODUCER_CONSUMER": "PRODUCER_CONSUMER_RATE_MISMATCH",
+    "FIX_STREAM_ORDER": "STREAM_ORDER_MISMATCH",
+    "FIX_INTERFACE_PROTOCOL": "INTERFACE_PROTOCOL_MISMATCH",
+    "FIX_RTL_C_SEMANTICS": "RTL_C_MISMATCH",
+}
+
 
 def _changed_lines(patch: str) -> tuple[list[str], list[str]]:
     added: list[str] = []
@@ -484,6 +515,26 @@ def classify_failure_subtype(
     return "UNKNOWN"
 
 
+def infer_failure_subtype_from_observed(
+    current: str, observed_strategy_atoms: Sequence[str]
+) -> str:
+    """Use an unambiguous observed fix to refine an OTHER/UNKNOWN subtype."""
+
+    if current not in {
+        "UNKNOWN",
+        "FUNCTIONAL_MISMATCH_OTHER",
+        "SYNTHESIS_ERROR_OTHER",
+        "STRUCTURAL_ERROR_OTHER",
+    }:
+        return current
+    candidates = {
+        _OBSERVED_STRATEGY_TO_FAILURE[atom]
+        for atom in observed_strategy_atoms
+        if atom in _OBSERVED_STRATEGY_TO_FAILURE
+    }
+    return next(iter(candidates)) if len(candidates) == 1 else current
+
+
 def classify_bottleneck_subtype(evidence: Mapping[str, object], source: str = "") -> str:
     text = " ".join(
         str(evidence.get(name) or "")
@@ -602,6 +653,9 @@ def migrate_v1_to_v2(
             "bottleneck_subtype": bottleneck_subtype,
         },
         validation={"patch_valid": outcome.get("patch_valid")},
+    )
+    failure_subtype = infer_failure_subtype_from_observed(
+        failure_subtype, normalization.observed_strategy_atoms
     )
     if not ctx.patch:
         total = int(proposal.get("patch_lines") or 0)
@@ -733,6 +787,7 @@ __all__ = [
     "classify_algorithm_family",
     "classify_bottleneck_subtype",
     "classify_failure_subtype",
+    "infer_failure_subtype_from_observed",
     "migrate_v1_to_v2",
     "task_family_hash",
 ]
