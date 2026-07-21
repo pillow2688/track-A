@@ -7,6 +7,8 @@
   "oracle_summary": "docs/submission/oracle_snapshots/v3d-oracle-deterministic-diverse-final-20260720-r02.json",
   "real_anchor_release": "llm4hls_harness/releases/v3d-corpus-oracle-anchors-2026-07-20.json",
   "vitis_probe_rerun_release": "llm4hls_harness/releases/v3d-vitis-probed-anchor-rerun-2026-07-21.json",
+  "xsim_recovery_snapshot": "docs/submission/oracle_snapshots/v3d-oracle-vitis-probed-anchors-a03.json",
+  "execution_summary_release": "llm4hls_harness/releases/v3d-overnight-daytime-summary-2026-07-21.json",
   "replay_release": "llm4hls_harness/releases/v3d-real-vitis-replay-acceptance-2026-07-20.json",
   "curated_runs": [
     {
@@ -60,8 +62,8 @@
     }
   ],
   "blockers": {
-    "real_llm": "当前 Codex 进程未设置 OPENAI_BASE_URL、OPENAI_API_KEY、LLM4HLS_MODEL；因此本轮无法完成 projection A04、STRUCTURAL_FIX 和 SYNTH_FIX 的新原子真实 LLM+Vitis 成功 run。",
-    "model_matrix": "TODO：配置真实 endpoint/key/model 后，运行 DeepSeek 官方三题各3次及 Qwen 同配置矩阵；当前没有可报告的新矩阵平均值或成功率。",
-    "docker": "当前会话访问 /var/run/docker.sock 被拒绝；新四模式入口已通过宿主专项验收，但必须恢复 daemon 权限后重建镜像才能生成当前源码的新 digest。"
+    "real_llm": "DeepSeek 四种 mode 的真实 LLM + Vitis fresh-final 闭环已经完成；当前外部模型阻塞仅为 Qwen serving 配置。",
+    "model_matrix": "DeepSeek 官方三题各 3 次和额外 synth-fix 3 次已经完成；Qwen3.5/Qwen3.6 缺少可达 endpoint、key 和服务端真实 model alias，因此仍为 NOT RUN。",
+    "docker": "源码/镜像基线 a796da3 已重建为 llm4hls-v3d:git-a796da3fc50b，demo-smoke 和容器 382 项快速测试通过；Vitis 仍由宿主外部 runtime 提供。"
   }
 }

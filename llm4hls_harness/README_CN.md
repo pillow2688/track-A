@@ -1,14 +1,14 @@
-# LLM4HLS Agent — 内部里程碑 V0–V3-C
+# LLM4HLS Agent — 内部里程碑 V0–V3-D
 
 [English](README.md) | 简体中文
 
-> 当前代码已经推进到 V3-C。新人和团队复盘请先阅读
-> [《当前系统说明与团队月度进展（2026-07-20）》](../doc/docs/2026-07-20-current-system-and-team-progress.md)。
+> 当前代码已经推进到 V3-D。新人和团队复盘请先阅读
+> [《当前系统说明与团队月度进展（首次发布 2026-07-20，更新至 2026-07-21）》](../doc/docs/2026-07-20-current-system-and-team-progress.md)。
 > 本 README 的 V0–V3-A1 内容保留用于历史命令和兼容说明，不再代表最新阶段总览。
 
 V0 至 V4 是本项目的内部工程里程碑，不是比赛官方阶段。比赛提供的示例名为 **Reference Agent & Evaluation Harness**。两者的范围、接口和实现差异见[中文对比文档](../doc/materials/02_harness/2026-07-14-official-reference-vs-internal-v0.md)。
 
-V0 提供不可变、受预算审计的 `csim -> synth -> cosim` baseline。V1 增加确定性失败诊断、紧凑修复上下文、受限 unified diff、隔离 Candidate、真实验证和安全回滚。V2 增加持久 Candidate 树、PPA/成本比较、多轮 best 保留、CoSim gate 和最终复验。V3-A 将这些步骤拆成可 checkpoint 的 LangGraph 动作；V3-B 接入真实 OpenAI-compatible Planner 和 fast-experiment 多轮优化；V3-C 再加入纯 Python PhaseRouter，使同一个 Planner 能按 `REPAIR`、`SYNTH_FIX`、`STRUCTURAL_FIX`、`OPTIMIZE` 四种模式工作。当前代码状态、真实结果和后续计划以顶部链接的团队月报为准。
+V0 提供不可变、受预算审计的 `csim -> synth -> cosim` baseline。V1 增加确定性失败诊断、紧凑修复上下文、受限 unified diff、隔离 Candidate、真实验证和安全回滚。V2 增加持久 Candidate 树、PPA/成本比较、多轮 best 保留、CoSim gate 和最终复验。V3-A 将这些步骤拆成可 checkpoint 的 LangGraph 动作；V3-B 接入真实 OpenAI-compatible Planner 和 fast-experiment 多轮优化；V3-C 再加入纯 Python PhaseRouter，使同一个 Planner 能按 `REPAIR`、`SYNTH_FIX`、`STRUCTURAL_FIX`、`OPTIMIZE` 四种模式工作。V3-D 在同一 Graph 外增加 28 题 corpus、Oracle、批量 Benchmark、TopInterfaceGuard、Docker/clean-room 和 submission QA 工具与草稿。当前代码状态、真实结果和后续计划以顶部链接的团队月报为准。
 
 `runs/v1-deepseek-final` 是 DeepSeek 曾成功修复 `FUNCTIONAL_MISMATCH` 的历史证据，但它早于严格 Candidate/action 绑定和 Artifact Manifest，必须重新生成，不能代表 V1 完成。只有 `FUNCTIONAL_MISMATCH`、`COMPILE_ERROR`、`SYNTHESIS_ERROR` 都具备真实 DeepSeek/Vitis 证据，并且独立的 `PATCH_INVALID` 安全负例通过确定性验收器，才可宣布 V1 完成。
 
@@ -189,11 +189,23 @@ preflight 报告 `vitis-run v2025.2`、`VITIS_PREFLIGHT_ONLY`、
 `runs/container/p8-host-20260720-r03/`；synthetic summary 会记录 CSim/Synth/CoSim 真实调用均为 0，
 fixture call。这是 host-entrypoint fixture 证据，不是 clean container 结果。
 
-当前会话无法重新构建或运行更新后的镜像：访问 `/var/run/docker.sock` 被拒绝，sandbox
-提升后仍失败，sudo 又需要无法提供的密码。因此上面的 digest 只代表最后一次成功的前序
-构建，不能宣称包含新的四模式入口。Docker daemon 权限恢复后，必须重新执行本文 build、
-`official-smoke` 和 `quick-tests` 三条命令。本次 P8 smoke/preflight 均未启动 CSim、Synth
-或 CoSim，不能作为真实 Vitis 验证证据。
+### P8 源码/镜像基线重建记录（2026-07-21）
+
+Docker daemon 本身正常，socket 保持安全的 `root:docker 660`。用户已在 `docker` 组中，
+但当前 Codex 父进程没有重新加载附加组，因此本次通过 `sg docker -c` 使用现有组权限，
+没有重启 daemon、改变 socket 所有权或执行危险的 `chmod 666`。
+
+源码基线 `a796da3fc50bb187cad68034c7dfc99e413f3837` 已重建为：
+
+- `llm4hls-v3d:py3.12`；
+- `llm4hls-v3d:git-a796da3fc50b`；
+- image ID `sha256:48edd63ee1c7212aa62f9e42692542e29f9d014b0c747a2a40a776864a74636d`；
+- OCI revision label 与完整 HEAD 一致。
+
+内置 `demo-smoke` PASS；用只读源码挂载和 SELinux label 隔离关闭后，容器 quick-tests
+为 382 tests PASS、3 个环境相关 SKIP。宿主同一源码快速回归为 382 tests PASS。
+这些结果只证明 Agent clean-room 和编排；镜像仍不包含专有 Vitis，真实 CSim/Synth/CoSim
+矩阵在宿主外部 Vitis 2025.2 runtime 中串行完成。
 
 ## V1 OpenAI-compatible 修复
 

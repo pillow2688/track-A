@@ -2,6 +2,8 @@
 
 > 自动生成于 2026-07-20T17:29:13+00:00，事实来源：`evidence_manifest.json` 指定的 run JSON。
 > 不读取 hidden/golden，不把脚本 Patch replay 计作真实 LLM。`TODO` 表示缺少实验，绝非 0。
+> 2026-07-21 的真实验收与矩阵段落为人工核对补充；当前 generator 不会重建这些补充，
+> 不可变事实入口是 `llm4hls_harness/releases/v3d-overnight-daytime-summary-2026-07-21.{md,json}`。
 
 ## 0:00–0:40 问题与限制
 
@@ -22,14 +24,14 @@ Candidate 先 CSim，再 Synth。没有严格性能提升就拒绝且不花 CoSi
 ## 3:00–3:50 真实 dotProduct
 
 真实 DeepSeek + Vitis：1027 → 38 cycles，27.03×，Tokens=8128，Credits=35。
-重点解释 baseline transaction interval 约 1025，但 loop achieved II=1；瓶颈是 1024 次串行 transaction/accumulation，不是“缺 PIPELINE”。模型采用 array partition、unroll 和多部分和并行归约。
+重点解释 baseline top transaction interval 约 1025，但 loop achieved II=1；瓶颈是单次 top transaction 内的 1024 次串行 loop accumulation/归约，不是“缺 PIPELINE”。模型采用 array partition、unroll 和多部分和并行归约。
 
 ## 3:50–4:30 Task-aware 三模式
 
-- projection：真实模型 A01–A03 找到功能错误，但旧 Patch policy 拒绝；post-fix 历史 Patch replay 已完成真实 Vitis fresh closure。不得称为新的真实 LLM 成功。
-- structural：residual deadlock 的脚本 Patch replay 已完成真实 Vitis closure；真实 LLM 仍为 TODO。
-- synth-fix：dynamic allocation 的脚本 Patch replay 已完成真实 Vitis closure；真实 LLM 仍为 TODO。
+- projection：A01–A03 暴露旧 Patch 行号策略问题；修复后的 A04 由真实模型生成 Patch，并完成 fresh final 全 PASS。重复矩阵为 3/3。
+- structural：residual baseline CoSim 真实 deadlock，模型修复后 fresh final 全 PASS；重复矩阵为 3/3。
+- synth-fix：dynamic allocation baseline CSim PASS、Synth FAIL，模型修复后 fresh final 全 PASS；重复矩阵为 3/3。
 
 ## 4:30–5:00 总结
 
-收束到三点：任务阶段路由、预算感知验证、可审计证据分级。最后明确当前缺口是重复真实模型矩阵和 hidden grader，而不是用 demo/replay 冒充结果。
+收束到三点：任务阶段路由、预算感知验证、可审计证据分级。DeepSeek 12 次矩阵全部 fresh final PASS；当前缺口是 Qwen serving、公平消融和 hidden grader，而不是继续增加 Agent 架构。

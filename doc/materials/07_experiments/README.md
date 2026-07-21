@@ -30,7 +30,8 @@
 
 当前持续维护的复盘文档：
 
-- [当前系统说明与团队月度进展（2026-07-20）](../../docs/2026-07-20-current-system-and-team-progress.md)
+- [当前系统说明与团队月度进展（更新至 2026-07-21）](../../docs/2026-07-20-current-system-and-team-progress.md)
+- [V3-D 昨夜至今日执行总结](../../../llm4hls_harness/releases/v3d-overnight-daytime-summary-2026-07-21.md)
 - [V1 问题复盘与 V2 开发清单](2026-07-15-v1-errors-and-v2-readiness.md)
 - [V2 核心报告阅读与更新指南](2026-07-18-v2-core-report-guide.md)
 

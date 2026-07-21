@@ -2,6 +2,8 @@
 
 > 自动生成于 2026-07-20T17:29:13+00:00，事实来源：`evidence_manifest.json` 指定的 run JSON。
 > 不读取 hidden/golden，不把脚本 Patch replay 计作真实 LLM。`TODO` 表示缺少实验，绝非 0。
+> 2026-07-21 的 A03、真实验收和矩阵为人工核对补充；当前 generator 不会重建这些补充，
+> 不可变事实入口是 `llm4hls_harness/releases/v3d-overnight-daytime-summary-2026-07-21.{md,json}`。
 
 ## 证据分级
 
@@ -10,7 +12,7 @@
 - `DETERMINISTIC/DEMO`：只验证编排和报告，不作为 HLS 成绩。
 - `REAL_VITIS_ATTEMPT_FAILED`：保留失败事实，不能计入成功率分子。
 
-## 当前审计 run
+## 2026-07-20 历史 curated runs
 
 - `v3b_fast_dotproduct_live_deepseek_retry2`：REAL_LLM / REAL_VITIS_VALIDATED
 - `v3c-real-projection-repair-a01-LOCAL_BUDGET_OVERRIDE`：REAL_LLM / REAL_VITIS_ATTEMPT_FAILED
@@ -24,6 +26,10 @@ Replay release 的证据边界：`llm4hls_harness/releases/v3d-real-vitis-replay
 
 Fail-closed Vitis probe 后的 anchor 重跑：`llm4hls_harness/releases/v3d-vitis-probed-anchor-rerun-2026-07-21.json`：A01=8 accepted/4 rejected；A02 retry=0 accepted/4 rejected；status=PARTIAL_XSIM_BLOCKED。失败来自重复的 XSIM CoSim 启动异常；该结果不是 LLM 成绩。
 
+后续 A03 恢复证据：`docs/submission/oracle_snapshots/v3d-oracle-vitis-probed-anchors-a03.json`：使用全新 run/simulator 工作目录、非沙箱串行重跑，4 accepted / 0 rejected，耗时 328.602 秒；015/016/017 命中预期 baseline deadlock 后 golden CoSim PASS，028 为 39 → 6 cycles。该证据支持瞬态或运行隔离问题，不足以把根因武断归到一个具体缓存文件。
+
+2026-07-21 真实模型矩阵：DeepSeek 官方三题 9/9 DONE、9/9 fresh final 全 PASS；加上 synth-fix 共 12/12 DONE，31258 Tokens、526 Credits。逐 run SHA-256 和源码/镜像基线记录见 `llm4hls_harness/releases/v3d-overnight-daytime-summary-2026-07-21.json`。
+
 ## 生成报告
 
 ```bash
@@ -33,6 +39,10 @@ python -m submission_tools.cli generate \
   --manifest "$PROJECT_ROOT/docs/submission/evidence_manifest.json" \
   --output-dir "$PROJECT_ROOT/docs/submission"
 ```
+
+该命令只重建 2026-07-20 generator 管理的基础段落；它不会读取
+`execution_summary_release` 或 `xsim_recovery_snapshot`，因此会覆盖本文件中的 2026-07-21
+人工补充。需要重生成时，应先保存或随后从不可变 release 恢复这些补充。
 
 Batch 原始 summary 可能含本机输出路径，先生成只保留指标与 SHA-256 的脱敏快照，再把快照相对路径加入 `evidence_manifest.json`：
 
@@ -99,7 +109,8 @@ staging 工具直接读取当前 Git HEAD 和工作树状态；环境变量不�
 
 ## 当前外部阻塞
 
-- 当前 Codex 进程未设置 OPENAI_BASE_URL、OPENAI_API_KEY、LLM4HLS_MODEL；因此本轮无法完成 projection A04、STRUCTURAL_FIX 和 SYNTH_FIX 的新原子真实 LLM+Vitis 成功 run。
+- DeepSeek 环境和三种真实修复闭环已经完成。当前模型实验的唯一外部阻塞是 Qwen：缺少可达的 OpenAI-compatible `OPENAI_BASE_URL`、`OPENAI_API_KEY` 和服务端实际 `LLM4HLS_MODEL` alias。
+- 源码/镜像基线 `a796da3` 的 Agent-only Docker 镜像已重建并通过 demo-smoke 与容器快速测试；专有 Vitis 仍使用宿主外部 runtime。
 
 ## 可复现性边界
 

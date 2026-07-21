@@ -1,11 +1,12 @@
 # Track A 当前系统说明与团队月度进展
 
-- 更新时间：2026-07-20
-- 当前代码分支：`feat/v3c-task-aware-router`
-- 当前代码基线：`d1cf869`（V3-C task-aware routing + LLM Patch 唯一上下文重定位）
-- 当前快速回归：`291 tests PASS`
+- 首次发布：2026-07-20
+- 更新时间：2026-07-21
+- 当前代码分支：`feat/v3d-overnight-execution`
+- 当前代码基线：`a796da3`（V3-D corpus/oracle/batch/interface guard/Docker + XSIM A03 恢复报告）
+- 最近完整回归（源码基线 `a796da3`）：宿主 `Ran 382 tests; OK`；容器 `Ran 382 tests; OK (skipped=3)`
 - 报告版本：查看 `git log -1 -- doc/docs/2026-07-20-current-system-and-team-progress.md`
-- 发布状态：当前仅在本地功能分支提交，尚未合并或推送到远端
+- 发布状态：当前功能分支已推送；尚未合并到生产分支
 - 面向读者：第一次接触项目的组员、需要复盘实验的开发者、论文与演示负责人
 - 文档定位：当前事实入口。历史设计文档用于解释“为什么这样设计”，本报告说明“代码现在实际能做什么”
 
@@ -16,7 +17,7 @@
 1. 看第 1 节，知道项目现在做到哪里；
 2. 看第 2.1、2.2 节，把概念职责映射到真实代码并认清常用术语；
 3. 看第 3.0～3.2 节，理解真实系统边界、纵向流程和横向组件；
-4. 看第 8.1、8.3 节，各看一个真实成功和真实失败；
+4. 先看第 8.0 节掌握当前证据，再按需看第 8.1、8.3 节的历史成功与失败；
 5. 看第 10、14 节，知道当前成绩和唯一最高优先级；
 6. 只有准备改代码时，再查第 4、5 节的入口和文件地图。
 
@@ -30,19 +31,20 @@
 
 我们正在做一个自动修改 HLS C++ 的程序。它收到一道题后，先让真实工具产生 baseline 事实；PhaseRouter 只负责选择任务模式，Evidence Extractor 压缩失败或性能信息，再由大模型诊断具体问题并提出 Patch，最后调用 Vitis 验证修改是否正确、能否综合、是否更快。
 
-截至 2026-07-20，最准确的项目状态是：
+截至 2026-07-21，最准确的项目状态是：
 
 1. V0、V1、V2 已经完成各自的工程闭环：V0 保留真实 Vitis baseline 证据，V1/V2 保留真实 LLM + Vitis 验收证据。
 2. V3-A 已把工具节点和 scripted Planner 流程迁移到可 checkpoint 的 LangGraph；V3-B 进一步加入真实、不可重放 LLM 请求的 STARTED/COMPLETED action 记录与恢复边界。
 3. V3-B 已接入真实 OpenAI-compatible Planner，并在官方 `dotProduct_optimize` 上得到一次真实成功结果：Synth worst latency 从 `1027` 降到 `38 cycles`，最终 CSim、Synth、CoSim 全部通过。
-4. V3-C 已加入任务分诊能力，能够区分功能修复、综合修复、RTL 结构修复和性能优化。
-5. V3-C 已对官方 `projection_bugfix` 做了 3 次真实 REPAIR 尝试：真实 Vitis 正确暴露 baseline CSim 失败，PhaseRouter 正确进入 REPAIR，真实 `deepseek-v4-pro` 三次都诊断并修对了漏掉的 `z2 / 3`；但旧 V3 Patch 落地因 diff 行号偏移而在 Candidate 创建前拒绝，三次都未进入 Synth/CoSim。
-6. `d1cf869` 已把现有“唯一、逐字 old-hunk 重定位”能力接入 V3，并覆盖同一官方 projection 的 `@@ -12 → -14` 错位模式；当前 291 项快速测试通过，但修复后尚未重新取得真实 fresh final 证据。
-7. 当前最大的工作重点不是继续扩建框架，而是完成 V3-C 三种非 optimize mode 的真实验收、模型对比、提交材料和复现环境。
+4. V3-C 的任务分诊已经真实闭环：`projection_bugfix` 进入 REPAIR、`residual_stream_deadlock` 进入 STRUCTURAL_FIX、动态分配 fixture 进入 SYNTH_FIX，三者均由真实 `deepseek-v4-pro` 生成 Patch，并通过真实 Vitis fresh final CSim/Synth/CoSim。
+5. V3-D 已新增 28 题 fast corpus、fail-closed Corpus Oracle、批量 Benchmark、TopInterfaceGuard、Docker/clean-room、提交报告和秘密扫描。Deterministic Oracle 为 28 accepted / 0 rejected；可移植真实 Vitis receipts 覆盖四种 mode 各 3 道。
+6. XSIM A01/A02 的 4 个失败任务已在全新 A03 环境串行恢复为 4 accepted / 0 rejected；`015/016/017` 复现预期 deadlock 后 golden CoSim PASS，`028` 从 39 降到 6 cycles。
+7. DeepSeek 已完成官方三题各 3 次和额外 SYNTH_FIX 3 次：12/12 DONE、12/12 fresh final 全 PASS，共 31258 Tokens、526 Credits；dotProduct 三次分别得到 38、518 和安全回退 1027 cycles。
+8. 源码/镜像基线 `a796da3` 的 Docker 镜像已重建并通过 demo-smoke 与容器快速测试；当前唯一不能立即执行的模型矩阵是 Qwen，因为没有可达的 Qwen endpoint/key/model alias。
 
 一句话概括：
 
-> 系统骨架、真实 LLM 接口和真实优化路径已经打通；当前要把“模型会提出正确修复”推进成“修复 Candidate 经过真实 Vitis fresh final 全部通过”。
+> 当前系统已经从“单题原型”进入“可重复实验和提交冻结前验证”阶段；下一步重点是 Qwen 公平矩阵、消融、最终提交格式和论文/视频，而不是继续扩建 Agent 架构。
 
 ## 2. 用最通俗的话理解整个系统
 
@@ -157,6 +159,8 @@ LLM Planner 提出一个 Patch
   ↓
 Patch 安全检查
   ↓
+TopInterfaceGuard 检查顶层硬件 ABI
+  ↓
 创建隔离 Candidate
   ↓
 按任务模式运行验证
@@ -238,6 +242,7 @@ Baseline CSim、Synth PASS，但需要的 CoSim FAIL
 | Budget gate + Ledger | 每轮规划及每次 LLM/工具动作前后 | Graph gate 先判断本轮和 final reserve 是否整体付得起；Ledger 再以 STARTED、COMPLETED/AMBIGUOUS 记录并硬限制每个真实动作的 Token/Credit/次数/runtime | 不能生成 Patch 或提高预算上限 |
 | Candidate Manager | 通过校验的 Patch + parent | 原子保存源码、Patch、hash 和父子关系 | 不决定 promote、reject 或 final |
 | Patch Validator | Planner unified diff + parent source | 校验路径/大小并做唯一精确上下文重定位 | 不接受歧义修改，也不判断性能 |
+| TopInterfaceGuard | Patch 后源码 + baseline 顶层签名 | 在 Candidate 进入 Vitis 前阻止顶层函数名、参数、类型和固定接口被改写 | 不判断算法正确性或优化收益 |
 | ToolServer | Graph 指定的 stage + Candidate | 统一调用、计费、缓存、保存 action 结果 | 不自己选择下一工具或 final |
 | Evidence Extractor | ToolResult 和有限日志 | 压缩成 CSim/Synth/CoSim failure 或 Synth 性能事实 | 不虚构缺失的 II、latency 或根因 |
 | Scoring/Comparator | Candidate Synth/验证结果 | 判断 optimize Candidate 是否严格优于 incumbent | 不覆盖 correctness gate |
@@ -264,6 +269,7 @@ Baseline CSim、Synth PASS，但需要的 CoSim FAIL
   → candidate_000（不可变 baseline）
   → Planner Patch
   → Patch 唯一上下文匹配/安全校验
+  → TopInterfaceGuard 固定顶层硬件 ABI
   → candidates/candidate_NNN/source/<kernel>.cpp
   → CSim/Synth/CoSim
 ```
@@ -318,12 +324,12 @@ Docker/唯一命令/实验矩阵/论文与视频
 
 | 层次 | 当前真实状态 | 提交前目标 | 主要缺口 |
 |---|---|---|---|
-| 任务输入 | 三道官方公开题和少量 fixture | reference-compatible + hidden-like 变体 | 题目覆盖和泛化不足 |
-| 控制面 | 四 mode、预算、checkpoint、final/fallback | 保持现架构，冻结非必要变化 | 三种修复 mode 的真实 final 证据 |
-| 推理面 | DeepSeek 单一 mode-aware Planner 已真实接入 | 至少完成推荐模型可用范围内的公平矩阵 | Qwen 等模型覆盖、重复实验 |
-| 执行面 | Candidate、Patch、ToolServer、Vitis 2025.2 已工作 | 在干净环境稳定复现并控制超时/XSIM 风险 | Docker、环境探测、真实 structural/synth-fix |
+| 任务输入 | 三道官方公开题 + 28 题 V3-D fast corpus | 增加经过真实 Oracle 的高区分度任务 | hidden-like 覆盖仍有限 |
+| 控制面 | 四 mode、预算、checkpoint、final/fallback | 保持现架构，冻结非必要变化 | strict/fast 和两项消融 |
+| 推理面 | DeepSeek mode-aware Planner 已完成 12-run 重复矩阵 | 在完全相同配置下补 Qwen3.5/Qwen3.6 | 缺 Qwen serving 配置 |
+| 执行面 | Candidate、Patch、TopInterfaceGuard、ToolServer、Vitis 2025.2 已工作 | 冻结 Docker/外部 Vitis 部署口径 | 最终官方容器要求待确认 |
 | 评价面 | latency、II、clock、resource 和 public score proxy | 正确性优先，报告可追溯；不冒充 hidden scorer | Power 没有可靠实测，官方最终评分仍可能调整 |
-| 交付面 | 本地 runs 和部分 release/report | 唯一启动命令、脱敏包、实验表、论文、视频 | 冻结、打包和提交 QA |
+| 交付面 | Docker、依赖锁、preflight、release、submission 草稿和 QA 已有 | 最终 staging、论文、视频和官方格式复核 | 尚未形成最终提交包 |
 
 因此目标架构的“升级”主要发生在证据覆盖、任务覆盖和交付层，不是继续新增 Controller、Multi-Agent、RL 或 RAG。
 
@@ -334,9 +340,10 @@ Docker/唯一命令/实验矩阵/论文与视频
 | 要运行的阶段 | 命令入口 | 主要代码 |
 |---|---|---|
 | V0、V1、V2 | `python -m llm4hls_agent ...` | `llm4hls_agent/cli.py` |
-| V3-B、V3-C | `llm4hls-v3-prototype` | `v3_prototype_cli.py` + `v3_prototype.py` |
+| V3-B、V3-C、V3-D 单题 | `llm4hls-v3-prototype` | `v3_prototype_cli.py` + `v3_prototype.py` |
+| V3-D corpus/oracle/batch | `llm4hls-v3d-oracle`、`llm4hls-benchmark` | `v3d_oracle_validator.py` + `v3_batch_benchmark.py` |
 
-V3-C 不是第三套新程序。它是在 V3-B 的同一张 LangGraph 中加入 PhaseRouter 和修复分支。
+V3-C 不是第三套新程序。它是在 V3-B 的同一张 LangGraph 中加入 PhaseRouter 和修复分支。V3-D 也没有再造一张 Agent Graph，而是在外层增加 corpus、Oracle、batch、接口保护和交付工具。
 
 当前若只想理解最新系统，建议阅读顺序是：
 
@@ -347,7 +354,8 @@ V3-C 不是第三套新程序。它是在 V3-B 的同一张 LangGraph 中加入 
 5. `v3_phase_router.py`；
 6. `test_v3_task_aware_smoke.py`；
 7. `budget.py`、`candidate.py`、`tools.py`；
-8. `v3_openai_planner.py` 和 `openai_provider.py`。
+8. `v3_openai_planner.py` 和 `openai_provider.py`；
+9. 需要跑数据集时再看 `v3d_oracle_validator.py`、`v3_batch_benchmark.py` 和 `top_interface_guard.py`。
 
 不要从头通读 `v3_prototype.py`。它是总装文件，应先看 Graph 节点名称，再按节点查函数。
 
@@ -363,6 +371,8 @@ V3-C 不是第三套新程序。它是在 V3-B 的同一张 LangGraph 中加入 
 | [`task.py`](../../llm4hls_harness/llm4hls_agent/task.py) | 读取公开任务并拒绝 hidden/reference 路径 | 增加任务格式或排查加载失败时 |
 | [`workflow.py`](../../llm4hls_harness/llm4hls_agent/workflow.py) | V0 的不可变 baseline 和三工具基础闭环 | 理解底层运行规则时 |
 | [`v3_prototype.py`](../../llm4hls_harness/llm4hls_agent/v3_prototype.py) | 当前 V3 LangGraph 总流程、节点、路由、final 和报告 | 修改 V3 数据流时 |
+| [`v3_batch_benchmark.py`](../../llm4hls_harness/llm4hls_agent/v3_batch_benchmark.py) | 串行执行模型 × 任务 × repeat，失败后继续并区分真实/fixture 证据 | 做重复实验和汇总时 |
+| [`v3d_oracle_validator.py`](../../llm4hls_harness/llm4hls_agent/v3d_oracle_validator.py) | 按 mode 验证 baseline/golden 应命中的门，只让合格题进入 accepted corpus | 扩充或复验数据集时 |
 
 ### 5.2 任务分诊和 Evidence
 
@@ -398,6 +408,7 @@ openai_provider.py   = 真正把请求发给模型
 | [`tools.py`](../../llm4hls_harness/llm4hls_agent/tools.py) | CSim/Synth/CoSim 唯一受预算控制的调用入口 | 缓存、action 绑定、工具结果审计失败 |
 | [`vitis.py`](../../llm4hls_harness/llm4hls_agent/vitis.py) | 真正启动 Vitis 2025.2 并解析报告 | Vitis/XSIM、license、超时、报告解析问题 |
 | [`validation.py`](../../llm4hls_harness/llm4hls_agent/validation.py) | V1/V2 共用的整段验证助手 | 旧流程 Candidate 验证问题 |
+| [`top_interface_guard.py`](../../llm4hls_harness/llm4hls_agent/top_interface_guard.py) | 独立检查 top 函数名、参数、返回类型、public symbol 和 interface pragma 风险 | 防止模型改变硬件 ABI 时 |
 
 ### 5.5 优化、评分和报告
 
@@ -415,12 +426,14 @@ V3 的报告生成目前仍在 `v3_prototype.py` 内部，没有单独拆文件�
 | 路径 | 内容 | 能否当真实成绩 |
 |---|---|---|
 | [`task_corpus/official/`](../../llm4hls_harness/task_corpus/official/) | 三道官方公开题目的本地快照 | 是真实公开题目，但运行结果仍取决于 backend |
+| [`task_corpus/v3d-fast/`](../../llm4hls_harness/task_corpus/v3d-fast/) | 28 道不透明 mutation 任务和 acceptance/golden/hidden-like 隔离 | 只有真实 Vitis/LLM run 才能当真实结果 |
 | [`examples/`](../../llm4hls_harness/examples/) | 团队自建任务和测试 Patch | 只能证明局部能力 |
 | [`tests/`](../../llm4hls_harness/tests/) | 自动单元测试和 deterministic smoke | 不能冒充真实 LLM/Vitis 成绩 |
 | `llm4hls_harness/runs/` | 本机原始实验、工具日志、Planner 输入输出 | 可能是真实证据，但默认不进 Git |
 | [`releases/`](../../llm4hls_harness/releases/) | 已冻结、适合团队共享的阶段报告 | 以每份 release 声明的证据等级为准 |
 | [`doc/materials/`](../materials/) | 官方规则、HLS、环境和实验笔记 | 资料，不是运行证据 |
 | [`docs/superpowers/`](../../docs/superpowers/) | 历史设计规范和实施计划 | 解释设计，不代表当前代码已经实现 |
+| [`docs/submission/`](../../docs/submission/) | 实验表、失败分析、复现、Demo 和 checklist | 提交素材草稿，不等于官方最终格式 |
 
 ### 5.7 想改某件事时先找哪个文件
 
@@ -486,7 +499,7 @@ V3 的报告生成目前仍在 `v3_prototype.py` 内部，没有单独拆文件�
   ≠ hidden grader 得分
 ```
 
-## 7. V0 到 V3-C 到底完成了什么
+## 7. V0 到 V3-D 到底完成了什么
 
 | 阶段 | 通俗目标 | 已完成内容 | 当前状态 |
 |---|---|---|---|
@@ -495,12 +508,33 @@ V3 的报告生成目前仍在 `v3_prototype.py` 内部，没有单独拆文件�
 | V2 | 让模型反复优化并保留最好版本 | Candidate 树、PPA 比较、CoSim gate、多轮优化、final closure、团队报告 | 已冻结发布，不再扩展 |
 | V3-A | 把流程变成可恢复状态机 | LangGraph 节点、checkpoint、scripted Planner/action 哈希、循环级 Synth Evidence | 已完成 |
 | V3-B | 让真实 LLM 自主分析优化 | OpenAI-compatible Planner、live action journal、fast-experiment、多轮拒绝后继续、风险 CoSim gate | optimize 真实闭环已成功 |
-| V3-C | 先判断题型，再进入相应流程 | PhaseRouter、三类失败 Evidence、四种 mode、共享 Candidate/Budget/Final | 代码和 smoke 完成；REPAIR 有真实部分链路，三种修复 mode 均缺完整真实 final 成功 |
-| V4 | 变成可提交、可泛化的比赛系统 | hidden-like 测试、多模型矩阵、Docker/复现包、论文和视频 | 尚未完成 |
+| V3-C | 先判断题型，再进入相应流程 | PhaseRouter、三类失败 Evidence、四种 mode、共享 Candidate/Budget/Final | 三种修复 mode 均有真实 LLM + Vitis fresh final 成功 |
+| V3-D | 从单题 Agent 变成可评测、可复现的候选系统 | 28 题 corpus、Oracle、batch、TopInterfaceGuard、Docker、submission QA 工具与草稿、真实重复矩阵 | 主体完成；Qwen、消融和最终提交冻结待完成 |
+| V4/提交冻结 | 形成官方可复现交付 | 最终容器/外部 Vitis 口径、论文、视频、hidden-like 扩展 | 尚未完成，不再通过新增 Agent 架构推进 |
 
 ## 8. 目前最重要的真实结果
 
-### 8.1 V3-B 官方 dotProduct：真实成功
+### 8.0 2026-07-21 当前证据总览
+
+完整时间线、逐 run 数据和 SHA-256 绑定见：
+
+- [`v3d-overnight-daytime-summary-2026-07-21.md`](../../llm4hls_harness/releases/v3d-overnight-daytime-summary-2026-07-21.md)
+- [`v3d-overnight-daytime-summary-2026-07-21.json`](../../llm4hls_harness/releases/v3d-overnight-daytime-summary-2026-07-21.json)
+
+四种 mode 现在均有真实模型 + 真实 Vitis 原子闭环：
+
+| 任务 | Mode | Tokens | Credits | LLM/CSim/Synth/CoSim | Fresh final |
+|---|---|---:|---:|---:|---|
+| projection A04 | REPAIR | 2043 | 31 | 1/3/2/1 | 全 PASS |
+| residual A01 | STRUCTURAL_FIX | 2216 | 71 | 1/3/2/3 | 全 PASS |
+| synth-fix A01 | SYNTH_FIX | 1675 | 35 | 1/3/3/1 | 全 PASS |
+| dotProduct 独立成功 | OPTIMIZE | 8128 | 35 | 3/3/3/1 | 1027 → 38，Final 全 PASS |
+
+DeepSeek 重复矩阵不是只保留最好值：官方三题 9/9 DONE、9/9 fresh final 全 PASS；加上额外 synth-fix 后共 12/12 DONE、31258 Tokens、526 Credits、15/38/32/18 次 LLM/CSim/Synth/CoSim、1645.641 秒。dotProduct 三次分别为 `1027 → 38`、`1027 → 518`、`1027 → 1027 baseline fallback`。
+
+XSIM A03 对 A01/A02 的四个失败任务使用全新目录重跑后为 4 accepted / 0 rejected；源码/镜像基线 `a796da3` 的 Docker 镜像也已重建并通过 demo-smoke 和 382 项容器测试。下面 8.1～8.3 保留较早的独立成功、smoke 和失败历史，用于解释系统怎样走到当前状态，不应再当作最新结论。
+
+### 8.1 历史独立 dotProduct：真实成功
 
 运行目录（仅本机存在，不提交 Git）：
 
@@ -565,7 +599,7 @@ ARRAY_PARTITION + LOOP_UNROLL + MULTI_PARTIAL_SUM
 
 注意：这是公开任务上的真实本地结果，不等于比赛 hidden grader 最终成绩；reference harness 的评分公式也不能当作已公布的最终官方评分公式。
 
-### 8.2 V3-C 三道官方题目：编排 smoke 通过
+### 8.2 历史 V3-C 三道官方题目：编排 smoke 通过
 
 当前 smoke 使用官方题目源码、scripted Patch 和 deterministic backend，用于证明 Graph 路由与工具顺序，不代表真实模型或真实 Vitis 能力。
 
@@ -577,7 +611,9 @@ ARRAY_PARTITION + LOOP_UNROLL + MULTI_PARTIAL_SUM
 
 此外还有一个合成的资源超限 Graph 测试，证明“工具返回 Synth PASS，但资源超出上限”时仍会进入 `SYNTH_FIX`，不会误进入优化。
 
-### 8.3 V3-C projection：三次真实部分链路，尚未验收成功
+### 8.3 历史 projection A01–A03：旧 Patch policy 失败
+
+> 这三次失败已由 A04 后续成功闭环。保留本节是为了说明“模型诊断正确但 Patch 落地失败”怎样推动 `d1cf869`，不是当前 REPAIR 状态。
 
 下面三次不是 fake smoke：都调用了真实 Vitis baseline CSim 和真实 OpenAI-compatible `deepseek-v4-pro`，并使用独立 run 目录。但它们都发生在 Patch 重定位修复之前，因此不能写成 REPAIR 成功。
 
@@ -605,15 +641,17 @@ llm4hls_harness/runs/v3c-real-projection-repair-a03-LOCAL_BUDGET_OVERRIDE/
 
 `d1cf869` 已修复该阻断：行号错误时，只有 old-hunk 在 kernel 中存在唯一逐字匹配才自动重定位；零匹配、多匹配和非 kernel 目标仍拒绝。修复后只要 Candidate 成功物化，系统会在 Candidate/Trace 中同时保存 Planner 原 Patch hash、实际应用 Patch hash 和 normalization 标记；A01～A03 发生在修复前且没有创建 Candidate，因此只有 Planner 原 Patch 证据。回归覆盖了同一官方 projection 的 `-12 → -14` 错位模式，以及大偏移、歧义、缺失和越权路径。
 
-当前证据边界：代码修复和 291 项回归已完成，**修复后的干净 A04 尚未执行**，所以 REPAIR 仍是黄色状态。
+后续 A04 已在新目录执行：2043 Tokens、31 Credits、83.919 秒，Candidate 和 fresh final CSim/Synth/CoSim 全部 PASS。REPAIR 因而已从黄色转为绿色；A01–A03 仍作为真实失败历史保留。
 
 这三次都以 40 Credits 本地覆盖运行，必须标记 `LOCAL_BUDGET_OVERRIDE`；不能宣称满足官方样例的 20-Credit 预算。
 
 ### 8.4 当前自动测试
 
-截至代码基线 `d1cf869`：
+截至代码基线 `a796da3`：
 
-- 完整回归：291 tests PASS；
+- 宿主完整回归：382 tests PASS；
+- 源码/镜像基线 `a796da3` Docker quick-tests：`Ran 382 tests; OK (skipped=3)`；
+- Docker `demo-smoke`：PASS；
 - Python 语法检查：PASS；
 - `git diff --check`：PASS；
 - 旧 V3-B checkpoint 缺少 `mode` 时仍默认按 OPTIMIZE 恢复。
@@ -640,18 +678,20 @@ PYTHONPATH=. ../.venv/bin/python -m unittest discover -s tests -t . -v
 - 对低价值 Candidate 跳过探索 CoSim；
 - 中断后通过 checkpoint 和 action journal 恢复；
 - 对最终 Candidate 重新执行完整验证；
-- 生成逐节点、逐 Candidate、逐预算的团队报告。
+- 生成逐节点、逐 Candidate、逐预算的团队报告；
+- 构建并 Oracle 验证 28 道四模式 fast corpus；
+- 串行执行模型 × 任务 × repeat，单题失败后继续并保持独立 run；
+- 用 TopInterfaceGuard 独立保护顶层硬件 ABI；
+- 在源码/镜像基线 `a796da3` 的 Docker clean-room 中运行 demo-smoke 和快速回归；
+- 生成脱敏 submission 报告、receipt、staging 和秘密扫描。
 
 ### 9.2 还不能宣布完成
 
-- V3-C 的 REPAIR 已有三次真实 baseline/Router/Planner/正确 Patch 证据，但尚无 Candidate + fresh final 成功证据；
-- V3-C 的 SYNTH_FIX 尚无真实 LLM + Vitis 最终成功证据；
-- V3-C 的 STRUCTURAL_FIX 尚无真实 LLM + Vitis 最终成功证据；
-- 当前没有独立的函数签名/顶层接口静态 diff gate；接口保持主要依赖 Planner 约束和后续 CSim/Synth/CoSim，不能把 Patch 路径检查描述成完整接口证明；
-- 当前只完成 DeepSeek 的重点真实实验，尚未完成三种推荐模型的公平对比；
-- 三道公开任务数量太少，尚未充分证明对 hidden-like 任务的泛化；
+- Qwen3.5/Qwen3.6 尚无真实运行；当前缺少可达 endpoint、key 和服务端实际 model alias，本机没有本地 Qwen serving 或权重；
+- 28 题 corpus 已扩充任务形状，但只有 12 道提交级真实 Vitis anchors，尚不能等价为 hidden grader 泛化证明；
+- DeepSeek 已完成重复矩阵，但 strict/fast 对照和 Evidence/CoSim gate 消融尚未运行；
 - 当前所谓 PPA 评价主要是 latency/II、clock 和资源占用的 proxy；没有可靠的板上或 post-route Power 测量，不能宣称已经优化真实功耗；
-- Docker、干净环境复现、最终 `.zip`、论文实验表和 5 分钟视频尚未形成完整交付；
+- Agent-only Docker 和复现入口已完成，但最终官方 Docker/Vitis 部署口径、最终 `.zip`、两页论文和 5 分钟视频尚未冻结；
 - 真实运行必须在**执行命令的那个终端**设置 `OPENAI_BASE_URL`、`OPENAI_API_KEY`、`LLM4HLS_MODEL`；不同 Codex/shell 进程不会自动继承，任何密钥都不得进入 Git、Prompt 审计文件或报告；
 - 官方精确评分公式、Token 权重和最终统一 Credit 仍未公开确认。
 
@@ -672,7 +712,7 @@ baseline CSim 1
 = 31 Credits
 ```
 
-因此 deterministic 完整 smoke 使用 `credit_limit=100` 的本地测试配置；A01–A03 真实实验使用 40-Credit `LOCAL_BUDGET_OVERRIDE`。真实比赛前必须确认：
+因此 deterministic 完整 smoke 使用本地测试配置；A01–A04 和 projection 重复矩阵使用 40-Credit 上限并显式写入 `LOCAL_BUDGET_OVERRIDE`。真实比赛前必须确认：
 
 - 最终评测是否允许本地 final CoSim 不计入 Agent 的任务 Credit；或
 - 不要求 CoSim 的任务是否可以采用更轻的 final；或
@@ -696,51 +736,49 @@ baseline CSim 1
 |---|---|---|---|
 | V0/V1/V2 工程底座 | 绿色 | V1 REAL/PASS；V2 冻结发布与真实验收 | 只维护，不再扩架构 |
 | V3 LangGraph/Checkpoint | 绿色 | 动作节点、恢复、Manifest、完整回归 | 只修阻断性问题 |
-| V3-B optimize | 绿色（单题） | 官方 dotProduct 真实 1027 → 38，Final 三项 PASS | 增加重复实验和模型对比 |
-| V3-C PhaseRouter | 黄色偏绿 | 四模式测试、三题 smoke；projection 三次真实路由均正确进入 REPAIR | structural/synth-fix 真实路由与 final 成功后转绿 |
-| V3-C REPAIR | 黄色 | deterministic smoke PASS；A01–A03 真实模型均诊断/修复正确；`d1cf869` 已解除 Patch 行号阻断 | 干净 A04 完成 Candidate 与 fresh final 三项 PASS |
-| V3-C SYNTH_FIX | 黄色 | Router/Planner/资源超限 Graph 测试 PASS | 真实综合失败任务成功运行 |
-| V3-C STRUCTURAL_FIX | 黄色 | residual deterministic smoke PASS | 真实 CoSim deadlock 修复成功 |
-| 模型覆盖 | 红色 | DeepSeek 真实结果 | 补 Qwen3.5、Qwen3.6 或写明不可用原因 |
-| 泛化与稳定性 | 红色 | 3 道公开题，覆盖仍小 | hidden-like 题集、重复次数、失败率统计 |
-| Docker/复现包 | 红色 | 本地环境可运行 | 干净环境构建和唯一启动命令 |
-| 论文/视频 | 红色 | 已有技术数据和报告素材 | 实验表、两页正文、附录、5 分钟演示 |
+| V3-B optimize | 绿色 | dotProduct 独立 1027 → 38；重复矩阵两次改善、一次安全 baseline fallback，全部 Final PASS | 补 Qwen 和 strict/fast 对照 |
+| V3-C PhaseRouter | 绿色 | 四 mode 均有真实 baseline 分诊 + LLM Patch + Vitis fresh final | 只维护阻断性问题 |
+| V3-C REPAIR | 绿色 | projection A04 + 重复 3/3，fresh final 全 PASS | 继续明确 20/31 Credit 口径 |
+| V3-C SYNTH_FIX | 绿色 | dynamic fixture 独立验收 + 重复 3/3，fresh final 全 PASS | 增加更多真实综合错误形状 |
+| V3-C STRUCTURAL_FIX | 绿色 | residual 独立验收 + 重复 3/3；A03 三道 structural anchor accepted | 扩充不同 stream/FIFO 根因 |
+| V3-D corpus/oracle/batch | 绿色偏黄 | 28 题、28/0 deterministic Oracle、12 个真实 Vitis receipts、batch runner | 增加真实模型 corpus 子集 |
+| 模型覆盖 | 黄色 | DeepSeek 12-run 矩阵完整 | Qwen3.5/Qwen3.6 外部服务配置 |
+| 泛化与稳定性 | 黄色 | 28 题 corpus、12 anchors、DeepSeek 重复成功率 | hidden-like 真实模型运行和消融 |
+| Docker/复现包 | 绿色偏黄 | 源码/镜像基线 `a796da3`、demo-smoke、382 容器测试 PASS | 官方部署格式和外部 Vitis 口径最终确认 |
+| 论文/视频 | 黄色 | 实验表、失败分析、复现、Demo 草稿已有 | 两页正文、最终图表、真实视频和提交 QA |
 
 当前总体判断：
 
-> 工程主体进入“黄色偏绿”：核心系统已经形成，单个优化任务成绩很好，但比赛提交所需的任务覆盖、模型覆盖和复现材料仍不足。
+> 工程主体已经进入“绿色偏黄”：四模式和 DeepSeek 重复实验已闭环，主要风险从 Agent 实现转移到 Qwen 外部服务、官方预算/容器口径、消融与最终交付。
 
 ## 11. 接下来的阶段计划
 
 按团队 2026-07-10 保存的官网规则快照，比赛技术材料截止时间约为北京时间 2026-08-08 19:59；若官方后续更新 FAQ 或提交入口，应以最新通知为准。现在不适合继续增加新 Agent、RL、RAG 或复杂 Controller，应以证据闭环和提交为主。
 
-### 7 月 20 日至 7 月 24 日：补齐 V3-C 真实闭环
+### 7 月 20 日晚至 7 月 21 日白天：已完成里程碑
 
-目标：补齐三种非 optimize mode 的真实 Candidate + fresh final 闭环。projection 的真实路由和模型诊断已经由 A01–A03 证明，但后半条 Candidate/Vitis 链路尚未闭环。
+本阶段已经交付：
 
-必须交付：
+1. projection A04、residual A01、synth-fix A01 三种非 optimize mode 的真实模型 + Vitis fresh final；
+2. 28 题 fast corpus、deterministic Oracle 28/0 和四 mode 各 3 个真实 Vitis receipts；
+3. Batch Benchmark、TopInterfaceGuard、Docker/clean-room 和 submission QA 工具与草稿；
+4. XSIM A03 对四个失败 anchor 的 4/4 恢复；
+5. DeepSeek 官方三题各 3 次及额外 synth-fix 3 次，全部 run 和失败/回退均保留；
+6. 脱敏 JSON/Markdown 总结，避免关键事实只存在于被 Git 忽略的 `runs/`。
 
-1. `projection_bugfix`：在 `d1cf869` 后使用全新 A04 run 目录，真实模型进入 REPAIR，验证 Patch 重定位后完成 Candidate 与 fresh CSim/Synth/CoSim；使用至少 31 Credits 的本地覆盖，并明确标记 `LOCAL_BUDGET_OVERRIDE`，不能据此宣称满足官方样例的 20 Credits；A01–A03 已用完原定三次真实模型额度，执行 A04 前需要团队明确批准将该专项上限由 3 放宽到 4，并把它记录为新增 post-fix 实验；
-2. `residual_stream_deadlock`：真实模型进入 STRUCTURAL_FIX，最终三项 PASS；
-3. 团队 synthesis-error fixture：真实进入 SYNTH_FIX，最终三项 PASS；
-4. 每次实验保存模型 ID、Prompt 版本、Token、Credits、工具次数、wall time 和失败原因；
-5. 失败运行保留，不只记录最好结果；
-6. 对齐“Agent 搜索预算”与“外部 grader/final closure 是否计费”的官方口径，解决 20 < 25 的结构性冲突；
-7. 将 V3-B 成功与失败各发布一份脱敏核心报告，避免真实证据只存在于被 Git 忽略的本地 `runs/`。
+仍需对齐“Agent 搜索预算”与“外部 grader/final closure 是否计费”的官方口径，解决 projection 公开 20 Credits 小于本地完整 closure 最低 31 Credits 的结构性冲突。
 
-验收线：三种非 optimize mode 至少各有一次真实成功证据，并能从干净 run 目录复现。
-
-### 7 月 25 日至 7 月 31 日：实验矩阵与稳定性
+### 7 月 21 日至 7 月 31 日：补齐对比与稳定性
 
 目标：从“跑通过一次”变成“可以比较和写论文”。
 
 优先级：
 
-1. 固定同一 task、预算、Prompt、Vitis 版本和超时；
-2. DeepSeek 在三道官方题上各重复至少 3 次；
-3. 接入可用的 Qwen3.5 与 Qwen3.6，不能接入时记录明确环境/资源原因；
-4. 统计成功率、平均/最好 latency、Token、Credits、工具次数和 wall time；
-5. 增加少量 hidden-like 变体，检查是否存在针对公开样例的硬编码。
+1. 获得 Qwen3.5 与 Qwen3.6 的真实 endpoint/key/model alias，并复用相同 task、预算、Prompt、Vitis 版本和超时；
+2. Qwen 每个推荐模型至少跑官方三题一轮，保留全部失败；
+3. 运行 strict/fast 对照，以及有/无结构化 Evidence、有/无 CoSim risk gate 的最小消融；
+4. 从 28 题 corpus 选取四 mode 小子集做真实模型运行，检查公开样例硬编码；
+5. 将成功率、平均/最好 latency、Token、Credits、工具次数和 wall time 固化进论文表。
 
 验收线：形成一张可直接放入论文的模型 × 任务实验表，并且每个数字都能追到 run ID。
 
@@ -821,11 +859,11 @@ baseline CSim 1
 
 ## 14. 当前最值得做的一件事
 
-现在最值得做的不是拆文件或增加新架构，而是：
+现在最值得做的不是继续修改 optimize loop 或增加新架构，而是：
 
-> 基于 `d1cf869`，在从未使用过的 A04 run 目录中重新运行 `projection_bugfix`，让已经正确生成的修复真正进入 Candidate CSim/Synth 和 fresh final CSim/Synth/CoSim。
+> 获得 Qwen3.5/Qwen3.6 可达的 OpenAI-compatible endpoint、key 和服务端真实 model alias，然后用与 DeepSeek 完全相同的三道官方任务、预算、Prompt、Vitis 和超时跑第一轮公平矩阵。
 
-原因是 A01–A03 已经证明 PhaseRouter、Failure Evidence 和真实模型诊断有效，现在只差验证 `d1cf869` 的 Patch materialization 修复及后半条真实 Vitis 链路。注意 A04 会超过原 projection“最多 3 次”的实验上限，必须先由团队明确批准将上限放宽到 4，并继续使用全新目录。A04 完成后，再按 `residual_stream_deadlock` → synthesis-error fixture → 多模型矩阵的顺序推进。
+原因是 A04、residual、synth-fix、DeepSeek 12-run、XSIM A03 和源码/镜像基线 `a796da3` 的 Docker 都已经完成。继续堆 Controller 的边际收益很低；目前论文和比赛最缺的是跨模型公平证据。Qwen 配置不可用时，不应把“未运行”写成 0% 成功率，也不应把 Hugging Face repo ID 猜成 API alias。
 
 ## 15. 文档与命名债务
 
@@ -845,3 +883,6 @@ baseline CSim 1
 - [V2 核心报告阅读指南](../materials/07_experiments/2026-07-18-v2-core-report-guide.md)
 - [V2 冻结发布记录](../../llm4hls_harness/releases/v2-ppa-gated-final_CN.md)
 - [V3-C task-aware smoke 测试](../../llm4hls_harness/tests/test_v3_task_aware_smoke.py)
+- [V3-D 昨夜至今日执行总结](../../llm4hls_harness/releases/v3d-overnight-daytime-summary-2026-07-21.md)
+- [V3-D Corpus](../../llm4hls_harness/task_corpus/v3d-fast/README.md)
+- [提交实验表](../../docs/submission/experiment_tables.md)

@@ -2,8 +2,33 @@
 
 > 自动生成于 2026-07-20T17:29:13+00:00，事实来源：`evidence_manifest.json` 指定的 run JSON。
 > 不读取 hidden/golden，不把脚本 Patch replay 计作真实 LLM。`TODO` 表示缺少实验，绝非 0。
+> 2026-07-21 的当前能力与矩阵为人工核对补充；当前 generator 不会重建该补充，
+> 不可变事实入口是 `llm4hls_harness/releases/v3d-overnight-daytime-summary-2026-07-21.{md,json}`。
 
-## 当前能力矩阵
+> **2026-07-21 补充：**下方原自动表保留 7 月 20 日证据历史；当前真实 LLM/Vitis
+> 验收与重复矩阵以
+> [`v3d-overnight-daytime-summary-2026-07-21.md`](../../llm4hls_harness/releases/v3d-overnight-daytime-summary-2026-07-21.md)
+> 及其同名 JSON 为准。
+
+## 2026-07-21 当前能力和模型矩阵
+
+| Mode | 真实 LLM + Vitis 原子闭环 | 重复证据 |
+|---|---|---|
+| REPAIR | projection A04，fresh final 全 PASS | projection 3/3 DONE、3/3 fresh final PASS |
+| SYNTH_FIX | dynamic allocation A01，fresh final 全 PASS | synth-fix 3/3 DONE、3/3 fresh final PASS |
+| STRUCTURAL_FIX | residual A01，baseline CoSim FAIL 后修复，fresh final 全 PASS | residual 3/3 DONE、3/3 fresh final PASS |
+| OPTIMIZE | dotProduct 独立 1027 → 38，fresh final 全 PASS | 三次 final 为 38、518、1027 baseline fallback，3/3 fresh final PASS |
+
+| Matrix | Runs | DONE | Fresh final | Tokens | Credits | LLM/CSim/Synth/CoSim | Wall (s) |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| DeepSeek 官方三题 | 9 | 9 | 9 | 26354 | 421 | 12/29/23/15 | 1400.738 |
+| 额外 synth-fix | 3 | 3 | 3 | 4904 | 105 | 3/9/9/3 | 244.903 |
+| **DeepSeek 全部** | **12** | **12** | **12** | **31258** | **526** | **15/38/32/18** | **1645.641** |
+
+Qwen3.5/Qwen3.6 仍是 `NOT RUN`，原因是当前 endpoint 只提供 DeepSeek，且本机没有
+Qwen serving、权重或独立 endpoint/key/model alias。不能把未运行写成 0% 成功率。
+
+## 2026-07-20 历史自动能力矩阵
 
 | Mode | 当前证据 | Run IDs |
 | --- | --- | --- |
@@ -124,4 +149,5 @@
 
 ## 模型矩阵缺口
 
-- TODO：配置真实 endpoint/key/model 后，运行 DeepSeek 官方三题各3次及 Qwen 同配置矩阵；当前没有可报告的新矩阵平均值或成功率。
+- DeepSeek 官方三题各 3 次已经完成，逐 run 数据见 2026-07-21 执行总结。
+- Qwen 仍缺可达的 `OPENAI_BASE_URL`、`OPENAI_API_KEY` 和服务端真实 `LLM4HLS_MODEL` alias。

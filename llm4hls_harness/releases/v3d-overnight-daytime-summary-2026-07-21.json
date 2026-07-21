@@ -1,0 +1,166 @@
+{
+  "schema_version": "v3d.execution-summary.v1",
+  "period": {
+    "start": "2026-07-20T18:56:28+08:00",
+    "end": "2026-07-21T12:00:00+08:00",
+    "label": "2026-07-20 overnight to 2026-07-21 daytime"
+  },
+  "git": {
+    "branch": "feat/v3d-overnight-execution",
+    "start_commit": "d56a2ed",
+    "source_head": "a796da3fc50bb187cad68034c7dfc99e413f3837",
+    "commits_in_period": 16
+  },
+  "evidence_boundary": {
+    "hidden_grader": "NOT_RUN",
+    "qwen_matrix": "NOT_RUN_NO_SERVING_CONFIGURATION",
+    "raw_runs_tracked_in_git": false,
+    "summary_is_sanitized": true
+  },
+  "standalone_real_llm_vitis_acceptance": [
+    {
+      "run_id": "v3c-real-projection-repair-a04-LOCAL_BUDGET_OVERRIDE",
+      "task": "projection_bugfix",
+      "mode": "REPAIR",
+      "status": "DONE",
+      "tokens": 2043,
+      "credits": 31,
+      "tool_calls": {"llm": 1, "csim": 3, "synth": 2, "cosim": 1},
+      "wall_time_seconds": 83.919436,
+      "fresh_final": {"csim": "PASS", "synth": "PASS", "cosim": "PASS"},
+      "budget_note": "LOCAL_BUDGET_OVERRIDE; not evidence of official 20-credit compliance",
+      "result_sha256": "aeb828fcb1d0ab4bd6ff91300829573faebacb2bed9de2f8e77c170721045f63"
+    },
+    {
+      "run_id": "v3c-real-residual-structural-a01",
+      "task": "residual_stream_deadlock",
+      "mode": "STRUCTURAL_FIX",
+      "status": "DONE",
+      "tokens": 2216,
+      "credits": 71,
+      "tool_calls": {"llm": 1, "csim": 3, "synth": 2, "cosim": 3},
+      "wall_time_seconds": 127.148173,
+      "latency_cycles": {"baseline": 135, "final": 68},
+      "fresh_final": {"csim": "PASS", "synth": "PASS", "cosim": "PASS"},
+      "result_sha256": "0a2085c36ed357445883522f9ec1727b05462ddaa2fce1a7f8d603da104887f7"
+    },
+    {
+      "run_id": "v3c-real-synth-fix-dynamic-a01",
+      "task": "u55c_synthesis_repair",
+      "mode": "SYNTH_FIX",
+      "status": "DONE",
+      "tokens": 1675,
+      "credits": 35,
+      "tool_calls": {"llm": 1, "csim": 3, "synth": 3, "cosim": 1},
+      "wall_time_seconds": 75.316265,
+      "latency_cycles": {"baseline": null, "final": 39},
+      "fresh_final": {"csim": "PASS", "synth": "PASS", "cosim": "PASS"},
+      "result_sha256": "28dd70fe34e48ed3161a5a4a2a0b05a9352fbc6ccf1aba065cead98a08eb1965"
+    },
+    {
+      "run_id": "v3b_fast_dotproduct_live_deepseek_retry2",
+      "task": "dotProduct_optimize",
+      "mode": "OPTIMIZE",
+      "status": "DONE",
+      "tokens": 8128,
+      "credits": 35,
+      "tool_calls": {"llm": 3, "csim": 3, "synth": 3, "cosim": 1},
+      "wall_time_seconds": 130.781313,
+      "latency_cycles": {"baseline": 1027, "final": 38},
+      "acceleration": 27.026316,
+      "fresh_final": {"csim": "PASS", "synth": "PASS", "cosim": "PASS"},
+      "result_sha256": "1311db8a612bda0c2278e9d1cc92165e7ad972f40df007c8389a9d901733a83f"
+    }
+  ],
+  "deepseek_repeat_matrix": {
+    "model": "deepseek-v4-pro",
+    "provider": "openai-compatible",
+    "vitis": "2025.2",
+    "validation_profile": "fast-experiment",
+    "official_three": {
+      "runs": 9,
+      "done": 9,
+      "fresh_final_pass": 9,
+      "tokens": 26354,
+      "credits": 421,
+      "tool_calls": {"llm": 12, "csim": 29, "synth": 23, "cosim": 15},
+      "wall_time_seconds": 1400.738322
+    },
+    "extra_synth_fix": {
+      "runs": 3,
+      "done": 3,
+      "fresh_final_pass": 3,
+      "tokens": 4904,
+      "credits": 105,
+      "tool_calls": {"llm": 3, "csim": 9, "synth": 9, "cosim": 3},
+      "wall_time_seconds": 244.902544
+    },
+    "all_runs": {
+      "runs": 12,
+      "done": 12,
+      "fresh_final_pass": 12,
+      "tokens": 31258,
+      "credits": 526,
+      "tool_calls": {"llm": 15, "csim": 38, "synth": 32, "cosim": 18},
+      "wall_time_seconds": 1645.640867
+    },
+    "runs": [
+      {"run_id": "v3d-matrix-deepseek-task-aware-a01/projection/r01-LOCAL_BUDGET_OVERRIDE", "task": "projection_bugfix", "mode": "REPAIR", "status": "DONE", "tokens": 2044, "credits": 31, "tool_calls": {"llm": 1, "csim": 3, "synth": 2, "cosim": 1}, "fresh_final": {"csim": "PASS_FRESH", "synth": "PASS_FRESH", "cosim": "PASS_FRESH"}, "wall_time_seconds": 103.354245, "final_latency_cycles": 0, "result_sha256": "1647774839d448328d350003d68540c970e7e201e69e1de69c6fe16a7d37e81f"},
+      {"run_id": "v3d-matrix-deepseek-task-aware-a01/projection/r02-LOCAL_BUDGET_OVERRIDE", "task": "projection_bugfix", "mode": "REPAIR", "status": "DONE", "tokens": 2011, "credits": 31, "tool_calls": {"llm": 1, "csim": 3, "synth": 2, "cosim": 1}, "fresh_final": {"csim": "PASS_FRESH", "synth": "PASS_FRESH", "cosim": "PASS_FRESH"}, "wall_time_seconds": 92.686304, "final_latency_cycles": 0, "result_sha256": "1bf31984e459dba61e057a3b4cb61703eb43927e407a924fd6702276bcde3a53"},
+      {"run_id": "v3d-matrix-deepseek-task-aware-a01/projection/r03-LOCAL_BUDGET_OVERRIDE", "task": "projection_bugfix", "mode": "REPAIR", "status": "DONE", "tokens": 2035, "credits": 31, "tool_calls": {"llm": 1, "csim": 3, "synth": 2, "cosim": 1}, "fresh_final": {"csim": "PASS_FRESH", "synth": "PASS_FRESH", "cosim": "PASS_FRESH"}, "wall_time_seconds": 98.671060, "final_latency_cycles": 0, "result_sha256": "2bc62b4ce9a78639b8257503a5f30e2dde941c7889d7418db7dde26c664d65c9"},
+      {"run_id": "v3d-matrix-deepseek-task-aware-a01/residual/r01", "task": "residual_stream_deadlock", "mode": "STRUCTURAL_FIX", "status": "DONE", "tokens": 2139, "credits": 71, "tool_calls": {"llm": 1, "csim": 3, "synth": 2, "cosim": 3}, "fresh_final": {"csim": "PASS_FRESH", "synth": "PASS_FRESH", "cosim": "PASS_FRESH"}, "wall_time_seconds": 155.848256, "baseline_latency_cycles": 135, "final_latency_cycles": 68, "result_sha256": "ccddf48ca6d54bb445bf076d07bdaf4d39c334b0966d2fc5eb1843a997b91816"},
+      {"run_id": "v3d-matrix-deepseek-task-aware-a01/residual/r02", "task": "residual_stream_deadlock", "mode": "STRUCTURAL_FIX", "status": "DONE", "tokens": 2209, "credits": 71, "tool_calls": {"llm": 1, "csim": 3, "synth": 2, "cosim": 3}, "fresh_final": {"csim": "PASS_FRESH", "synth": "PASS_FRESH", "cosim": "PASS_FRESH"}, "wall_time_seconds": 149.554548, "baseline_latency_cycles": 135, "final_latency_cycles": 68, "result_sha256": "07ef07c2aea7581c5c0793059d0f313e46e3b824657ac15b7c8886229c3a48ad"},
+      {"run_id": "v3d-matrix-deepseek-task-aware-a01/residual/r03", "task": "residual_stream_deadlock", "mode": "STRUCTURAL_FIX", "status": "DONE", "tokens": 2204, "credits": 71, "tool_calls": {"llm": 1, "csim": 3, "synth": 2, "cosim": 3}, "fresh_final": {"csim": "PASS_FRESH", "synth": "PASS_FRESH", "cosim": "PASS_FRESH"}, "wall_time_seconds": 169.904845, "baseline_latency_cycles": 135, "final_latency_cycles": 68, "result_sha256": "85eb90ee8e40b9f18e6a2a69e849ac796528ad68a8ea41b58b0269ffae898872"},
+      {"run_id": "v3d-matrix-deepseek-task-aware-a01/synth-fix/r01", "task": "u55c_synthesis_repair", "mode": "SYNTH_FIX", "status": "DONE", "tokens": 1634, "credits": 35, "tool_calls": {"llm": 1, "csim": 3, "synth": 3, "cosim": 1}, "fresh_final": {"csim": "PASS_FRESH", "synth": "PASS_FRESH", "cosim": "PASS_FRESH"}, "wall_time_seconds": 77.642816, "final_latency_cycles": 39, "result_sha256": "d62b55bda1eec3b9037dd9b51add4e0e402b1e3a0539fdec0a9245d90cf0412f"},
+      {"run_id": "v3d-matrix-deepseek-task-aware-a01/synth-fix/r02", "task": "u55c_synthesis_repair", "mode": "SYNTH_FIX", "status": "DONE", "tokens": 1642, "credits": 35, "tool_calls": {"llm": 1, "csim": 3, "synth": 3, "cosim": 1}, "fresh_final": {"csim": "PASS_FRESH", "synth": "PASS_FRESH", "cosim": "PASS_FRESH"}, "wall_time_seconds": 83.063441, "final_latency_cycles": 39, "result_sha256": "c27a081f1916981a82babfd86297d0403fd10b0534b72c3c1981040ddb2b303e"},
+      {"run_id": "v3d-matrix-deepseek-task-aware-a01/synth-fix/r03", "task": "u55c_synthesis_repair", "mode": "SYNTH_FIX", "status": "DONE", "tokens": 1628, "credits": 35, "tool_calls": {"llm": 1, "csim": 3, "synth": 3, "cosim": 1}, "fresh_final": {"csim": "PASS_FRESH", "synth": "PASS_FRESH", "cosim": "PASS_FRESH"}, "wall_time_seconds": 84.196288, "final_latency_cycles": 39, "result_sha256": "e973ce70258e17830b294778a228695c16a05f5dc9e0f9ccb659bc0fb8d56d12"},
+      {"run_id": "v3d-matrix-deepseek-official-a01/dotProduct/r01", "task": "dotProduct_optimize", "mode": "OPTIMIZE", "status": "DONE", "tokens": 4533, "credits": 40, "tool_calls": {"llm": 2, "csim": 4, "synth": 4, "cosim": 1}, "fresh_final": {"csim": "PASS_FRESH", "synth": "PASS_FRESH", "cosim": "PASS_FRESH"}, "wall_time_seconds": 168.468243, "baseline_latency_cycles": 1027, "final_latency_cycles": 38, "acceleration": 27.026316, "result_sha256": "f9856350da4736c0bc8aaed2c152e0a880aaf31f13caa7809067db0a2b45388f"},
+      {"run_id": "v3d-matrix-deepseek-official-a01/dotProduct/r02", "task": "dotProduct_optimize", "mode": "OPTIMIZE", "status": "DONE", "tokens": 4843, "credits": 40, "tool_calls": {"llm": 2, "csim": 4, "synth": 4, "cosim": 1}, "fresh_final": {"csim": "PASS_FRESH", "synth": "PASS_FRESH", "cosim": "PASS_FRESH"}, "wall_time_seconds": 162.673841, "baseline_latency_cycles": 1027, "final_latency_cycles": 518, "acceleration": 1.982625, "result_sha256": "cc9a1a95b96bd6204dfcada83c1e4b7b7002f0787dd39b294674e74154b0a8c4"},
+      {"run_id": "v3d-matrix-deepseek-official-a01/dotProduct/r03", "task": "dotProduct_optimize", "mode": "OPTIMIZE", "status": "DONE", "tokens": 4336, "credits": 35, "tool_calls": {"llm": 2, "csim": 3, "synth": 3, "cosim": 1}, "fresh_final": {"csim": "PASS_FRESH", "synth": "PASS_FRESH", "cosim": "PASS_FRESH"}, "wall_time_seconds": 299.576980, "baseline_latency_cycles": 1027, "final_latency_cycles": 1027, "acceleration": 1.0, "stop_reason": "BASELINE_FINALIZED_NO_IMPROVEMENT", "result_sha256": "b3eb5655624ca94dcb6812da01dfe43af0cabf0e3e3275ee16143a1ce483f8ee"}
+    ]
+  },
+  "corpus_and_oracle": {
+    "tasks": 28,
+    "mode_distribution": {"REPAIR": 8, "SYNTH_FIX": 6, "STRUCTURAL_FIX": 6, "OPTIMIZE": 8},
+    "deterministic_oracle": {"accepted": 28, "rejected": 0, "checks_passed": 134, "checks_total": 134},
+    "portable_real_vitis_receipts": {"anchors": 12, "modes": 4, "checks_passed": 59, "checks_total": 59, "artifact_hashes": 238}
+  },
+  "xsim_recovery_a03": {
+    "snapshot": "docs/submission/oracle_snapshots/v3d-oracle-vitis-probed-anchors-a03.json",
+    "source_sha256": "75666d6f851125258ce6743867d871501214eb10b6e5d3999a64ac5df361bac5",
+    "tasks": ["v3d_fast_015", "v3d_fast_016", "v3d_fast_017", "v3d_fast_028"],
+    "accepted": 4,
+    "rejected": 0,
+    "wall_time_seconds": 328.601615,
+    "optimize_028": {"baseline_latency_cycles": 39, "golden_latency_cycles": 6, "acceleration": 6.5},
+    "conclusion": "A03 fresh non-sandbox serial rerun passed; evidence supports a transient or run-isolation XSIM issue but does not identify one specific cache file as root cause"
+  },
+  "docker": {
+    "access": "OPERATIONAL_VIA_SG_DOCKER",
+    "image_id": "sha256:48edd63ee1c7212aa62f9e42692542e29f9d014b0c747a2a40a776864a74636d",
+    "tags": ["llm4hls-v3d:py3.12", "llm4hls-v3d:git-a796da3fc50b"],
+    "revision": "a796da3fc50bb187cad68034c7dfc99e413f3837",
+    "demo_smoke": "PASS",
+    "container_quick_tests": {"tests": 382, "status": "PASS", "skipped": 3},
+    "host_quick_tests": {"tests": 382, "status": "PASS"},
+    "vitis_boundary": "Agent-only image; proprietary Vitis remains an external host runtime"
+  },
+  "remaining_blockers": [
+    {
+      "id": "QWEN_SERVING",
+      "status": "BLOCKED_EXTERNAL",
+      "required": ["OPENAI_BASE_URL", "OPENAI_API_KEY", "LLM4HLS_MODEL"],
+      "detail": "Current endpoint exposes only deepseek-v4-flash and deepseek-v4-pro; no local Qwen service or weights were found"
+    },
+    {
+      "id": "OFFICIAL_BUDGET_CLARIFICATION",
+      "status": "OPEN",
+      "detail": "projection full local closure costs at least 31 credits while the public example budget is 20"
+    },
+    {
+      "id": "HIDDEN_GRADER",
+      "status": "NOT_AVAILABLE",
+      "detail": "No claim of hidden-test or final official score is made"
+    }
+  ]
+}

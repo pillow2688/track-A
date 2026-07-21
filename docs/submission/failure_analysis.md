@@ -2,6 +2,8 @@
 
 > 自动生成于 2026-07-20T17:29:13+00:00，事实来源：`evidence_manifest.json` 指定的 run JSON。
 > 不读取 hidden/golden，不把脚本 Patch replay 计作真实 LLM。`TODO` 表示缺少实验，绝非 0。
+> 2026-07-21 的 A04、XSIM A03 和重复矩阵结论为人工核对补充；当前 generator 不会重建该补充，
+> 不可变事实入口是 `llm4hls_harness/releases/v3d-overnight-daytime-summary-2026-07-21.{md,json}`。
 
 ## 失败阶段分布
 
@@ -14,8 +16,11 @@
 ## 已观察到的关键问题
 
 - projection 的真实模型 A01–A03 能定位缺失项，但 Patch 在旧的严格 hunk 行号策略处被拒绝；它们不是功能推理失败，也不是 Vitis 失败。
-- projection post-fix、residual structural、synth-fix 的 replay 已通过真实 Vitis fresh final，但 replay 不构成新的真实模型成功证据。
+- 2026-07-20 历史证据中，projection post-fix、residual structural、synth-fix 的 replay 已通过真实 Vitis fresh final，但 replay 不构成新的真实模型成功证据。
 - XSIM/CoSim 失败必须区分 RTL deadlock、仿真器内部异常与沙箱环境失败；不能把启动异常写成算法错误。
+- projection A04 已证明唯一 old-hunk 重定位修复有效；A01–A03 继续作为历史 Patch policy 失败保留。
+- XSIM A03 使用新目录重跑后 4/4 accepted；这说明 A01/A02 不是稳定的 RTL 算错证据，但仍不能武断指定某个缓存文件为根因。
+- dotProduct 重复 R02 的第二 Candidate 综合 latency 为 2684355097，被正确拒绝；R03 无严格改善后安全 final baseline。报告必须同时保留退化和无收益结果。
 
 ## Planner hypothesis（仅来自已保存输出）
 
@@ -31,9 +36,9 @@
 
 ## 下一轮所需证据
 
-1. 在 post-fix 代码上完成 projection 新的真实模型 run（新 run ID）。
-2. residual 与 synth-fix 各完成至少 3 次真实模型 run，保留全部失败。
-3. 为每个失败统一记录 failure stage、Patch rejection、Token、Credit 和 final fresh closure。
+1. 接入 Qwen3.5/Qwen3.6 的真实 serving，并在同配置官方三题上运行。
+2. 运行 strict/fast、Evidence 和 CoSim gate 的最小消融。
+3. 继续为每个失败记录 failure stage、Patch rejection、Token、Credit 和 final fresh closure，不只保留最好值。
 
 ## Oracle anchor 降级记录
 
