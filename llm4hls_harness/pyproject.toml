@@ -22,6 +22,7 @@ llm4hls-v3d-oracle = "llm4hls_agent.v3d_oracle_validator:main_entry"
 llm4hls-anchor-receipts = "llm4hls_agent.v3d_anchor_receipts:main_entry"
 llm4hls-benchmark = "llm4hls_agent.v3_batch_benchmark:main_entry"
 llm4hls-v3e-loro = "llm4hls_agent.v3_experience_loro:main_entry"
+llm4hls-experience = "llm4hls_agent.v3_experience_kb_cli:main_entry"
 
 [tool.setuptools.packages.find]
 include = ["llm4hls_agent*"]
