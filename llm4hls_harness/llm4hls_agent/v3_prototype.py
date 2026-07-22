@@ -305,6 +305,10 @@ def _run_config_snapshot(runtime: _Runtime) -> dict[str, object]:
             _sha256_json(proposal.to_dict()) for proposal in runtime.proposals
         ]
         value["max_no_improvement_rounds"] = runtime.max_no_improvement_rounds
+    if runtime.continuation_policy_mode != "off":
+        # A persisted shadow/enforce decision is part of the durable routing
+        # identity even for scripted smoke runs.
+        value["continuation_policy_mode"] = runtime.continuation_policy_mode
     if runtime.max_final_attempts != 1:
         value["max_final_attempts"] = runtime.max_final_attempts
     if runtime.validation_profile != STRICT_VALIDATION_PROFILE:
