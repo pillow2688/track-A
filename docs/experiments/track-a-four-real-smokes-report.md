@@ -4,142 +4,162 @@
 
 分支：`feat/track-a-vitis-run-task-final-smoke`
 
-执行起点：`cfeb72e`
-
-Vitis receipt 修复提交：`cb0033e`
+执行起点：`e880e3d`
+真实 run 根目录：`llm4hls_harness/runs/track_a_real_smoke_20260722_A01/`
 
 ## 结论
 
-本次没有把 scripted/demo backend 当成真实 Smoke。Vitis 2025.2 的真实 preflight 已经
-通过；但当前 Codex 执行环境及其交互 shell 都没有继承 OpenAI-compatible Provider
-配置。因此最小真实 Provider 请求无法安全发起，四类真实 Planner + Vitis Smoke 按规则
-全部标记为 `REAL_SMOKE_BLOCKED`。这属于全局 `PROVIDER_FAILURE`，不是 Agent、Patch、
-Vitis 或 task-contract 故障。
+四类任务都已经完成 **真实 DeepSeek Planner + 真实 Vitis 2025.2** 的独立运行。所有
+Planner、Candidate、CSim/Synth/CoSim 和 fresh final 都来自本次新的 run 目录；没有复用
+旧 Planner response、Candidate 或 final 结果。
 
-所以本报告不声称任何 public/hidden correctness、Token 效率、PPA 或比赛分数提升；也不
-建议启动 28 题单次覆盖。
+- 官方 repair：成功修复，fresh final `CSim + Synth` PASS；
+- 官方 optimize：从 `1027` 降至 `38` cycles，raw acceleration=`27.03x`，达到 8x
+  acceleration cap 后停止纯 latency 搜索；fresh final `CSim + Synth` PASS；
+- 官方 structural：baseline CoSim 真实 deadlock，修复后 Candidate CoSim 及 fresh final
+  `CSim + Synth + CoSim` 全部 PASS；
+- 公开开发 generate task：以 `generation_required=true` 进入 REPAIR，fresh final
+  `CSim + Synth` PASS。
 
-## 1. 仓库与安全基线
+这证明当前安全基线可实际完成四条入口的端到端闭环。它**不是** hidden 评测，也不构成
+最终官方分数主张；Power 依然是 `UNSUPPORTED`。
 
-开始时分支正确、工作树干净，HEAD 为 `cfeb72e`。执行期间仅修复了 Vitis receipt 对
-`vitis-run v2025.2` 的版本提取；没有新增 Agent、LangGraph 节点、学习模型或
-Continuation/Experience 路由。
+## 1. 历史与运行环境
 
-安全基线保持：
+先前预检因 Codex 进程没有继承 Provider 环境而标记 `REAL_SMOKE_BLOCKED`。本次改为仅在
+实际运行子进程中加载已 Git-ignore 的本地 Provider 环境文件：密钥未读出、未打印、未写入
+Prompt、run artifact 或本报告。
 
-- continuation=`shadow`；experience=`shadow`；ranker=`bayesian_shadow`；
-  comparator=`latency_first`；
-- final policy=`task_contract`；
-- hidden/reference/golden access=false；Power=`UNSUPPORTED`；
-- CSim/Synth/CoSim cost=`1/4/20`。
+最小不含任务源码的 Provider JSON 预检通过：
 
-[track_a_safe_baseline_v1.json](../../llm4hls_harness/llm4hls_agent/config/track_a_safe_baseline_v1.json)
+| 项目 | 实际结果 |
+|---|---|
+| Provider/model | OpenAI-compatible / `deepseek-v4-pro` |
+| 请求结果 | PASS |
+| input / output Token | 45 / 5 |
+| finish reason | `stop` |
+
+所有真实工具 receipt 选择同一工具链：
+
+| 项目 | 结果 |
+|---|---|
+| executable | `vitis-run` |
+| invocation | `vitis-run --mode hls --tcl run_hls.tcl` |
+| version | Vitis `2025.2`，SW Build `6295257` |
+| receipt schema | `v3.vitis-toolchain-receipt.v1` |
+| receipt preflight | `READY` |
+
+## 2. 固定运行配置与隔离边界
+
+所有 run 均使用：
+
+- `backend=vitis`、`validation-profile=fast-experiment`、
+  `final-validation-policy=task_contract`；
+- `continuation-policy=shadow`、`experience-mode=shadow`；两者只留下审计 artifact，
+  不改变 route 或 Planner Prompt；
+- CSim/Synth/CoSim 的 credit cost=`1/4/20`；
+- `max-planner-rounds=3`、`max-no-improvement-rounds=2`、run Token limit=`32768`；
+- public task source、fixed header 和 public description 允许进入 Planner；
+  hidden/reference/golden/testbench 不允许进入 Prompt；
+- kernel-only Patch Validator 和 top/interface guard 全程开启；
+- Power=`UNSUPPORTED`，没有制造 Power proxy；External grader cost 均为 `0`。
+
+安全基线配置为
+[track_a_safe_baseline_v1.json](../../llm4hls_harness/llm4hls_agent/config/track_a_safe_baseline_v1.json)，
 SHA-256：`ca1ca142f3488062184069e0fc434f3c680687dfed561b10d5bd20aaedd27e48`。
 
-## 2. Provider 预检
+## 3. 四类真实结果
 
-只检查变量是否存在，未输出或持久化任何值：
+| Task | 来源 / mode | Baseline 路径 | Planner | Search / Internal final / Total credit | Token (in/out) | Fresh final | 结果 |
+|---|---|---|---:|---:|---:|---|---|
+| `projection_bugfix` | official / REPAIR | CSim FAIL → REPAIR | 1 | 6 / 5 / 11 | 1617 / 423 | CSim PASS；Synth PASS；CoSim NOT_RUN（非必需） | PASS |
+| `dotProduct_optimize` | official / OPTIMIZE | CSim PASS；Synth PASS | 3 | 15 / 5 / 20 | 5602 / 1927 | CSim PASS；Synth PASS；CoSim NOT_RUN（非必需） | PASS |
+| `residual_stream_deadlock` | official / STRUCTURAL_FIX | CSim PASS；Synth PASS；CoSim FAIL | 1 | 46 / 25 / 71 | 1611 / 609 | CSim PASS；Synth PASS；CoSim PASS | PASS |
+| `v3d_fast_004` | public development / REPAIR, `generation_required=true` | CSim FAIL → REPAIR | 1 | 6 / 5 / 11 | 1348 / 413 | CSim PASS；Synth PASS；CoSim NOT_RUN（非必需） | PASS |
 
-```text
-OPENAI_BASE_URL=UNSET
-OPENAI_API_KEY=UNSET
-LLM4HLS_MODEL=UNSET
-```
+四条运行的 wall time 依次为 `56.28s`、`134.15s`、`153.28s`、`42.30s`。所有 final
+CSim/Synth/CoSim action 均是 fresh（`cached=false`）。
 
-普通 login shell 与交互 shell 的结论一致。本线程没有附着的 app terminal session，
-无法从用户的独立终端继承 export。因此没有构造网络请求、没有 Authorization header、
-没有 Provider usage、也没有生成 Planner input/output artifact。
+### 3.1 `projection_bugfix`：功能修复
 
-| 项目 | 结果 |
-|---|---|
-| 最小真实 OpenAI-compatible JSON 请求 | 未发送 |
-| Provider/model | `UNKNOWN` |
-| usage | `UNKNOWN` |
-| failure class | `PROVIDER_FAILURE_ENVIRONMENT` |
-| 可复现性 | 是：当前 shell 的三项变量均未设置 |
+- baseline CSim 的 public test 失败，PhaseRouter 正确选择 `REPAIR`；
+- Planner 定位 `angle==0` 分支漏掉第三个 `z` 顶点项；
+- 一次小 Patch 后 Candidate CSim、Synth PASS；
+- final 按 `requires_cosim=false` 的 task contract 执行新鲜 CSim+Synth，均 PASS；
+- 无 baseline Synth latency，因此没有声称 PPA acceleration。
 
-## 3. Vitis 2025.2 真实预检
+### 3.2 `dotProduct_optimize`：真实 PPA 闭环
 
-| 项目 | 结果 |
-|---|---|
-| selected executable | `vitis-run`（root 优先） |
-| invocation mode | `vitis-run --mode hls --tcl run_hls.tcl` |
-| version | `2025.2`，SW Build `6295257` |
-| preflight result | `READY` |
-| 真实无 LLM synthesis | PASS |
-| baseline latency | 1027 cycles |
-| preflight elapsed | 17.182 s |
+| 阶段 | Candidate | 策略 / 结果 | Latency | 说明 |
+|---|---|---|---:|---|
+| baseline | `candidate_000` | 已正确、已流水化 | 1027 | top transaction interval=1025，不把它误当 loop II |
+| round 1 | `candidate_001` | `LOOP_UNROLL + MULTI_PARTIAL_SUM + PARALLEL_REDUCTION` | 518 | CSim/Synth PASS，严格改善，低风险延后 CoSim |
+| round 2 | — | `PAR_FACTOR_TUNING` Patch | — | Patch context 不唯一，Patch Validator 拒绝；未创建 Candidate、未调用 Vitis |
+| round 3 | `candidate_002` | `ARRAY_PARTITION + LOOP_UNROLL + LOOP_PIPELINE` | 38 | CSim/Synth PASS，晋升并 fresh final PASS |
 
-无 LLM preflight 对公开 `dotProduct_optimize` baseline 执行真实 `csynth_design`，产生
-`tcl`、stdout/stderr、`csynth.xml` 和 `vitis_toolchain.json`。本地未提交 artifact：
-`/tmp/track_a_vitis_2025_2_preflight_A02/`（约 17 MiB）。receipt 绑定的可执行文件
-SHA-256 为 `4d1bf95564e127673e3fde65bdaa7f93dc35220d15af85c794d148517fd91fb3`。
+最终 raw acceleration 为 `1027 / 38 = 27.03x`；公开 proxy 的 acceleration cap 是 `8x`，
+所以系统正确产生 `ACCELERATION_CAP_REACHED` 并停止后续纯 latency follow-up。final clock
+estimated period=`3.17 ns`，满足 100 MHz 要求。此任务 `requires_cosim=false`，因此没有为
+非必需 CoSim 消耗 20 credit。
 
-Docker daemon 对当前用户不可访问，但本机 Vitis 直跑不依赖 Docker，不构成此次
-Provider 阻塞的原因。
+### 3.3 `residual_stream_deadlock`：结构死锁修复
 
-## 4. 四类 Smoke 计划与实际结果
+- baseline 的 CSim、Synth 都 PASS，但强制 baseline CoSim 失败；
+- CoSim evidence 指向 `s_main` 满而 `s_skip` 空的 FIFO 循环等待；
+- PhaseRouter 选择 `STRUCTURAL_FIX`；Planner 用一次 Patch 将 stageA 对 main/skip 的
+  burst 写改为交错写；
+- Candidate CSim PASS、CoSim PASS；fresh final CSim、Synth、CoSim 均 PASS；
+- 资源允许的伴随时延改善为 baseline `135` → final `68` cycles（约 `1.99x`），但本次
+  主张是结构正确性修复，不把它写作官方最终评分。
 
-公开 generation/stub 采用开发 corpus 的 `v3d_fast_004`；它是公开开发任务，不声称
-属于官方 Track A 分布。
+### 3.4 `v3d_fast_004`：generation 入口
 
-| Task | Type | Mode | requires_cosim | Planner Calls | Token | Search Credits | Final Stages | Final Credits | Result |
-|---|---|---|---:|---:|---|---:|---|---:|---|
-| `task_corpus/official/fpt26-harness-public/projection_bugfix` | repair | REPAIR | false | 0 | N/A | 0 | 未运行；contract 应为 CSim+Synth | 0 | `REAL_SMOKE_BLOCKED` |
-| `task_corpus/official/fpt26-harness-public/dotProduct_optimize` | optimize | OPTIMIZE | false | 0 | N/A | 0 | 未运行；contract 应为 CSim+Synth | 0 | `REAL_SMOKE_BLOCKED` |
-| `task_corpus/official/fpt26-harness-public/residual_stream_deadlock` | structural | STRUCTURAL_FIX | true | 0 | N/A | 0 | 未运行；contract 应为 CSim+Synth+CoSim | 0 | `REAL_SMOKE_BLOCKED` |
-| `task_corpus/v3d-fast/tasks/v3d_fast_004` | generate | REPAIR | false | 0 | N/A | 0 | 未运行；contract 应为 CSim+Synth | 0 | `REAL_SMOKE_BLOCKED` |
+该任务是公开 development corpus，不能称为官方 Track A 分布。Task Loader 读取到
+`task_type=generate`、`generation_required=true`，且 PhaseRouter 如设计映射至 `REPAIR`。
+真实 Planner 修复了 kernel 内的循环索引，Candidate 与 fresh final CSim/Synth PASS。
 
-generation task 的 `generation_required=true` 已由 Task Loader 验证；Planner 未启动，
-所以没有 kernel patch、Candidate、final、Token、Search credit 或 Agent ledger 可审计。
-四个 fresh run-dir 也没有创建，避免留下“未真实执行”的伪 run。
+本题的真实 Patch 恰好是小修复，而不是大范围 kernel-body 替换；因此它验证了
+`generation_required` 的 **入口、接口保护和真实工具闭环**，但尚未单独证明复杂空 stub
+的大 Patch 生成质量。
 
-## 5. Contract、隔离与分账
+## 4. `requires_cosim` 与预算行为
 
-实现与 deterministic 回归已验证：
+本次真实运行直接验证了 task contract，而非“所有任务强制三件套”：
 
-- `requires_cosim=false` 的 `task_contract` fresh final 是 CSim+Synth，内部 final
-  cost=5；
-- `requires_cosim=true` 的 fresh final 是 CSim+Synth+CoSim，内部 final cost=25；
-- `full_internal_audit` 才无条件要求 final CoSim；
-- Agent Search、Internal final 和 External grader 分账保持独立；External grader 永远
-  是 `0 / NOT_RUN_BY_AGENT`；
-- shadow continuation 只落 decision artifact，不能改 route；shadow Experience 不进入
-  Planner prompt；
-- kernel-only Patch Validator、top/interface guard、hidden/reference/golden 隔离没有
-  改动。
+- `projection_bugfix`、`dotProduct_optimize`、`v3d_fast_004` 的
+  `requires_cosim=false`：最终只有 fresh CSim+Synth，CoSim 状态是
+  `NOT_RUN / FINAL_COSIM_NOT_REQUIRED`；
+- `residual_stream_deadlock` 的 `requires_cosim=true`：baseline CoSim 是 routing gate，
+  Candidate CoSim 是 structural gate，fresh final CoSim 也是必需 gate；
+- dotProduct 的两个低/中风险、且 Synth 严格改善 Candidate 均延后 CoSim，避免无必要的
+  20-credit 调用；
+- structural run 的 credit 分布精确反映为 baseline CSim+Synth+CoSim=`25`、Candidate
+  CSim+CoSim=`21`、final CSim+Synth+CoSim=`25`，总计 `71`。
 
-此次没有 Agent run，故不存在可审计的 Candidate parent-child、fresh final source hash 或
-Planner token usage。Vitis preflight 不属于 Agent Search 或 Internal final，未把它记入
-任一任务的 competition credit。
+## 5. Artifact 与可复核性
 
-## 6. 回归与准入
+每个 task 都有不可变 run 目录，包含：`trace.jsonl`、`budget_ledger.jsonl`、
+`candidate_registry.json`、Planner input/output、Patch、Vitis action result、工具 log、
+`vitis_toolchain.json`、final result 和 team report。运行产物按项目规则不提交 Git。
 
-| 检查 | 结果 |
-|---|---|
-| Vitis entry-point/receipt tests | PASS |
-| task-contract final tests | PASS |
-| complete unittest discover | **550 PASS** |
-| compileall | PASS |
-| git diff --check | PASS |
-| LangGraph nodes/edges | 未新增 |
+可从以下位置复核：
 
-`V3` 的默认 CLI final policy 仍为 `task_contract`；安全配置中的 shadow/default、
-Power status 与 8x stop 没有变化。
+- [projection run](../../llm4hls_harness/runs/track_a_real_smoke_20260722_A01/projection_repair/v3_prototype_result.json)
+- [dotProduct run](../../llm4hls_harness/runs/track_a_real_smoke_20260722_A01/dotproduct_optimize/v3_prototype_result.json)
+- [residual run](../../llm4hls_harness/runs/track_a_real_smoke_20260722_A01/residual_structural/v3_prototype_result.json)
+- [generation run](../../llm4hls_harness/runs/track_a_real_smoke_20260722_A01/generation_stub/v3_prototype_result.json)
 
-## 7. 最小 Smoke 是否通过、是否进入 28 题
+这些链接只在本机 workspace 内有效；报告没有复制任何 API key、hidden/reference/golden 或
+完整 testbench 内容。
 
-**未通过最小 Smoke，不能进入 28 题单次覆盖。**
+## 6. 回归与下一步
 
-唯一需要修复的前置条件是：让运行本任务的 Codex shell 继承真实 Provider 配置。
-例如在启动 Codex 前或其同一进程环境中设置：
+本轮只创建真实 run artifact 与本报告，没有修改产品代码、LangGraph 节点、BudgetLedger、
+CandidateManager、ToolServer、Checkpoint 或 fresh-final 逻辑。执行前工作树干净，
+`git diff --check` PASS；最近完整回归保持 **550 unittest PASS**、`compileall` PASS。
 
-```bash
-export OPENAI_BASE_URL='https://<provider>/v1'
-export OPENAI_API_KEY='<secret>'
-export LLM4HLS_MODEL='<model>'
-```
+最值得做的一项下一步工作是：在保持此安全基线不变的前提下，补一个真正的空函数/TODO
+公开 generation fixture 的真实 Planner+Vitis 验收，专门测量合法大 kernel-body Patch，而
+不是把当前 `v3d_fast_004` 的小索引修复误称为完整 generation 能力。
 
-恢复后，先按本表四个任务以全新独立 run-dir 运行，不复用本次任何 Planner/Candidate/final
-artifact；只有四类 fresh final 都满足 task contract、分账正确且无隔离泄漏，才评估
-28 题单次覆盖。
+本报告提交后应以该提交 hash 作为此次真实四类 Smoke 的代码/documentation 边界。
