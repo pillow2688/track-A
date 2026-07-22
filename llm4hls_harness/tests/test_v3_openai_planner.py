@@ -220,6 +220,109 @@ class V3OpenAIPlannerTests(unittest.TestCase):
             )
             self.assertEqual(proposal.effective_max_output_tokens, captured["max_tokens"])
 
+    def test_dynamic_hard_cap_keeps_legacy_prompt_but_matches_provider(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            run_root = Path(directory).resolve()
+            source_path = run_root / "candidates" / "candidate_000" / "kernel.cpp"
+            source_path.parent.mkdir(parents=True)
+            source = b"void top(int *a) { a[0] = 0; }\n"
+            source_path.write_bytes(source)
+            source_sha = hashlib.sha256(source).hexdigest()
+            candidate = {
+                "candidate_id": "candidate_000",
+                "parent_id": None,
+                "kind": "baseline",
+                "status": "BASELINE",
+                "source": {
+                    "ref": str(source_path.relative_to(run_root)),
+                    "sha256": source_sha,
+                },
+                "code_hash": source_sha,
+                "metrics": {"ref": None, "sha256": None},
+                "synth_evidence": {"ref": None, "sha256": None},
+                "validation": {},
+            }
+            planner_input = build_planner_input(
+                task={
+                    "task_id": "fixture",
+                    "task_type": "repair",
+                    "difficulty": 1,
+                    "top": "top",
+                    "part": "xcu55c-fsvh2892-2L-e",
+                    "clock_ns": 10.0,
+                    "requires_cosim": False,
+                    "initial_condition": "repair public behavior",
+                    "description": "A public task-aware fixture.",
+                    "kernel_file": "kernel.cpp",
+                    "public_tb": "kernel_tb.cpp",
+                },
+                round_state={
+                    "round_index": 1,
+                    "rounds_completed": 0,
+                    "parent_candidate_id": "candidate_000",
+                    "mode": "REPAIR",
+                    "failure_evidence": {
+                        "schema_version": "v3c.csim-failure-evidence.v1",
+                        "failure_kind": "runtime_fail",
+                        "error_summary": "public mismatch",
+                        "source_locations": ["kernel.cpp:1"],
+                        "relevant_log_lines": ["expected 1 actual 0"],
+                    },
+                },
+                incumbent=candidate,
+                baseline=candidate,
+                history=[],
+                policy={"max_optimization_rounds": 2},
+                budget={
+                    "run_token_limit": 6000,
+                    "token_limit": 6000,
+                    "tokens_used": 100,
+                    "tokens_remaining": 5900,
+                    "credits_remaining": 80,
+                },
+            )
+            provider = OpenAICompatibleOptimizationProvider(
+                OpenAICompatibleConfig(
+                    base_url="https://llm.example/v1",
+                    api_key="hard-cap-secret",
+                    model="fixture-dynamic",
+                    max_output_tokens=512,
+                    top_p=1.0,
+                )
+            )
+            planner = OpenAICompatibleV3PlannerAdapter(
+                run_root,
+                provider,
+                fast_experiment=True,
+                read_only_headers={"kernel.h": "void top(int *a);\n"},
+                token_budget_policy=TokenBudgetPolicy(
+                    TokenBudgetLimits(
+                        configured_max_output_tokens=400,
+                        minimum_viable_output_tokens=128,
+                        provider_hard_output_cap=512,
+                        context_window_tokens=8192,
+                        future_round_token_reserve=300,
+                    )
+                ),
+                token_estimator=TokenEstimator(
+                    tokenizer=lambda text: text.split(),
+                    estimator_name="fixture-tokenizer",
+                ),
+                token_budget_visible=False,
+            )
+
+            prepared = planner.prepare(planner_input)
+            envelope_value = prepared.request["token_envelope"]
+            body = prepared.request["provider_request"]["http_body"]
+            prompt = body["messages"][1]["content"]
+
+            self.assertEqual(prepared.request["token_budget_visibility"], "hidden")
+            self.assertEqual(body["max_tokens"], envelope_value["effective_max_output_tokens"])
+            self.assertEqual(body["top_p"], 1.0)
+            self.assertNotIn("TOKEN BUDGET", prompt)
+            self.assertNotIn("Token pressure", prompt)
+            self.assertNotIn("_effective_max_output_tokens", prompt)
+
     def test_task_aware_modes_do_not_require_successful_synth_metrics(self) -> None:
         for mode, evidence_schema, expected_class in (
             ("REPAIR", "v3c.csim-failure-evidence.v1", "FUNCTIONAL_REPAIR"),

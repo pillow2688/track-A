@@ -108,6 +108,16 @@ def _parser() -> argparse.ArgumentParser:
         help="fixed preserves V3-D behavior; dynamic enables v3.token-policy.v1.",
     )
     parser.add_argument(
+        "--token-budget-visibility",
+        choices=("hidden", "visible"),
+        default="visible",
+        help=(
+            "For dynamic policy, hidden enforces the Provider cap without adding "
+            "TokenEnvelope text; visible also shows the matching envelope and "
+            "pressure guidance to the Planner."
+        ),
+    )
+    parser.add_argument(
         "--llm-timeout",
         type=float,
         default=float(os.environ.get("LLM4HLS_LLM_TIMEOUT_S", "120")),
@@ -140,6 +150,14 @@ def _parser() -> argparse.ArgumentParser:
         type=float,
         default=0.0,
         help="OpenAI-compatible sampling temperature.",
+    )
+    parser.add_argument(
+        "--llm-top-p",
+        type=float,
+        help=(
+            "Optional explicit OpenAI-compatible top_p. Omitted preserves the "
+            "Provider default; controlled matrices should set it explicitly."
+        ),
     )
     parser.add_argument(
         "--max-planner-rounds",
@@ -332,6 +350,7 @@ def main(argv: list[str] | None = None) -> int:
                     timeout_seconds=args.llm_timeout,
                     max_output_tokens=args.llm_max_output_tokens,
                     temperature=args.llm_temperature,
+                    top_p=args.llm_top_p,
                 )
             )
             token_policy = None
@@ -370,6 +389,9 @@ def main(argv: list[str] | None = None) -> int:
                 {
                     "token_budget_policy": token_policy,
                     "token_estimator": token_estimator,
+                    "token_budget_visible": (
+                        args.token_budget_visibility == "visible"
+                    ),
                 }
                 if token_policy is not None
                 else {}

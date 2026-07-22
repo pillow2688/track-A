@@ -22,6 +22,7 @@ from .budget import (
     TokenEnvelope,
     TokenEstimate,
     TokenEstimator,
+    validate_token_envelope,
 )
 from .optimization import (
     ALLOWED_OPTIMIZATIONS,
@@ -151,6 +152,7 @@ class _BudgetedOptimizationDispatch:
     context: OptimizationContext
     token_envelope: Mapping[str, object]
     guidance: Mapping[str, object] | None = None
+    token_budget_visible: bool = True
 
     def binding(self) -> dict[str, object]:
         return {
@@ -159,6 +161,7 @@ class _BudgetedOptimizationDispatch:
                 dict(self.guidance) if self.guidance is not None else None
             ),
             "token_envelope": dict(self.token_envelope),
+            "token_budget_visible": self.token_budget_visible,
         }
 
 
@@ -602,6 +605,7 @@ class OpenAICompatibleV3PlannerAdapter:
         experience_algorithm_family: str | None = None,
         token_budget_policy: TokenBudgetPolicy | None = None,
         token_estimator: TokenEstimator | None = None,
+        token_budget_visible: bool = True,
     ) -> None:
         self.run_root = Path(run_root).resolve()
         self.provider = provider
@@ -624,6 +628,7 @@ class OpenAICompatibleV3PlannerAdapter:
         self.max_output_tokens = selected_max
         self.token_budget_policy = token_budget_policy
         self.token_estimator = token_estimator or TokenEstimator()
+        self.token_budget_visible = bool(token_budget_visible)
         provider_fingerprint = provider.fingerprint()
         if not isinstance(provider_fingerprint, str) or not provider_fingerprint:
             raise ValueError("provider fingerprint must not be empty")
@@ -764,6 +769,9 @@ class OpenAICompatibleV3PlannerAdapter:
                     ),
                 },
                 "estimator": self.token_estimator.estimator_name,
+                "visibility": (
+                    "visible" if self.token_budget_visible else "hidden"
+                ),
             }
         return f"{OPENAI_V3_ADAPTER_VERSION}:{canonical_sha256(identity)}"
 
@@ -921,6 +929,18 @@ class OpenAICompatibleV3PlannerAdapter:
         value["token_budget"] = envelope.to_dict()
         return value
 
+    @staticmethod
+    def _with_effective_max_output(
+        context: Mapping[str, object], envelope: TokenEnvelope
+    ) -> dict[str, object]:
+        """Carry the Provider cap without adding TokenEnvelope Prompt text."""
+
+        value = dict(context)
+        value["_effective_max_output_tokens"] = (
+            envelope.effective_max_output_tokens
+        )
+        return value
+
     def _persist_guidance(
         self,
         planner_input: Mapping[str, object],
@@ -1042,6 +1062,14 @@ class OpenAICompatibleV3PlannerAdapter:
 
         if self.token_budget_policy is None:
             raise RuntimeError("dynamic token policy is disabled")
+        if not self.token_budget_visible:
+            return self._prepare_hard_capped_mapping_context(
+                planner_input,
+                mode=mode,
+                base_context=base_context,
+                describe=describe,
+                guidance_kwargs=guidance_kwargs,
+            )
         base_request = describe(base_context)
         if not isinstance(base_request, Mapping):
             raise V3OpenAIPlannerError("provider request audit must be an object")
@@ -1196,6 +1224,131 @@ class OpenAICompatibleV3PlannerAdapter:
             guidance=guidance,
         )
 
+    def _prepare_hard_capped_mapping_context(
+        self,
+        planner_input: Mapping[str, object],
+        *,
+        mode: str,
+        base_context: Mapping[str, object],
+        describe: Callable[[Mapping[str, object]], Mapping[str, object]],
+        guidance_kwargs: Mapping[str, object],
+    ) -> _BudgetedPreparedContext:
+        """Allocate dynamically while retaining the legacy Planner Prompt."""
+
+        if self.token_budget_policy is None:
+            raise RuntimeError("dynamic token policy is disabled")
+        base_request = describe(base_context)
+        base_estimate = self._estimate_provider_request(
+            base_request, context=base_context
+        )
+        provisional = self._allocate_token_envelope(
+            planner_input,
+            mode=mode,
+            base_estimate=base_estimate,
+            final_estimate=base_estimate,
+            guidance_tokens=0,
+            guidance_allowed=(
+                self.experience_mode is not ExperienceMode.OFF
+                and not self._experience_disabled
+            ),
+        )
+        guidance = self._build_experience_guidance(
+            planner_input,
+            mode=mode,
+            guidance_token_cap=provisional.guidance_token_cap,
+            persist=False,
+            **dict(guidance_kwargs),
+        )
+        inject = bool(
+            self.experience_mode is ExperienceMode.GUIDED
+            and _guidance_actionable(guidance)
+        )
+        prompt_context = dict(base_context)
+        if inject and guidance is not None:
+            prompt_context["experience_guidance"] = dict(guidance)
+        guidance_tokens = (
+            self.token_estimator.estimate_text(guidance) if inject else 0
+        )
+        prompt_request = describe(prompt_context)
+        final_estimate = self._estimate_provider_request(
+            prompt_request,
+            context=prompt_context,
+            guidance=guidance if inject else None,
+        )
+        envelope = self._allocate_token_envelope(
+            planner_input,
+            mode=mode,
+            base_estimate=base_estimate,
+            final_estimate=final_estimate,
+            guidance_tokens=guidance_tokens,
+            guidance_allowed=(
+                self.experience_mode is not ExperienceMode.OFF
+                and not self._experience_disabled
+            ),
+        )
+        if inject and guidance_tokens > envelope.guidance_token_cap:
+            guidance = self._build_experience_guidance(
+                planner_input,
+                mode=mode,
+                guidance_token_cap=envelope.guidance_token_cap,
+                persist=False,
+                **dict(guidance_kwargs),
+            )
+            inject = bool(
+                self.experience_mode is ExperienceMode.GUIDED
+                and _guidance_actionable(guidance)
+            )
+            prompt_context = dict(base_context)
+            if inject and guidance is not None:
+                prompt_context["experience_guidance"] = dict(guidance)
+            guidance_tokens = (
+                self.token_estimator.estimate_text(guidance) if inject else 0
+            )
+
+        for _ in range(8):
+            final_context = self._with_effective_max_output(
+                prompt_context, envelope
+            )
+            final_request = describe(final_context)
+            final_estimate = self._estimate_provider_request(
+                final_request,
+                context=final_context,
+                guidance=guidance if inject else None,
+            )
+            updated = self._allocate_token_envelope(
+                planner_input,
+                mode=mode,
+                base_estimate=base_estimate,
+                final_estimate=final_estimate,
+                guidance_tokens=guidance_tokens,
+                guidance_allowed=(
+                    self.experience_mode is not ExperienceMode.OFF
+                    and not self._experience_disabled
+                ),
+            )
+            if updated.stable_hash == envelope.stable_hash:
+                envelope = updated
+                break
+            envelope = updated
+        else:
+            raise V3OpenAIPlannerError(
+                "hard-capped TokenEnvelope did not converge"
+            )
+        body = final_request.get("http_body")
+        provider_max = body.get("max_tokens") if isinstance(body, Mapping) else None
+        if provider_max != envelope.effective_max_output_tokens:
+            raise V3OpenAIPlannerError(
+                "hard-capped Provider max output diverged from TokenEnvelope"
+            )
+        self._persist_guidance(planner_input, guidance)
+        return _BudgetedPreparedContext(
+            context=final_context,
+            provider_request=final_request,
+            envelope=envelope,
+            estimate=final_estimate,
+            guidance=guidance,
+        )
+
     def _prepare_budgeted_optimization_context(
         self,
         planner_input: Mapping[str, object],
@@ -1207,6 +1360,14 @@ class OpenAICompatibleV3PlannerAdapter:
     ) -> _BudgetedPreparedOptimization:
         if self.token_budget_policy is None:
             raise RuntimeError("dynamic token policy is disabled")
+        if not self.token_budget_visible:
+            return self._prepare_hard_capped_optimization_context(
+                planner_input,
+                context=context,
+                source=source,
+                synth_report=synth_report,
+                synth_evidence=synth_evidence,
+            )
         base_request = self.provider.describe_optimization_request(context)
         base_estimate = self._estimate_provider_request(
             base_request, context=context
@@ -1333,6 +1494,101 @@ class OpenAICompatibleV3PlannerAdapter:
             context=context,
             token_envelope=envelope.to_dict(),
             guidance=injected_guidance,
+            token_budget_visible=True,
+        )
+        return _BudgetedPreparedOptimization(
+            dispatch=dispatch,
+            provider_request=final_request,
+            envelope=envelope,
+            estimate=final_estimate,
+        )
+
+    def _prepare_hard_capped_optimization_context(
+        self,
+        planner_input: Mapping[str, object],
+        *,
+        context: OptimizationContext,
+        source: str,
+        synth_report: Mapping[str, object],
+        synth_evidence: Mapping[str, object],
+    ) -> _BudgetedPreparedOptimization:
+        if self.token_budget_policy is None:
+            raise RuntimeError("dynamic token policy is disabled")
+        base_request = self.provider.describe_optimization_request(context)
+        base_estimate = self._estimate_provider_request(
+            base_request, context=context
+        )
+        provisional = self._allocate_token_envelope(
+            planner_input,
+            mode="OPTIMIZE",
+            base_estimate=base_estimate,
+            final_estimate=base_estimate,
+            guidance_tokens=0,
+            guidance_allowed=(
+                self.experience_mode is not ExperienceMode.OFF
+                and not self._experience_disabled
+            ),
+        )
+        guidance = self._build_experience_guidance(
+            planner_input,
+            mode="OPTIMIZE",
+            source=source,
+            synth_report=synth_report,
+            synth_evidence=synth_evidence,
+            guidance_token_cap=provisional.guidance_token_cap,
+            persist=False,
+        )
+        inject = bool(
+            self.experience_mode is ExperienceMode.GUIDED
+            and _guidance_actionable(guidance)
+        )
+        injected_guidance = guidance if inject else None
+        guidance_tokens = (
+            self.token_estimator.estimate_text(guidance) if inject else 0
+        )
+        envelope = provisional
+        for _ in range(8):
+            final_request = self.provider.describe_optimization_request_capped(
+                context,
+                envelope.effective_max_output_tokens,
+                experience_guidance=injected_guidance,
+            )
+            final_estimate = self._estimate_provider_request(
+                final_request,
+                context=context,
+                guidance=injected_guidance,
+            )
+            updated = self._allocate_token_envelope(
+                planner_input,
+                mode="OPTIMIZE",
+                base_estimate=base_estimate,
+                final_estimate=final_estimate,
+                guidance_tokens=guidance_tokens,
+                guidance_allowed=(
+                    self.experience_mode is not ExperienceMode.OFF
+                    and not self._experience_disabled
+                ),
+            )
+            if updated.stable_hash == envelope.stable_hash:
+                envelope = updated
+                break
+            envelope = updated
+        else:
+            raise V3OpenAIPlannerError(
+                "hard-capped optimization TokenEnvelope did not converge"
+            )
+        body = final_request.get("http_body")
+        provider_max = body.get("max_tokens") if isinstance(body, Mapping) else None
+        if provider_max != envelope.effective_max_output_tokens:
+            raise V3OpenAIPlannerError(
+                "hard-capped optimization Provider max diverged"
+            )
+        self._persist_guidance(planner_input, guidance)
+        dispatch = _BudgetedOptimizationDispatch(
+            context=context,
+            token_envelope=envelope.to_dict(),
+            guidance=injected_guidance,
+            token_budget_visible=False,
         )
         return _BudgetedPreparedOptimization(
             dispatch=dispatch,
@@ -1481,6 +1737,9 @@ class OpenAICompatibleV3PlannerAdapter:
             if token_envelope is not None:
                 request["token_envelope"] = token_envelope.to_dict()
                 request["token_envelope_sha256"] = token_envelope.stable_hash
+                request["token_budget_visibility"] = (
+                    "visible" if self.token_budget_visible else "hidden"
+                )
             return PreparedPlannerCall(
                 request=request,
                 estimated_input_tokens=estimated_input_tokens,
@@ -1628,6 +1887,9 @@ class OpenAICompatibleV3PlannerAdapter:
             if token_envelope is not None:
                 request["token_envelope"] = token_envelope.to_dict()
                 request["token_envelope_sha256"] = token_envelope.stable_hash
+                request["token_budget_visibility"] = (
+                    "visible" if self.token_budget_visible else "hidden"
+                )
             return PreparedPlannerCall(
                 request=request,
                 estimated_input_tokens=estimated_input_tokens,
@@ -1798,6 +2060,9 @@ class OpenAICompatibleV3PlannerAdapter:
             )
             request["token_envelope"] = token_envelope.to_dict()
             request["token_envelope_sha256"] = token_envelope.stable_hash
+            request["token_budget_visibility"] = (
+                "visible" if self.token_budget_visible else "hidden"
+            )
         return PreparedPlannerCall(
             request=request,
             estimated_input_tokens=estimated_input_tokens,
@@ -1869,11 +2134,19 @@ class OpenAICompatibleV3PlannerAdapter:
                 raise V3OpenAIPlannerError(
                     "prepared budgeted optimization request binding is invalid"
                 )
-            proposal = self.provider.propose_optimization_budgeted(
-                context.context,
-                context.token_envelope,
-                experience_guidance=context.guidance,
-            )
+            if context.token_budget_visible:
+                proposal = self.provider.propose_optimization_budgeted(
+                    context.context,
+                    context.token_envelope,
+                    experience_guidance=context.guidance,
+                )
+            else:
+                envelope = validate_token_envelope(context.token_envelope)
+                proposal = self.provider.propose_optimization_capped(
+                    context.context,
+                    int(envelope["effective_max_output_tokens"]),
+                    experience_guidance=context.guidance,
+                )
             if not isinstance(proposal, PatchProposal):
                 raise V3OpenAIPlannerError(
                     "budgeted optimization provider returned an invalid proposal"

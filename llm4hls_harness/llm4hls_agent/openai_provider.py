@@ -225,6 +225,7 @@ class OpenAICompatibleConfig:
     timeout_seconds: float = 120.0
     max_output_tokens: int = 1000
     temperature: float = 0.0
+    top_p: float | None = None
 
     def __post_init__(self) -> None:
         base = self.base_url.rstrip("/")
@@ -251,6 +252,10 @@ class OpenAICompatibleConfig:
             raise ValueError("LLM max output tokens must be positive")
         if not math.isfinite(self.temperature) or self.temperature < 0:
             raise ValueError("LLM temperature must be finite and non-negative")
+        if self.top_p is not None and (
+            not math.isfinite(self.top_p) or not 0 < self.top_p <= 1
+        ):
+            raise ValueError("LLM top_p must be finite and in (0,1]")
         object.__setattr__(self, "base_url", base)
 
     @property
@@ -415,7 +420,11 @@ def build_fast_experiment_prompt(context: Mapping[str, object]) -> str:
         "budget",
         "constraints",
     }
-    optional = {"experience_guidance", "token_budget"}
+    optional = {
+        "experience_guidance",
+        "token_budget",
+        "_effective_max_output_tokens",
+    }
     if not required.issubset(context) or set(context).difference(required | optional):
         raise ValueError("fast Planner context has an invalid field set")
     experience_guidance = context.get("experience_guidance")
@@ -573,7 +582,11 @@ def build_task_aware_prompt(context: Mapping[str, object]) -> str:
         "budget",
         "constraints",
     }
-    optional = {"experience_guidance", "token_budget"}
+    optional = {
+        "experience_guidance",
+        "token_budget",
+        "_effective_max_output_tokens",
+    }
     if not required.issubset(context) or set(context).difference(required | optional):
         raise ValueError("task-aware Planner context has an invalid field set")
     experience_guidance = context.get("experience_guidance")
@@ -894,6 +907,7 @@ class _Completion:
     finish_reason: str | None
     requested_max_output_tokens: int
     effective_max_output_tokens: int
+    revision: str | None
 
 
 def _completion_body(
@@ -926,6 +940,8 @@ def _completion_body(
         "max_tokens": selected_max,
         "response_format": {"type": "json_object"},
     }
+    if config.top_p is not None:
+        body["top_p"] = config.top_p
     if "api.deepseek.com" in config.base_url and config.model.startswith("deepseek-"):
         body["thinking"] = {"type": "disabled"}
     return body
@@ -986,6 +1002,13 @@ def _request_completion(
         or headers.get("x-request-id")
         or headers.get("X-Request-Id")
     )
+    response_model = envelope.get("model")
+    system_fingerprint = envelope.get("system_fingerprint")
+    revision_parts = [
+        str(item)
+        for item in (response_model, system_fingerprint)
+        if isinstance(item, str) and item.strip()
+    ]
     try:
         choice = envelope["choices"][0]
         message = choice["message"]
@@ -1056,6 +1079,7 @@ def _request_completion(
         finish_reason=finish_reason,
         requested_max_output_tokens=config.max_output_tokens,
         effective_max_output_tokens=int(body["max_tokens"]),
+        revision="|".join(revision_parts) if revision_parts else None,
     )
 
 
@@ -1087,6 +1111,7 @@ def _raise_if_truncated(
 
 def _completion_proposal_metadata(completion: _Completion) -> dict[str, object]:
     return {
+        "revision": completion.revision,
         "finish_reason": completion.finish_reason,
         "output_truncated": False,
         "truncation_reason": None,
@@ -1099,7 +1124,12 @@ def _completion_proposal_metadata(completion: _Completion) -> dict[str, object]:
 def _context_effective_max_output(context: Mapping[str, object]) -> int | None:
     raw = context.get("token_budget")
     if raw is None:
-        return None
+        hidden = context.get("_effective_max_output_tokens")
+        if hidden is None:
+            return None
+        if isinstance(hidden, bool) or not isinstance(hidden, int) or hidden <= 0:
+            raise ValueError("_effective_max_output_tokens must be positive")
+        return hidden
     if not isinstance(raw, Mapping):
         raise ValueError("token_budget must be a TokenEnvelope object")
     envelope = validate_token_envelope(raw)
@@ -1126,6 +1156,7 @@ class OpenAICompatibleRepairProvider:
                 self.config.model,
                 str(self.config.max_output_tokens),
                 format(self.config.temperature, ".12g"),
+                "default" if self.config.top_p is None else format(self.config.top_p, ".12g"),
             ]
         )
 
@@ -1195,6 +1226,7 @@ class OpenAICompatibleOptimizationProvider:
                 self.config.model,
                 str(self.config.max_output_tokens),
                 format(self.config.temperature, ".12g"),
+                "default" if self.config.top_p is None else format(self.config.top_p, ".12g"),
             ]
         )
 
@@ -1247,6 +1279,31 @@ class OpenAICompatibleOptimizationProvider:
                 effective_max_output_tokens=int(
                     envelope["effective_max_output_tokens"]
                 ),
+            ),
+        }
+
+    def describe_optimization_request_capped(
+        self,
+        context: OptimizationContext,
+        effective_max_output_tokens: int,
+        *,
+        experience_guidance: Mapping[str, object] | None = None,
+    ) -> dict[str, object]:
+        """Apply a dynamic hard cap without exposing TokenEnvelope text."""
+
+        prompt = (
+            build_guided_optimization_prompt(context, experience_guidance)
+            if experience_guidance is not None
+            else build_optimization_prompt(context)
+        )
+        return {
+            "provider": "openai-compatible",
+            "model": self.config.model,
+            "endpoint": self.config.chat_completions_url,
+            "http_body": _completion_body(
+                self.config,
+                prompt=prompt,
+                effective_max_output_tokens=effective_max_output_tokens,
             ),
         }
 
@@ -1513,6 +1570,26 @@ class OpenAICompatibleOptimizationProvider:
             effective_max_output_tokens=int(
                 envelope["effective_max_output_tokens"]
             ),
+        )
+
+    def propose_optimization_capped(
+        self,
+        context: OptimizationContext,
+        effective_max_output_tokens: int,
+        *,
+        experience_guidance: Mapping[str, object] | None = None,
+    ) -> PatchProposal:
+        """Use the legacy Prompt while enforcing a dynamic Provider cap."""
+
+        prompt = (
+            build_guided_optimization_prompt(context, experience_guidance)
+            if experience_guidance is not None
+            else build_optimization_prompt(context)
+        )
+        return self._propose_optimization_with_prompt(
+            context,
+            prompt,
+            effective_max_output_tokens=effective_max_output_tokens,
         )
 
     def propose_guided_optimization(
