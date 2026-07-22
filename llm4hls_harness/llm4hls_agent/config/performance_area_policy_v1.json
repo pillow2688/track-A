@@ -1,0 +1,15 @@
+{
+  "policy_version": "v3.performance-area-policy.v1",
+  "weights": {
+    "lut": 0.25,
+    "ff": 0.15,
+    "dsp": 0.25,
+    "bram": 0.25,
+    "uram": 0.10
+  },
+  "resource_pressure_thresholds": {
+    "medium": 0.70,
+    "high": 0.85,
+    "critical": 0.95
+  }
+}

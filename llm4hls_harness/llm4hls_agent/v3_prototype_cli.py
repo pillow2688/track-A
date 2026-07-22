@@ -190,6 +190,15 @@ def _parser() -> argparse.ArgumentParser:
         help="Stop after this many consecutive rejected/non-improving rounds.",
     )
     parser.add_argument(
+        "--continuation-policy",
+        choices=("off", "shadow", "enforce"),
+        default="shadow",
+        help=(
+            "Value-gated follow-up policy. shadow persists a decision without "
+            "changing routing; enforce uses the existing stop/final edges."
+        ),
+    )
+    parser.add_argument(
         "--enable-final-fallback",
         action="store_true",
         help=(
@@ -560,6 +569,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_no_improvement_rounds=args.max_no_improvement_rounds,
                 max_final_attempts=max_final_attempts,
                 validation_profile=args.validation_profile,
+                continuation_policy_mode=args.continuation_policy,
             )
         else:
             result = run_v3_prototype(
@@ -573,6 +583,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_no_improvement_rounds=args.max_no_improvement_rounds,
                 max_final_attempts=max_final_attempts,
                 validation_profile=args.validation_profile,
+                continuation_policy_mode=args.continuation_policy,
             )
         if args.experience_mode != "off":
             # Rebuild Candidate-level records from terminal, hash-bound run

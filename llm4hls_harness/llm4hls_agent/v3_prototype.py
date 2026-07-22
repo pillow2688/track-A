@@ -53,6 +53,16 @@ from .v3_failure_evidence import (
     extract_synth_failure_evidence,
 )
 from .v3_phase_router import PhaseMode, PhaseRoutingError, route_phase
+from .v3_continuation import (
+    POLICY_MODES as CONTINUATION_POLICY_MODES,
+    continuation_cost,
+    continuation_decision,
+    evidence_delta,
+    load_performance_area_policy,
+    observed_strategy_atoms,
+    performance_area_delta,
+    strategy_novelty,
+)
 from .v3_planner import (
     PLANNER_ACTION_SCHEMA,
     PLANNER_INPUT_SCHEMA,
@@ -173,6 +183,9 @@ class V3PrototypeState(TypedDict, total=False):
     registry_revision: int
     final_attempt_count: int
     final_attempted_candidate_ids: list[str]
+    continuation_decision_ref: str
+    continuation_decision_hash: str
+    performance_area_ref: str
 
 
 @dataclass(frozen=True)
@@ -190,6 +203,7 @@ class _Runtime:
     live_planner: LivePlanner | None = None
     max_planner_rounds: int = 1
     validation_profile: str = STRICT_VALIDATION_PROFILE
+    continuation_policy_mode: str = "off"
 
     @property
     def proposal(self) -> PatchProposal:
@@ -277,6 +291,7 @@ def _run_config_snapshot(runtime: _Runtime) -> dict[str, object]:
                 "live_planner_replay_policy": runtime.live_planner.replay_policy,
                 "planner_mode": runtime.planner_mode,
                 "max_planner_rounds": runtime.max_planner_rounds,
+                "continuation_policy_mode": runtime.continuation_policy_mode,
                 "live_planner_action_schema": LIVE_PLANNER_ACTION_SCHEMA,
                 "live_planner_outcome_schema": LIVE_PLANNER_OUTCOME_SCHEMA,
             }
@@ -2564,6 +2579,9 @@ def _initialize(runtime: _Runtime, _state: V3PrototypeState) -> V3PrototypeState
         "no_improvement_rounds": 0,
         "last_round_improved": False,
         "exploration_stop_reason": "RUNNING",
+        "continuation_decision_ref": "",
+        "continuation_decision_hash": "",
+        "performance_area_ref": "",
         "registry_revision": int(registry.get("v3_revision", 0)),
         "node_events": [event],
     }
@@ -2884,6 +2902,148 @@ def _phase_router(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeStat
     }
 
 
+def _continuation_history(
+    runtime: _Runtime, state: V3PrototypeState
+) -> tuple[list[tuple[str, ...]], list[tuple[str, ...]], list[str], Mapping[str, object] | None]:
+    """Collect only already-materialized run facts; never future Planner output."""
+
+    registry = CandidateManager(runtime.run_root, runtime.task).load_registry()
+    raw = registry.get("candidates")
+    candidates = raw if isinstance(raw, Mapping) else {}
+    attempted: list[tuple[str, ...]] = []
+    failed: list[tuple[str, ...]] = []
+    patches: list[str] = []
+    latest: tuple[int, Mapping[str, object]] | None = None
+    current_round = int(state.get("round_index", 1))
+    for raw_candidate_id, candidate in candidates.items():
+        if not isinstance(candidate, Mapping) or candidate.get("kind") == "baseline":
+            continue
+        candidate_round = candidate.get("round_index")
+        if isinstance(candidate_round, bool) or not isinstance(candidate_round, int):
+            continue
+        if candidate_round >= current_round:
+            continue
+        metadata = candidate.get("metadata")
+        metadata = metadata if isinstance(metadata, Mapping) else candidate
+        declared = metadata.get("strategy_bundle") or metadata.get("change_class") or ()
+        if isinstance(declared, str):
+            declared = (declared,)
+        patch = ""
+        patch_ref = candidate.get("patch_ref")
+        if isinstance(patch_ref, str) and patch_ref:
+            try:
+                patch = _safe_run_ref(runtime, patch_ref).read_text(encoding="utf-8")
+            except (OSError, RuntimeError):
+                patch = ""
+        atoms = observed_strategy_atoms(
+            declared=declared if isinstance(declared, Sequence) else (), patch=patch
+        )
+        if atoms:
+            attempted.append(atoms)
+            if str(candidate.get("status", "")).startswith("REJECTED"):
+                failed.append(atoms)
+        digest = candidate.get("patch_sha256")
+        if isinstance(digest, str) and digest:
+            patches.append(digest)
+        if latest is None or candidate_round > latest[0]:
+            latest = (candidate_round, {**candidate, "candidate_id": str(raw_candidate_id)})
+    return attempted, failed, patches, latest[1] if latest is not None else None
+
+
+def _continuation_evidence(
+    runtime: _Runtime, state: V3PrototypeState, latest: Mapping[str, object] | None
+) -> tuple[Mapping[str, object], Mapping[str, object], Mapping[str, object], Mapping[str, object]]:
+    """Return before/after evidence and metrics already created before this call."""
+
+    mode = str(state.get("mode", PhaseMode.OPTIMIZE.value))
+    current_metrics: Mapping[str, object] = {}
+    best_metrics_ref = state.get("best_metrics_ref")
+    if isinstance(best_metrics_ref, str) and best_metrics_ref:
+        current_metrics = _completed_synth_report(
+            runtime, best_metrics_ref, candidate_id=state["best_candidate_id"], validation_scope="exploration"
+        )
+    current_evidence: Mapping[str, object] = dict(state.get("failure_evidence", {}))
+    if mode == PhaseMode.OPTIMIZE.value:
+        reference = state.get("best_synth_evidence_ref")
+        if isinstance(reference, str) and reference:
+            current_evidence = _read_json_object(_safe_run_ref(runtime, reference))
+    previous_metrics: Mapping[str, object] = current_metrics
+    previous_evidence: Mapping[str, object] = current_evidence
+    if latest is not None:
+        metrics_ref = latest.get("metrics_ref")
+        candidate_id = latest.get("candidate_id")
+        if isinstance(metrics_ref, str) and isinstance(candidate_id, str) and metrics_ref:
+            previous_metrics = _completed_synth_report(runtime, metrics_ref, candidate_id=candidate_id, validation_scope="exploration")
+        evidence_ref = latest.get("synth_evidence_ref") if mode == PhaseMode.OPTIMIZE.value else None
+        if isinstance(evidence_ref, str) and evidence_ref:
+            previous_evidence = _read_json_object(_safe_run_ref(runtime, evidence_ref))
+    return previous_evidence, current_evidence, previous_metrics, current_metrics
+
+
+def _apply_continuation_policy(
+    runtime: _Runtime,
+    state: V3PrototypeState,
+    *,
+    budget_gate: Mapping[str, object],
+    estimated_tokens: int,
+    estimated_credits: int,
+) -> tuple[bool, dict[str, object], str, str, str]:
+    """Persist a pre-call decision at an existing budget gate.
+
+    In ``shadow`` it deliberately returns the existing budget verdict.  In
+    ``enforce`` only this pure decision may stop the existing route.
+    """
+
+    policy_mode = runtime.continuation_policy_mode
+    if policy_mode == "off":
+        return bool(budget_gate.get("allowed")), {}, "", "", ""
+    round_index = int(state.get("round_index", 1))
+    planner_limit = runtime.max_planner_rounds if runtime.live_planner is not None else len(runtime.proposals)
+    ledger = BudgetLedger(runtime.run_root / "budget_ledger.jsonl", runtime.config.budget).snapshot()
+    attempted, failed, patches, latest = _continuation_history(runtime, state)
+    before_evidence, after_evidence, before_metrics, after_metrics = _continuation_evidence(runtime, state, latest)
+    mode = str(state.get("mode", PhaseMode.OPTIMIZE.value))
+    delta = evidence_delta(before_evidence, after_evidence, mode=mode, before_metrics=before_metrics, after_metrics=after_metrics)
+    novelty = strategy_novelty(attempted=attempted, failed=failed, patch_digests=patches)
+    pa = performance_area_delta(before_metrics, after_metrics, policy=load_performance_area_policy(), reference="previous_incumbent")
+    baseline_metrics = _completed_synth_report(runtime, state["baseline_metrics_ref"], candidate_id=state["baseline_candidate_id"], validation_scope="exploration") if state.get("baseline_metrics_ref") else {}
+    best_latency = _worst_latency(after_metrics, name="incumbent") if after_metrics else None
+    baseline_latency = _worst_latency(baseline_metrics, name="baseline") if baseline_metrics else None
+    strict_improvement = bool(best_latency is not None and baseline_latency is not None and best_latency < baseline_latency)
+    has_correct = mode == PhaseMode.OPTIMIZE.value or state.get("best_candidate_id") != state.get("baseline_candidate_id")
+    cost = continuation_cost(
+        ledger=ledger,
+        estimated_input_tokens=estimated_tokens,
+        estimated_output_tokens=0,
+        estimated_credits=estimated_credits,
+        estimated_wall_time_seconds=0.0,
+        final_reserve_safe=bool(budget_gate.get("allowed")),
+    )
+    decision = continuation_decision(
+        run_id=runtime.run_root.name, round_index=round_index, mode=mode,
+        policy_mode=policy_mode, has_correct_candidate=has_correct,
+        has_strict_latency_improvement=strict_improvement, performance_area=pa,
+        delta=delta, strategies=novelty, cost=cost,
+        remaining_rounds=max(0, planner_limit - round_index + 1),
+    )
+    # Initial calls have no follow-up to suppress, but are still recorded in
+    # shadow/enforce for auditability.
+    if round_index == 1 and decision["decision"] != "DEFER_TO_FINAL":
+        decision["decision"] = "ALLOW"
+        decision["reason_codes"] = [*decision["reason_codes"], "INITIAL_PLANNER_CALL"]
+        decision["decision_hash"] = ""
+        decision["decision_hash"] = canonical_sha256({key: value for key, value in decision.items() if key != "decision_hash"})
+    decision_ref = f"planner/call_gates/round_{round_index:03d}.json"
+    _write_once_or_verify(runtime.run_root / decision_ref, decision)
+    pa_ref = f"performance_area/round_{round_index:03d}.json"
+    _write_once_or_verify(runtime.run_root / pa_ref, pa)
+    decision_hash = str(decision["decision_hash"])
+    allowed = bool(budget_gate.get("allowed"))
+    if policy_mode == "enforce" and decision["decision"] != "ALLOW":
+        allowed = False
+    return allowed, decision, decision_ref, decision_hash, pa_ref
+
+
 def _evaluate_task_round_budget(
     runtime: _Runtime, state: V3PrototypeState
 ) -> V3PrototypeState:
@@ -2903,6 +3063,8 @@ def _evaluate_task_round_budget(
         else len(runtime.proposals)
     )
     no_improvement = int(state.get("no_improvement_rounds", 0))
+    required_tokens = 0
+    next_credits = 0
     if round_index > planner_round_limit:
         gate: dict[str, object] = {
             "policy": "task_repair_round_limit",
@@ -2938,11 +3100,14 @@ def _evaluate_task_round_budget(
                 "cosim": 1,
             },
         }[mode]
+        next_credits = sum(
+            int(candidate_calls[stage]) * int(runtime.config.budget.costs[stage])
+            for stage in candidate_calls
+        )
         required = {
             stage: candidate_calls[stage] + _FULL_CLOSURE_CALLS[stage]
             for stage in _FULL_CLOSURE_CALLS
         }
-        required_tokens = 0
         token_policy_blocker: str | None = None
         if runtime.live_planner is not None:
             try:
@@ -2980,7 +3145,12 @@ def _evaluate_task_round_budget(
                 if gate["allowed"] is True
                 else "TASK_REPAIR_SKIPPED_FINAL_RESERVE"
             )
-    allowed = gate["allowed"] is True
+    allowed, continuation, continuation_ref, continuation_hash, pa_ref = _apply_continuation_policy(
+        runtime, state, budget_gate=gate, estimated_tokens=required_tokens,
+        estimated_credits=next_credits,
+    )
+    if not allowed and continuation.get("decision") in {"BLOCK", "DEFER_TO_FINAL"}:
+        reason = "CONTINUATION_" + str(continuation["decision"])
     event = _event(
         runtime,
         node="evaluate_task_round_budget",
@@ -2998,6 +3168,9 @@ def _evaluate_task_round_budget(
         "status": "RUNNING" if allowed else "FAILED",
         "stop_reason": "RUNNING" if allowed else reason,
         "exploration_stop_reason": "RUNNING" if allowed else reason,
+        "continuation_decision_ref": continuation_ref,
+        "continuation_decision_hash": continuation_hash,
+        "performance_area_ref": pa_ref,
         "node_events": [event],
     }
 
@@ -3007,6 +3180,7 @@ def _evaluate_round_budget(
 ) -> V3PrototypeState:
     round_index = int(state.get("round_index", 1))
     no_improvement = int(state.get("no_improvement_rounds", 0))
+    required_tokens = 0
     planner_round_limit = (
         runtime.max_planner_rounds
         if runtime.live_planner is not None
@@ -3043,7 +3217,6 @@ def _evaluate_round_budget(
                 else 2
             ),
         }
-        required_tokens = 0
         token_policy_blocker: str | None = None
         if runtime.live_planner is not None:
             try:
@@ -3085,7 +3258,15 @@ def _evaluate_round_budget(
                 if gate["allowed"] is True
                 else "ROUND_SKIPPED_FINAL_RESERVE"
             )
-    allowed = gate["allowed"] is True
+    allowed, continuation, continuation_ref, continuation_hash, pa_ref = _apply_continuation_policy(
+        runtime, state, budget_gate=gate, estimated_tokens=required_tokens,
+        estimated_credits=(
+            int(runtime.config.budget.costs["csim"])
+            + int(runtime.config.budget.costs["synth"])
+        ),
+    )
+    if not allowed and continuation.get("decision") in {"BLOCK", "DEFER_TO_FINAL"}:
+        reason = "CONTINUATION_" + str(continuation["decision"])
     event = _event(
         runtime,
         node="evaluate_round_budget",
@@ -3105,6 +3286,9 @@ def _evaluate_round_budget(
     update: V3PrototypeState = {
         "budget_gate": gate,
         "last_tool_ok": allowed,
+        "continuation_decision_ref": continuation_ref,
+        "continuation_decision_hash": continuation_hash,
+        "performance_area_ref": pa_ref,
         "node_events": [event],
     }
     if not allowed and int(state.get("rounds_completed", 0)) == 0:
@@ -3945,6 +4129,16 @@ def _candidate_score_gate(
     candidate_score_ref = f"scores/{candidate_id}.pre_cosim.json"
     _atomic_json(runtime.run_root / baseline_score_ref, incumbent_score.to_dict())
     _atomic_json(runtime.run_root / candidate_score_ref, candidate_score.to_dict())
+    performance_area = performance_area_delta(
+        incumbent_metrics,
+        candidate_metrics,
+        policy=load_performance_area_policy(),
+        reference=f"incumbent:{incumbent_id}",
+    )
+    performance_area_ref = f"performance_area/{candidate_id}.json"
+    _write_once_or_verify(
+        runtime.run_root / performance_area_ref, performance_area
+    )
     policy = (
         "official_score_gate"
         if runtime.scoring.official_score_enabled
@@ -4012,12 +4206,16 @@ def _candidate_score_gate(
             "promote_without_cosim": gate_value.get(
                 "promote_without_cosim", False
             ),
+            "performance_area_ref": performance_area_ref,
+            "pareto_relation": performance_area.get("pareto_relation"),
+            "performance_area_delta_class": performance_area.get("delta_class"),
         },
     )
     return {
         "baseline_score_ref": baseline_score_ref,
         "candidate_score_ref": candidate_score_ref,
         "cosim_gate": gate_value,
+        "performance_area_ref": performance_area_ref,
         "node_events": [event],
     }
 
@@ -5418,6 +5616,14 @@ def _render_team_report(
             + report_cell(result.get("phase_decision", {}))
             + "`",
             f"- Failure evidence: `{result.get('failure_evidence_ref') or '-'}`",
+            "- Continuation policy / last decision: `"
+            + str(result.get("continuation_policy_mode", "off"))
+            + " / "
+            + str(result.get("continuation_decision_ref") or "-")
+            + "`",
+            "- Performance-Area advisory: `"
+            + str(result.get("performance_area_ref") or "-")
+            + "` (Power 未纳入)",
             f"- Validation profile: `{result.get('validation_profile', 'strict')}`",
             f"- Status: `{result.get('status', 'FAILED')}`",
             f"- Stop reason: `{result.get('stop_reason', 'UNKNOWN')}`",
@@ -5551,6 +5757,10 @@ def _write_report(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeStat
         "failure_evidence_ref": state.get("failure_evidence_ref"),
         "failure_evidence_sha256": state.get("failure_evidence_sha256"),
         "validation_profile": runtime.validation_profile,
+        "continuation_policy_mode": runtime.continuation_policy_mode,
+        "continuation_decision_ref": state.get("continuation_decision_ref"),
+        "continuation_decision_hash": state.get("continuation_decision_hash"),
+        "performance_area_ref": state.get("performance_area_ref"),
         "status": state.get("status", "FAILED"),
         "stop_reason": state.get("stop_reason", "UNKNOWN"),
         "exploration_stop_reason": state.get(
@@ -5657,6 +5867,7 @@ def _write_report(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeStat
             "planner_inputs": "planner/inputs",
             "planner_outputs": "planner/outputs",
             "planner_call_gates": "planner/call_gates",
+            "performance_area": "performance_area",
             "synth_evidence": "evidence/synth",
             "failure_evidence": "evidence/failures",
             "package_manifest": "control/package_manifest.json",
@@ -6019,6 +6230,7 @@ def run_v3_prototype(
     max_no_improvement_rounds: int = 2,
     max_final_attempts: int = 1,
     validation_profile: str = STRICT_VALIDATION_PROFILE,
+    continuation_policy_mode: str = "off",
 ) -> dict[str, object]:
     """Run the checkpointed V3-A1 graph and return its durable result.
 
@@ -6038,6 +6250,8 @@ def run_v3_prototype(
         raise ValueError("max_planner_rounds must be positive")
     if validation_profile not in VALIDATION_PROFILES:
         raise ValueError("unsupported validation profile")
+    if continuation_policy_mode not in CONTINUATION_POLICY_MODES:
+        raise ValueError("unsupported continuation policy mode")
     if planner is not None and proposal is not None:
         raise ValueError("live planner and scripted proposals are mutually exclusive")
     if planner is None:
@@ -6075,6 +6289,7 @@ def run_v3_prototype(
         live_planner=planner,
         max_planner_rounds=max_planner_rounds,
         validation_profile=validation_profile,
+        continuation_policy_mode=continuation_policy_mode,
     )
     checkpoint_path = root / "graph_checkpoints.sqlite"
     graph_schema_path = root / "v3_graph_schema.json"
