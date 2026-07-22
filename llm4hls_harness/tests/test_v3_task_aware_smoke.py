@@ -212,6 +212,31 @@ class CombinationalRepairSmokeBackend(TaskAwareSmokeBackend):
         return replace(result, report=report)
 
 
+class MissingLatencyRepairSmokeBackend(TaskAwareSmokeBackend):
+    """Model valid correctness synthesis reports with no PPA latency table."""
+
+    def run(
+        self,
+        kind: str,
+        *,
+        kernel_bytes: bytes,
+        work_dir: Path,
+        **kwargs: object,
+    ) -> BackendResult:
+        result = super().run(
+            kind,
+            kernel_bytes=kernel_bytes,
+            work_dir=work_dir,
+            **kwargs,
+        )
+        if kind != "synth":
+            return result
+        report = dict(result.report or {})
+        report.pop("latency", None)
+        report.pop("interval", None)
+        return replace(result, report=report)
+
+
 def task_config(task: PublicTask) -> RunConfig:
     # The official projection task advertises 20 credits, while the unchanged
     # mandatory fresh final closure alone costs 25.  These graph smoke tests
@@ -430,6 +455,19 @@ class V3TaskAwareOfficialSmokeTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "DONE")
         self.assertEqual(result["candidate_rounds"][0]["latency_worst"], 0.0)
+
+    def test_projection_missing_latency_keeps_fresh_final_pass_authoritative(self) -> None:
+        result, _registry, _planner_input, _calls = self._run(
+            "projection_bugfix",
+            backend=MissingLatencyRepairSmokeBackend("projection_bugfix"),
+        )
+
+        self.assertEqual(result["status"], "DONE")
+        self.assertEqual(result["stop_reason"], "REPAIR_FINALIZED")
+        self.assertIsNone(result["candidate_rounds"][0]["latency_worst"])
+        self.assertIsNone(
+            result["candidate_rounds"][0]["acceleration_vs_baseline"]
+        )
 
     def test_dot_product_keeps_existing_optimize_route(self) -> None:
         result, registry, planner_input, calls = self._run("dotProduct_optimize")

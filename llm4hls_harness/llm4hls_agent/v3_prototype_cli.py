@@ -103,9 +103,19 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--token-budget-policy",
-        choices=("fixed", "dynamic"),
+        choices=("fixed", "dynamic", "hybrid"),
         default="fixed",
-        help="fixed preserves V3-D behavior; dynamic enables v3.token-policy.v1.",
+        help=(
+            "fixed preserves V3-D; dynamic enables v3.token-policy.v1; "
+            "hybrid enables empirical stable caps and the Planner-call gate."
+        ),
+    )
+    parser.add_argument(
+        "--token-policy-config",
+        help=(
+            "Hybrid policy JSON override. By default the versioned package "
+            "configuration generated from the 72-run historical analysis is used."
+        ),
     )
     parser.add_argument(
         "--token-budget-visibility",
@@ -355,34 +365,75 @@ def main(argv: list[str] | None = None) -> int:
             )
             token_policy = None
             token_estimator = None
-            if args.token_budget_policy == "dynamic":
-                token_policy = TokenBudgetPolicy(
-                    TokenBudgetLimits(
-                        mode_output_caps={
-                            "REPAIR": args.repair_max_output_tokens,
-                            "SYNTH_FIX": args.synth_fix_max_output_tokens,
-                            "STRUCTURAL_FIX": args.structural_fix_max_output_tokens,
-                            "OPTIMIZE": args.optimize_max_output_tokens,
-                        },
-                        configured_max_output_tokens=args.max_output_tokens,
-                        minimum_viable_output_tokens=(
-                            args.minimum_viable_output_tokens
-                        ),
-                        provider_hard_output_cap=args.llm_max_output_tokens,
-                        context_window_tokens=args.context_window_tokens,
-                        context_safety_margin_tokens=(
-                            args.context_safety_margin_tokens
-                        ),
-                        token_budget_safety_margin=args.token_safety_margin,
-                        future_round_token_reserve=(
-                            args.future_round_token_reserve
-                        ),
-                        final_token_reserve=args.final_token_reserve,
-                        configured_guidance_cap=(
-                            args.experience_max_guidance_tokens
-                        ),
-                        guidance_ratio=args.guidance_ratio,
+            if args.token_budget_policy in {"dynamic", "hybrid"}:
+                hybrid_config: dict[str, object] = {}
+                if args.token_budget_policy == "hybrid":
+                    hybrid_path = (
+                        Path(args.token_policy_config).expanduser().resolve()
+                        if args.token_policy_config
+                        else Path(__file__).with_name("config")
+                        / "token_policy_hybrid_v2.json"
                     )
+                    hybrid_config = json.loads(
+                        hybrid_path.read_text(encoding="utf-8")
+                    )
+                    if (
+                        not isinstance(hybrid_config, dict)
+                        or hybrid_config.get("schema_version")
+                        != "v3e.token-policy-hybrid-config.v1"
+                    ):
+                        raise ValueError("invalid Hybrid Token Policy config")
+                configured_caps = (
+                    hybrid_config.get("mode_output_caps")
+                    if hybrid_config
+                    else {
+                        "REPAIR": args.repair_max_output_tokens,
+                        "SYNTH_FIX": args.synth_fix_max_output_tokens,
+                        "STRUCTURAL_FIX": args.structural_fix_max_output_tokens,
+                        "OPTIMIZE": args.optimize_max_output_tokens,
+                    }
+                )
+                configured_minimums = (
+                    hybrid_config.get("mode_minimum_viable_output")
+                    if hybrid_config
+                    else None
+                )
+                if not isinstance(configured_caps, dict):
+                    raise ValueError("Hybrid mode_output_caps must be an object")
+                if configured_minimums is not None and not isinstance(
+                    configured_minimums, dict
+                ):
+                    raise ValueError(
+                        "Hybrid mode_minimum_viable_output must be an object"
+                    )
+                limit_kwargs: dict[str, object] = {
+                    "mode_output_caps": configured_caps,
+                    "configured_max_output_tokens": args.max_output_tokens,
+                    "minimum_viable_output_tokens": (
+                        args.minimum_viable_output_tokens
+                    ),
+                    "provider_hard_output_cap": args.llm_max_output_tokens,
+                    "context_window_tokens": args.context_window_tokens,
+                    "context_safety_margin_tokens": (
+                        args.context_safety_margin_tokens
+                    ),
+                    "token_budget_safety_margin": args.token_safety_margin,
+                    "future_round_token_reserve": (
+                        args.future_round_token_reserve
+                    ),
+                    "final_token_reserve": args.final_token_reserve,
+                    "configured_guidance_cap": (
+                        args.experience_max_guidance_tokens
+                    ),
+                    "guidance_ratio": args.guidance_ratio,
+                }
+                if configured_minimums is not None:
+                    limit_kwargs["mode_minimum_viable_output"] = (
+                        configured_minimums
+                    )
+                token_policy = TokenBudgetPolicy(
+                    TokenBudgetLimits(**limit_kwargs),
+                    profile=args.token_budget_policy,
                 )
                 token_estimator = TokenEstimator.for_model(str(args.model))
             token_policy_kwargs = (
@@ -390,7 +441,8 @@ def main(argv: list[str] | None = None) -> int:
                     "token_budget_policy": token_policy,
                     "token_estimator": token_estimator,
                     "token_budget_visible": (
-                        args.token_budget_visibility == "visible"
+                        args.token_budget_policy == "hybrid"
+                        or args.token_budget_visibility == "visible"
                     ),
                 }
                 if token_policy is not None

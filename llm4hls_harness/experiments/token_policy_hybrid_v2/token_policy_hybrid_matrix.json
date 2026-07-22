@@ -1,0 +1,69 @@
+{
+  "schema_version": "v3e.token-policy-hybrid-matrix.v1",
+  "experiment_id": "token-policy-hybrid-v2-real-pilot",
+  "scope": "PUBLIC_TRAIN_DEV_ONLY",
+  "corpus_manifest": "../../task_corpus/v3d-fast/corpus_manifest.json",
+  "hybrid_policy_config": "../../llm4hls_agent/config/token_policy_hybrid_v2.json",
+  "allow_hidden_like": false,
+  "provider": "openai-compatible",
+  "model_env": "LLM4HLS_MODEL",
+  "provider_seed_supported": false,
+  "temperature": 0.0,
+  "top_p": 1.0,
+  "seed": null,
+  "repeats": 2,
+  "execution_order": "BALANCED_ALTERNATING_AD_V1",
+  "validation_profile": "fast-experiment",
+  "run_token_limit": 12000,
+  "credit_limit": 100,
+  "max_planner_rounds": 4,
+  "max_no_improvement_rounds": 2,
+  "final_reserve_credits": 25,
+  "runtime_limit_seconds": 3600,
+  "csim_timeout_seconds": 300,
+  "synth_timeout_seconds": 900,
+  "cosim_timeout_seconds": 600,
+  "llm_timeout_seconds": 180,
+  "provider_hard_output_cap": 4096,
+  "context_window_tokens": 32768,
+  "context_safety_margin_tokens": 256,
+  "token_safety_margin": 128,
+  "future_round_token_reserve": 1800,
+  "final_token_reserve": 0,
+  "guidance_ratio": 0.15,
+  "experience_mode": "off",
+  "baseline_reuse": false,
+  "candidate_reuse": false,
+  "final_reuse": false,
+  "conditions": {
+    "A_FIXED": {
+      "token_budget_policy": "fixed",
+      "token_budget_visibility": "legacy"
+    },
+    "D_HYBRID": {
+      "token_budget_policy": "hybrid",
+      "token_budget_visibility": "minimal"
+    }
+  },
+  "pilot_tasks": {
+    "REPAIR": ["v3d_fast_001", "v3d_fast_004", "v3d_fast_005"],
+    "SYNTH_FIX": ["v3d_fast_009", "v3d_fast_012", "v3d_fast_013"],
+    "STRUCTURAL_FIX": ["v3d_fast_015", "v3d_fast_016", "v3d_fast_017"],
+    "OPTIMIZE": ["v3d_fast_021", "v3d_fast_023", "v3d_fast_025"]
+  },
+  "admission": {
+    "max_final_success_drop_points": 5.0,
+    "target_average_total_token_reduction": 0.1,
+    "tokens_per_success_must_not_increase": true,
+    "planner_calls_must_not_clearly_increase": true,
+    "required_budget_compliance": 1.0,
+    "required_patch_invalid_rate": 0.0,
+    "required_truncation_rate": 0.0,
+    "quality_regression_tolerance": 0.05
+  },
+  "statistics": {
+    "bootstrap_samples": 10000,
+    "bootstrap_seed": 260722,
+    "minimum_tasks_for_inferential_claim": 20
+  }
+}

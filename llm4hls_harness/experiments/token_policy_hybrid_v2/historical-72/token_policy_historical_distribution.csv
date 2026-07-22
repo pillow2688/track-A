@@ -1,0 +1,5 @@
+mode,runs,success_rate,call_output_p50,call_output_p75,call_output_p90,call_output_p95,call_output_max,successful_call_output_p95,stable_cap,planner_calls_mean,second_call_rate,second_call_new_evidence_rate,second_call_improvement_rate,patch_invalid_runs,acceleration_median,acceleration_geometric_mean
+REPAIR,18,1.0,388.0,411.75,454.8,459.15,460.0,459.15,544,1.0,0.0,,,0,,
+SYNTH_FIX,18,1.0,434.0,697.5,816.8,829.2499999999999,876.0,829.2499999999999,960,1.0,0.0,,,0,,
+STRUCTURAL_FIX,18,0.6111111111111112,413.5,433.0,450.5,451.95,472.0,462.0,544,1.2222222222222223,0.2222222222222222,1.0,0.0,1,1.5263157894736843,1.4327007988227578
+OPTIMIZE,18,1.0,514.0,761.5,787.8,796.65,894.0,796.65,928,1.3333333333333333,0.3333333333333333,1.0,0.5,0,1.8108108108108107,1.8587942179668822

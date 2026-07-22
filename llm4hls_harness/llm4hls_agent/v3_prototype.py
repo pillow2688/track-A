@@ -3809,6 +3809,32 @@ def _worst_latency(
     return float(value)
 
 
+def _optional_worst_latency(
+    report: Mapping[str, object], *, allow_zero: bool = False
+) -> float | None:
+    """Return a usable latency value without turning reporting into a gate.
+
+    Correctness-oriented modes may synthesize successfully without Vitis
+    emitting a latency table.  Their fresh final CSim/Synth/CoSim result is
+    authoritative; acceleration is merely unavailable in that case.  The
+    optimize score gate intentionally continues to use ``_worst_latency``.
+    """
+
+    latency = report.get("latency")
+    if not isinstance(latency, Mapping):
+        return None
+    value = latency.get("worst")
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(float(value))
+        or float(value) < 0
+        or (float(value) == 0 and not allow_zero)
+    ):
+        return None
+    return float(value)
+
+
 def _fast_experiment_risk(
     runtime: _Runtime, proposal: PatchProposal
 ) -> dict[str, object]:
@@ -4794,7 +4820,8 @@ def _candidate_round_summaries(
     if not isinstance(candidates, Mapping):
         return []
     baseline_latency: float | None = None
-    allow_zero_latency = state.get("mode") != PhaseMode.OPTIMIZE.value
+    optimize_mode = state.get("mode") == PhaseMode.OPTIMIZE.value
+    allow_zero_latency = not optimize_mode
     baseline_ref = state.get("baseline_metrics_ref")
     if isinstance(baseline_ref, str) and baseline_ref:
         baseline_report = _completed_synth_report(
@@ -4803,10 +4830,12 @@ def _candidate_round_summaries(
             candidate_id=str(state.get("baseline_candidate_id")),
             validation_scope="exploration",
         )
-        baseline_latency = _worst_latency(
-            baseline_report,
-            name="baseline",
-            allow_zero=allow_zero_latency,
+        baseline_latency = (
+            _worst_latency(baseline_report, name="baseline")
+            if optimize_mode
+            else _optional_worst_latency(
+                baseline_report, allow_zero=allow_zero_latency
+            )
         )
     rows: list[dict[str, object]] = []
     for candidate_id, raw_candidate in candidates.items():
@@ -4822,10 +4851,12 @@ def _candidate_round_summaries(
                 candidate_id=str(candidate_id),
                 validation_scope="exploration",
             )
-            latency = _worst_latency(
-                report,
-                name=str(candidate_id),
-                allow_zero=allow_zero_latency,
+            latency = (
+                _worst_latency(report, name=str(candidate_id))
+                if optimize_mode
+                else _optional_worst_latency(
+                    report, allow_zero=allow_zero_latency
+                )
             )
         validation = candidate.get("validation")
         validation = validation if isinstance(validation, Mapping) else {}
@@ -4995,6 +5026,29 @@ def _planner_token_rounds(runtime: _Runtime) -> list[dict[str, object]]:
                 "truncation_reason": truncation_reason,
                 "estimator_name": envelope.get("estimator_name"),
                 "action_id": action_id,
+            }
+        )
+    return rows
+
+
+def _planner_call_gates(runtime: _Runtime) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    root = runtime.run_root / "planner" / "call_gates"
+    for path in sorted(root.glob("round_*.json")):
+        value = _read_json_object(path)
+        rows.append(
+            {
+                "round": value.get("round_index"),
+                "mode": value.get("mode"),
+                "decision": value.get("decision"),
+                "reason_codes": value.get("reason_codes", []),
+                "estimated_input_tokens": value.get("estimated_input_tokens"),
+                "configured_output_tokens": value.get(
+                    "configured_output_tokens"
+                ),
+                "estimated_total_tokens": value.get("estimated_total_tokens"),
+                "ref": path.relative_to(runtime.run_root).as_posix(),
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
             }
         )
     return rows
@@ -5230,6 +5284,36 @@ def _render_team_report(
             )
             + " |"
         )
+    call_gate_rows = [
+        "| Round | Mode | Decision | Reasons | Estimated input/output/total | Artifact |",
+        "|---:|---|---|---|---:|---|",
+    ]
+    raw_call_gates = result.get("planner_call_gates")
+    for gate_row in (
+        raw_call_gates if isinstance(raw_call_gates, list) else []
+    ):
+        if not isinstance(gate_row, Mapping):
+            continue
+        call_gate_rows.append(
+            "| "
+            + " | ".join(
+                [
+                    report_cell(gate_row.get("round")),
+                    report_cell(gate_row.get("mode")),
+                    report_cell(gate_row.get("decision")),
+                    report_cell(gate_row.get("reason_codes")),
+                    report_cell(
+                        str(gate_row.get("estimated_input_tokens"))
+                        + "/"
+                        + str(gate_row.get("configured_output_tokens"))
+                        + "/"
+                        + str(gate_row.get("estimated_total_tokens"))
+                    ),
+                    report_cell(gate_row.get("ref")),
+                ]
+            )
+            + " |"
+        )
     calls = budget.get("tool_used")
     calls = calls if isinstance(calls, Mapping) else {}
     planner_contract = result.get("planner_contract")
@@ -5383,6 +5467,10 @@ def _render_team_report(
             "",
             *token_rows,
             "",
+            "### Planner Call Gate",
+            "",
+            *call_gate_rows,
+            "",
             "- 汇总：`" + report_cell(result.get("token_policy_summary", {})) + "`",
             "- Search/Planner Token 与 final CSim/Synth/CoSim Credit 分开记账。",
             "- Token Policy 属于 Budget 横向组件内部能力；主 Graph 新增节点数：`0`。",
@@ -5419,6 +5507,7 @@ def _write_report(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeStat
     ).snapshot()
     token_rounds = _planner_token_rounds(runtime)
     token_policy_summary = _planner_token_summary(token_rounds, budget)
+    planner_call_gates = _planner_call_gates(runtime)
     experience_summary: dict[str, object] | None = None
     if runtime.live_planner is not None:
         summary_method = getattr(runtime.live_planner, "experience_summary", None)
@@ -5537,6 +5626,7 @@ def _write_report(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeStat
         "budget": budget,
         "token_policy_rounds": token_rounds,
         "token_policy_summary": token_policy_summary,
+        "planner_call_gates": planner_call_gates,
         "candidate_rounds": _candidate_round_summaries(runtime, state),
         "node_events": node_events,
         "prototype_limits": [
@@ -5566,6 +5656,7 @@ def _write_report(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeStat
             "candidate_operations": "control/candidate_operations",
             "planner_inputs": "planner/inputs",
             "planner_outputs": "planner/outputs",
+            "planner_call_gates": "planner/call_gates",
             "synth_evidence": "evidence/synth",
             "failure_evidence": "evidence/failures",
             "package_manifest": "control/package_manifest.json",

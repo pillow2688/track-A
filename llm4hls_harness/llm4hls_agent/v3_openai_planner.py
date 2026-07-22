@@ -30,6 +30,7 @@ from .optimization import (
     optimization_hls_rules,
     select_optimization,
 )
+from .openai_provider import FAST_EXPERIMENT_STRATEGIES
 from .repair import PatchProposal
 from .scoring import estimate_official_score_proxy
 from .v3_planner import canonical_json, canonical_sha256, validate_planner_input
@@ -744,7 +745,11 @@ class OpenAICompatibleV3PlannerAdapter:
             }
         if self.token_budget_policy is not None:
             identity["token_policy"] = {
-                "policy_version": "v3.token-policy.v1",
+                "policy_version": (
+                    "v3.token-policy.hybrid-v2"
+                    if self.token_budget_policy.hybrid_enabled
+                    else "v3.token-policy.v1"
+                ),
                 "limits": {
                     "mode_output_caps": dict(
                         self.token_budget_policy.limits.mode_output_caps
@@ -825,6 +830,176 @@ class OpenAICompatibleV3PlannerAdapter:
             round_state.get("rounds_completed"), "round.rounds_completed"
         )
         return max(1, maximum - completed)
+
+    def _persist_hybrid_call_gate(
+        self, round_index: int, value: Mapping[str, object]
+    ) -> dict[str, object]:
+        reference = f"planner/call_gates/round_{round_index:03d}.json"
+        path = self.run_root / reference
+        path.parent.mkdir(parents=True, exist_ok=True)
+        encoded = canonical_json(value) + b"\n"
+        if path.is_file():
+            if path.read_bytes() != encoded:
+                raise V3OpenAIPlannerError(
+                    "Hybrid Planner-call gate artifact changed during replay"
+                )
+        else:
+            path.write_bytes(encoded)
+        return {
+            "ref": reference,
+            "sha256": hashlib.sha256(encoded).hexdigest(),
+            "decision": value.get("decision"),
+            "reason_codes": list(value.get("reason_codes", [])),
+        }
+
+    def _hybrid_call_gate(
+        self, planner_input: Mapping[str, object], *, mode: str
+    ) -> dict[str, object] | None:
+        policy = self.token_budget_policy
+        if policy is None or not policy.hybrid_enabled:
+            return None
+        round_state = _mapping(planner_input.get("round"), "round")
+        budget = _mapping(planner_input.get("budget"), "budget")
+        history = planner_input.get("history")
+        if not isinstance(history, list):
+            raise V3OpenAIPlannerError("Planner input history must be a list")
+        round_index = _positive_int(
+            round_state.get("round_index"), "round.round_index"
+        )
+        estimate = max(1, self.token_estimator.estimate_text(planner_input))
+        configured_output = int(policy.limits.mode_output_caps[mode])
+        reasons: list[str] = []
+        evidence_ids: list[str] = []
+        decision = "ALLOW"
+
+        if round_index == 1:
+            reasons.append("FIRST_PLANNER_CALL")
+        else:
+            prior = [
+                item
+                for item in history
+                if isinstance(item, Mapping)
+                and int(item.get("round_index") or 0) < round_index
+            ]
+            latest_round = max(
+                (int(item.get("round_index") or 0) for item in prior),
+                default=0,
+            )
+            latest = [
+                item
+                for item in prior
+                if int(item.get("round_index") or 0) == latest_round
+            ]
+            structured_new = False
+            for item in latest:
+                for name in ("synth_evidence", "metrics", "score"):
+                    binding = item.get(name)
+                    if isinstance(binding, Mapping) and isinstance(
+                        binding.get("sha256"), str
+                    ):
+                        structured_new = True
+                        evidence_ids.append(str(binding["sha256"]))
+            failure_evidence = round_state.get("failure_evidence")
+            failure_digest = (
+                canonical_sha256(failure_evidence)
+                if isinstance(failure_evidence, Mapping) and failure_evidence
+                else None
+            )
+            incumbent = _mapping(planner_input.get("incumbent"), "incumbent")
+            baseline = _mapping(planner_input.get("baseline"), "baseline")
+            best_changed = (
+                incumbent.get("candidate_id") != baseline.get("candidate_id")
+            )
+            if failure_digest is not None and mode == "OPTIMIZE":
+                structured_new = True
+                evidence_ids.append(failure_digest)
+            if not structured_new:
+                reasons.append("NO_NEW_STRUCTURED_EVIDENCE")
+            if not best_changed and not structured_new:
+                reasons.append("BEST_FAILURE_OR_BOTTLENECK_UNCHANGED")
+
+            attempted = [
+                str(item.get("change_class"))
+                for item in prior
+                if isinstance(item.get("change_class"), str)
+                and item.get("change_class")
+            ]
+            attempted_strategies = {
+                strategy
+                for bundle in attempted
+                for strategy in bundle.split("+")
+                if strategy
+            }
+            if mode == "OPTIMIZE" and not set(
+                FAST_EXPERIMENT_STRATEGIES
+            ).difference(attempted_strategies):
+                reasons.append("NO_UNTRIED_STRATEGY")
+
+            patch_digests = [
+                str(item.get("patch_sha256"))
+                for item in prior
+                if isinstance(item.get("patch_sha256"), str)
+                and item.get("patch_sha256")
+            ]
+            if len(patch_digests) != len(set(patch_digests)):
+                reasons.append("DUPLICATE_PATCH_DIGEST")
+
+            failed = [
+                (
+                    item.get("change_class"),
+                    item.get("rejection_reason") or item.get("reason"),
+                    item.get("selection_metrics_digest"),
+                )
+                for item in prior
+                if item.get("rejection_reason") or item.get("reason")
+            ]
+            if len(failed) >= 2 and failed[-1] == failed[-2]:
+                reasons.append("EXACT_REPEAT_FAILURE")
+            duplicate_bundles = len(attempted) != len(set(attempted))
+            if duplicate_bundles:
+                reasons.append("DUPLICATE_STRATEGY_BUNDLE")
+
+        credits_remaining = budget.get("credits_remaining")
+        if (
+            isinstance(credits_remaining, int)
+            and not isinstance(credits_remaining, bool)
+            and credits_remaining <= self.final_reserve_credits
+        ):
+            reasons.append("ONLY_FINAL_CREDIT_RESERVE_REMAINS")
+        tokens_remaining = budget.get("tokens_remaining")
+        minimum = int(policy.limits.mode_minimum_viable_output[mode])
+        if (
+            not isinstance(tokens_remaining, int)
+            or isinstance(tokens_remaining, bool)
+            or tokens_remaining
+            < estimate
+            + minimum
+            + policy.limits.final_token_reserve
+            + policy.limits.token_budget_safety_margin
+        ):
+            reasons.append("ESTIMATED_INPUT_EXCEEDS_AVAILABLE_TOKEN_BUDGET")
+
+        blockers = [reason for reason in reasons if reason != "FIRST_PLANNER_CALL"]
+        if blockers:
+            decision = "BLOCK"
+        artifact = {
+            "schema_version": "v3e.hybrid-planner-call-gate.v1",
+            "mode": mode,
+            "round_index": round_index,
+            "decision": decision,
+            "reason_codes": reasons,
+            "estimated_input_tokens": estimate,
+            "configured_output_tokens": configured_output,
+            "estimated_total_tokens": estimate + configured_output,
+            "evidence_digests": sorted(set(evidence_ids)),
+            "final_reserve_credits": self.final_reserve_credits,
+        }
+        binding = self._persist_hybrid_call_gate(round_index, artifact)
+        if decision == "BLOCK":
+            raise BudgetExceeded(
+                "Hybrid Planner-call gate blocked: " + ",".join(blockers)
+            )
+        return binding
 
     def _estimate_provider_request(
         self,
@@ -1062,6 +1237,13 @@ class OpenAICompatibleV3PlannerAdapter:
 
         if self.token_budget_policy is None:
             raise RuntimeError("dynamic token policy is disabled")
+        if self.token_budget_policy.hybrid_enabled:
+            return self._prepare_hybrid_mapping_context(
+                planner_input,
+                mode=mode,
+                base_context=base_context,
+                describe=describe,
+            )
         if not self.token_budget_visible:
             return self._prepare_hard_capped_mapping_context(
                 planner_input,
@@ -1222,6 +1404,138 @@ class OpenAICompatibleV3PlannerAdapter:
             envelope=envelope,
             estimate=final_estimate,
             guidance=guidance,
+        )
+
+    @staticmethod
+    def _compress_hybrid_context(
+        context: Mapping[str, object]
+    ) -> dict[str, object]:
+        """Apply the configured HIGH-pressure compression order.
+
+        Kernel, primary evidence, output schema and interface constraints stay
+        untouched.  Only duplicated/old explanatory material is reduced.
+        """
+
+        value = _json_copy(context)
+        if not isinstance(value, dict):
+            raise V3OpenAIPlannerError("Hybrid Planner context is invalid")
+        budget = value.get("budget")
+        if isinstance(budget, Mapping):
+            value["budget"] = {
+                name: budget.get(name)
+                for name in (
+                    "remaining_tokens",
+                    "remaining_credits",
+                    "round_index",
+                    "rounds_completed",
+                    "final_reserve_credits",
+                )
+                if name in budget
+            }
+        attempts = value.get("attempted_strategies")
+        if isinstance(attempts, list):
+            value["attempted_strategies"] = attempts[-3:]
+        failures = value.get("recent_failures")
+        if isinstance(failures, list):
+            deduplicated: list[object] = []
+            seen: set[str] = set()
+            for item in reversed(failures):
+                digest = canonical_sha256(item)
+                if digest not in seen:
+                    deduplicated.append(item)
+                    seen.add(digest)
+            value["recent_failures"] = list(reversed(deduplicated[:2]))
+        synth = value.get("synth_evidence")
+        if isinstance(synth, dict):
+            scheduling = synth.get("scheduling_or_memory_evidence")
+            if isinstance(scheduling, list):
+                unique: list[object] = []
+                seen_lines: set[str] = set()
+                for item in scheduling:
+                    rendered = canonical_json(item)
+                    if rendered not in seen_lines:
+                        unique.append(item)
+                        seen_lines.add(rendered)
+                synth["scheduling_or_memory_evidence"] = unique[:8]
+        failure = value.get("failure_evidence")
+        if isinstance(failure, dict):
+            for name in ("source_locations", "relevant_tool_log_lines"):
+                rows = failure.get(name)
+                if isinstance(rows, list):
+                    failure[name] = rows[:4]
+        description = value.get("description")
+        if isinstance(description, str) and len(description) > 1600:
+            value["description"] = description[:1600] + "\n[public description compressed]"
+        return value
+
+    def _prepare_hybrid_mapping_context(
+        self,
+        planner_input: Mapping[str, object],
+        *,
+        mode: str,
+        base_context: Mapping[str, object],
+        describe: Callable[[Mapping[str, object]], Mapping[str, object]],
+    ) -> _BudgetedPreparedContext:
+        if self.token_budget_policy is None:
+            raise RuntimeError("Hybrid token policy is disabled")
+        base_request = describe(base_context)
+        if not isinstance(base_request, Mapping):
+            raise V3OpenAIPlannerError("provider request audit must be an object")
+        base_estimate = self._estimate_provider_request(
+            base_request, context=base_context
+        )
+        envelope = self._allocate_token_envelope(
+            planner_input,
+            mode=mode,
+            base_estimate=base_estimate,
+            final_estimate=base_estimate,
+            guidance_tokens=0,
+            guidance_allowed=False,
+        )
+        final_context: dict[str, object] = dict(base_context)
+        final_request: Mapping[str, object] = base_request
+        final_estimate = base_estimate
+        for _ in range(8):
+            prompt_context = (
+                self._compress_hybrid_context(base_context)
+                if envelope.token_pressure == "HIGH"
+                else dict(base_context)
+            )
+            final_context = (
+                self._with_effective_max_output(prompt_context, envelope)
+                if envelope.token_pressure == "LOW"
+                else self._with_token_budget(prompt_context, envelope)
+            )
+            final_request = describe(final_context)
+            final_estimate = self._estimate_provider_request(
+                final_request, context=final_context
+            )
+            updated = self._allocate_token_envelope(
+                planner_input,
+                mode=mode,
+                base_estimate=base_estimate,
+                final_estimate=final_estimate,
+                guidance_tokens=0,
+                guidance_allowed=False,
+            )
+            if updated.stable_hash == envelope.stable_hash:
+                envelope = updated
+                break
+            envelope = updated
+        else:
+            raise V3OpenAIPlannerError("Hybrid TokenEnvelope did not converge")
+        body = final_request.get("http_body")
+        provider_max = body.get("max_tokens") if isinstance(body, Mapping) else None
+        if provider_max != envelope.effective_max_output_tokens:
+            raise V3OpenAIPlannerError(
+                "Hybrid Provider max output diverged from TokenEnvelope"
+            )
+        return _BudgetedPreparedContext(
+            context=final_context,
+            provider_request=final_request,
+            envelope=envelope,
+            estimate=final_estimate,
+            guidance=None,
         )
 
     def _prepare_hard_capped_mapping_context(
@@ -1621,6 +1935,7 @@ class OpenAICompatibleV3PlannerAdapter:
             TASK_AWARE_MODES | {"OPTIMIZE"}
         ):
             raise V3OpenAIPlannerError("Planner input round.mode is unsupported")
+        call_gate = self._hybrid_call_gate(value, mode=mode_value)
         if mode_value in TASK_AWARE_MODES:
             source = _source_only(self.run_root, incumbent, name="incumbent")
             failure_evidence = _task_aware_failure_evidence(
@@ -1740,6 +2055,8 @@ class OpenAICompatibleV3PlannerAdapter:
                 request["token_budget_visibility"] = (
                     "visible" if self.token_budget_visible else "hidden"
                 )
+            if call_gate is not None:
+                request["planner_call_gate"] = call_gate
             return PreparedPlannerCall(
                 request=request,
                 estimated_input_tokens=estimated_input_tokens,
@@ -1890,6 +2207,8 @@ class OpenAICompatibleV3PlannerAdapter:
                 request["token_budget_visibility"] = (
                     "visible" if self.token_budget_visible else "hidden"
                 )
+            if call_gate is not None:
+                request["planner_call_gate"] = call_gate
             return PreparedPlannerCall(
                 request=request,
                 estimated_input_tokens=estimated_input_tokens,
@@ -2063,6 +2382,8 @@ class OpenAICompatibleV3PlannerAdapter:
             request["token_budget_visibility"] = (
                 "visible" if self.token_budget_visible else "hidden"
             )
+        if call_gate is not None:
+            request["planner_call_gate"] = call_gate
         return PreparedPlannerCall(
             request=request,
             estimated_input_tokens=estimated_input_tokens,

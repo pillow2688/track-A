@@ -1,0 +1,292 @@
+{
+  "by_mode": {
+    "OPTIMIZE": {
+      "acceleration_geometric_mean": 1.8587942179668822,
+      "acceleration_median": 1.8108108108108107,
+      "final_success_rate": 1.0,
+      "patch_invalid_runs": 0,
+      "per_call_output_tokens": {
+        "count": 24,
+        "max": 894.0,
+        "mean": 583.0416666666666,
+        "p50": 514.0,
+        "p75": 761.5,
+        "p90": 787.8,
+        "p95": 796.65
+      },
+      "planner_calls": {
+        "count": 18,
+        "max": 2.0,
+        "mean": 1.3333333333333333,
+        "p50": 1.0,
+        "p75": 2.0,
+        "p90": 2.0,
+        "p95": 2.0
+      },
+      "run_input_tokens": {
+        "count": 18,
+        "max": 3688.0,
+        "mean": 2380.5,
+        "p50": 1929.0,
+        "p75": 3195.5,
+        "p90": 3670.7,
+        "p95": 3684.6
+      },
+      "run_output_tokens": {
+        "count": 18,
+        "max": 1590.0,
+        "mean": 777.3888888888889,
+        "p50": 782.5,
+        "p75": 894.25,
+        "p90": 1179.2000000000003,
+        "p95": 1540.6999999999998
+      },
+      "runs": 18,
+      "second_call_improvement_rate": 0.5,
+      "second_call_new_evidence_rate": 1.0,
+      "second_call_rate": 0.3333333333333333,
+      "second_call_runs": 6,
+      "stable_cap": 928,
+      "successful_per_call_output_tokens": {
+        "count": 24,
+        "max": 894.0,
+        "mean": 583.0416666666666,
+        "p50": 514.0,
+        "p75": 761.5,
+        "p90": 787.8,
+        "p95": 796.65
+      },
+      "successful_run_output_tokens": {
+        "count": 18,
+        "max": 1590.0,
+        "mean": 777.3888888888889,
+        "p50": 782.5,
+        "p75": 894.25,
+        "p90": 1179.2000000000003,
+        "p95": 1540.6999999999998
+      },
+      "successful_runs": 18
+    },
+    "REPAIR": {
+      "acceleration_geometric_mean": null,
+      "acceleration_median": null,
+      "final_success_rate": 1.0,
+      "patch_invalid_runs": 0,
+      "per_call_output_tokens": {
+        "count": 18,
+        "max": 460.0,
+        "mean": 379.0,
+        "p50": 388.0,
+        "p75": 411.75,
+        "p90": 454.8,
+        "p95": 459.15
+      },
+      "planner_calls": {
+        "count": 18,
+        "max": 1.0,
+        "mean": 1.0,
+        "p50": 1.0,
+        "p75": 1.0,
+        "p90": 1.0,
+        "p95": 1.0
+      },
+      "run_input_tokens": {
+        "count": 18,
+        "max": 1460.0,
+        "mean": 1259.6666666666667,
+        "p50": 1287.0,
+        "p75": 1323.0,
+        "p90": 1364.1000000000001,
+        "p95": 1460.0
+      },
+      "run_output_tokens": {
+        "count": 18,
+        "max": 460.0,
+        "mean": 379.0,
+        "p50": 388.0,
+        "p75": 411.75,
+        "p90": 454.8,
+        "p95": 459.15
+      },
+      "runs": 18,
+      "second_call_improvement_rate": null,
+      "second_call_new_evidence_rate": null,
+      "second_call_rate": 0.0,
+      "second_call_runs": 0,
+      "stable_cap": 544,
+      "successful_per_call_output_tokens": {
+        "count": 18,
+        "max": 460.0,
+        "mean": 379.0,
+        "p50": 388.0,
+        "p75": 411.75,
+        "p90": 454.8,
+        "p95": 459.15
+      },
+      "successful_run_output_tokens": {
+        "count": 18,
+        "max": 460.0,
+        "mean": 379.0,
+        "p50": 388.0,
+        "p75": 411.75,
+        "p90": 454.8,
+        "p95": 459.15
+      },
+      "successful_runs": 18
+    },
+    "STRUCTURAL_FIX": {
+      "acceleration_geometric_mean": 1.4327007988227578,
+      "acceleration_median": 1.5263157894736843,
+      "final_success_rate": 0.6111111111111112,
+      "patch_invalid_runs": 1,
+      "per_call_output_tokens": {
+        "count": 22,
+        "max": 472.0,
+        "mean": 412.77272727272725,
+        "p50": 413.5,
+        "p75": 433.0,
+        "p90": 450.5,
+        "p95": 451.95
+      },
+      "planner_calls": {
+        "count": 18,
+        "max": 2.0,
+        "mean": 1.2222222222222223,
+        "p50": 1.0,
+        "p75": 1.0,
+        "p90": 2.0,
+        "p95": 2.0
+      },
+      "run_input_tokens": {
+        "count": 18,
+        "max": 3814.0,
+        "mean": 2247.1111111111113,
+        "p50": 1851.0,
+        "p75": 1990.0,
+        "p90": 3620.8,
+        "p95": 3814.0
+      },
+      "run_output_tokens": {
+        "count": 18,
+        "max": 803.0,
+        "mean": 504.5,
+        "p50": 435.0,
+        "p75": 467.0,
+        "p90": 790.5,
+        "p95": 801.3
+      },
+      "runs": 18,
+      "second_call_improvement_rate": 0.0,
+      "second_call_new_evidence_rate": 1.0,
+      "second_call_rate": 0.2222222222222222,
+      "second_call_runs": 4,
+      "stable_cap": 544,
+      "successful_per_call_output_tokens": {
+        "count": 11,
+        "max": 472.0,
+        "mean": 430.27272727272725,
+        "p50": 434.0,
+        "p75": 448.5,
+        "p90": 452.0,
+        "p95": 462.0
+      },
+      "successful_run_output_tokens": {
+        "count": 11,
+        "max": 472.0,
+        "mean": 430.27272727272725,
+        "p50": 434.0,
+        "p75": 448.5,
+        "p90": 452.0,
+        "p95": 462.0
+      },
+      "successful_runs": 11
+    },
+    "SYNTH_FIX": {
+      "acceleration_geometric_mean": null,
+      "acceleration_median": null,
+      "final_success_rate": 1.0,
+      "patch_invalid_runs": 0,
+      "per_call_output_tokens": {
+        "count": 18,
+        "max": 876.0,
+        "mean": 537.7222222222222,
+        "p50": 434.0,
+        "p75": 697.5,
+        "p90": 816.8,
+        "p95": 829.2499999999999
+      },
+      "planner_calls": {
+        "count": 18,
+        "max": 1.0,
+        "mean": 1.0,
+        "p50": 1.0,
+        "p75": 1.0,
+        "p90": 1.0,
+        "p95": 1.0
+      },
+      "run_input_tokens": {
+        "count": 18,
+        "max": 1804.0,
+        "mean": 1585.0,
+        "p50": 1640.0,
+        "p75": 1667.0,
+        "p90": 1785.1,
+        "p95": 1804.0
+      },
+      "run_output_tokens": {
+        "count": 18,
+        "max": 876.0,
+        "mean": 537.7222222222222,
+        "p50": 434.0,
+        "p75": 697.5,
+        "p90": 816.8,
+        "p95": 829.2499999999999
+      },
+      "runs": 18,
+      "second_call_improvement_rate": null,
+      "second_call_new_evidence_rate": null,
+      "second_call_rate": 0.0,
+      "second_call_runs": 0,
+      "stable_cap": 960,
+      "successful_per_call_output_tokens": {
+        "count": 18,
+        "max": 876.0,
+        "mean": 537.7222222222222,
+        "p50": 434.0,
+        "p75": 697.5,
+        "p90": 816.8,
+        "p95": 829.2499999999999
+      },
+      "successful_run_output_tokens": {
+        "count": 18,
+        "max": 876.0,
+        "mean": 537.7222222222222,
+        "p50": 434.0,
+        "p75": 697.5,
+        "p90": 816.8,
+        "p95": 829.2499999999999
+      },
+      "successful_runs": 18
+    }
+  },
+  "generated_mode_stable_caps": {
+    "OPTIMIZE": 928,
+    "REPAIR": 544,
+    "STRUCTURAL_FIX": 544,
+    "SYNTH_FIX": 960
+  },
+  "schema_version": "v3e.token-policy-historical-distribution.v1",
+  "source": {
+    "experiment_root": "/home/ying/CompetitionTrackA/track-A/llm4hls_harness/experiments/token_policy_abc/pilot-real-deepseek-v4-pro-20260722-01",
+    "external_model_calls": 0,
+    "real_reconciled_runs": 72,
+    "records_ref": "token_policy_abc_reconciled_results.jsonl",
+    "vitis_calls": 0
+  },
+  "stable_cap_rule": {
+    "percentile": 0.95,
+    "population": "successful real Planner calls grouped by routed mode",
+    "rounding_quantum_tokens": 16,
+    "safety_margin": 0.15
+  }
+}

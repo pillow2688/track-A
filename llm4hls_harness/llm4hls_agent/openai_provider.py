@@ -12,7 +12,7 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Callable, Mapping
 
-from .budget import validate_token_envelope
+from .budget import TOKEN_POLICY_HYBRID_VERSION, validate_token_envelope
 from .optimization import OptimizationContext
 from .repair import PatchProposal, RepairContext, RepairProviderError
 
@@ -80,6 +80,18 @@ def _token_budget_prompt(value: object) -> str:
         return ""
     envelope = validate_token_envelope(value)
     pressure = str(envelope["token_pressure"])
+    if envelope["policy_version"] == TOKEN_POLICY_HYBRID_VERSION:
+        if pressure == "LOW":
+            return ""
+        return (
+            "TOKEN BUDGET: pressure="
+            + pressure
+            + ", max_output="
+            + str(envelope["effective_max_output_tokens"])
+            + ", rounds_left="
+            + str(envelope["rounds_remaining"])
+            + ". Return one concise hypothesis, one strategy, and one focused patch."
+        )
     focus = {
         "LOW": "Use the strongest evidence-backed strategy bundle permitted by the task.",
         "MEDIUM": "Focus on one or two strongly supported strategies and keep explanations concise.",
@@ -448,11 +460,21 @@ def build_fast_experiment_prompt(context: Mapping[str, object]) -> str:
         "attempted_strategies": context["attempted_strategies"],
         "budget": context["budget"],
     }
+    token_budget = context.get("token_budget")
+    high_hybrid_pressure = bool(
+        isinstance(token_budget, Mapping)
+        and token_budget.get("policy_version") == TOKEN_POLICY_HYBRID_VERSION
+        and token_budget.get("token_pressure") == "HIGH"
+    )
     response_contract = {
         "hypothesis": "non-empty string",
         "primary_bottleneck": "non-empty string",
         "evidence_used": ["one or more concise evidence facts"],
-        "strategy_bundle": ["one to three allowed strategies"],
+        "strategy_bundle": [
+            "exactly one allowed strategy"
+            if high_hybrid_pressure
+            else "one to three allowed strategies"
+        ],
         "expected_effect": "non-empty string",
         "risk": {
             "level": "LOW|MEDIUM|HIGH",
@@ -1460,6 +1482,23 @@ class OpenAICompatibleOptimizationProvider:
                 finish_reason=completion.finish_reason,
             ) from exc
         strategy_bundle = tuple(str(item) for item in parsed["strategy_bundle"])
+        token_budget = context.get("token_budget")
+        if (
+            isinstance(token_budget, Mapping)
+            and token_budget.get("policy_version") == TOKEN_POLICY_HYBRID_VERSION
+            and token_budget.get("token_pressure") == "HIGH"
+            and len(strategy_bundle) != 1
+        ):
+            raise RepairProviderError(
+                "HIGH-pressure Hybrid policy requires exactly one strategy",
+                input_tokens=completion.input_tokens,
+                output_tokens=completion.output_tokens,
+                cached_input_tokens=completion.cached_input_tokens,
+                duration_seconds=completion.duration_seconds,
+                request_id=completion.request_id,
+                response_excerpt=completion.content[:2000],
+                finish_reason=completion.finish_reason,
+            )
         risk = dict(parsed["risk"])
         risk["primary_bottleneck"] = str(parsed["primary_bottleneck"])
         risk["evidence_used"] = [str(item) for item in parsed["evidence_used"]]

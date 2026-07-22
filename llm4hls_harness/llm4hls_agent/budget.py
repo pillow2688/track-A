@@ -96,6 +96,7 @@ class BudgetConfig:
 
 TOKEN_ENVELOPE_SCHEMA = "v3.token-envelope.v1"
 TOKEN_POLICY_VERSION = "v3.token-policy.v1"
+TOKEN_POLICY_HYBRID_VERSION = "v3.token-policy.hybrid-v2"
 TOKEN_PRESSURES = frozenset({"LOW", "MEDIUM", "HIGH", "CRITICAL"})
 TOKEN_POLICY_MODES = frozenset(
     {"REPAIR", "SYNTH_FIX", "STRUCTURAL_FIX", "OPTIMIZE"}
@@ -432,8 +433,20 @@ def validate_token_envelope(value: Mapping[str, object]) -> dict[str, object]:
 class TokenBudgetPolicy:
     """Compute one bounded Planner quota from an authoritative Ledger snapshot."""
 
-    def __init__(self, limits: TokenBudgetLimits | None = None) -> None:
+    def __init__(
+        self,
+        limits: TokenBudgetLimits | None = None,
+        *,
+        profile: str = "dynamic",
+    ) -> None:
+        if profile not in {"dynamic", "hybrid"}:
+            raise ValueError("unsupported TokenBudgetPolicy profile")
         self.limits = limits or TokenBudgetLimits()
+        self.profile = profile
+
+    @property
+    def hybrid_enabled(self) -> bool:
+        return self.profile == "hybrid"
 
     def allocate(
         self,
@@ -496,7 +509,7 @@ class TokenBudgetPolicy:
             - int(estimated_input_tokens)
             - self.limits.context_safety_margin_tokens,
         )
-        effective = max(
+        capacity = max(
             0,
             min(
                 configured,
@@ -510,7 +523,7 @@ class TokenBudgetPolicy:
             reasons.append("EXISTING_BUDGET_GATE_BLOCKED")
         if estimated_input_tokens + self.limits.context_safety_margin_tokens >= self.limits.context_window_tokens:
             reasons.append("INPUT_EXCEEDS_CONTEXT_WINDOW")
-        if effective < minimum:
+        if capacity < minimum:
             reasons.append("BELOW_MINIMUM_VIABLE_OUTPUT")
         if tokens_remaining <= self.limits.final_token_reserve:
             reasons.append("ONLY_FINAL_TOKEN_RESERVE_REMAINS")
@@ -523,17 +536,37 @@ class TokenBudgetPolicy:
             - self.limits.final_token_reserve
             - self.limits.token_budget_safety_margin,
         )
-        planner_allowed = not reasons and effective >= minimum
-        if not planner_allowed:
-            pressure = "CRITICAL"
-        elif effective < max(minimum + 1, configured // 2) or available_after_fixed < minimum + future_need:
-            pressure = "HIGH"
-            reasons.append("TIGHT_OUTPUT_OR_FUTURE_ROUND_HEADROOM")
-        elif effective < configured or available_after_fixed < configured + future_need:
-            pressure = "MEDIUM"
-            reasons.append("OUTPUT_CAP_REDUCED_TO_PRESERVE_BUDGET")
+        planner_allowed = not reasons and capacity >= minimum
+        if self.hybrid_enabled:
+            if not planner_allowed:
+                pressure = "CRITICAL"
+                effective = capacity
+            elif (
+                capacity < configured
+                or available_after_fixed < minimum + future_need
+            ):
+                pressure = "HIGH"
+                effective = capacity
+                reasons.append("HYBRID_HIGH_PRESSURE_OUTPUT_SHRINK")
+            elif available_after_fixed < configured + future_need:
+                pressure = "MEDIUM"
+                effective = configured
+                reasons.append("HYBRID_MEDIUM_PRESSURE_STABLE_CAP")
+            else:
+                pressure = "LOW"
+                effective = configured
         else:
-            pressure = "LOW"
+            effective = capacity
+            if not planner_allowed:
+                pressure = "CRITICAL"
+            elif effective < max(minimum + 1, configured // 2) or available_after_fixed < minimum + future_need:
+                pressure = "HIGH"
+                reasons.append("TIGHT_OUTPUT_OR_FUTURE_ROUND_HEADROOM")
+            elif effective < configured or available_after_fixed < configured + future_need:
+                pressure = "MEDIUM"
+                reasons.append("OUTPUT_CAP_REDUCED_TO_PRESERVE_BUDGET")
+            else:
+                pressure = "LOW"
 
         available_context_budget = max(
             0,
@@ -593,6 +626,11 @@ class TokenBudgetPolicy:
             token_budget_safety_margin=self.limits.token_budget_safety_margin,
             token_pressure=pressure,
             planner_call_allowed=planner_allowed,
+            policy_version=(
+                TOKEN_POLICY_HYBRID_VERSION
+                if self.hybrid_enabled
+                else TOKEN_POLICY_VERSION
+            ),
             reason_codes=tuple(reasons),
             estimator_name=estimate.estimator_name,
             estimator_version=estimate.estimator_version,
