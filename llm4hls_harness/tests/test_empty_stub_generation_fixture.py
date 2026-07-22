@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import difflib
+import hashlib
 import json
 import shutil
 import tempfile
@@ -210,7 +211,7 @@ class EmptyStubGenerationFixtureTests(unittest.TestCase):
             source_path = run_root / "candidates" / "candidate_000" / task.kernel_name
             source_path.parent.mkdir(parents=True)
             source_path.write_bytes(task.kernel_bytes)
-            source_sha = __import__("hashlib").sha256(task.kernel_bytes).hexdigest()
+            source_sha = hashlib.sha256(task.kernel_bytes).hexdigest()
             candidate = {
                 "candidate_id": "candidate_000",
                 "parent_id": None,
