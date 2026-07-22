@@ -6,12 +6,15 @@ import math
 import os
 import shlex
 import signal
+import hashlib
+import json
+import shutil
 import subprocess
 import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Callable, Protocol
 
 from .task import PublicTask
 from .tools import BackendResult, ToolConfig
@@ -126,6 +129,131 @@ class ProcessResult:
     stderr: str
     elapsed_s: float
     timed_out: bool
+
+
+@dataclass(frozen=True)
+class VitisToolchain:
+    """Selected public Vitis entry point and its auditable preflight facts."""
+
+    executable: str | None
+    invocation_mode: str | None
+    selection_source: str | None
+    vitis_root: str
+    executable_sha256: str | None
+    version: str | None
+    version_summary: str | None
+    preflight_result: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema_version": "v3.vitis-toolchain-receipt.v1",
+            "selected_executable": self.executable,
+            "selected_executable_sha256": self.executable_sha256,
+            "selection_source": self.selection_source,
+            "invocation_mode": self.invocation_mode,
+            "version": self.version,
+            "version_summary": self.version_summary,
+            "vitis_root": self.vitis_root,
+            "preflight_result": self.preflight_result,
+        }
+
+
+def _default_version_probe(executable: str) -> tuple[str | None, str | None]:
+    """Return a bounded, non-secret version summary without failing execution."""
+
+    try:
+        completed = subprocess.run(
+            [executable, "--version"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30.0,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None, None
+    if completed.returncode != 0:
+        return None, None
+    lines = [
+        " ".join(line.split())[:512]
+        for line in (completed.stdout + "\n" + completed.stderr).splitlines()
+        if line.strip()
+    ]
+    if not lines:
+        return None, None
+    summary = " | ".join(lines[:2])
+    import re
+
+    match = re.search(r"\b(20\d{2}\.\d+(?:\.\d+)?)\b", summary)
+    return (match.group(1) if match else None), summary
+
+
+def detect_vitis_toolchain(
+    vitis_root: str | Path,
+    *,
+    path_lookup: Callable[[str], str | None] = shutil.which,
+    version_probe: Callable[[str], tuple[str | None, str | None]] = _default_version_probe,
+) -> VitisToolchain:
+    """Select Vitis in 2025.2-first order without requiring ``vitis_hls``.
+
+    The official 2025.2 harness uses ``vitis-run --mode hls --tcl``.  Older
+    ``vitis_hls`` remains a compatibility fallback only.
+    """
+
+    root = Path(vitis_root).expanduser()
+    candidates = (
+        (root / "bin" / "vitis-run", "vitis-run", "root_bin_vitis_run"),
+        (path_lookup("vitis-run"), "vitis-run", "path_vitis_run"),
+        (root / "bin" / "vitis_hls", "vitis_hls", "root_bin_vitis_hls"),
+        (path_lookup("vitis_hls"), "vitis_hls", "path_vitis_hls"),
+    )
+    for raw_path, mode, source in candidates:
+        if raw_path is None:
+            continue
+        path = Path(raw_path).expanduser()
+        if not path.is_file() or not os.access(path, os.X_OK):
+            continue
+        resolved = str(path.resolve())
+        try:
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        except OSError:
+            digest = None
+        version, summary = version_probe(resolved)
+        return VitisToolchain(
+            executable=resolved,
+            invocation_mode=mode,
+            selection_source=source,
+            vitis_root=str(root),
+            executable_sha256=digest,
+            version=version,
+            version_summary=summary,
+            preflight_result="READY",
+        )
+    return VitisToolchain(
+        executable=None,
+        invocation_mode=None,
+        selection_source=None,
+        vitis_root=str(root),
+        executable_sha256=None,
+        version=None,
+        version_summary=None,
+        preflight_result="TOOLCHAIN_UNAVAILABLE",
+    )
+
+
+def vitis_invocation_command(
+    toolchain: VitisToolchain, *, tcl_file: str = "run_hls.tcl"
+) -> list[str]:
+    """Build the version-appropriate command without invoking the shell."""
+
+    if toolchain.preflight_result not in {"READY", "INJECTED_RUNNER"}:
+        raise ValueError("Vitis toolchain is unavailable")
+    if not toolchain.executable or not toolchain.invocation_mode:
+        raise ValueError("Vitis toolchain selection is incomplete")
+    if toolchain.invocation_mode == "vitis-run":
+        return [toolchain.executable, "--mode", "hls", "--tcl", tcl_file]
+    if toolchain.invocation_mode == "vitis_hls":
+        return [toolchain.executable, "-f", tcl_file]
+    raise ValueError("unsupported Vitis invocation mode")
 
 
 class ProcessRunner(Protocol):
@@ -257,11 +385,32 @@ class VitisBackend:
 
     def __init__(self, runner: ProcessRunner | None = None) -> None:
         self._runner = runner or SubprocessRunner()
+        self._uses_default_runner = runner is None
+        self._toolchains: dict[str, VitisToolchain] = {}
 
     def fingerprint(self) -> str:
         """Stable cache identity; bump when command/report semantics change."""
 
-        return "llm4hls_agent.vitis.VitisBackend:v0.7"
+        return "llm4hls_agent.vitis.VitisBackend:v0.8"
+
+    def _toolchain(self, config: ToolConfig) -> VitisToolchain:
+        """Cache real detection; injected test runners stay deterministic."""
+
+        key = str(Path(config.vitis_root).expanduser())
+        if self._uses_default_runner:
+            if key not in self._toolchains:
+                self._toolchains[key] = detect_vitis_toolchain(config.vitis_root)
+            return self._toolchains[key]
+        return VitisToolchain(
+            executable="vitis-run",
+            invocation_mode="vitis-run",
+            selection_source="injected_runner",
+            vitis_root=key,
+            executable_sha256=None,
+            version=None,
+            version_summary=None,
+            preflight_result="INJECTED_RUNNER",
+        )
 
     def run(
         self,
@@ -311,11 +460,37 @@ class VitisBackend:
         tcl_path = work_dir / "run_hls.tcl"
         tcl_path.write_text(tcl, encoding="utf-8")
         timeout = config.timeout_for(kind) if timeout_s is None else float(timeout_s)
+        toolchain = self._toolchain(config)
+        receipt_path = work_dir / "vitis_toolchain.json"
+        receipt_path.write_text(
+            json.dumps(toolchain.to_dict(), indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        artifacts = {
+            "tcl": _artifact_ref(tcl_path, work_dir),
+            "vitis_toolchain": _artifact_ref(receipt_path, work_dir),
+        }
+        if toolchain.preflight_result != "READY" and self._uses_default_runner:
+            return ProcessResult(
+                127,
+                "",
+                "TOOLCHAIN_UNAVAILABLE: no vitis-run or vitis_hls executable found",
+                0.0,
+                False,
+            ), artifacts
         settings = Path(config.vitis_root) / "settings64.sh"
-        inner = (
+        invocation = " ".join(
+            shlex.quote(item)
+            for item in vitis_invocation_command(toolchain)
+        )
+        source_settings = (
             f". {shlex.quote(str(settings))} >/dev/null 2>&1 && "
+            if settings.is_file()
+            else ""
+        )
+        inner = source_settings + (
             "exec timeout --signal=TERM --kill-after=2s "
-            f"{timeout:.6f}s vitis-run --mode hls --tcl run_hls.tcl"
+            f"{timeout:.6f}s {invocation}"
         )
         result = self._runner.run(
             ["bash", "-c", inner], cwd=work_dir, timeout_s=timeout
@@ -324,11 +499,13 @@ class VitisBackend:
         stderr_path = work_dir / "vitis.stderr.log"
         stdout_path.write_text(result.stdout, encoding="utf-8")
         stderr_path.write_text(result.stderr, encoding="utf-8")
-        return result, {
-            "tcl": _artifact_ref(tcl_path, work_dir),
-            "vitis_stdout": _artifact_ref(stdout_path, work_dir),
-            "vitis_stderr": _artifact_ref(stderr_path, work_dir),
-        }
+        artifacts.update(
+            {
+                "vitis_stdout": _artifact_ref(stdout_path, work_dir),
+                "vitis_stderr": _artifact_ref(stderr_path, work_dir),
+            }
+        )
+        return result, artifacts
 
     def _run_csim(
         self, task: PublicTask, work_dir: Path, config: ToolConfig

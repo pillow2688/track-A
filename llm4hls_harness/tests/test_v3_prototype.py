@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -242,6 +243,57 @@ def prototype_config(task, *, credit_limit: int = 80) -> RunConfig:
 
 @unittest.skipIf(run_v3_prototype is None, "V3 optional dependencies are not installed")
 class V3PrototypeTests(unittest.TestCase):
+    def test_task_contract_final_skips_cosim_only_when_not_required(self) -> None:
+        project = Path(__file__).resolve().parents[1]
+        structural_task = load_public_task(
+            project / "examples" / "u55c_v2_optimize_task"
+        )
+        optional_cosim_task = replace(
+            structural_task, task_type="optimize", requires_cosim=False
+        )
+        backend = PrototypeBackend()
+        with tempfile.TemporaryDirectory() as directory:
+            result = run_v3_prototype(
+                optional_cosim_task,
+                Path(directory) / "task-contract-final",
+                prototype_config(optional_cosim_task, credit_limit=100),
+                prototype_proposal(),
+                backend=backend,
+                thread_id="task-contract-final",
+                validation_profile="fast-experiment",
+                final_validation_policy="task_contract",
+            )
+
+        self.assertEqual(result["status"], "DONE")
+        self.assertEqual(result["final_validation"]["csim"]["status"], "PASS")
+        self.assertEqual(result["final_validation"]["synth"]["status"], "PASS")
+        self.assertEqual(result["final_validation"]["cosim"]["status"], "NOT_RUN")
+        accounting = result["track_a_budget_accounting"]
+        self.assertEqual(accounting["internal_final_validation_cost"], 5)
+        self.assertTrue(accounting["reconciled"])
+
+    def test_task_contract_final_keeps_required_cosim(self) -> None:
+        project = Path(__file__).resolve().parents[1]
+        task = load_public_task(project / "examples" / "u55c_v2_optimize_task")
+        with tempfile.TemporaryDirectory() as directory:
+            result = run_v3_prototype(
+                task,
+                Path(directory) / "required-task-contract-final",
+                prototype_config(task, credit_limit=100),
+                prototype_proposal(),
+                backend=PrototypeBackend(),
+                thread_id="required-task-contract-final",
+                validation_profile="fast-experiment",
+                final_validation_policy="task_contract",
+            )
+
+        self.assertEqual(result["status"], "DONE")
+        self.assertEqual(result["final_validation"]["cosim"]["status"], "PASS")
+        self.assertEqual(
+            result["track_a_budget_accounting"]["internal_final_validation_cost"],
+            25,
+        )
+
     def test_eight_x_acceleration_stops_only_further_latency_follow_up(self) -> None:
         project = Path(__file__).resolve().parents[1]
         task = load_public_task(project / "examples" / "u55c_v2_optimize_task")

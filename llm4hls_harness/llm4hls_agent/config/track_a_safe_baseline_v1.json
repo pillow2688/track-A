@@ -15,7 +15,12 @@
   },
   "final_validation": {
     "fresh_final": "required",
-    "stages": ["csim", "synth", "cosim"]
+    "policy": "task_contract",
+    "task_contract": {
+      "requires_cosim_true": ["csim", "synth", "cosim"],
+      "requires_cosim_false": ["csim", "synth"]
+    },
+    "full_internal_audit": ["csim", "synth", "cosim"]
   },
   "access_control": {
     "hidden_access": false,

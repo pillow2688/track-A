@@ -11,15 +11,18 @@ try:
     from llm4hls_agent.vitis import (
         ProcessResult,
         VitisBackend,
+        detect_vitis_toolchain,
         parse_cosim_report,
         parse_synth_report,
+        vitis_invocation_command,
     )
 except ModuleNotFoundError:
     def _missing(*_args: object, **_kwargs: object):
         raise AssertionError("Vitis backend is not implemented")
 
     load_public_task = ToolConfig = ProcessResult = VitisBackend = _missing  # type: ignore[misc,assignment]
-    parse_cosim_report = parse_synth_report = _missing
+    parse_cosim_report = parse_synth_report = detect_vitis_toolchain = _missing
+    vitis_invocation_command = _missing
 
 
 def make_task(root: Path) -> None:
@@ -305,6 +308,75 @@ class VitisBackendTests(unittest.TestCase):
         second = VitisBackend(PlannedRunner([])).fingerprint()
         self.assertEqual(first, second)
         self.assertIn("VitisBackend", first)
+
+    def _tool(self, name: str) -> Path:
+        path = self.root / "Vitis" / "bin" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        path.chmod(0o755)
+        return path
+
+    def _detect(self):
+        return detect_vitis_toolchain(
+            self.root / "Vitis",
+            path_lookup=lambda _name: None,
+            version_probe=lambda _path: ("2025.2", "vitis fixture 2025.2"),
+        )
+
+    def test_vitis_run_is_selected_when_it_is_the_only_entry_point(self) -> None:
+        executable = self._tool("vitis-run")
+        toolchain = self._detect()
+
+        self.assertEqual(toolchain.preflight_result, "READY")
+        self.assertEqual(toolchain.invocation_mode, "vitis-run")
+        self.assertEqual(toolchain.executable, str(executable.resolve()))
+        self.assertEqual(
+            vitis_invocation_command(toolchain),
+            [str(executable.resolve()), "--mode", "hls", "--tcl", "run_hls.tcl"],
+        )
+
+    def test_legacy_vitis_hls_is_selected_only_as_fallback(self) -> None:
+        executable = self._tool("vitis_hls")
+        toolchain = self._detect()
+
+        self.assertEqual(toolchain.invocation_mode, "vitis_hls")
+        self.assertEqual(
+            vitis_invocation_command(toolchain),
+            [str(executable.resolve()), "-f", "run_hls.tcl"],
+        )
+
+    def test_path_vitis_run_precedes_root_legacy_vitis_hls(self) -> None:
+        self._tool("vitis_hls")
+        path_executable = self.root / "path-bin" / "vitis-run"
+        path_executable.parent.mkdir(parents=True)
+        path_executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        path_executable.chmod(0o755)
+
+        toolchain = detect_vitis_toolchain(
+            self.root / "Vitis",
+            path_lookup=lambda name: str(path_executable)
+            if name == "vitis-run"
+            else None,
+            version_probe=lambda _path: ("2025.2", "vitis fixture 2025.2"),
+        )
+
+        self.assertEqual(toolchain.executable, str(path_executable.resolve()))
+        self.assertEqual(toolchain.selection_source, "path_vitis_run")
+
+    def test_vitis_run_has_priority_when_both_entries_exist(self) -> None:
+        selected = self._tool("vitis-run")
+        self._tool("vitis_hls")
+
+        toolchain = self._detect()
+
+        self.assertEqual(toolchain.executable, str(selected.resolve()))
+        self.assertEqual(toolchain.selection_source, "root_bin_vitis_run")
+
+    def test_missing_entries_report_toolchain_unavailable(self) -> None:
+        toolchain = self._detect()
+
+        self.assertEqual(toolchain.preflight_result, "TOOLCHAIN_UNAVAILABLE")
+        self.assertIsNone(toolchain.executable)
 
 
 if __name__ == "__main__":

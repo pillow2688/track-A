@@ -113,6 +113,12 @@ _FULL_CLOSURE_CALLS = {"csim": 1, "synth": 1, "cosim": 1}
 STRICT_VALIDATION_PROFILE = "strict"
 FAST_EXPERIMENT_PROFILE = "fast-experiment"
 VALIDATION_PROFILES = (STRICT_VALIDATION_PROFILE, FAST_EXPERIMENT_PROFILE)
+TASK_CONTRACT_FINAL_POLICY = "task_contract"
+FULL_INTERNAL_AUDIT_FINAL_POLICY = "full_internal_audit"
+FINAL_VALIDATION_POLICIES = (
+    TASK_CONTRACT_FINAL_POLICY,
+    FULL_INTERNAL_AUDIT_FINAL_POLICY,
+)
 
 
 def _v3_task_spec(task: PublicTask) -> dict[str, object]:
@@ -215,6 +221,7 @@ class _Runtime:
     live_planner: LivePlanner | None = None
     max_planner_rounds: int = 1
     validation_profile: str = STRICT_VALIDATION_PROFILE
+    final_validation_policy: str = FULL_INTERNAL_AUDIT_FINAL_POLICY
     continuation_policy_mode: str = "off"
 
     @property
@@ -230,6 +237,33 @@ class _Runtime:
         if self.validation_profile == FAST_EXPERIMENT_PROFILE:
             return "openai_compatible_fast_experiment"
         return "live_non_replayable_adapter"
+
+
+def _final_requires_cosim(runtime: _Runtime) -> bool:
+    """Apply the public task contract without weakening structural correctness."""
+
+    return (
+        runtime.final_validation_policy == FULL_INTERNAL_AUDIT_FINAL_POLICY
+        or runtime.task.requires_cosim
+        or runtime.validation_profile == STRICT_VALIDATION_PROFILE
+        and str(runtime.task.task_type).casefold() == "structural"
+    )
+
+
+def _final_required_calls(runtime: _Runtime) -> dict[str, int]:
+    return {
+        "csim": 1,
+        "synth": 1,
+        "cosim": 1 if _final_requires_cosim(runtime) else 0,
+    }
+
+
+def _final_required_stages(runtime: _Runtime) -> tuple[str, ...]:
+    return (
+        ("csim", "synth", "cosim")
+        if _final_requires_cosim(runtime)
+        else ("csim", "synth")
+    )
 
 
 def _utc_now() -> str:
@@ -293,6 +327,7 @@ def _run_config_snapshot(runtime: _Runtime) -> dict[str, object]:
                 runtime.patch_limits.allow_full_file_replacement
             ),
         },
+        "final_validation_policy": runtime.final_validation_policy,
     }
     if runtime.live_planner is None:
         identity["proposal_sha256"] = _sha256_json(runtime.proposal.to_dict())
@@ -817,7 +852,7 @@ def _build_round_planner_input(
             "minimum_frequency_mhz": runtime.config.minimum_frequency_mhz,
             "requires_cosim": runtime.task.requires_cosim,
             "candidate_gate": "strict_score_improvement_before_cosim",
-            "final_validation": ["csim", "synth", "cosim"],
+            "final_validation": list(_final_required_stages(runtime)),
             "validation_profile": runtime.validation_profile,
             "max_optimization_rounds": (
                 runtime.max_planner_rounds
@@ -2308,10 +2343,12 @@ def _score(
     clock: Mapping[str, object],
     proposal: PatchProposal | None,
     provisional_cosim: bool,
+    task_contract_final: bool = False,
 ) -> CandidateScore:
     scoring = (
         replace(runtime.scoring, required_verification_tier=3)
         if provisional_cosim
+        or (task_contract_final and not _final_requires_cosim(runtime))
         else runtime.scoring
     )
     official_score = (
@@ -2440,7 +2477,7 @@ def _validate_score_artifacts(
                 raise RuntimeError("final score Candidate was never attempted")
             stage_results = {
                 stage: completed_final_results.get((candidate_id, stage))
-                for stage in ("csim", "synth", "cosim")
+                for stage in _final_required_stages(runtime)
             }
             if any(item is None for item in stage_results.values()):
                 raise RuntimeError("final score lacks a complete tool closure")
@@ -2467,6 +2504,7 @@ def _validate_score_artifacts(
                 ),
                 proposal=_proposal_for_candidate(runtime, candidate_id),
                 provisional_cosim=False,
+                task_contract_final=True,
             )
         else:
             deferred_fast_cosim = False
@@ -2534,8 +2572,9 @@ def _initialize(runtime: _Runtime, _state: V3PrototypeState) -> V3PrototypeState
         or runtime.task.requires_cosim
     ):
         baseline_calls["cosim"] = 1
+    final_calls = _final_required_calls(runtime)
     required_calls = {
-        kind: baseline_calls[kind] + _FULL_CLOSURE_CALLS[kind]
+        kind: baseline_calls[kind] + final_calls[kind]
         for kind in _FULL_CLOSURE_CALLS
     }
     budget_gate = _budget_affordability(
@@ -3144,8 +3183,9 @@ def _evaluate_task_round_budget(
             int(candidate_calls[stage]) * int(runtime.config.budget.costs[stage])
             for stage in candidate_calls
         )
+        final_calls = _final_required_calls(runtime)
         required = {
-            stage: candidate_calls[stage] + _FULL_CLOSURE_CALLS[stage]
+            stage: candidate_calls[stage] + final_calls[stage]
             for stage in _FULL_CLOSURE_CALLS
         }
         token_policy_blocker: str | None = None
@@ -4372,7 +4412,7 @@ def _candidate_score_gate(
 def _candidate_cosim_budget_gate(
     runtime: _Runtime, state: V3PrototypeState
 ) -> V3PrototypeState:
-    required = dict(_FULL_CLOSURE_CALLS)
+    required = _final_required_calls(runtime)
     required["cosim"] += 1
     gate = _budget_affordability(
         runtime,
@@ -4732,8 +4772,8 @@ def _evaluate_final_budget(
 ) -> V3PrototypeState:
     gate = _budget_affordability(
         runtime,
-        required_calls=_FULL_CLOSURE_CALLS,
-        policy="final_closure",
+        required_calls=_final_required_calls(runtime),
+        policy=f"final_closure:{runtime.final_validation_policy}",
     )
     allowed = gate["allowed"] is True
     event = _event(
@@ -4742,7 +4782,10 @@ def _evaluate_final_budget(
         phase="FINAL",
         candidate_id=state.get("final_attempt_candidate_id"),
         action="authorize_full_final_validation",
-        why="Finalization requires a fresh CSim, Synth and CoSim closure.",
+        why=(
+            "Finalization follows the configured task contract: "
+            + ", ".join(_final_required_stages(runtime))
+        ),
         outcome="FINAL_BUDGET_AVAILABLE" if allowed else "FINAL_CLOSURE_UNAFFORDABLE",
     )
     return {
@@ -4760,12 +4803,7 @@ def _fallback_verified(
     validation = candidate.get("validation")
     if not isinstance(validation, Mapping):
         return False
-    stages = (
-        ("csim", "synth")
-        if runtime.validation_profile == FAST_EXPERIMENT_PROFILE
-        and not runtime.task.requires_cosim
-        else ("csim", "synth", "cosim")
-    )
+    stages = _final_required_stages(runtime)
     for stage in stages:
         record = validation.get(stage)
         if not isinstance(record, Mapping) or not (
@@ -4782,7 +4820,7 @@ def _evaluate_final_fallback(
     if mode != PhaseMode.OPTIMIZE.value:
         gate = _budget_affordability(
             runtime,
-            required_calls=_FULL_CLOSURE_CALLS,
+            required_calls=_final_required_calls(runtime),
             policy="task_repair_no_broken_baseline_fallback",
         )
         event = _event(
@@ -4852,7 +4890,7 @@ def _evaluate_final_fallback(
         ]
     budget_gate = _budget_affordability(
         runtime,
-        required_calls=_FULL_CLOSURE_CALLS,
+        required_calls=_final_required_calls(runtime),
         policy="final_fallback_closure",
     )
     limit_reached = int(state.get("final_attempt_count", 1)) >= runtime.max_final_attempts
@@ -5009,7 +5047,35 @@ def _final_synth(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeState
 
 
 def _final_cosim(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeState:
-    update = _final_stage(runtime, state, stage="cosim")
+    if _final_requires_cosim(runtime):
+        update = _final_stage(runtime, state, stage="cosim")
+    else:
+        update = {
+            "final_validation": {
+                name: dict(value)
+                for name, value in state.get(
+                    "final_validation", _initial_validation()
+                ).items()
+            },
+            "last_tool_ok": True,
+            "last_tool_phase": "not_run",
+            "last_tool_reason": "TASK_CONTRACT_COSIM_NOT_REQUIRED",
+            "node_events": [
+                _event(
+                    runtime,
+                    node="final_cosim",
+                    phase="FINAL",
+                    candidate_id=state.get("final_attempt_candidate_id"),
+                    action="skip_optional_final_cosim",
+                    why="The task-contract final policy requires only fresh CSim and Synth.",
+                    outcome="FINAL_COSIM_NOT_REQUIRED",
+                    details={
+                        "final_validation_policy": runtime.final_validation_policy,
+                        "requires_cosim": runtime.task.requires_cosim,
+                    },
+                )
+            ],
+        }
     if not update["last_tool_ok"]:
         return update | {
             "status": "FAILED",
@@ -5045,7 +5111,7 @@ def _final_cosim(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeState
         # routing a non-optimization result through latency-ratio scoring.
         resource = _resource_constraint(final_metrics, runtime.scoring)
         failures: list[str] = []
-        for stage in ("csim", "synth", "cosim"):
+        for stage in _final_required_stages(runtime):
             record = validation.get(stage)
             if not isinstance(record, Mapping) or record.get("status") != "PASS":
                 failures.append(f"{stage.upper()}_VALIDATION")
@@ -5067,7 +5133,7 @@ def _final_cosim(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeState
             expected_best_id=state["best_candidate_id"],
             expected_registry_revision=int(state.get("registry_revision", 0)),
             round_index=int(state.get("round_index", 1)),
-            reason="FINAL_FULL_CLOSURE_PASS",
+            reason="FINAL_TASK_CONTRACT_PASS",
             registry_updates={
                 "final_candidate_id": candidate_id,
                 "final_attempt_candidate_id": candidate_id,
@@ -5108,6 +5174,7 @@ def _final_cosim(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeState
         clock=state["final_clock"],
         proposal=_proposal_for_candidate(runtime, candidate_id),
         provisional_cosim=False,
+        task_contract_final=True,
     )
     score_ref = f"scores/{candidate_id}.final.json"
     _atomic_json(runtime.run_root / score_ref, score.to_dict())
@@ -5125,7 +5192,7 @@ def _final_cosim(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeState
         expected_best_id=state["best_candidate_id"],
         expected_registry_revision=int(state.get("registry_revision", 0)),
         round_index=int(state.get("round_index", 1)),
-        reason="FINAL_FULL_CLOSURE_PASS",
+        reason="FINAL_TASK_CONTRACT_PASS",
         registry_updates={
             "final_candidate_id": candidate_id,
             "final_attempt_candidate_id": candidate_id,
@@ -6482,6 +6549,7 @@ def run_v3_prototype(
     max_no_improvement_rounds: int = 2,
     max_final_attempts: int = 1,
     validation_profile: str = STRICT_VALIDATION_PROFILE,
+    final_validation_policy: str = FULL_INTERNAL_AUDIT_FINAL_POLICY,
     continuation_policy_mode: str = "off",
 ) -> dict[str, object]:
     """Run the checkpointed V3-A1 graph and return its durable result.
@@ -6502,6 +6570,8 @@ def run_v3_prototype(
         raise ValueError("max_planner_rounds must be positive")
     if validation_profile not in VALIDATION_PROFILES:
         raise ValueError("unsupported validation profile")
+    if final_validation_policy not in FINAL_VALIDATION_POLICIES:
+        raise ValueError("unsupported final validation policy")
     if continuation_policy_mode not in CONTINUATION_POLICY_MODES:
         raise ValueError("unsupported continuation policy mode")
     if planner is not None and proposal is not None:
@@ -6544,6 +6614,7 @@ def run_v3_prototype(
         live_planner=planner,
         max_planner_rounds=max_planner_rounds,
         validation_profile=validation_profile,
+        final_validation_policy=final_validation_policy,
         continuation_policy_mode=continuation_policy_mode,
     )
     checkpoint_path = root / "graph_checkpoints.sqlite"

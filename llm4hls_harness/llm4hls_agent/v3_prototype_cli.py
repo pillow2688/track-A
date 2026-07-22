@@ -17,6 +17,7 @@ from .budget import (
 from .repair import PatchProposal
 from .task import load_public_task
 from .tools import ToolConfig
+from .vitis import detect_vitis_toolchain
 from .workflow import RunConfig
 
 
@@ -249,6 +250,15 @@ def _parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--final-validation-policy",
+        choices=("task_contract", "full_internal_audit"),
+        default="task_contract",
+        help=(
+            "Fresh final contract: task_contract runs CoSim only when required; "
+            "full_internal_audit always runs CSim/Synth/CoSim."
+        ),
+    )
+    parser.add_argument(
         "--experience-mode",
         choices=("off", "shadow", "guided"),
         default="shadow",
@@ -299,13 +309,19 @@ def main(argv: list[str] | None = None) -> int:
     }
 
     if args.backend == "vitis":
-        settings_path = vitis_root / "settings64.sh"
-        if not settings_path.is_file():
+        toolchain = detect_vitis_toolchain(vitis_root)
+        if toolchain.preflight_result != "READY":
             _print_error(
                 "VITIS_PREFLIGHT_FAILED",
-                "The Vitis root must contain settings64.sh; the Graph was not started.",
+                "No supported Vitis executable was found; the Graph was not started.",
                 backend="vitis",
-                expected_settings64=str(settings_path),
+                accepted_executables=["vitis-run", "vitis_hls"],
+                selection_order=[
+                    "root/bin/vitis-run",
+                    "PATH:vitis-run",
+                    "root/bin/vitis_hls",
+                    "PATH:vitis_hls",
+                ],
                 credits_used=0,
             )
             return 3
@@ -607,6 +623,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_no_improvement_rounds=args.max_no_improvement_rounds,
                 max_final_attempts=max_final_attempts,
                 validation_profile=args.validation_profile,
+                final_validation_policy=args.final_validation_policy,
                 continuation_policy_mode=args.continuation_policy,
             )
         else:
@@ -621,6 +638,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_no_improvement_rounds=args.max_no_improvement_rounds,
                 max_final_attempts=max_final_attempts,
                 validation_profile=args.validation_profile,
+                final_validation_policy=args.final_validation_policy,
                 continuation_policy_mode=args.continuation_policy,
             )
         if args.experience_mode != "off":

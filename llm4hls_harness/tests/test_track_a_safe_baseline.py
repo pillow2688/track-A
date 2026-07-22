@@ -26,6 +26,11 @@ class TrackASafeBaselineTests(unittest.TestCase):
         self.assertEqual(value["planner"]["strategy_ranker"], "bayesian_shadow")
         self.assertEqual(value["planner"]["comparator"], "latency_first")
         self.assertEqual(value["final_validation"]["fresh_final"], "required")
+        self.assertEqual(value["final_validation"]["policy"], "task_contract")
+        self.assertEqual(
+            value["final_validation"]["task_contract"]["requires_cosim_false"],
+            ["csim", "synth"],
+        )
         self.assertFalse(value["access_control"]["hidden_access"])
         self.assertFalse(value["access_control"]["reference_access"])
         self.assertEqual(value["power"]["status"], "UNSUPPORTED")
@@ -58,6 +63,7 @@ class TrackASafeBaselineTests(unittest.TestCase):
             (explicit_args.cost_csim, explicit_args.cost_synth, explicit_args.cost_cosim),
             (1, 4, 20),
         )
+        self.assertEqual(env_args.final_validation_policy, "task_contract")
 
 
 if __name__ == "__main__":
