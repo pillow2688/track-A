@@ -1965,6 +1965,7 @@ class OpenAICompatibleV3PlannerAdapter:
                     "kernel_file": task.get("kernel_file"),
                     "initial_condition": task.get("initial_condition"),
                     "requires_cosim": requires_cosim,
+                    "generation_required": task.get("generation_required", False),
                     "part": task.get("part"),
                     "clock_ns": task.get("clock_ns"),
                 },
@@ -1984,6 +1985,9 @@ class OpenAICompatibleV3PlannerAdapter:
                     "read_only_files": read_only_files,
                     "preserve_top": task.get("top"),
                     "preserve_interface": True,
+                    "allow_large_kernel_body_patch": bool(
+                        task.get("generation_required", False)
+                    ),
                     "planner_cannot_choose_tools_or_final": True,
                 },
             }
@@ -2086,6 +2090,8 @@ class OpenAICompatibleV3PlannerAdapter:
                     "top": task.get("top"),
                     "kernel_file": task.get("kernel_file"),
                     "difficulty": task.get("difficulty"),
+                    "difficulty_status": task.get("difficulty_status", "UNKNOWN"),
+                    "generation_required": task.get("generation_required", False),
                     "initial_condition": task.get("initial_condition"),
                     "requires_cosim": task.get("requires_cosim"),
                     "part": task.get("part"),
@@ -2133,6 +2139,9 @@ class OpenAICompatibleV3PlannerAdapter:
                     "preserve_top": task.get("top"),
                     "preserve_interface": True,
                     "preserve_numerical_semantics": True,
+                    "allow_large_kernel_body_patch": bool(
+                        task.get("generation_required", False)
+                    ),
                     "planner_cannot_choose_tools_or_final": True,
                 },
             }

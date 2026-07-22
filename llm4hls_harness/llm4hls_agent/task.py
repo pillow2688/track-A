@@ -27,6 +27,18 @@ _FORBIDDEN_DIRECTORIES = {
 _SAFE_PUBLIC_PATH = re.compile(r"\A[A-Za-z0-9_./+-]+\Z")
 _SAFE_C_IDENTIFIER = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*\Z")
 _SAFE_TCL_ATOM = re.compile(r"\A[A-Za-z0-9_.+-]+\Z")
+_SUPPORTED_TASK_TYPES = frozenset(
+    {
+        "generate",
+        "repair",
+        "optimize",
+        "synth_fix",
+        # ``structural`` is the existing reference-harness spelling for a
+        # structural/CoSim repair task.  Keep it public and explicit rather
+        # than silently treating it as an unknown task type.
+        "structural",
+    }
+)
 
 
 def _sha256(data: bytes) -> str:
@@ -71,6 +83,8 @@ class PublicTask:
     id: str
     task_type: str
     difficulty: int
+    difficulty_declared: bool
+    generation_required: bool
     top: str
     budget: int
     part: str
@@ -191,6 +205,18 @@ def load_public_task(task_dir: str | Path) -> PublicTask:
     if description_exists:
         public_hashes["description.md"] = _sha256(description_bytes)
 
+    task_type = str(spec.get("task_type", "generate")).strip().lower()
+    if task_type not in _SUPPORTED_TASK_TYPES:
+        raise TaskPackageError(
+            "unsupported task_type "
+            f"{task_type!r}; expected one of {sorted(_SUPPORTED_TASK_TYPES)}"
+        )
+    raw_generation_required = spec.get("generation_required", task_type == "generate")
+    if not isinstance(raw_generation_required, bool):
+        raise TaskPackageError("generation_required must be boolean when supplied")
+    difficulty_declared = "difficulty" in spec
+    raw_difficulty = spec.get("difficulty", 1)
+
     try:
         parsed_clock_ns = float(clock_ns)
         if not math.isfinite(parsed_clock_ns) or parsed_clock_ns <= 0:
@@ -198,8 +224,10 @@ def load_public_task(task_dir: str | Path) -> PublicTask:
         return PublicTask(
             directory=root,
             id=str(spec.get("task_id", root.name)),
-            task_type=str(spec.get("task_type", "generate")),
-            difficulty=int(spec.get("difficulty", 1)),
+            task_type=task_type,
+            difficulty=int(raw_difficulty),
+            difficulty_declared=difficulty_declared,
+            generation_required=raw_generation_required,
             top=str(top),
             budget=int(spec.get("budget", 40)),
             part=str(part),

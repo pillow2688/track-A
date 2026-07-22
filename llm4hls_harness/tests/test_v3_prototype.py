@@ -242,6 +242,41 @@ def prototype_config(task, *, credit_limit: int = 80) -> RunConfig:
 
 @unittest.skipIf(run_v3_prototype is None, "V3 optional dependencies are not installed")
 class V3PrototypeTests(unittest.TestCase):
+    def test_eight_x_acceleration_stops_only_further_latency_follow_up(self) -> None:
+        project = Path(__file__).resolve().parents[1]
+        task = load_public_task(project / "examples" / "u55c_v2_optimize_task")
+        with tempfile.TemporaryDirectory() as directory:
+            result = run_v3_prototype(
+                task,
+                Path(directory) / "track-a-8x-cap",
+                prototype_config(task, credit_limit=100),
+                (prototype_proposal(), another_non_improving_proposal()),
+                backend=PrototypeBackend(candidate_latency=256),
+                thread_id="track-a-8x-cap",
+            )
+
+        self.assertEqual(result["status"], "DONE")
+        self.assertEqual(result["rounds_completed"], 1)
+        self.assertEqual(result["exploration_stop_reason"], "ACCELERATION_CAP_REACHED")
+        cap_events = [
+            event
+            for event in result["node_events"]
+            if event["node"] == "evaluate_round_budget"
+            and event["outcome"] == "ACCELERATION_CAP_REACHED"
+        ]
+        self.assertEqual(len(cap_events), 1)
+        cap = cap_events[0]["details"]["acceleration_cap"]
+        self.assertTrue(cap["reached"])
+        self.assertGreaterEqual(cap["acceleration"], 8.0)
+        accounting = result["track_a_budget_accounting"]
+        self.assertEqual(accounting["external_grader_cost"], 0)
+        self.assertTrue(accounting["reconciled"])
+        self.assertEqual(
+            accounting["agent_search_cost"]
+            + accounting["internal_final_validation_cost"],
+            result["budget"]["credits_used"],
+        )
+
     def test_shadow_continuation_persists_decision_without_changing_first_route(self) -> None:
         project = Path(__file__).resolve().parents[1]
         task = load_public_task(project / "examples" / "u55c_v2_optimize_task")
@@ -400,7 +435,7 @@ class V3PrototypeTests(unittest.TestCase):
     ) -> None:
         project = Path(__file__).resolve().parents[1]
         task = load_public_task(project / "examples" / "u55c_v2_optimize_task")
-        backend = PrototypeBackend()
+        backend = PrototypeBackend(candidate_latency=1024)
 
         with tempfile.TemporaryDirectory() as directory:
             run_root = Path(directory) / "v3-a1-round-two-input"
@@ -1021,7 +1056,7 @@ class V3PrototypeTests(unittest.TestCase):
     def test_rejected_candidate_continues_to_second_round_and_promotes(self) -> None:
         project = Path(__file__).resolve().parents[1]
         task = load_public_task(project / "examples" / "u55c_v2_optimize_task")
-        backend = PrototypeBackend()
+        backend = PrototypeBackend(candidate_latency=1024)
 
         with tempfile.TemporaryDirectory() as directory:
             run_root = Path(directory) / "v3-two-rounds"
@@ -1286,7 +1321,7 @@ class V3PrototypeTests(unittest.TestCase):
     def test_later_rejection_preserves_promoted_incumbent(self) -> None:
         project = Path(__file__).resolve().parents[1]
         task = load_public_task(project / "examples" / "u55c_v2_optimize_task")
-        backend = PrototypeBackend()
+        backend = PrototypeBackend(candidate_latency=1024)
 
         with tempfile.TemporaryDirectory() as directory:
             run_root = Path(directory) / "v3-preserve-incumbent"
@@ -2050,7 +2085,7 @@ class V3PrototypeTests(unittest.TestCase):
     ) -> None:
         project = Path(__file__).resolve().parents[1]
         task = load_public_task(project / "examples" / "u55c_v2_optimize_task")
-        backend = PrototypeBackend()
+        backend = PrototypeBackend(candidate_latency=1024)
         self.assertIsNotNone(v3_prototype_module)
         original_materialize = v3_prototype_module._materialize_candidate
 

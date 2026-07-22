@@ -102,6 +102,25 @@ class PatchLimits:
             raise ValueError("patch limits must be positive")
 
 
+def task_patch_limits(task: PublicTask, base: PatchLimits) -> PatchLimits:
+    """Return the smallest safe patch policy for the public task capability.
+
+    Ordinary repair/optimization tasks retain V3's intentionally small patch
+    budget.  A declared public generation/stub task is different: its kernel
+    body may legitimately need to be replaced.  The exception is deliberately
+    narrow: the existing kernel-only path checks and TopInterfaceGuard still
+    run for every patch.
+    """
+
+    if not task.generation_required:
+        return base
+    return PatchLimits(
+        max_changed_lines=max(base.max_changed_lines, 1600),
+        max_hunks=max(base.max_hunks, 48),
+        allow_full_file_replacement=True,
+    )
+
+
 @dataclass(frozen=True)
 class PatchProposal:
     """A provider response; the provider cannot perform side effects."""

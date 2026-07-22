@@ -34,6 +34,7 @@ from .repair import (
     apply_unified_diff,
     normalize_unified_diff_headers,
     relocate_unified_diff_hunks,
+    task_patch_limits,
 )
 from .scoring import (
     OFFICIAL_SCORE_SOURCE,
@@ -112,6 +113,17 @@ _FULL_CLOSURE_CALLS = {"csim": 1, "synth": 1, "cosim": 1}
 STRICT_VALIDATION_PROFILE = "strict"
 FAST_EXPERIMENT_PROFILE = "fast-experiment"
 VALIDATION_PROFILES = (STRICT_VALIDATION_PROFILE, FAST_EXPERIMENT_PROFILE)
+
+
+def _v3_task_spec(task: PublicTask) -> dict[str, object]:
+    """Add V3-only capability metadata without changing V0--V2 snapshots."""
+
+    value = _task_spec(task)
+    value["difficulty_status"] = (
+        "DECLARED" if task.difficulty_declared else "UNKNOWN"
+    )
+    value["generation_required"] = task.generation_required
+    return value
 
 
 class V3PrototypeState(TypedDict, total=False):
@@ -787,7 +799,7 @@ def _build_round_planner_input(
         runtime.run_root / "budget_ledger.jsonl", runtime.config.budget
     ).snapshot()
     return build_planner_input(
-        task=_task_spec(runtime.task),
+        task=_v3_task_spec(runtime.task),
         round_state={
             "mode": str(state.get("mode", PhaseMode.OPTIMIZE.value)),
             "failure_evidence": dict(state.get("failure_evidence", {})),
@@ -1667,7 +1679,7 @@ def _verify_run_identity(
     if not task_path.exists() and not config_path.exists():
         return
     expected = {
-        task_path: _task_spec(runtime.task),
+        task_path: _v3_task_spec(runtime.task),
         config_path: _run_config_snapshot(runtime),
     }
     proposal_path = runtime.run_root / "planner" / "proposal_001.json"
@@ -2311,7 +2323,7 @@ def _score(
             requires_cosim=runtime.task.requires_cosim,
             provisional_cosim=provisional_cosim,
         )
-        if scoring.official_score_enabled
+        if scoring.official_score_enabled and runtime.task.difficulty_declared
         else None
     )
     credits = sum(
@@ -2509,7 +2521,7 @@ def _initialize(runtime: _Runtime, _state: V3PrototypeState) -> V3PrototypeState
     _write_once_or_verify(
         runtime.run_root / "v3_graph_schema.json", _checkpoint_schema_snapshot()
     )
-    _write_once_or_verify(runtime.run_root / "v3_task_spec.json", _task_spec(runtime.task))
+    _write_once_or_verify(runtime.run_root / "v3_task_spec.json", _v3_task_spec(runtime.task))
     _write_once_or_verify(
         runtime.run_root / "v3_run_config.json", _run_config_snapshot(runtime)
     )
@@ -3209,6 +3221,85 @@ def _evaluate_task_round_budget(
     }
 
 
+def _stage_passed(validation: Mapping[str, object], stage: str) -> bool:
+    record = validation.get(stage)
+    return isinstance(record, Mapping) and (
+        record.get("status") == "PASS" or record.get("ok") is True
+    )
+
+
+def _acceleration_cap_status(
+    runtime: _Runtime, state: V3PrototypeState
+) -> dict[str, object]:
+    """Return whether an optimize-only 8x latency cap is safely actionable.
+
+    The reference score normalizes acceleration at 8x.  Once an incumbent has
+    reached that cap *and* its observed CSim/Synth (plus required CoSim), clock
+    and resource constraints pass, another pure latency proposal cannot
+    improve the local reference-score proxy.  This is deliberately called only
+    from the OPTIMIZE loop; repair paths retain their correctness iterations.
+    """
+
+    unknown: dict[str, object] = {
+        "checked": False,
+        "reached": False,
+        "acceleration": None,
+        "clock_passed": False,
+        "resource_passed": False,
+    }
+    if str(state.get("mode", PhaseMode.OPTIMIZE.value)) != PhaseMode.OPTIMIZE.value:
+        return unknown
+    baseline_ref = state.get("baseline_metrics_ref")
+    best_ref = state.get("best_metrics_ref")
+    incumbent_id = state.get("best_candidate_id")
+    baseline_id = state.get("baseline_candidate_id")
+    if not all(
+        isinstance(item, str) and item
+        for item in (baseline_ref, best_ref, incumbent_id, baseline_id)
+    ):
+        return unknown
+    try:
+        baseline = _completed_synth_report(
+            runtime,
+            baseline_ref,
+            candidate_id=baseline_id,
+            validation_scope="exploration",
+        )
+        incumbent = _completed_synth_report(
+            runtime,
+            best_ref,
+            candidate_id=incumbent_id,
+            validation_scope="exploration",
+        )
+        baseline_latency = _worst_latency(baseline, name="baseline")
+        incumbent_latency = _worst_latency(incumbent, name="incumbent")
+        validation = _registry_validation(runtime, incumbent_id)
+    except (RuntimeError, ValueError, KeyError):
+        return unknown
+    required_stages = ("csim", "synth", "cosim") if runtime.task.requires_cosim else ("csim", "synth")
+    correctness_passed = all(_stage_passed(validation, stage) for stage in required_stages)
+    clock = _clock_constraint(incumbent, runtime.config.minimum_frequency_mhz)
+    resource = _resource_constraint(incumbent, runtime.scoring)
+    acceleration = baseline_latency / incumbent_latency if incumbent_latency > 0 else None
+    clock_passed = bool(clock["passed"])
+    resource_passed = bool(resource["passed"])
+    return {
+        "checked": True,
+        "reached": bool(
+            acceleration is not None
+            and acceleration >= 8.0
+            and correctness_passed
+            and clock_passed
+            and resource_passed
+        ),
+        "acceleration": acceleration,
+        "correctness_passed": correctness_passed,
+        "clock_passed": clock_passed,
+        "resource_passed": resource_passed,
+        "required_stages": list(required_stages),
+    }
+
+
 def _evaluate_round_budget(
     runtime: _Runtime, state: V3PrototypeState
 ) -> V3PrototypeState:
@@ -3220,7 +3311,20 @@ def _evaluate_round_budget(
         if runtime.live_planner is not None
         else len(runtime.proposals)
     )
-    if round_index > planner_round_limit:
+    acceleration_cap = _acceleration_cap_status(runtime, state)
+    if acceleration_cap["reached"] is True:
+        gate: dict[str, object] = {
+            "policy": "track_a_acceleration_cap",
+            "allowed": False,
+            "required_calls": {},
+            "required_credits": 0,
+            "blockers": ["acceleration_cap_reached:8x"],
+            "acceleration": acceleration_cap["acceleration"],
+            "clock_passed": acceleration_cap["clock_passed"],
+            "resource_passed": acceleration_cap["resource_passed"],
+        }
+        reason = "ACCELERATION_CAP_REACHED"
+    elif round_index > planner_round_limit:
         gate: dict[str, object] = {
             "policy": "scripted_proposals",
             "allowed": False,
@@ -3322,6 +3426,11 @@ def _evaluate_round_budget(
         ),
         outcome=reason,
         round_index=round_index,
+        details=(
+            {"acceleration_cap": acceleration_cap}
+            if acceleration_cap["checked"] is True
+            else None
+        ),
     )
     update: V3PrototypeState = {
         "budget_gate": gate,
@@ -5424,6 +5533,27 @@ def _render_team_report(
         + report_cell(gate.get("candidate_ppa_cost"))
         + " |",
     ]
+    track_a_budget = result.get("track_a_budget_accounting")
+    track_a_budget = track_a_budget if isinstance(track_a_budget, Mapping) else {}
+    budget_rows = [
+        "| 账本项目 | Credit |",
+        "|---|---:|",
+        "| Agent search cost | "
+        + report_cell(track_a_budget.get("agent_search_cost"))
+        + " |",
+        "| Internal final validation cost | "
+        + report_cell(track_a_budget.get("internal_final_validation_cost"))
+        + " |",
+        "| External grader cost | "
+        + report_cell(track_a_budget.get("external_grader_cost"))
+        + " |",
+        "| External grader status | "
+        + report_cell(track_a_budget.get("external_grader_status"))
+        + " |",
+        "| Ledger reconciliation | "
+        + report_cell(track_a_budget.get("reconciled"))
+        + " |",
+    ]
 
     final_validation = result.get("final_validation")
     final_validation = (
@@ -5713,6 +5843,10 @@ def _render_team_report(
             "",
             *token_rows,
             "",
+            "## Track A Credit 分账",
+            "",
+            *budget_rows,
+            "",
             "### Planner Call Gate",
             "",
             *call_gate_rows,
@@ -5733,6 +5867,81 @@ def _render_team_report(
     )
 
 
+def _track_a_budget_accounting(
+    runtime: _Runtime, budget: Mapping[str, object]
+) -> dict[str, object]:
+    """Split charged internal actions without inventing grader execution.
+
+    The append-only ledger remains the authority.  Tool result artifacts carry
+    the immutable ``validation_scope`` needed to distinguish exploration from
+    the agent's own fresh final closure.  The external hidden grader is never
+    invoked by this process and therefore has a literal zero recorded cost.
+    """
+
+    ledger = BudgetLedger(
+        runtime.run_root / "budget_ledger.jsonl", runtime.config.budget
+    )
+    search_cost = 0
+    final_cost = 0
+    completed_actions = 0
+    classification_errors: list[str] = []
+    for event in ledger.events():
+        if event.get("state") != "COMPLETED":
+            continue
+        kind = event.get("kind")
+        cost = event.get("actual_cost")
+        if isinstance(cost, bool) or not isinstance(cost, int) or cost < 0:
+            classification_errors.append("INVALID_COMPLETED_COST")
+            continue
+        completed_actions += 1
+        if kind == "llm":
+            search_cost += cost
+            continue
+        if kind not in _FULL_CLOSURE_CALLS:
+            classification_errors.append(f"UNKNOWN_KIND:{kind}")
+            continue
+        result_ref = event.get("result_ref")
+        if not isinstance(result_ref, str) or not result_ref:
+            classification_errors.append(f"MISSING_RESULT_REF:{kind}")
+            continue
+        try:
+            raw = _read_json_object(_safe_run_ref(runtime, result_ref))
+            result = ToolResult.from_dict(raw)
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            classification_errors.append(f"UNREADABLE_RESULT:{kind}:{type(exc).__name__}")
+            continue
+        if result.kind != kind:
+            classification_errors.append(f"RESULT_KIND_MISMATCH:{kind}")
+            continue
+        if result.validation_scope == "final":
+            final_cost += cost
+        elif result.validation_scope == "exploration":
+            search_cost += cost
+        else:
+            classification_errors.append(
+                f"UNKNOWN_VALIDATION_SCOPE:{result.validation_scope}"
+            )
+    ledger_credits = budget.get("credits_used")
+    reconciled = (
+        not classification_errors
+        and isinstance(ledger_credits, int)
+        and not isinstance(ledger_credits, bool)
+        and search_cost + final_cost == ledger_credits
+    )
+    return {
+        "schema_version": "v3.track-a-budget-accounting.v1",
+        "agent_search_cost": search_cost,
+        "internal_final_validation_cost": final_cost,
+        "external_grader_cost": 0,
+        "external_grader_status": "NOT_RUN_BY_AGENT",
+        "total_internal_cost": search_cost + final_cost,
+        "ledger_credits_used": ledger_credits,
+        "completed_actions": completed_actions,
+        "classification_errors": classification_errors,
+        "reconciled": reconciled,
+    }
+
+
 def _write_report(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeState:
     report_event = _event(
         runtime,
@@ -5751,6 +5960,7 @@ def _write_report(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeStat
     budget = BudgetLedger(
         runtime.run_root / "budget_ledger.jsonl", runtime.config.budget
     ).snapshot()
+    track_a_budget_accounting = _track_a_budget_accounting(runtime, budget)
     token_rounds = _planner_token_rounds(runtime)
     token_policy_summary = _planner_token_summary(token_rounds, budget)
     planner_call_gates = _planner_call_gates(runtime)
@@ -5873,7 +6083,9 @@ def _write_report(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeStat
         "last_tool_phase": state.get("last_tool_phase"),
         "last_tool_reason": state.get("last_tool_reason"),
         "cosim_gate": state.get("cosim_gate", {}),
+        "budget_gate": state.get("budget_gate", {}),
         "budget": budget,
+        "track_a_budget_accounting": track_a_budget_accounting,
         "token_policy_rounds": token_rounds,
         "token_policy_summary": token_policy_summary,
         "planner_call_gates": planner_call_gates,
@@ -6322,7 +6534,10 @@ def run_v3_prototype(
         proposals=proposals,
         backend=backend or VitisBackend(),
         scoring=scoring,
-        patch_limits=patch_limits or PatchLimits(max_changed_lines=30, max_hunks=4),
+        patch_limits=task_patch_limits(
+            task,
+            patch_limits or PatchLimits(max_changed_lines=30, max_hunks=4),
+        ),
         thread_id=thread_id,
         max_no_improvement_rounds=max_no_improvement_rounds,
         max_final_attempts=max_final_attempts,

@@ -173,6 +173,39 @@ class PublicTaskLoaderTests(unittest.TestCase):
                 hashlib.sha256(b"").hexdigest(),
             )
 
+    def test_generate_defaults_to_large_kernel_body_capability_and_unknown_difficulty(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_public_task(root)
+            task_toml = root / "task.toml"
+            value = task_toml.read_text(encoding="utf-8")
+            value = value.replace('task_type = "structural"', 'task_type = "generate"')
+            value = value.replace("difficulty = 4\n", "")
+            task_toml.write_text(value, encoding="utf-8")
+
+            task = load_public_task(root)
+
+        self.assertEqual(task.task_type, "generate")
+        self.assertTrue(task.generation_required)
+        self.assertFalse(task.difficulty_declared)
+        # Compatibility still provides a numeric value to legacy callers; it
+        # must not be presented as an official difficulty in new reports.
+        self.assertEqual(task.difficulty, 1)
+
+    def test_rejects_unknown_task_type(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_public_task(root)
+            task_toml = root / "task.toml"
+            task_toml.write_text(
+                task_toml.read_text(encoding="utf-8").replace(
+                    'task_type = "structural"', 'task_type = "unsupported"'
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(TaskPackageError, "unsupported task_type"):
+                load_public_task(root)
+
     def test_rejects_task_root_inside_forbidden_directory(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "reference" / "task"

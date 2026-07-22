@@ -20,6 +20,21 @@ from .tools import ToolConfig
 from .workflow import RunConfig
 
 
+def _env_positive_int(name: str, default: int) -> int:
+    """Read a positive integer without making malformed shell state silent."""
+
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be a positive integer") from exc
+    if value <= 0:
+        raise ValueError(f"{name} must be a positive integer")
+    return value
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="llm4hls-v3-prototype",
@@ -78,6 +93,24 @@ def _parser() -> argparse.ArgumentParser:
         default=os.environ.get("LLM4HLS_TOOLCHAIN_ID", "Vitis 2025.2"),
     )
     parser.add_argument("--credit-limit", type=int)
+    parser.add_argument(
+        "--cost-csim",
+        type=int,
+        default=_env_positive_int("LLM4HLS_COST_CSIM", 1),
+        help="Configured CSim Credit cost (default: LLM4HLS_COST_CSIM or 1).",
+    )
+    parser.add_argument(
+        "--cost-synth",
+        type=int,
+        default=_env_positive_int("LLM4HLS_COST_SYNTH", 4),
+        help="Configured Synth Credit cost (default: LLM4HLS_COST_SYNTH or 4).",
+    )
+    parser.add_argument(
+        "--cost-cosim",
+        type=int,
+        default=_env_positive_int("LLM4HLS_COST_COSIM", 20),
+        help="Configured CoSim Credit cost (default: LLM4HLS_COST_COSIM or 20).",
+    )
     parser.add_argument("--runtime-limit", type=float, default=7200.0)
     parser.add_argument("--csim-timeout", type=float, default=300.0)
     parser.add_argument("--synth-timeout", type=float, default=1800.0)
@@ -545,7 +578,12 @@ def main(argv: list[str] | None = None) -> int:
                     if args.credit_limit is not None
                     else task.budget
                 ),
-                costs={"csim": 1, "synth": 4, "cosim": 20, "llm": 0},
+                costs={
+                    "csim": args.cost_csim,
+                    "synth": args.cost_synth,
+                    "cosim": args.cost_cosim,
+                    "llm": 0,
+                },
                 tool_limits={
                     "csim": validation_call_limit,
                     "synth": validation_call_limit,

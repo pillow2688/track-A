@@ -98,6 +98,17 @@ class V3PhaseRouterTests(unittest.TestCase):
         )
         self.assertEqual(decision.to_dict()["mode"], "OPTIMIZE")
 
+    def test_public_generate_task_routes_to_repair_after_baseline_passes(self) -> None:
+        decision = self.router.route(
+            baseline_csim={"status": "PASS"},
+            baseline_synth={"status": "PASS"},
+            baseline_cosim={"status": "NOT_RUN"},
+            task_metadata={"task_type": "generate", "requires_cosim": False},
+        )
+
+        self.assertEqual(decision.mode, PhaseMode.REPAIR)
+        self.assertEqual(decision.reason, "GENERATE_TASK_REQUIRES_IMPLEMENTATION")
+
     def test_optional_cosim_pass_also_routes_to_optimize(self) -> None:
         decision = self.router.route(
             baseline_csim={"status": "PASS"},

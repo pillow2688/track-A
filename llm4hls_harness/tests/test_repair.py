@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import difflib
 import json
 import stat
 import tempfile
@@ -16,6 +17,7 @@ from llm4hls_agent.repair import (
     RepairProviderError,
     StaticPatchProvider,
     apply_unified_diff,
+    task_patch_limits,
     diagnose_failure,
     deterministic_fallback_proposal,
     FailureDiagnostic,
@@ -155,6 +157,45 @@ class RepairTests(unittest.TestCase):
                 "```diff\n" + self.patch() + "```\n",
                 kernel_name="kernel.cpp",
             )
+
+    def test_declared_generation_task_allows_large_kernel_body_patch_only(self) -> None:
+        replacement = (
+            '# include "kernel.h"\n'
+            'void  kernel(int value, int *out) {\n'
+            '#pragma HLS PIPELINE II=1\n'
+            '    *out = value + 1;\n'
+            '} // generated\n'
+        )
+        patch = "".join(
+            difflib.unified_diff(
+                self.task.kernel_code.splitlines(keepends=True),
+                replacement.splitlines(keepends=True),
+                fromfile="a/kernel.cpp",
+                tofile="b/kernel.cpp",
+                n=0,
+            )
+        )
+        standard = PatchLimits(max_changed_lines=40, max_hunks=1)
+        with self.assertRaisesRegex(PatchValidationError, "whole-file replacement"):
+            apply_unified_diff(
+                self.task.kernel_bytes,
+                patch,
+                kernel_name=self.task.kernel_name,
+                limits=standard,
+                task=self.task,
+            )
+
+        limits = task_patch_limits(self.task, standard)
+        application = apply_unified_diff(
+            self.task.kernel_bytes,
+            patch,
+            kernel_name=self.task.kernel_name,
+            limits=limits,
+            task=self.task,
+        )
+
+        self.assertTrue(limits.allow_full_file_replacement)
+        self.assertIn(b"#pragma HLS PIPELINE II=1", application.patched_bytes)
 
     def test_patch_normalizer_repairs_only_hunk_line_counts(self) -> None:
         malformed = self.patch().replace(
