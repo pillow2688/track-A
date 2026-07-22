@@ -1,0 +1,29 @@
+{
+  "beneficial_retention": 0.6,
+  "by_mode": {
+    "OPTIMIZE": {
+      "ALLOW": 8,
+      "BLOCK": 3,
+      "outcome_BENEFICIAL_PERFORMANCE": 5,
+      "outcome_HARMFUL": 6
+    }
+  },
+  "decisions": {
+    "allow": 8,
+    "block": 3
+  },
+  "essential_retention": null,
+  "followup_total": 11,
+  "outcomes": {
+    "ALLOW": 8,
+    "BLOCK": 3,
+    "beneficial_retained": 3,
+    "followups": 11,
+    "outcome_BENEFICIAL_PERFORMANCE": 5,
+    "outcome_HARMFUL": 6,
+    "waste_blocked": 1
+  },
+  "schema_version": "v3.continuation-replay-evaluation.v1",
+  "status": "EVALUATED",
+  "waste_block_rate": 0.16666666666666666
+}

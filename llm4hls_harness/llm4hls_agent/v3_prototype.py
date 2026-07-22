@@ -2970,6 +2970,30 @@ def _continuation_evidence(
     previous_metrics: Mapping[str, object] = current_metrics
     previous_evidence: Mapping[str, object] = current_evidence
     if latest is not None:
+        # When the latest materialized Candidate is also the current
+        # incumbent, compare its already-known evidence against its parent.
+        # Comparing it with itself would erase precisely the new bottleneck
+        # information that a second Planner call is allowed to use.
+        if latest.get("candidate_id") == state.get("best_candidate_id"):
+            registry = CandidateManager(runtime.run_root, runtime.task).load_registry()
+            candidates = registry.get("candidates")
+            parent_id = latest.get("parent_id")
+            parent = (
+                candidates.get(parent_id)
+                if isinstance(candidates, Mapping) and isinstance(parent_id, str)
+                else None
+            )
+            if isinstance(parent, Mapping):
+                parent_metrics_ref = parent.get("metrics_ref")
+                if isinstance(parent_metrics_ref, str) and parent_metrics_ref:
+                    previous_metrics = _completed_synth_report(
+                        runtime, parent_metrics_ref, candidate_id=parent_id,
+                        validation_scope="exploration",
+                    )
+                parent_evidence_ref = parent.get("synth_evidence_ref")
+                if mode == PhaseMode.OPTIMIZE.value and isinstance(parent_evidence_ref, str) and parent_evidence_ref:
+                    previous_evidence = _read_json_object(_safe_run_ref(runtime, parent_evidence_ref))
+            return previous_evidence, current_evidence, previous_metrics, current_metrics
         metrics_ref = latest.get("metrics_ref")
         candidate_id = latest.get("candidate_id")
         if isinstance(metrics_ref, str) and isinstance(candidate_id, str) and metrics_ref:
@@ -3028,7 +3052,7 @@ def _apply_continuation_policy(
     )
     # Initial calls have no follow-up to suppress, but are still recorded in
     # shadow/enforce for auditability.
-    if round_index == 1 and decision["decision"] != "DEFER_TO_FINAL":
+    if round_index == 1:
         decision["decision"] = "ALLOW"
         decision["reason_codes"] = [*decision["reason_codes"], "INITIAL_PLANNER_CALL"]
         decision["decision_hash"] = ""
@@ -3145,10 +3169,16 @@ def _evaluate_task_round_budget(
                 if gate["allowed"] is True
                 else "TASK_REPAIR_SKIPPED_FINAL_RESERVE"
             )
-    allowed, continuation, continuation_ref, continuation_hash, pa_ref = _apply_continuation_policy(
-        runtime, state, budget_gate=gate, estimated_tokens=required_tokens,
-        estimated_credits=next_credits,
-    )
+    if gate["allowed"] is True:
+        allowed, continuation, continuation_ref, continuation_hash, pa_ref = _apply_continuation_policy(
+            runtime, state, budget_gate=gate, estimated_tokens=required_tokens,
+            estimated_credits=next_credits,
+        )
+    else:
+        allowed, continuation = False, {}
+        continuation_ref = str(state.get("continuation_decision_ref", ""))
+        continuation_hash = str(state.get("continuation_decision_hash", ""))
+        pa_ref = str(state.get("performance_area_ref", ""))
     if not allowed and continuation.get("decision") in {"BLOCK", "DEFER_TO_FINAL"}:
         reason = "CONTINUATION_" + str(continuation["decision"])
     event = _event(
@@ -3258,13 +3288,19 @@ def _evaluate_round_budget(
                 if gate["allowed"] is True
                 else "ROUND_SKIPPED_FINAL_RESERVE"
             )
-    allowed, continuation, continuation_ref, continuation_hash, pa_ref = _apply_continuation_policy(
-        runtime, state, budget_gate=gate, estimated_tokens=required_tokens,
-        estimated_credits=(
-            int(runtime.config.budget.costs["csim"])
-            + int(runtime.config.budget.costs["synth"])
-        ),
-    )
+    if gate["allowed"] is True:
+        allowed, continuation, continuation_ref, continuation_hash, pa_ref = _apply_continuation_policy(
+            runtime, state, budget_gate=gate, estimated_tokens=required_tokens,
+            estimated_credits=(
+                int(runtime.config.budget.costs["csim"])
+                + int(runtime.config.budget.costs["synth"])
+            ),
+        )
+    else:
+        allowed, continuation = False, {}
+        continuation_ref = str(state.get("continuation_decision_ref", ""))
+        continuation_hash = str(state.get("continuation_decision_hash", ""))
+        pa_ref = str(state.get("performance_area_ref", ""))
     if not allowed and continuation.get("decision") in {"BLOCK", "DEFER_TO_FINAL"}:
         reason = "CONTINUATION_" + str(continuation["decision"])
     event = _event(

@@ -1,0 +1,12 @@
+{
+  "excluded": {
+    "DUPLICATE": 1,
+    "MISSING_SYNTH_METRICS": 1,
+    "NOT_REAL_VITIS": 4
+  },
+  "future_fields_separated": true,
+  "sample_count": 11,
+  "schema_version": "v3.continuation-replay-manifest.v1",
+  "source_count": 11,
+  "status": "READY"
+}

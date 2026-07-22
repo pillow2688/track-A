@@ -242,6 +242,25 @@ def prototype_config(task, *, credit_limit: int = 80) -> RunConfig:
 
 @unittest.skipIf(run_v3_prototype is None, "V3 optional dependencies are not installed")
 class V3PrototypeTests(unittest.TestCase):
+    def test_shadow_continuation_persists_decision_without_changing_first_route(self) -> None:
+        project = Path(__file__).resolve().parents[1]
+        task = load_public_task(project / "examples" / "u55c_v2_optimize_task")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "v3f-shadow"
+            result = run_v3_prototype(
+                task, root, prototype_config(task), prototype_proposal(),
+                backend=PrototypeBackend(), thread_id="v3f-shadow-test",
+                continuation_policy_mode="shadow",
+            )
+            self.assertEqual(result["status"], "DONE")
+            self.assertEqual(result["continuation_policy_mode"], "shadow")
+            reference = result["continuation_decision_ref"]
+            self.assertIsInstance(reference, str)
+            decision = json.loads((root / reference).read_text(encoding="utf-8"))
+            self.assertEqual(decision["decision"], "ALLOW")
+            self.assertEqual(decision["round_index"], 1)
+            self.assertTrue((root / result["performance_area_ref"]).is_file())
+
     def test_legacy_checkpoint_without_mode_keeps_optimize_cosim_route(self) -> None:
         self.assertIsNotNone(v3_prototype_module)
         for legacy_mode in (None, "", "UNROUTED"):
