@@ -44,8 +44,16 @@
       }
     },
     {
-      "id": "project_examples",
+      "id": "track_a_empty_stub_generation_development",
       "priority": 2,
+      "path": "development/track_a_empty_stub_generation",
+      "scope": "public development-only empty-stub generation smoke; not an official benchmark or difficulty distribution",
+      "contains_hidden_or_reference_files": false,
+      "runtime_visibility": "task.toml, description, kernel, header and public testbench only"
+    },
+    {
+      "id": "project_examples",
+      "priority": 3,
       "path": "../examples",
       "scope": "locally maintained harness fixtures",
       "contains_hidden_or_reference_files": false

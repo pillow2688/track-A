@@ -1,0 +1,15 @@
+task_id = "track_a_empty_stub_generation"
+task_type = "generate"
+generation_required = true
+development_difficulty = "medium"
+top = "matrix_transform"
+kernel_file = "kernel.cpp"
+header_files = ["matrix_transform.h"]
+public_tb = "matrix_transform_tb.cpp"
+budget = 80
+requires_cosim = false
+initial_condition = "The public kernel is a deliberately empty TODO stub. Generate the complete synthesizable algorithm while preserving the declared interface."
+
+[target]
+part = "xcu55c-fsvh2892-2L-e"
+clock_ns = 5.0
