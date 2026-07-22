@@ -183,7 +183,7 @@ def _default_version_probe(executable: str) -> tuple[str | None, str | None]:
     summary = " | ".join(lines[:2])
     import re
 
-    match = re.search(r"\b(20\d{2}\.\d+(?:\.\d+)?)\b", summary)
+    match = re.search(r"(?<!\d)(20\d{2}\.\d+(?:\.\d+)?)(?!\d)", summary)
     return (match.group(1) if match else None), summary
 
 

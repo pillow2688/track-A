@@ -4,6 +4,8 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 try:
     from llm4hls_agent.task import load_public_task
@@ -11,6 +13,7 @@ try:
     from llm4hls_agent.vitis import (
         ProcessResult,
         VitisBackend,
+        _default_version_probe,
         detect_vitis_toolchain,
         parse_cosim_report,
         parse_synth_report,
@@ -22,6 +25,7 @@ except ModuleNotFoundError:
 
     load_public_task = ToolConfig = ProcessResult = VitisBackend = _missing  # type: ignore[misc,assignment]
     parse_cosim_report = parse_synth_report = detect_vitis_toolchain = _missing
+    _default_version_probe = _missing
     vitis_invocation_command = _missing
 
 
@@ -377,6 +381,20 @@ class VitisBackendTests(unittest.TestCase):
 
         self.assertEqual(toolchain.preflight_result, "TOOLCHAIN_UNAVAILABLE")
         self.assertIsNone(toolchain.executable)
+
+    def test_version_probe_extracts_vitis_run_prefixed_version(self) -> None:
+        with patch(
+            "llm4hls_agent.vitis.subprocess.run",
+            return_value=SimpleNamespace(
+                returncode=0,
+                stdout="****** vitis-run v2025.2 (64-bit)\n",
+                stderr="",
+            ),
+        ):
+            version, summary = _default_version_probe("/fixture/vitis-run")
+
+        self.assertEqual(version, "2025.2")
+        self.assertIn("vitis-run v2025.2", str(summary))
 
 
 if __name__ == "__main__":
