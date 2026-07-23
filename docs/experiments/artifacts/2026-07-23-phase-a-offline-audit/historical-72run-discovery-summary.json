@@ -1,0 +1,71 @@
+{
+  "candidates": [
+    {
+      "actual_runs": 72,
+      "match": true,
+      "path": "/home/ying/CompetitionTrackA/track-A/llm4hls_harness/experiments/token_policy_abc/pilot-real-deepseek-v4-pro-20260722-01",
+      "planned_runs": 72,
+      "shape": "12 tasks x 3 conditions x 2 repeats",
+      "status": "COMPLETE"
+    },
+    {
+      "actual_runs": 1,
+      "match": false,
+      "path": "/home/ying/CompetitionTrackA/track-A/llm4hls_harness/experiments/token_policy_abc/preflight-real-20260722-01",
+      "planned_runs": 1,
+      "rejection_reason": "PREFLIGHT_ONLY_NOT_72",
+      "shape": "1 task x 1 condition x 1 repeat",
+      "status": "COMPLETE"
+    },
+    {
+      "actual_runs": 48,
+      "match": false,
+      "path": "/home/ying/CompetitionTrackA/track-A/llm4hls_harness/experiments/token_policy_hybrid_v2/pilot-real-deepseek-v4-pro-20260722-01",
+      "planned_runs": 48,
+      "rejection_reason": "48_RUN_TWO_CONDITION_HYBRID_NOT_ABC",
+      "shape": "12 tasks x 2 conditions x 2 repeats",
+      "status": "COMPLETE"
+    }
+  ],
+  "directory_count_not_used_as_identity": true,
+  "discovery_date": "2026-07-23",
+  "schema_version": "phase-a.historical-72-discovery.v1",
+  "selection": {
+    "conditions": [
+      "A_FIXED",
+      "B_DYNAMIC_HARD",
+      "C_DYNAMIC_VISIBLE"
+    ],
+    "created_at": "2026-07-22T01:35:22.806561+00:00",
+    "finished_at": "2026-07-22T03:23:09.413161+00:00",
+    "git_commit": "431f7a65627ab6911bd11d1a4a8ae6f57094ab08",
+    "model": "deepseek-v4-pro",
+    "path": "/home/ying/CompetitionTrackA/track-A/llm4hls_harness/experiments/token_policy_abc/pilot-real-deepseek-v4-pro-20260722-01",
+    "real_evidence_levels": [
+      "REAL_VITIS_ATTEMPT_FAILED",
+      "REAL_VITIS_VALIDATED"
+    ],
+    "reason": "Only candidate with content-confirmed 12 unique tasks x 3 Token Policy conditions x 2 repeats, 72 schedule rows, 72 reconciled result rows, COMPLETE real-run manifest, and 72 matching run directories.",
+    "repeats": [
+      1,
+      2
+    ],
+    "run_count": 72,
+    "tasks": [
+      "v3d_fast_001",
+      "v3d_fast_004",
+      "v3d_fast_005",
+      "v3d_fast_009",
+      "v3d_fast_012",
+      "v3d_fast_013",
+      "v3d_fast_015",
+      "v3d_fast_016",
+      "v3d_fast_017",
+      "v3d_fast_021",
+      "v3d_fast_023",
+      "v3d_fast_025"
+    ],
+    "vitis_version": "Vitis 2025.2"
+  },
+  "status": "UNIQUE_MATCH"
+}

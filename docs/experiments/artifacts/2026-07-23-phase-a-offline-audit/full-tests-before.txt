@@ -1,0 +1,94 @@
+======================================================================
+FAIL: test_acceptance_gate_matrix_routes_to_the_declared_v3c_mode (llm4hls_harness.tests.test_v3d_corpus.V3DFastCorpusTests.test_acceptance_gate_matrix_routes_to_the_declared_v3c_mode) (task_id='v3d_fast_021')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/ying/CompetitionTrackA/track-A/llm4hls_harness/tests/test_v3d_corpus.py", line 505, in test_acceptance_gate_matrix_routes_to_the_declared_v3c_mode
+    self.assertEqual(decision.mode.value, acceptance["expected_mode"])
+AssertionError: 'REPAIR' != 'OPTIMIZE'
+- REPAIR
++ OPTIMIZE
+
+
+======================================================================
+FAIL: test_acceptance_gate_matrix_routes_to_the_declared_v3c_mode (llm4hls_harness.tests.test_v3d_corpus.V3DFastCorpusTests.test_acceptance_gate_matrix_routes_to_the_declared_v3c_mode) (task_id='v3d_fast_022')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/ying/CompetitionTrackA/track-A/llm4hls_harness/tests/test_v3d_corpus.py", line 505, in test_acceptance_gate_matrix_routes_to_the_declared_v3c_mode
+    self.assertEqual(decision.mode.value, acceptance["expected_mode"])
+AssertionError: 'REPAIR' != 'OPTIMIZE'
+- REPAIR
++ OPTIMIZE
+
+
+======================================================================
+FAIL: test_acceptance_gate_matrix_routes_to_the_declared_v3c_mode (llm4hls_harness.tests.test_v3d_corpus.V3DFastCorpusTests.test_acceptance_gate_matrix_routes_to_the_declared_v3c_mode) (task_id='v3d_fast_023')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/ying/CompetitionTrackA/track-A/llm4hls_harness/tests/test_v3d_corpus.py", line 505, in test_acceptance_gate_matrix_routes_to_the_declared_v3c_mode
+    self.assertEqual(decision.mode.value, acceptance["expected_mode"])
+AssertionError: 'REPAIR' != 'OPTIMIZE'
+- REPAIR
++ OPTIMIZE
+
+
+======================================================================
+FAIL: test_acceptance_gate_matrix_routes_to_the_declared_v3c_mode (llm4hls_harness.tests.test_v3d_corpus.V3DFastCorpusTests.test_acceptance_gate_matrix_routes_to_the_declared_v3c_mode) (task_id='v3d_fast_024')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/ying/CompetitionTrackA/track-A/llm4hls_harness/tests/test_v3d_corpus.py", line 505, in test_acceptance_gate_matrix_routes_to_the_declared_v3c_mode
+    self.assertEqual(decision.mode.value, acceptance["expected_mode"])
+AssertionError: 'REPAIR' != 'OPTIMIZE'
+- REPAIR
++ OPTIMIZE
+
+
+======================================================================
+FAIL: test_acceptance_gate_matrix_routes_to_the_declared_v3c_mode (llm4hls_harness.tests.test_v3d_corpus.V3DFastCorpusTests.test_acceptance_gate_matrix_routes_to_the_declared_v3c_mode) (task_id='v3d_fast_025')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/ying/CompetitionTrackA/track-A/llm4hls_harness/tests/test_v3d_corpus.py", line 505, in test_acceptance_gate_matrix_routes_to_the_declared_v3c_mode
+    self.assertEqual(decision.mode.value, acceptance["expected_mode"])
+AssertionError: 'REPAIR' != 'OPTIMIZE'
+- REPAIR
++ OPTIMIZE
+
+
+======================================================================
+FAIL: test_acceptance_gate_matrix_routes_to_the_declared_v3c_mode (llm4hls_harness.tests.test_v3d_corpus.V3DFastCorpusTests.test_acceptance_gate_matrix_routes_to_the_declared_v3c_mode) (task_id='v3d_fast_026')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/ying/CompetitionTrackA/track-A/llm4hls_harness/tests/test_v3d_corpus.py", line 505, in test_acceptance_gate_matrix_routes_to_the_declared_v3c_mode
+    self.assertEqual(decision.mode.value, acceptance["expected_mode"])
+AssertionError: 'REPAIR' != 'OPTIMIZE'
+- REPAIR
++ OPTIMIZE
+
+
+======================================================================
+FAIL: test_acceptance_gate_matrix_routes_to_the_declared_v3c_mode (llm4hls_harness.tests.test_v3d_corpus.V3DFastCorpusTests.test_acceptance_gate_matrix_routes_to_the_declared_v3c_mode) (task_id='v3d_fast_027')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/ying/CompetitionTrackA/track-A/llm4hls_harness/tests/test_v3d_corpus.py", line 505, in test_acceptance_gate_matrix_routes_to_the_declared_v3c_mode
+    self.assertEqual(decision.mode.value, acceptance["expected_mode"])
+AssertionError: 'REPAIR' != 'OPTIMIZE'
+- REPAIR
++ OPTIMIZE
+
+
+======================================================================
+FAIL: test_acceptance_gate_matrix_routes_to_the_declared_v3c_mode (llm4hls_harness.tests.test_v3d_corpus.V3DFastCorpusTests.test_acceptance_gate_matrix_routes_to_the_declared_v3c_mode) (task_id='v3d_fast_028')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/ying/CompetitionTrackA/track-A/llm4hls_harness/tests/test_v3d_corpus.py", line 505, in test_acceptance_gate_matrix_routes_to_the_declared_v3c_mode
+    self.assertEqual(decision.mode.value, acceptance["expected_mode"])
+AssertionError: 'REPAIR' != 'OPTIMIZE'
+- REPAIR
++ OPTIMIZE
+
+
+----------------------------------------------------------------------
+Ran 555 tests in 33.477s
+
+FAILED (failures=8)
+
+EXIT_CODE=1

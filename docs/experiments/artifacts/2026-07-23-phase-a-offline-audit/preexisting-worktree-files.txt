@@ -1,0 +1,5 @@
+ M README.md
+ M doc/README.md
+ M doc/docs/README.md
+?? doc/docs/2026-07-22-new-member-complete-onboarding.md
+?? doc/docs/2026-07-23-one-week-project-completion-handbook.md

@@ -1,0 +1,133 @@
+{
+  "schema_version": "phase-a1.next-real-run-options-decision.v1",
+  "status": "AWAITING_USER_APPROVAL",
+  "executed": false,
+  "calculation_basis": {
+    "public_v3d_tasks": 28,
+    "historical_coverage_tasks": 12,
+    "historical_gap_reference_tasks": 16,
+    "mode_counts": {
+      "REPAIR": 8,
+      "SYNTH_FIX": 6,
+      "STRUCTURAL_FIX": 6,
+      "OPTIMIZE": 8
+    },
+    "requires_cosim_true_tasks": 7,
+    "max_planner_rounds_per_run": 2,
+    "run_token_limit": 8000,
+    "tool_costs": {
+      "csim": 1,
+      "synth": 4,
+      "cosim": 20
+    },
+    "final_reserve_credits_per_run": 25,
+    "automatic_retry_count": 0
+  },
+  "gate_b1": {
+    "final_validation_policy": "full_internal_audit",
+    "unique_run_slots": 5,
+    "max_planner_calls": 10,
+    "max_tokens": 40000,
+    "tool_call_caps": {
+      "csim": 20,
+      "synth": 16,
+      "cosim": 8
+    },
+    "tool_credit_cap": 244,
+    "tasks": [
+      "v3d_fast_002",
+      "v3d_fast_010",
+      "v3d_fast_018",
+      "v3d_fast_022",
+      "track_a_empty_stub_generation"
+    ]
+  },
+  "option_a_budget_first": {
+    "matrix_final_validation_policy": "task_contract",
+    "matrix_run_slots": 28,
+    "gate_b1_run_slots": 5,
+    "total_unique_run_slots": 33,
+    "unique_task_identities": 29,
+    "deliberately_duplicated_v3d_task_ids": [
+      "v3d_fast_002",
+      "v3d_fast_010",
+      "v3d_fast_018",
+      "v3d_fast_022"
+    ],
+    "duplication_reason": "Gate B1 uses full_internal_audit; the formal matrix uses task_contract. These are distinct protocol slots and may not impersonate each other.",
+    "max_planner_calls": 66,
+    "max_tokens": 264000,
+    "tool_call_caps": {
+      "csim": 132,
+      "synth": 108,
+      "cosim": 34
+    },
+    "tool_credit_cap": 1244,
+    "summed_per_run_final_reserve_credits": 825,
+    "final_reserve_is_included_in_tool_credit_cap": true,
+    "serial_wall_time": {
+      "empirical_p25_to_p90_seconds": [
+        2230.8955885923934,
+        4138.969302830519
+      ],
+      "empirical_p25_to_p90_minutes": [
+        37.18159314320656,
+        68.98282171384199
+      ],
+      "configured_hard_upper_bound_seconds": 118800,
+      "configured_hard_upper_bound_hours": 33
+    }
+  },
+  "option_b_evidence_first": {
+    "matrix_final_validation_policy": "full_internal_audit",
+    "matrix_run_slots": 28,
+    "v3d_anchor_slots_reused_inside_matrix": 4,
+    "external_empty_stub_anchor_run_slots": 1,
+    "total_unique_run_slots": 29,
+    "unique_task_identities": 29,
+    "deliberately_duplicated_v3d_task_ids": [],
+    "accounting_note": "The true empty-stub fixture is outside the V3-D 28-task corpus, so the formal matrix remains 28 slots while the complete Gate B1+B2 protocol has 29 run slots.",
+    "max_planner_calls": 58,
+    "max_tokens": 232000,
+    "tool_call_caps": {
+      "csim": 116,
+      "synth": 95,
+      "cosim": 48
+    },
+    "tool_credit_cap": 1456,
+    "summed_per_run_final_reserve_credits": 725,
+    "final_reserve_is_included_in_tool_credit_cap": true,
+    "serial_wall_time": {
+      "empirical_p25_to_p90_seconds": [
+        1960.4840020963457,
+        3637.2760540025775
+      ],
+      "empirical_p25_to_p90_minutes": [
+        32.67473336827243,
+        60.62126756670963
+      ],
+      "configured_hard_upper_bound_seconds": 104400,
+      "configured_hard_upper_bound_hours": 29
+    }
+  },
+  "wall_time_method": {
+    "historical_samples": 72,
+    "historical_nearest_rank_p25_seconds": 67.60289662401192,
+    "historical_nearest_rank_p90_seconds": 125.42331220698543,
+    "method": "Serial planning range = historical 72-run nearest-rank P25/P90 multiplied by unique run slots. This is an empirical planning range, not a guarantee. Hard upper bound = unique run slots multiplied by the proposed 3600-second per-run runtime limit."
+  },
+  "retry_rule": "No automatic or selective retry. A failed slot keeps its evidence. Any manual rerun requires separate user approval and a new run directory and is outside these caps.",
+  "gap_16_status": "DROPPED_AS_DEFAULT",
+  "recommended_option": "OPTION_A_BUDGET_FIRST",
+  "alternative_option": "OPTION_B_EVIDENCE_FIRST",
+  "recommendation_reason": "Option A reduces CoSim cap by 14 and Tool Credit cap by 212 while retaining five full-audit anchors and a same-commit 28-task task_contract matrix.",
+  "next_action": "AWAITING_USER_APPROVAL",
+  "phase_a1_actual_budget": {
+    "real_llm_calls": 0,
+    "real_tokens": 0,
+    "csim_calls": 0,
+    "synth_calls": 0,
+    "cosim_calls": 0,
+    "tool_credits": 0
+  }
+}

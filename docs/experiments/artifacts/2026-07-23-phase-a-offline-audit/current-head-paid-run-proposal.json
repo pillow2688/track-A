@@ -1,0 +1,372 @@
+{
+  "common_runtime": {
+    "continuation": "shadow",
+    "experience": "shadow",
+    "fresh_run_directory_required": true,
+    "provider": "real DeepSeek via openai-compatible adapter",
+    "ranker": "bayesian_shadow",
+    "selective_automatic_rerun": false,
+    "vitis": "real Vitis 2025.2"
+  },
+  "engineering_gap_coverage": {
+    "final_validation_policy": "task_contract",
+    "historical_12_count": 12,
+    "historical_12_reused_descriptively": [
+      "v3d_fast_001",
+      "v3d_fast_004",
+      "v3d_fast_005",
+      "v3d_fast_009",
+      "v3d_fast_012",
+      "v3d_fast_013",
+      "v3d_fast_015",
+      "v3d_fast_016",
+      "v3d_fast_017",
+      "v3d_fast_021",
+      "v3d_fast_023",
+      "v3d_fast_025"
+    ],
+    "missing_16_count": 16,
+    "one_repeat_max_per_missing_task": true,
+    "planned_fresh_runs": 16,
+    "runs": [
+      {
+        "estimated_credit_cap": 16,
+        "estimated_tool_call_caps": {
+          "cosim": 0,
+          "csim": 4,
+          "synth": 3
+        },
+        "mode": "REPAIR",
+        "planner_call_cap": 2,
+        "requires_cosim": false,
+        "run_directory_template": "llm4hls_harness/runs/phase-b-gap/{timestamp}/v3d_fast_002--r01",
+        "task_name": "v3d_fast_002",
+        "token_cap": 8000
+      },
+      {
+        "estimated_credit_cap": 16,
+        "estimated_tool_call_caps": {
+          "cosim": 0,
+          "csim": 4,
+          "synth": 3
+        },
+        "mode": "REPAIR",
+        "planner_call_cap": 2,
+        "requires_cosim": false,
+        "run_directory_template": "llm4hls_harness/runs/phase-b-gap/{timestamp}/v3d_fast_003--r01",
+        "task_name": "v3d_fast_003",
+        "token_cap": 8000
+      },
+      {
+        "estimated_credit_cap": 16,
+        "estimated_tool_call_caps": {
+          "cosim": 0,
+          "csim": 4,
+          "synth": 3
+        },
+        "mode": "REPAIR",
+        "planner_call_cap": 2,
+        "requires_cosim": false,
+        "run_directory_template": "llm4hls_harness/runs/phase-b-gap/{timestamp}/v3d_fast_006--r01",
+        "task_name": "v3d_fast_006",
+        "token_cap": 8000
+      },
+      {
+        "estimated_credit_cap": 16,
+        "estimated_tool_call_caps": {
+          "cosim": 0,
+          "csim": 4,
+          "synth": 3
+        },
+        "mode": "REPAIR",
+        "planner_call_cap": 2,
+        "requires_cosim": false,
+        "run_directory_template": "llm4hls_harness/runs/phase-b-gap/{timestamp}/v3d_fast_007--r01",
+        "task_name": "v3d_fast_007",
+        "token_cap": 8000
+      },
+      {
+        "estimated_credit_cap": 16,
+        "estimated_tool_call_caps": {
+          "cosim": 0,
+          "csim": 4,
+          "synth": 3
+        },
+        "mode": "REPAIR",
+        "planner_call_cap": 2,
+        "requires_cosim": false,
+        "run_directory_template": "llm4hls_harness/runs/phase-b-gap/{timestamp}/v3d_fast_008--r01",
+        "task_name": "v3d_fast_008",
+        "token_cap": 8000
+      },
+      {
+        "estimated_credit_cap": 20,
+        "estimated_tool_call_caps": {
+          "cosim": 0,
+          "csim": 4,
+          "synth": 4
+        },
+        "mode": "SYNTH_FIX",
+        "planner_call_cap": 2,
+        "requires_cosim": false,
+        "run_directory_template": "llm4hls_harness/runs/phase-b-gap/{timestamp}/v3d_fast_010--r01",
+        "task_name": "v3d_fast_010",
+        "token_cap": 8000
+      },
+      {
+        "estimated_credit_cap": 20,
+        "estimated_tool_call_caps": {
+          "cosim": 0,
+          "csim": 4,
+          "synth": 4
+        },
+        "mode": "SYNTH_FIX",
+        "planner_call_cap": 2,
+        "requires_cosim": false,
+        "run_directory_template": "llm4hls_harness/runs/phase-b-gap/{timestamp}/v3d_fast_011--r01",
+        "task_name": "v3d_fast_011",
+        "token_cap": 8000
+      },
+      {
+        "estimated_credit_cap": 20,
+        "estimated_tool_call_caps": {
+          "cosim": 0,
+          "csim": 4,
+          "synth": 4
+        },
+        "mode": "SYNTH_FIX",
+        "planner_call_cap": 2,
+        "requires_cosim": false,
+        "run_directory_template": "llm4hls_harness/runs/phase-b-gap/{timestamp}/v3d_fast_014--r01",
+        "task_name": "v3d_fast_014",
+        "token_cap": 8000
+      },
+      {
+        "estimated_credit_cap": 92,
+        "estimated_tool_call_caps": {
+          "cosim": 4,
+          "csim": 4,
+          "synth": 2
+        },
+        "mode": "STRUCTURAL_FIX",
+        "planner_call_cap": 2,
+        "requires_cosim": true,
+        "run_directory_template": "llm4hls_harness/runs/phase-b-gap/{timestamp}/v3d_fast_018--r01",
+        "task_name": "v3d_fast_018",
+        "token_cap": 8000
+      },
+      {
+        "estimated_credit_cap": 92,
+        "estimated_tool_call_caps": {
+          "cosim": 4,
+          "csim": 4,
+          "synth": 2
+        },
+        "mode": "STRUCTURAL_FIX",
+        "planner_call_cap": 2,
+        "requires_cosim": true,
+        "run_directory_template": "llm4hls_harness/runs/phase-b-gap/{timestamp}/v3d_fast_019--r01",
+        "task_name": "v3d_fast_019",
+        "token_cap": 8000
+      },
+      {
+        "estimated_credit_cap": 92,
+        "estimated_tool_call_caps": {
+          "cosim": 4,
+          "csim": 4,
+          "synth": 2
+        },
+        "mode": "STRUCTURAL_FIX",
+        "planner_call_cap": 2,
+        "requires_cosim": true,
+        "run_directory_template": "llm4hls_harness/runs/phase-b-gap/{timestamp}/v3d_fast_020--r01",
+        "task_name": "v3d_fast_020",
+        "token_cap": 8000
+      },
+      {
+        "estimated_credit_cap": 20,
+        "estimated_tool_call_caps": {
+          "cosim": 0,
+          "csim": 4,
+          "synth": 4
+        },
+        "mode": "OPTIMIZE",
+        "planner_call_cap": 2,
+        "requires_cosim": false,
+        "run_directory_template": "llm4hls_harness/runs/phase-b-gap/{timestamp}/v3d_fast_022--r01",
+        "task_name": "v3d_fast_022",
+        "token_cap": 8000
+      },
+      {
+        "estimated_credit_cap": 20,
+        "estimated_tool_call_caps": {
+          "cosim": 0,
+          "csim": 4,
+          "synth": 4
+        },
+        "mode": "OPTIMIZE",
+        "planner_call_cap": 2,
+        "requires_cosim": false,
+        "run_directory_template": "llm4hls_harness/runs/phase-b-gap/{timestamp}/v3d_fast_024--r01",
+        "task_name": "v3d_fast_024",
+        "token_cap": 8000
+      },
+      {
+        "estimated_credit_cap": 20,
+        "estimated_tool_call_caps": {
+          "cosim": 0,
+          "csim": 4,
+          "synth": 4
+        },
+        "mode": "OPTIMIZE",
+        "planner_call_cap": 2,
+        "requires_cosim": false,
+        "run_directory_template": "llm4hls_harness/runs/phase-b-gap/{timestamp}/v3d_fast_026--r01",
+        "task_name": "v3d_fast_026",
+        "token_cap": 8000
+      },
+      {
+        "estimated_credit_cap": 20,
+        "estimated_tool_call_caps": {
+          "cosim": 0,
+          "csim": 4,
+          "synth": 4
+        },
+        "mode": "OPTIMIZE",
+        "planner_call_cap": 2,
+        "requires_cosim": false,
+        "run_directory_template": "llm4hls_harness/runs/phase-b-gap/{timestamp}/v3d_fast_027--r01",
+        "task_name": "v3d_fast_027",
+        "token_cap": 8000
+      },
+      {
+        "estimated_credit_cap": 60,
+        "estimated_tool_call_caps": {
+          "cosim": 2,
+          "csim": 4,
+          "synth": 4
+        },
+        "mode": "OPTIMIZE",
+        "planner_call_cap": 2,
+        "requires_cosim": true,
+        "run_directory_template": "llm4hls_harness/runs/phase-b-gap/{timestamp}/v3d_fast_028--r01",
+        "task_name": "v3d_fast_028",
+        "token_cap": 8000
+      }
+    ]
+  },
+  "executed": false,
+  "five_current_head_anchors": {
+    "count": 5,
+    "final_validation_policy": "full_internal_audit",
+    "runs": [
+      {
+        "anchor": "repair",
+        "estimated_credit_cap": 36,
+        "estimated_tool_call_caps": {
+          "cosim": 1,
+          "csim": 4,
+          "synth": 3
+        },
+        "mode": "REPAIR",
+        "must_run_separately": false,
+        "planner_call_cap": 2,
+        "run_directory_template": "llm4hls_harness/runs/phase-b-current-head/{timestamp}/anchor-repair-v3d_fast_002",
+        "selected_from_missing_16": true,
+        "task_name": "v3d_fast_002",
+        "token_cap": 8000
+      },
+      {
+        "anchor": "synth_fix",
+        "estimated_credit_cap": 40,
+        "estimated_tool_call_caps": {
+          "cosim": 1,
+          "csim": 4,
+          "synth": 4
+        },
+        "mode": "SYNTH_FIX",
+        "must_run_separately": false,
+        "planner_call_cap": 2,
+        "run_directory_template": "llm4hls_harness/runs/phase-b-current-head/{timestamp}/anchor-synth_fix-v3d_fast_010",
+        "selected_from_missing_16": true,
+        "task_name": "v3d_fast_010",
+        "token_cap": 8000
+      },
+      {
+        "anchor": "structural_fix",
+        "estimated_credit_cap": 92,
+        "estimated_tool_call_caps": {
+          "cosim": 4,
+          "csim": 4,
+          "synth": 2
+        },
+        "mode": "STRUCTURAL_FIX",
+        "must_run_separately": false,
+        "planner_call_cap": 2,
+        "run_directory_template": "llm4hls_harness/runs/phase-b-current-head/{timestamp}/anchor-structural_fix-v3d_fast_018",
+        "selected_from_missing_16": true,
+        "task_name": "v3d_fast_018",
+        "token_cap": 8000
+      },
+      {
+        "anchor": "optimize",
+        "estimated_credit_cap": 40,
+        "estimated_tool_call_caps": {
+          "cosim": 1,
+          "csim": 4,
+          "synth": 4
+        },
+        "mode": "OPTIMIZE",
+        "must_run_separately": false,
+        "planner_call_cap": 2,
+        "run_directory_template": "llm4hls_harness/runs/phase-b-current-head/{timestamp}/anchor-optimize-v3d_fast_022",
+        "selected_from_missing_16": true,
+        "task_name": "v3d_fast_022",
+        "token_cap": 8000
+      },
+      {
+        "anchor": "true_empty_stub_generation",
+        "estimated_credit_cap": 36,
+        "estimated_tool_call_caps": {
+          "cosim": 1,
+          "csim": 4,
+          "synth": 3
+        },
+        "mode": "REPAIR_FROM_REAL_BASELINE_CSIM_FAILURE",
+        "must_run_separately": true,
+        "planner_call_cap": 2,
+        "run_directory_template": "llm4hls_harness/runs/phase-b-current-head/{timestamp}/anchor-empty-stub-generation",
+        "selected_from_missing_16": false,
+        "task_name": "track_a_empty_stub_generation",
+        "token_cap": 8000
+      }
+    ]
+  },
+  "formal_28_task_matrix": {
+    "execute_in_phase_a": false,
+    "reason_codes": [
+      "GLOBAL_BEHAVIORAL_CHANGE",
+      "NOT_SAME_VERSION_FORMAL_DATA",
+      "TASK_CONTRACT_AND_FINAL_POLICY_CHANGED",
+      "PLANNER_BUDGET_VITIS_PATH_CHANGED",
+      "SUBMISSION_FORMAL_TABLE_REQUIRES_SINGLE_COMMIT_AND_CONFIG"
+    ],
+    "recommendation": "REQUIRED",
+    "repeat_policy": "at least one frozen-config run per task; repeats require separate approval",
+    "task_count": 28
+  },
+  "phase_a_budget": {
+    "cosim_calls": 0,
+    "csim_calls": 0,
+    "real_llm_calls": 0,
+    "real_llm_tokens": 0,
+    "synth_calls": 0,
+    "tool_credits": 0
+  },
+  "proposal_only": true,
+  "schema_version": "phase-a.current-head-paid-run-proposal.v1",
+  "separation_of_claims": {
+    "formal_matrix": "submission-grade same-commit/same-config evidence",
+    "historical_plus_gap": "engineering coverage only, not same-version formal matrix"
+  }
+}

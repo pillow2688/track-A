@@ -1,0 +1,179 @@
+{
+  "capabilities": [
+    {
+      "capability": "task_loader_and_task_contract",
+      "classification": "GLOBAL_BEHAVIORAL",
+      "evidence": [
+        "llm4hls_harness/llm4hls_agent/task.py"
+      ]
+    },
+    {
+      "capability": "PhaseRouter",
+      "classification": "NONE",
+      "evidence": [
+        "Effective Phase A router source is byte-identical to historical commit source.",
+        "Committed HEAD had a generation override P0; Phase A removes it before acceptance."
+      ]
+    },
+    {
+      "capability": "Planner_prompt_schema_and_token_envelope",
+      "classification": "GLOBAL_BEHAVIORAL",
+      "evidence": [
+        "llm4hls_harness/llm4hls_agent/openai_provider.py",
+        "llm4hls_harness/llm4hls_agent/v3_openai_planner.py"
+      ]
+    },
+    {
+      "capability": "Patch_validator",
+      "classification": "GLOBAL_BEHAVIORAL",
+      "evidence": [
+        "llm4hls_harness/llm4hls_agent/repair.py"
+      ]
+    },
+    {
+      "capability": "Candidate_creation_comparator_promotion_and_final",
+      "classification": "GLOBAL_BEHAVIORAL",
+      "evidence": [
+        "llm4hls_harness/llm4hls_agent/v3_prototype.py"
+      ]
+    },
+    {
+      "capability": "BudgetLedger_and_reserves",
+      "classification": "GLOBAL_BEHAVIORAL",
+      "evidence": [
+        "llm4hls_harness/llm4hls_agent/budget.py"
+      ]
+    },
+    {
+      "capability": "Vitis_command_and_receipt",
+      "classification": "GLOBAL_BEHAVIORAL",
+      "evidence": [
+        "llm4hls_harness/llm4hls_agent/vitis.py"
+      ]
+    },
+    {
+      "capability": "validation_profile_and_final_policy",
+      "classification": "GLOBAL_BEHAVIORAL",
+      "evidence": [
+        "task_contract/full_internal_audit behavior was added after historical commit"
+      ]
+    },
+    {
+      "capability": "Continuation",
+      "classification": "GLOBAL_BEHAVIORAL",
+      "evidence": [
+        "New shadow-capable continuation implementation; authority remains SHADOW"
+      ]
+    },
+    {
+      "capability": "Experience_and_Bayesian_Ranker",
+      "classification": "NONE",
+      "evidence": [
+        "No guided/trained authority enabled by Phase A; historical batch used experience=off"
+      ]
+    },
+    {
+      "capability": "V3D_28_public_task_files_metadata_testbenches",
+      "classification": "NONE",
+      "evidence": [
+        "No v3d-fast task file differs between historical commit and current HEAD"
+      ]
+    }
+  ],
+  "changed_files_since_historical_commit": [
+    "doc/docs/2026-07-22-token-policy-abc-real-evaluation.md",
+    "docs/experiments/2026-07-22-value-gated-pa-continuation-report.md",
+    "docs/experiments/post-rollback-track-a-baseline-report.md",
+    "docs/experiments/post_rollback_audit.md",
+    "docs/experiments/token-policy-hybrid-v2-real-evaluation-20260722.md",
+    "docs/experiments/track-a-empty-stub-generation-smoke-report.md",
+    "docs/experiments/track-a-four-real-smokes-report.md",
+    "docs/experiments/track-a-vitis-run-task-contract-smoke-report.md",
+    "docs/status/2026-07-22-current-project-stage.md",
+    "llm4hls_harness/experiments/token_policy_abc/pilot-real-deepseek-v4-pro-20260722-01/manifest.json",
+    "llm4hls_harness/experiments/token_policy_abc/pilot-real-deepseek-v4-pro-20260722-01/schedule.jsonl",
+    "llm4hls_harness/experiments/token_policy_abc/pilot-real-deepseek-v4-pro-20260722-01/token_policy_abc_reconciled_results.jsonl",
+    "llm4hls_harness/experiments/token_policy_abc/pilot-real-deepseek-v4-pro-20260722-01/token_policy_abc_report.md",
+    "llm4hls_harness/experiments/token_policy_abc/pilot-real-deepseek-v4-pro-20260722-01/token_policy_abc_results.jsonl",
+    "llm4hls_harness/experiments/token_policy_abc/pilot-real-deepseek-v4-pro-20260722-01/token_policy_abc_summary.csv",
+    "llm4hls_harness/experiments/token_policy_abc/pilot-real-deepseek-v4-pro-20260722-01/token_policy_abc_summary.json",
+    "llm4hls_harness/experiments/token_policy_abc/preflight-real-20260722-01/manifest.json",
+    "llm4hls_harness/experiments/token_policy_abc/preflight-real-20260722-01/schedule.jsonl",
+    "llm4hls_harness/experiments/token_policy_abc/preflight-real-20260722-01/token_policy_abc_results.jsonl",
+    "llm4hls_harness/experiments/token_policy_abc/token_policy_abc_matrix.json",
+    "llm4hls_harness/experiments/token_policy_hybrid_v2/historical-72/token_policy_historical_analysis.md",
+    "llm4hls_harness/experiments/token_policy_hybrid_v2/historical-72/token_policy_historical_distribution.csv",
+    "llm4hls_harness/experiments/token_policy_hybrid_v2/historical-72/token_policy_historical_distribution.json",
+    "llm4hls_harness/experiments/token_policy_hybrid_v2/pilot-real-deepseek-v4-pro-20260722-01/manifest.json",
+    "llm4hls_harness/experiments/token_policy_hybrid_v2/pilot-real-deepseek-v4-pro-20260722-01/schedule.jsonl",
+    "llm4hls_harness/experiments/token_policy_hybrid_v2/pilot-real-deepseek-v4-pro-20260722-01/token_policy_hybrid_reconciled_results.jsonl",
+    "llm4hls_harness/experiments/token_policy_hybrid_v2/pilot-real-deepseek-v4-pro-20260722-01/token_policy_hybrid_report.md",
+    "llm4hls_harness/experiments/token_policy_hybrid_v2/pilot-real-deepseek-v4-pro-20260722-01/token_policy_hybrid_results.jsonl",
+    "llm4hls_harness/experiments/token_policy_hybrid_v2/pilot-real-deepseek-v4-pro-20260722-01/token_policy_hybrid_summary.csv",
+    "llm4hls_harness/experiments/token_policy_hybrid_v2/pilot-real-deepseek-v4-pro-20260722-01/token_policy_hybrid_summary.json",
+    "llm4hls_harness/experiments/token_policy_hybrid_v2/token_policy_hybrid_matrix.json",
+    "llm4hls_harness/experiments/v3f/continuation_replay_20260722/continuation_replay_data_quality.md",
+    "llm4hls_harness/experiments/v3f/continuation_replay_20260722/continuation_replay_dataset.jsonl",
+    "llm4hls_harness/experiments/v3f/continuation_replay_20260722/continuation_replay_evaluation.json",
+    "llm4hls_harness/experiments/v3f/continuation_replay_20260722/continuation_replay_manifest.json",
+    "llm4hls_harness/experiments/v3f/continuation_replay_20260722_r02/continuation_replay_data_quality.md",
+    "llm4hls_harness/experiments/v3f/continuation_replay_20260722_r02/continuation_replay_dataset.jsonl",
+    "llm4hls_harness/experiments/v3f/continuation_replay_20260722_r02/continuation_replay_evaluation.json",
+    "llm4hls_harness/experiments/v3f/continuation_replay_20260722_r02/continuation_replay_manifest.json",
+    "llm4hls_harness/llm4hls_agent/budget.py",
+    "llm4hls_harness/llm4hls_agent/config/performance_area_policy_v1.json",
+    "llm4hls_harness/llm4hls_agent/config/token_policy_hybrid_v2.json",
+    "llm4hls_harness/llm4hls_agent/config/track_a_safe_baseline_v1.json",
+    "llm4hls_harness/llm4hls_agent/openai_provider.py",
+    "llm4hls_harness/llm4hls_agent/repair.py",
+    "llm4hls_harness/llm4hls_agent/task.py",
+    "llm4hls_harness/llm4hls_agent/token_policy_abc_aggregate.py",
+    "llm4hls_harness/llm4hls_agent/token_policy_abc_runner.py",
+    "llm4hls_harness/llm4hls_agent/token_policy_historical_analysis.py",
+    "llm4hls_harness/llm4hls_agent/token_policy_hybrid_aggregate.py",
+    "llm4hls_harness/llm4hls_agent/token_policy_hybrid_runner.py",
+    "llm4hls_harness/llm4hls_agent/v3_continuation.py",
+    "llm4hls_harness/llm4hls_agent/v3_continuation_replay.py",
+    "llm4hls_harness/llm4hls_agent/v3_openai_planner.py",
+    "llm4hls_harness/llm4hls_agent/v3_phase_router.py",
+    "llm4hls_harness/llm4hls_agent/v3_prototype.py",
+    "llm4hls_harness/llm4hls_agent/v3_prototype_cli.py",
+    "llm4hls_harness/llm4hls_agent/vitis.py",
+    "llm4hls_harness/task_corpus/development/track_a_empty_stub_generation/description.md",
+    "llm4hls_harness/task_corpus/development/track_a_empty_stub_generation/kernel.cpp",
+    "llm4hls_harness/task_corpus/development/track_a_empty_stub_generation/matrix_transform.h",
+    "llm4hls_harness/task_corpus/development/track_a_empty_stub_generation/matrix_transform_tb.cpp",
+    "llm4hls_harness/task_corpus/development/track_a_empty_stub_generation/task.toml",
+    "llm4hls_harness/task_corpus/manifest.json",
+    "llm4hls_harness/tests/test_empty_stub_generation_fixture.py",
+    "llm4hls_harness/tests/test_repair.py",
+    "llm4hls_harness/tests/test_task.py",
+    "llm4hls_harness/tests/test_token_policy_abc.py",
+    "llm4hls_harness/tests/test_token_policy_hybrid.py",
+    "llm4hls_harness/tests/test_token_policy_hybrid_matrix.py",
+    "llm4hls_harness/tests/test_track_a_safe_baseline.py",
+    "llm4hls_harness/tests/test_v3_continuation.py",
+    "llm4hls_harness/tests/test_v3_continuation_replay.py",
+    "llm4hls_harness/tests/test_v3_openai_planner.py",
+    "llm4hls_harness/tests/test_v3_phase_router.py",
+    "llm4hls_harness/tests/test_v3_prototype.py",
+    "llm4hls_harness/tests/test_v3_task_aware_smoke.py",
+    "llm4hls_harness/tests/test_vitis.py"
+  ],
+  "conclusion": "Historical artifacts are reusable for descriptive engineering coverage, but global execution-path changes require a current-version formal 28-task matrix for submission-grade same-version claims.",
+  "current_head": "65ab82c13f28921356b77ea454306d6dc1ca8e17",
+  "effective_state": "CURRENT_HEAD_PLUS_PHASE_A_UNCOMMITTED_ROUTER_FIX",
+  "formal_comparability": "NOT_SAME_VERSION",
+  "historical_commit": "431f7a65627ab6911bd11d1a4a8ae6f57094ab08",
+  "phase_a_worktree_files": [
+    "README.md",
+    "doc/README.md",
+    "doc/docs/README.md",
+    "llm4hls_harness/llm4hls_agent/v3_phase_router.py",
+    "llm4hls_harness/tests/test_v3_phase_router.py"
+  ],
+  "schema_version": "phase-a.current-head-impact.v1",
+  "task_impact_counts": {
+    "GLOBAL_BEHAVIORAL": 28
+  }
+}

@@ -1,0 +1,964 @@
+{
+  "artifact_files_verified": 85500,
+  "artifact_manifests_valid": 72,
+  "conditions": [
+    "A_FIXED",
+    "B_DYNAMIC_HARD",
+    "C_DYNAMIC_VISIBLE"
+  ],
+  "continuation_eligible_runs": 9,
+  "discovered_slots": 72,
+  "duplicate_slots": 0,
+  "experience_eligible_runs": 72,
+  "integrity_errors": [],
+  "intended_slots": 72,
+  "ledger_reconciled_runs": 72,
+  "missing_slots": 0,
+  "per_run": [
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 739,
+        "files_verified": 739,
+        "manifest_present": true,
+        "manifest_sha256": "6b19faa0711e69b4f0405164f4794f8f7352f2d226218f9fc25f4e5b013f8260",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "001--a_fixed--v3d_fast_001--r01--5b52cfa542"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 739,
+        "files_verified": 739,
+        "manifest_present": true,
+        "manifest_sha256": "f13c1bbef08b7977e4ea139778e6bc90233b11053ceddf99cd11c38357d8649f",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "002--b_dynamic_hard--v3d_fast_001--r01--d49eb520a6"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 739,
+        "files_verified": 739,
+        "manifest_present": true,
+        "manifest_sha256": "aa99b05f5c5cc3721a22d5d7339d1953ecdb7f7f043f26a92f0da771e231aa35",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "003--c_dynamic_visible--v3d_fast_001--r01--a830880c3e"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 812,
+        "files_verified": 812,
+        "manifest_present": true,
+        "manifest_sha256": "d3a2a8cb2b403bc59579987730ced90814ddf75f084922b858c38654f04ccb90",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "004--b_dynamic_hard--v3d_fast_009--r01--9901448aa1"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 812,
+        "files_verified": 812,
+        "manifest_present": true,
+        "manifest_sha256": "d4ff315dc2aa4ae7db3bd4adf4f2ff86ae78b02d83dabf8ad7f2571e217abfa3",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "005--c_dynamic_visible--v3d_fast_009--r01--ab30dd6527"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 812,
+        "files_verified": 812,
+        "manifest_present": true,
+        "manifest_sha256": "8a77b9cc1f046cfafb7de822a3f2b8e144418bc38c97b0e57a542a516ab60a3f",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "006--a_fixed--v3d_fast_009--r01--c8b53bf8c1"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 1832,
+        "files_verified": 1832,
+        "manifest_present": true,
+        "manifest_sha256": "70322659e6fa669892ea8bd23bf78518137c8527383401cc8897dab6ff8a9745",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "007--c_dynamic_visible--v3d_fast_015--r01--15e736f957"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 2000,
+        "files_verified": 2000,
+        "manifest_present": true,
+        "manifest_sha256": "9cc7a9596a96af88459d4decd8ae6447c8cb7b9516b4e0f820beeea55d8beab2",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "008--a_fixed--v3d_fast_015--r01--4da3d4569a"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 2000,
+        "files_verified": 2000,
+        "manifest_present": true,
+        "manifest_sha256": "f0abfe7e4e2d8ccd8c66664ee5e75b8807027c8cb511eac7d4d23840e14b5030",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "009--b_dynamic_hard--v3d_fast_015--r01--c5a9debcb8"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 871,
+        "files_verified": 871,
+        "manifest_present": true,
+        "manifest_sha256": "8073e1da6453cea6ecdf25aa09477e06704e7e71c53487bc513cefb0b54b5747",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "010--a_fixed--v3d_fast_021--r01--c623d8ea10"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 983,
+        "files_verified": 983,
+        "manifest_present": true,
+        "manifest_sha256": "3ccc3b66448cfc96eaa61b627256f95bac7fcb79a802504c177ef0e195b81794",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "011--b_dynamic_hard--v3d_fast_021--r01--6ea6a2d649"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 1066,
+        "files_verified": 1066,
+        "manifest_present": true,
+        "manifest_sha256": "dfdc5333513942a4fdc13135fcce388b2eaf30d5e9742a4ce754accafa7ffa03",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "012--c_dynamic_visible--v3d_fast_021--r01--febc4ccd6c"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 739,
+        "files_verified": 739,
+        "manifest_present": true,
+        "manifest_sha256": "161962e8847cc2bb1d7b769fc9339ec9643bc6636ce1089b44219ad3adcdd298",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "013--b_dynamic_hard--v3d_fast_004--r01--b59b96f19d"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 739,
+        "files_verified": 739,
+        "manifest_present": true,
+        "manifest_sha256": "5919aca67e52511943f7ae0b534673500036c2ade5a0c1abfca564f8c49ac538",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "014--c_dynamic_visible--v3d_fast_004--r01--2d1eb462e5"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 739,
+        "files_verified": 739,
+        "manifest_present": true,
+        "manifest_sha256": "f815e72df8ae8e0a9eb70b0b0ae73da7dfc4726aa2c1aa447ce4e22d2c314f2c",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "015--a_fixed--v3d_fast_004--r01--6c2ff99971"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 1078,
+        "files_verified": 1078,
+        "manifest_present": true,
+        "manifest_sha256": "09e98f63e4aa89f42f37762c20a1d3c1c8258230a7907af4d02c883abec27b46",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "016--c_dynamic_visible--v3d_fast_012--r01--2e9b580bf9"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 1078,
+        "files_verified": 1078,
+        "manifest_present": true,
+        "manifest_sha256": "0f26225a8d7fde51ed3663f91a77fe6d5b7dbdbbde3b004510a94cb3185853c2",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "017--a_fixed--v3d_fast_012--r01--8a9453a7f2"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 1004,
+        "files_verified": 1004,
+        "manifest_present": true,
+        "manifest_sha256": "3d5a589c831ebc0765e955cb9da1529942e051c549d495b679e79ee814d274eb",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "018--b_dynamic_hard--v3d_fast_012--r01--8734cece71"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 1246,
+        "files_verified": 1246,
+        "manifest_present": true,
+        "manifest_sha256": "47bcd9b81ef425d7c7b4a7564a6ac558930de13806f1fd9e7404878a135946ec",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "019--a_fixed--v3d_fast_016--r01--630ef1d7ab"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 1733,
+        "files_verified": 1733,
+        "manifest_present": true,
+        "manifest_sha256": "fd42f6a289b1e7490bde133ecb889efb870acfd3fdace6e27fa41cb59beec9dd",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "020--b_dynamic_hard--v3d_fast_016--r01--ea8e5b1dbc"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 1733,
+        "files_verified": 1733,
+        "manifest_present": true,
+        "manifest_sha256": "b8acdd4c4b1b6a927a04661ca5af8a44d76ecc933a84f3ea5c642637cb59238f",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "021--c_dynamic_visible--v3d_fast_016--r01--2b62cfab7c"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 2023,
+        "files_verified": 2023,
+        "manifest_present": true,
+        "manifest_sha256": "70346681d893b33700f13f69940a119f1b69e8d0f9e25b681ded42f6fc925b29",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "022--b_dynamic_hard--v3d_fast_023--r01--afc07f19e9"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 1193,
+        "files_verified": 1193,
+        "manifest_present": true,
+        "manifest_sha256": "a721e46dc7e36a59d11ed96a2e51ffeba40aaf694e9a28338d0c718d7f38fd5f",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "023--c_dynamic_visible--v3d_fast_023--r01--ff12afed63"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 1022,
+        "files_verified": 1022,
+        "manifest_present": true,
+        "manifest_sha256": "2452b890d2bed3010358017904908ddcf28b54f49dc362ade243db8cd043c414",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "024--a_fixed--v3d_fast_023--r01--b6f8d36391"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 739,
+        "files_verified": 739,
+        "manifest_present": true,
+        "manifest_sha256": "cd5b2d5be7d85b5402f319592977d9a1218d34939a1446264a41b781cd6b2277",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "025--c_dynamic_visible--v3d_fast_005--r01--eed7eafa97"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 739,
+        "files_verified": 739,
+        "manifest_present": true,
+        "manifest_sha256": "21deac4bf6ffc7f1afa68b0c2f8de1653b90cfbef5393819b147eda006659433",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "026--a_fixed--v3d_fast_005--r01--7dc678e75a"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 739,
+        "files_verified": 739,
+        "manifest_present": true,
+        "manifest_sha256": "e8e456c74e22e32381c5ebf83a006972545004edb7a9757f6e5fb200308a128a",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "027--b_dynamic_hard--v3d_fast_005--r01--1a3a869499"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 1097,
+        "files_verified": 1097,
+        "manifest_present": true,
+        "manifest_sha256": "bd7e2fc03819292aa892d502795f6c176e3131c4e1c60c8f55485994a37370a2",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "028--a_fixed--v3d_fast_013--r01--0f604364a0"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 1097,
+        "files_verified": 1097,
+        "manifest_present": true,
+        "manifest_sha256": "7a71751da925f51d5c1e36e12e55402105d39e3f71f94cf136ed50775c94a625",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "029--b_dynamic_hard--v3d_fast_013--r01--7949edd0e6"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 1097,
+        "files_verified": 1097,
+        "manifest_present": true,
+        "manifest_sha256": "c3a06fbbeea8fe3a7e19677b1a40729afe3f15ec1d5a6697b3fdc4150de19f8f",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "030--c_dynamic_visible--v3d_fast_013--r01--9f1a98101f"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 2011,
+        "files_verified": 2011,
+        "manifest_present": true,
+        "manifest_sha256": "418c22f1bea2945783ac277100725b43b52aec0fd54eab917a2d8f1622cb5052",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "031--b_dynamic_hard--v3d_fast_017--r01--0c0d2e00c3"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 2011,
+        "files_verified": 2011,
+        "manifest_present": true,
+        "manifest_sha256": "2b833e89c66eb7d03e29333ebf65ab6233d467272128317332ff50be9ca03849",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "032--c_dynamic_visible--v3d_fast_017--r01--670fdc77e3"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 2011,
+        "files_verified": 2011,
+        "manifest_present": true,
+        "manifest_sha256": "76886650084e237f739951b6a83cc709ca98eb498ece14f121aa47998d9d21f7",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "033--a_fixed--v3d_fast_017--r01--698a1a8225"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 1529,
+        "files_verified": 1529,
+        "manifest_present": true,
+        "manifest_sha256": "694e1de697722f35aad23cff95ad81d0e5458c0fe7c60ba353f03d562745a676",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "034--c_dynamic_visible--v3d_fast_025--r01--7fadc45c1c"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 1529,
+        "files_verified": 1529,
+        "manifest_present": true,
+        "manifest_sha256": "306965b4e5a97587b7a44da9f6e746bbe10540f81d2c7b6a1390241b79922efb",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "035--a_fixed--v3d_fast_025--r01--7452752101"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 1529,
+        "files_verified": 1529,
+        "manifest_present": true,
+        "manifest_sha256": "bc0fe5a861a8c7c3ee0b9b22c576a27c71136212cb70faf676874fefe6d32168",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "036--b_dynamic_hard--v3d_fast_025--r01--cbb88b2dac"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 739,
+        "files_verified": 739,
+        "manifest_present": true,
+        "manifest_sha256": "b1eaa0a6a0c0e995d166ff81224993bb2f2384de5a8b46afa7db54d362a03bf6",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "037--b_dynamic_hard--v3d_fast_001--r02--0bf6e92f41"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 739,
+        "files_verified": 739,
+        "manifest_present": true,
+        "manifest_sha256": "1543757ef12ca10504240074d1e530a6f9444442ebab97071e1296106d248e5e",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "038--c_dynamic_visible--v3d_fast_001--r02--bba3700b89"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 739,
+        "files_verified": 739,
+        "manifest_present": true,
+        "manifest_sha256": "88bdd30fdc0e8f66cba1b4df7bd21e2fd3a1b8ba9872cf54daede905c293885e",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "039--a_fixed--v3d_fast_001--r02--befc5021be"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 812,
+        "files_verified": 812,
+        "manifest_present": true,
+        "manifest_sha256": "56171479b05a7ebbc4843945add54fa759c84178ab0b1dbbf442e76d1e28e882",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "040--c_dynamic_visible--v3d_fast_009--r02--ce16103cbf"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 812,
+        "files_verified": 812,
+        "manifest_present": true,
+        "manifest_sha256": "0f586c1d6858ef6151c07a2da32e455f94375d7733ed19a016faab80434ae563",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "041--a_fixed--v3d_fast_009--r02--0a61875fe5"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 812,
+        "files_verified": 812,
+        "manifest_present": true,
+        "manifest_sha256": "9a76e17d6eac5105d95537752920b670f76e9fd990fd55149691b09ed074b5cf",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "042--b_dynamic_hard--v3d_fast_009--r02--cb3a734d8c"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 2000,
+        "files_verified": 2000,
+        "manifest_present": true,
+        "manifest_sha256": "6b2b66b1cfeb689564b9517063faae4ce03a765b164973b76e933fcaf0c7331e",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "043--a_fixed--v3d_fast_015--r02--f3659a46e7"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 1832,
+        "files_verified": 1832,
+        "manifest_present": true,
+        "manifest_sha256": "82d9431b79230ff895087f44d58e2f56e30ab351ccf82fedcfd1e8c4d59b37f8",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "044--b_dynamic_hard--v3d_fast_015--r02--984bb05a0e"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 1832,
+        "files_verified": 1832,
+        "manifest_present": true,
+        "manifest_sha256": "a1c33e5651519d6aafdfa1e41887e5605a15e348ab16f744c562796b55257a78",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "045--c_dynamic_visible--v3d_fast_015--r02--649ce1520e"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 1064,
+        "files_verified": 1064,
+        "manifest_present": true,
+        "manifest_sha256": "d92f63b0f1587714b6adc1c89083f5c9be333bf13b6b0b04be834f83dfd9ac31",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "046--b_dynamic_hard--v3d_fast_021--r02--a3569717d5"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 1092,
+        "files_verified": 1092,
+        "manifest_present": true,
+        "manifest_sha256": "4cefaff8cbe7239be67f81490282c4766c1bae6c7281f392bbcb13f51350fd5e",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "047--c_dynamic_visible--v3d_fast_021--r02--8c5b68da2c"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 871,
+        "files_verified": 871,
+        "manifest_present": true,
+        "manifest_sha256": "bd7d940230a24110656fad86d7d686c6fc37e88c50bf62c0f0cfd9782e17034d",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "048--a_fixed--v3d_fast_021--r02--b03971c8b8"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 739,
+        "files_verified": 739,
+        "manifest_present": true,
+        "manifest_sha256": "830ba023c8de3aa631eb6e6fc7a6b12cf3b39df2cb0ca744f9b9fae43c45130c",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "049--c_dynamic_visible--v3d_fast_004--r02--75ad1d0ea6"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 739,
+        "files_verified": 739,
+        "manifest_present": true,
+        "manifest_sha256": "cd86c1a7b0d4fad890ce3c72f3b74fcbe389e1737142e84074ccc00e5d22aaae",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "050--a_fixed--v3d_fast_004--r02--eb5b668458"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 739,
+        "files_verified": 739,
+        "manifest_present": true,
+        "manifest_sha256": "2640c81fc76df24c0cc30020383b055406e6db1eb9ea544c61b81098e8e68f59",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "051--b_dynamic_hard--v3d_fast_004--r02--7f743683a4"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 1004,
+        "files_verified": 1004,
+        "manifest_present": true,
+        "manifest_sha256": "49479936150094613a65d9684a98dfcec3904d7dbe1d7bdcf40d9d5e1c2a5dc4",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "052--a_fixed--v3d_fast_012--r02--3b3d124e06"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 1078,
+        "files_verified": 1078,
+        "manifest_present": true,
+        "manifest_sha256": "daefeb9dcf8d53d65167947fea018709e4b8908c86f7455b5d862bb86988fe51",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "053--b_dynamic_hard--v3d_fast_012--r02--3996239c0f"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 1078,
+        "files_verified": 1078,
+        "manifest_present": true,
+        "manifest_sha256": "563d8647aa71e45c361d8996e269dc0dc9ee9e9eca7896227062b6fa435242cf",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "054--c_dynamic_visible--v3d_fast_012--r02--54fb837028"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 1733,
+        "files_verified": 1733,
+        "manifest_present": true,
+        "manifest_sha256": "f8c86a4ca87be8ed3751d020594aff634816a7108cdb14e39c57a8fb8e56e60a",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "055--b_dynamic_hard--v3d_fast_016--r02--0cbb6428e3"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 1254,
+        "files_verified": 1254,
+        "manifest_present": true,
+        "manifest_sha256": "63fe0905a5a9e67846f516b3e7390072e11023aaeb220fb5901eda9007b92fda",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "056--c_dynamic_visible--v3d_fast_016--r02--e997e6e569"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 1246,
+        "files_verified": 1246,
+        "manifest_present": true,
+        "manifest_sha256": "8c887cf99d8b093b8842e7c765a923f4de2e41c7e76fd55749cf55da46724ed4",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "057--a_fixed--v3d_fast_016--r02--caf1e9f24d"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 1022,
+        "files_verified": 1022,
+        "manifest_present": true,
+        "manifest_sha256": "4219f9820237888c436677f006a771ed9f0280d63408a717ef515933fbfac616",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "058--c_dynamic_visible--v3d_fast_023--r02--dee67de443"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 1022,
+        "files_verified": 1022,
+        "manifest_present": true,
+        "manifest_sha256": "26c4af23d9db1193041afaf243a341be995659d89ee3a29001fe8cf6054923bd",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "059--a_fixed--v3d_fast_023--r02--26a0cee003"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 1273,
+        "files_verified": 1273,
+        "manifest_present": true,
+        "manifest_sha256": "6f282511c38f82ce228f8e431fcfa76bfc092f5beff2df34aa1a486fbe4df8eb",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "060--b_dynamic_hard--v3d_fast_023--r02--ff3e52b3c4"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 739,
+        "files_verified": 739,
+        "manifest_present": true,
+        "manifest_sha256": "65fe7f93a632fe2f6de3867c75d670ab9852e571ff0ce04f68ff97eed2df2a59",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "061--a_fixed--v3d_fast_005--r02--4901251441"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 739,
+        "files_verified": 739,
+        "manifest_present": true,
+        "manifest_sha256": "a038085f43f62a462ee451357dcf4d21f3f92105cf4e4c31fbaccf7c8e1cadb7",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "062--b_dynamic_hard--v3d_fast_005--r02--9a86f6e6f9"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 739,
+        "files_verified": 739,
+        "manifest_present": true,
+        "manifest_sha256": "437ffb755aaf6a4a09c39f007a8f848d9d72896474e879c833113e6c6c634355",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "063--c_dynamic_visible--v3d_fast_005--r02--f982ae7d24"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 1097,
+        "files_verified": 1097,
+        "manifest_present": true,
+        "manifest_sha256": "d012aca39f1a7732bba1c9d1a5b26305789f3018879f39032a1249478c8c0b24",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "064--b_dynamic_hard--v3d_fast_013--r02--abeedf2914"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 1097,
+        "files_verified": 1097,
+        "manifest_present": true,
+        "manifest_sha256": "62948521629984fe5267837193182e4260945c84bf42ba4e9693c1ad45f03ea7",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "065--c_dynamic_visible--v3d_fast_013--r02--88bc3ed4f3"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 1097,
+        "files_verified": 1097,
+        "manifest_present": true,
+        "manifest_sha256": "1aec599c68adf23d24cb887112bab6b91033ff0c92c332dffbd7bc6afdee9afc",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "066--a_fixed--v3d_fast_013--r02--7fa331fcae"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 1252,
+        "files_verified": 1252,
+        "manifest_present": true,
+        "manifest_sha256": "be4f56165a07ec64baadd856c3db811c0546d7e7e22f56c201404c7e4ac73dc7",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "067--c_dynamic_visible--v3d_fast_017--r02--4d55928f1c"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 2011,
+        "files_verified": 2011,
+        "manifest_present": true,
+        "manifest_sha256": "edb3d7a1541572ac423857abf41735688baf24aa503f165ab401dc63e7a31c40",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "068--a_fixed--v3d_fast_017--r02--16b3fafdd0"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 2011,
+        "files_verified": 2011,
+        "manifest_present": true,
+        "manifest_sha256": "15e43aec570d0bb1ae4b6591aadc660add6cba2bdd80c94d57bd91a2ef4239a2",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "069--b_dynamic_hard--v3d_fast_017--r02--afd4607d11"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 1529,
+        "files_verified": 1529,
+        "manifest_present": true,
+        "manifest_sha256": "ef7d703ae2136123118ebbf85221dc2aa0640f38cabc08e6c8da6a21af796fe7",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "070--a_fixed--v3d_fast_025--r02--2aa5117d24"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 1529,
+        "files_verified": 1529,
+        "manifest_present": true,
+        "manifest_sha256": "8fcbaafb54976a1c4afb02853eb142601cfaf56c4f5a133ecd46e3f9a62f0929",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "071--b_dynamic_hard--v3d_fast_025--r02--337977629b"
+    },
+    {
+      "artifact_manifest": {
+        "errors": [],
+        "files_declared": 1529,
+        "files_verified": 1529,
+        "manifest_present": true,
+        "manifest_sha256": "c64f8bc82c24d8c6064c654328c771b2020203ac7ffae3a92ebd3c1299ee098b",
+        "valid": true
+      },
+      "ledger_reconciled": true,
+      "ledger_reconciliation_reasons": [],
+      "run_id": "072--c_dynamic_visible--v3d_fast_025--r02--2fc0d278e4"
+    }
+  ],
+  "reconciled_from_durable_artifacts": 13,
+  "repeats": [
+    1,
+    2
+  ],
+  "schema_version": "phase-a.historical-72-integrity.v1",
+  "stability_eligible_runs": 72,
+  "target_batch": "/home/ying/CompetitionTrackA/track-A/llm4hls_harness/experiments/token_policy_abc/pilot-real-deepseek-v4-pro-20260722-01",
+  "unique_tasks": 12
+}

@@ -1,0 +1,75 @@
+{
+  "schema_version": "phase-a1.proposed-frozen-run-config.v1",
+  "status": "PROPOSAL_ONLY_AWAITING_USER_APPROVAL",
+  "executed": false,
+  "product_code_commit": "e5ba32a032432579bb9daa8015d2f705cff93498",
+  "scope": "PUBLIC_TRAIN_DEV_ONLY",
+  "provider": {
+    "adapter": "openai-compatible",
+    "model_alias": "deepseek-v4-pro",
+    "real_call_authorized": false,
+    "temperature": 0.0,
+    "top_p": 1.0,
+    "llm_timeout_seconds": 180,
+    "provider_hard_output_cap": 4096
+  },
+  "planner": {
+    "max_planner_rounds_per_run": 2,
+    "run_token_limit": 8000,
+    "token_budget_policy": "fixed",
+    "continuation_policy": "shadow",
+    "experience_mode": "shadow",
+    "strategy_ranker": "bayesian_shadow",
+    "automatic_retry_count": 0
+  },
+  "validation": {
+    "backend": "vitis",
+    "toolchain": "Vitis 2025.2",
+    "validation_profile": "fast-experiment",
+    "fresh_final": "required",
+    "final_policy_by_option": {
+      "gate_b1": "full_internal_audit",
+      "option_a_matrix": "task_contract",
+      "option_b_matrix": "full_internal_audit"
+    },
+    "fresh_run_directory_required": true,
+    "selective_automatic_rerun": false
+  },
+  "budget": {
+    "tool_costs": {
+      "csim": 1,
+      "synth": 4,
+      "cosim": 20
+    },
+    "final_reserve_credits_per_run": 25,
+    "final_token_reserve": 0,
+    "token_safety_margin": 128,
+    "future_round_token_reserve": 1800,
+    "runtime_limit_seconds_per_run": 3600,
+    "tool_timeouts_seconds": {
+      "csim": 300,
+      "synth": 900,
+      "cosim": 600
+    }
+  },
+  "mode_output_caps": {
+    "REPAIR": 1400,
+    "SYNTH_FIX": 1800,
+    "STRUCTURAL_FIX": 2200,
+    "OPTIMIZE": 2400
+  },
+  "access_control": {
+    "hidden_access": false,
+    "reference_access": false,
+    "golden_access": false
+  },
+  "calculation_sources": [
+    "llm4hls_harness/llm4hls_agent/config/track_a_safe_baseline_v1.json",
+    "llm4hls_harness/experiments/token_policy_abc/token_policy_abc_matrix.json",
+    "docs/experiments/artifacts/2026-07-23-phase-a-offline-audit/current-28task-inventory.json",
+    "docs/experiments/artifacts/2026-07-23-phase-a-offline-audit/current-head-paid-run-proposal.json",
+    "llm4hls_harness/llm4hls_agent/v3_prototype.py",
+    "llm4hls_harness/llm4hls_agent/v3_prototype_cli.py"
+  ],
+  "invalidation_rule": "Changing any Planner, Token, timeout, tool-cost, validation-profile, final-policy, retry or task-spec field requires recalculating every cap before approval."
+}

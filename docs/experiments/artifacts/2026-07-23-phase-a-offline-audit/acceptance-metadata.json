@@ -1,0 +1,64 @@
+{
+  "acceptance_decision": "ACCEPTED",
+  "branch": "feat/track-a-empty-stub-generation-smoke",
+  "compileall": "PASS",
+  "continuation": {
+    "completely_bound_samples": 9,
+    "current_admission": "INSUFFICIENT_EVIDENCE",
+    "current_authority": "SHADOW",
+    "excluded_samples": 1,
+    "exclusion_distribution": {
+      "OUTCOME_NOT_BINDABLE": 1
+    },
+    "follow_up_decision_points": 10,
+    "future_fields_separated": true,
+    "old_r02_admission": "NOT_READY",
+    "outcome_distribution": {
+      "BENEFICIAL_PERFORMANCE": 3,
+      "HARMFUL": 6
+    },
+    "policy_input_boundary": "pre_state_only",
+    "policy_replay_executed": false,
+    "policy_replay_reason": "Source runs predate persisted Continuation decisions; one follow-up has no bindable Candidate, and no threshold tuning or invented readiness formula is permitted in Phase A.",
+    "runs_with_follow_up": 10
+  },
+  "cosim_calls": 0,
+  "csim_calls": 0,
+  "current_tasks": 28,
+  "end_head": "65ab82c13f28921356b77ea454306d6dc1ca8e17",
+  "experience_candidate_records": 81,
+  "focused_tests": {
+    "errors": 0,
+    "failures": 0,
+    "run": 25
+  },
+  "formal_matrix_recommendation": "REQUIRED",
+  "git_diff_check": "PASS",
+  "historical_discovery": "UNIQUE_MATCH",
+  "historical_runs": 72,
+  "offline_parser_wall_time_seconds": "RECORDED_IN_offline-audit-generator.log",
+  "old_v3f_report_sha256": "4477d8829bb93bd5472927b10899684bef7e414411bbe3a47c06b2b07de20c9a",
+  "phase": "Phase A",
+  "real_llm_calls": 0,
+  "real_llm_tokens": 0,
+  "schema_version": "phase-a.acceptance-metadata.v1",
+  "stability_eligible_runs": 72,
+  "start_head": "65ab82c13f28921356b77ea454306d6dc1ca8e17",
+  "status": "DONE",
+  "strategy_ranker_candidate_records": 81,
+  "synth_calls": 0,
+  "task_impact_counts": {
+    "GLOBAL_BEHAVIORAL": 28
+  },
+  "tests_after": {
+    "errors": 0,
+    "failures": 0,
+    "run": 556
+  },
+  "tests_before": {
+    "errors": 0,
+    "failures": 8,
+    "run": 555
+  },
+  "tool_credits": 0
+}

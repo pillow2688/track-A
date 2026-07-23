@@ -1,0 +1,57 @@
+2026-07-23T12:08:45+08:00
+/home/ying/CompetitionTrackA/track-A
+On branch feat/track-a-empty-stub-generation-smoke
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   README.md
+	modified:   doc/README.md
+	modified:   doc/docs/README.md
+	modified:   llm4hls_harness/llm4hls_agent/v3_phase_router.py
+	modified:   llm4hls_harness/tests/test_v3_phase_router.py
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	doc/docs/2026-07-22-new-member-complete-onboarding.md
+	doc/docs/2026-07-23-one-week-project-completion-handbook.md
+	docs/experiments/2026-07-23-phase-a-baseline-offline-audit-acceptance.md
+	docs/experiments/artifacts/
+	docs/experiments/current-28task-inventory.md
+	docs/experiments/current-28task-inventory.zh-CN.md
+	docs/experiments/current-head-impact-analysis.md
+	docs/experiments/current-head-impact-analysis.zh-CN.md
+	docs/experiments/current-head-paid-run-proposal.md
+	docs/experiments/current-head-paid-run-proposal.zh-CN.md
+	docs/experiments/historical_12task_stability_report.md
+	docs/experiments/historical_12task_stability_report.zh-CN.md
+	docs/status/2026-07-23-phase-a-baseline-offline-audit.md
+	docs/status/2026-07-23-track-a-completion-board.md
+
+no changes added to commit (use "git add" and/or "git commit -a")
+ M README.md
+ M doc/README.md
+ M doc/docs/README.md
+ M llm4hls_harness/llm4hls_agent/v3_phase_router.py
+ M llm4hls_harness/tests/test_v3_phase_router.py
+?? doc/docs/2026-07-22-new-member-complete-onboarding.md
+?? doc/docs/2026-07-23-one-week-project-completion-handbook.md
+?? docs/experiments/2026-07-23-phase-a-baseline-offline-audit-acceptance.md
+?? docs/experiments/artifacts/
+?? docs/experiments/current-28task-inventory.md
+?? docs/experiments/current-28task-inventory.zh-CN.md
+?? docs/experiments/current-head-impact-analysis.md
+?? docs/experiments/current-head-impact-analysis.zh-CN.md
+?? docs/experiments/current-head-paid-run-proposal.md
+?? docs/experiments/current-head-paid-run-proposal.zh-CN.md
+?? docs/experiments/historical_12task_stability_report.md
+?? docs/experiments/historical_12task_stability_report.zh-CN.md
+?? docs/status/2026-07-23-phase-a-baseline-offline-audit.md
+?? docs/status/2026-07-23-track-a-completion-board.md
+ README.md                                        | 22 +++++++------
+ doc/README.md                                    | 17 ++++++----
+ doc/docs/README.md                               | 42 +++++++++++++-----------
+ llm4hls_harness/llm4hls_agent/v3_phase_router.py | 29 ----------------
+ llm4hls_harness/tests/test_v3_phase_router.py    | 28 ++++++++++++++--
+ 5 files changed, 71 insertions(+), 67 deletions(-)
+65ab82c13f28921356b77ea454306d6dc1ca8e17
+EXIT_CODE=0

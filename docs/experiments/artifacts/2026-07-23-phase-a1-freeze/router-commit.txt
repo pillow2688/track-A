@@ -1,0 +1,8 @@
+branch=feat/track-a-empty-stub-generation-smoke
+starting_head=65ab82c13f28921356b77ea454306d6dc1ca8e17
+router_fix_commit=e5ba32a032432579bb9daa8015d2f705cff93498
+commit_message=fix(router): restore baseline-fact phase routing
+product_file=llm4hls_harness/llm4hls_agent/v3_phase_router.py
+test_file=llm4hls_harness/tests/test_v3_phase_router.py
+preexisting_user_files_staged=false
+push_performed=false

@@ -1,0 +1,55 @@
+{
+  "by_mode_and_failure_class": {
+    "OPTIMIZE": {
+      "NONE": 18
+    },
+    "REPAIR": {
+      "NONE": 18
+    },
+    "STRUCTURAL_FIX": {
+      "NONE": 6,
+      "POST_VALIDATION_METRIC_OR_RESULT_WRITER_ERROR": 5,
+      "UNRESOLVED_POST_RUN_RECONCILIATION_ERROR": 2,
+      "UNRESOLVED_STRUCTURAL_FIX": 5
+    },
+    "SYNTH_FIX": {
+      "NONE": 12,
+      "POST_VALIDATION_METRIC_OR_RESULT_WRITER_ERROR": 6
+    }
+  },
+  "candidate_outcomes": {
+    "COSIM_FAILURE": 10,
+    "REJECTED_NO_STRICT_IMPROVEMENT": 6,
+    "SUCCESS": 64,
+    "SYNTH_FAILURE": 1
+  },
+  "failure_class": {
+    "NONE": 54,
+    "POST_VALIDATION_METRIC_OR_RESULT_WRITER_ERROR": 11,
+    "UNRESOLVED_POST_RUN_RECONCILIATION_ERROR": 2,
+    "UNRESOLVED_STRUCTURAL_FIX": 5
+  },
+  "interpretation": [
+    "ERROR with final_success=true is retained as terminal ERROR and separately classified as a post-validation metric/result-writer error.",
+    "No failed run is rewritten as DONE.",
+    "No missing field is imputed from task names."
+  ],
+  "post_validation_reconciled_runs": 13,
+  "schema_version": "phase-a.historical-failure-taxonomy.v1",
+  "scope": "72 historical public real LLM+Vitis runs",
+  "stop_reason": {
+    "BASELINE_FINALIZED_NO_IMPROVEMENT": 2,
+    "BenchmarkExecutionError": 13,
+    "CANDIDATE_PROMOTED_AND_FINALIZED": 16,
+    "REPAIR_FINALIZED": 18,
+    "STRUCTURAL_FIX_FINALIZED": 6,
+    "SYNTH_FIX_FINALIZED": 12,
+    "TASK_REPAIR_NO_IMPROVEMENT_LIMIT": 3,
+    "TASK_REPAIR_SKIPPED_FINAL_RESERVE": 2
+  },
+  "terminal_status": {
+    "DONE": 54,
+    "ERROR": 13,
+    "FAILED": 5
+  }
+}

@@ -1,0 +1,50 @@
+Phase A.1 初始文件分类
+=======================
+
+起始分支：feat/track-a-empty-stub-generation-smoke
+起始 HEAD：65ab82c13f28921356b77ea454306d6dc1ca8e17
+记录日期：2026-07-23
+
+1. PRE_EXISTING_USER_WORK
+-------------------------
+以下文件在 Phase A 开始前已存在修改，本阶段不修改、不暂存、不提交：
+
+M  README.md
+M  doc/README.md
+M  doc/docs/README.md
+?? doc/docs/2026-07-22-new-member-complete-onboarding.md
+?? doc/docs/2026-07-23-one-week-project-completion-handbook.md
+
+2. PHASE_A_ROUTER_PRODUCT_AND_TEST
+----------------------------------
+以下文件是 Phase A Router P0 修复及其直接回归测试：
+
+M  llm4hls_harness/llm4hls_agent/v3_phase_router.py
+M  llm4hls_harness/tests/test_v3_phase_router.py
+
+3. PHASE_A_OFFLINE_AUDIT_DOCS_AND_ARTIFACTS
+--------------------------------------------
+以下路径是 Phase A 离线审计产生的文档与脱敏证据，不属于预先存在用户修改：
+
+?? docs/experiments/2026-07-23-phase-a-baseline-offline-audit-acceptance.md
+?? docs/experiments/artifacts/2026-07-23-phase-a-offline-audit/
+?? docs/experiments/current-28task-inventory.md
+?? docs/experiments/current-28task-inventory.zh-CN.md
+?? docs/experiments/current-head-impact-analysis.md
+?? docs/experiments/current-head-impact-analysis.zh-CN.md
+?? docs/experiments/current-head-paid-run-proposal.md
+?? docs/experiments/current-head-paid-run-proposal.zh-CN.md
+?? docs/experiments/historical_12task_stability_report.md
+?? docs/experiments/historical_12task_stability_report.zh-CN.md
+?? docs/status/2026-07-23-phase-a-baseline-offline-audit.md
+?? docs/status/2026-07-23-track-a-completion-board.md
+
+4. PHASE_A1_CHINESE_DOCS_AND_FREEZE_EVIDENCE
+---------------------------------------------
+本文件及同目录后续日志属于 Phase A.1；主要中文状态、验收、影响分析、运行提案和完成看板将在本阶段修订。
+
+?? docs/experiments/artifacts/2026-07-23-phase-a1-freeze/
+
+保护结论
+--------
+五个 PRE_EXISTING_USER_WORK 文件与 Router/Phase A/Phase A.1 文件能够按路径明确区分。

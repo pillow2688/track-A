@@ -1,0 +1,1102 @@
+[
+  {
+    "baseline_facts": {
+      "cosim": "NOT_RUN",
+      "csim": "FAIL",
+      "synth": "NOT_RUN"
+    },
+    "current_head": "65ab82c13f28921356b77ea454306d6dc1ca8e17",
+    "current_head_change_impact": "GLOBAL_BEHAVIORAL",
+    "effective_worktree_note": "Phase A router P0 fix is uncommitted and included in this audit state",
+    "fresh_run_reason_codes": [
+      "GLOBAL_BEHAVIORAL_CHANGE",
+      "FORMAL_SAME_VERSION_MATRIX_REQUIRED"
+    ],
+    "generation_required": true,
+    "historical_artifacts_reusable": true,
+    "historical_commit_shas": [
+      "431f7a65627ab6911bd11d1a4a8ae6f57094ab08"
+    ],
+    "historical_conditions": [
+      "A",
+      "B",
+      "C"
+    ],
+    "historical_repeat_count_by_condition": {
+      "A": 2,
+      "B": 2,
+      "C": 2
+    },
+    "impact_reasons": [
+      "GLOBAL_EXECUTION_PATH_CHANGED_SINCE_HISTORICAL_COMMIT",
+      "TASK_CONTRACT_FINAL_POLICY_ADDED",
+      "PLANNER_AND_TOKEN_ENVELOPE_CHANGED",
+      "BUDGET_AND_VITIS_EXECUTION_PATH_CHANGED",
+      "PHASE_A_ROUTER_FIX_RESTORES_BASELINE_FACT_AUTHORITY"
+    ],
+    "in_historical_12": true,
+    "mode": "REPAIR",
+    "mode_reason": "BASELINE_CSIM_FAILED",
+    "mode_source": "CURRENT_ROUTER_REPLAY_FROM_DEVELOPMENT_ACCEPTANCE_BASELINE_FACTS; development-only audit oracle, never Planner-visible",
+    "needs_current_head_fresh_run": true,
+    "requires_cosim": false,
+    "task_digest": "0cf3403fc66f45c274f8dc8391e4fa2d1adbb1eb3bc6f24f7b14efee320a88a6",
+    "task_name": "v3d_fast_001",
+    "task_type": "generate"
+  },
+  {
+    "baseline_facts": {
+      "cosim": "NOT_RUN",
+      "csim": "FAIL",
+      "synth": "NOT_RUN"
+    },
+    "current_head": "65ab82c13f28921356b77ea454306d6dc1ca8e17",
+    "current_head_change_impact": "GLOBAL_BEHAVIORAL",
+    "effective_worktree_note": "Phase A router P0 fix is uncommitted and included in this audit state",
+    "fresh_run_reason_codes": [
+      "GLOBAL_BEHAVIORAL_CHANGE",
+      "FORMAL_SAME_VERSION_MATRIX_REQUIRED"
+    ],
+    "generation_required": true,
+    "historical_artifacts_reusable": false,
+    "historical_commit_shas": [],
+    "historical_conditions": [],
+    "historical_repeat_count_by_condition": {},
+    "impact_reasons": [
+      "GLOBAL_EXECUTION_PATH_CHANGED_SINCE_HISTORICAL_COMMIT",
+      "TASK_CONTRACT_FINAL_POLICY_ADDED",
+      "PLANNER_AND_TOKEN_ENVELOPE_CHANGED",
+      "BUDGET_AND_VITIS_EXECUTION_PATH_CHANGED",
+      "PHASE_A_ROUTER_FIX_RESTORES_BASELINE_FACT_AUTHORITY"
+    ],
+    "in_historical_12": false,
+    "mode": "REPAIR",
+    "mode_reason": "BASELINE_CSIM_FAILED",
+    "mode_source": "CURRENT_ROUTER_REPLAY_FROM_DEVELOPMENT_ACCEPTANCE_BASELINE_FACTS; development-only audit oracle, never Planner-visible",
+    "needs_current_head_fresh_run": true,
+    "requires_cosim": false,
+    "task_digest": "a63ad73d6be50cdd7298f6171169651337e3ce21d099b9c36891cdc406efc9fd",
+    "task_name": "v3d_fast_002",
+    "task_type": "generate"
+  },
+  {
+    "baseline_facts": {
+      "cosim": "NOT_RUN",
+      "csim": "FAIL",
+      "synth": "NOT_RUN"
+    },
+    "current_head": "65ab82c13f28921356b77ea454306d6dc1ca8e17",
+    "current_head_change_impact": "GLOBAL_BEHAVIORAL",
+    "effective_worktree_note": "Phase A router P0 fix is uncommitted and included in this audit state",
+    "fresh_run_reason_codes": [
+      "GLOBAL_BEHAVIORAL_CHANGE",
+      "FORMAL_SAME_VERSION_MATRIX_REQUIRED"
+    ],
+    "generation_required": true,
+    "historical_artifacts_reusable": false,
+    "historical_commit_shas": [],
+    "historical_conditions": [],
+    "historical_repeat_count_by_condition": {},
+    "impact_reasons": [
+      "GLOBAL_EXECUTION_PATH_CHANGED_SINCE_HISTORICAL_COMMIT",
+      "TASK_CONTRACT_FINAL_POLICY_ADDED",
+      "PLANNER_AND_TOKEN_ENVELOPE_CHANGED",
+      "BUDGET_AND_VITIS_EXECUTION_PATH_CHANGED",
+      "PHASE_A_ROUTER_FIX_RESTORES_BASELINE_FACT_AUTHORITY"
+    ],
+    "in_historical_12": false,
+    "mode": "REPAIR",
+    "mode_reason": "BASELINE_CSIM_FAILED",
+    "mode_source": "CURRENT_ROUTER_REPLAY_FROM_DEVELOPMENT_ACCEPTANCE_BASELINE_FACTS; development-only audit oracle, never Planner-visible",
+    "needs_current_head_fresh_run": true,
+    "requires_cosim": false,
+    "task_digest": "69486149956193001a04701c98694bf4257b10816bbab68c3ff8ac54887a4216",
+    "task_name": "v3d_fast_003",
+    "task_type": "generate"
+  },
+  {
+    "baseline_facts": {
+      "cosim": "NOT_RUN",
+      "csim": "FAIL",
+      "synth": "NOT_RUN"
+    },
+    "current_head": "65ab82c13f28921356b77ea454306d6dc1ca8e17",
+    "current_head_change_impact": "GLOBAL_BEHAVIORAL",
+    "effective_worktree_note": "Phase A router P0 fix is uncommitted and included in this audit state",
+    "fresh_run_reason_codes": [
+      "GLOBAL_BEHAVIORAL_CHANGE",
+      "FORMAL_SAME_VERSION_MATRIX_REQUIRED"
+    ],
+    "generation_required": true,
+    "historical_artifacts_reusable": true,
+    "historical_commit_shas": [
+      "431f7a65627ab6911bd11d1a4a8ae6f57094ab08"
+    ],
+    "historical_conditions": [
+      "A",
+      "B",
+      "C"
+    ],
+    "historical_repeat_count_by_condition": {
+      "A": 2,
+      "B": 2,
+      "C": 2
+    },
+    "impact_reasons": [
+      "GLOBAL_EXECUTION_PATH_CHANGED_SINCE_HISTORICAL_COMMIT",
+      "TASK_CONTRACT_FINAL_POLICY_ADDED",
+      "PLANNER_AND_TOKEN_ENVELOPE_CHANGED",
+      "BUDGET_AND_VITIS_EXECUTION_PATH_CHANGED",
+      "PHASE_A_ROUTER_FIX_RESTORES_BASELINE_FACT_AUTHORITY"
+    ],
+    "in_historical_12": true,
+    "mode": "REPAIR",
+    "mode_reason": "BASELINE_CSIM_FAILED",
+    "mode_source": "CURRENT_ROUTER_REPLAY_FROM_DEVELOPMENT_ACCEPTANCE_BASELINE_FACTS; development-only audit oracle, never Planner-visible",
+    "needs_current_head_fresh_run": true,
+    "requires_cosim": false,
+    "task_digest": "6ee59604f8e60c5e3fb424772a8d76fd7140dc084cea654dcad85b3ee3ac1e80",
+    "task_name": "v3d_fast_004",
+    "task_type": "generate"
+  },
+  {
+    "baseline_facts": {
+      "cosim": "NOT_RUN",
+      "csim": "FAIL",
+      "synth": "NOT_RUN"
+    },
+    "current_head": "65ab82c13f28921356b77ea454306d6dc1ca8e17",
+    "current_head_change_impact": "GLOBAL_BEHAVIORAL",
+    "effective_worktree_note": "Phase A router P0 fix is uncommitted and included in this audit state",
+    "fresh_run_reason_codes": [
+      "GLOBAL_BEHAVIORAL_CHANGE",
+      "FORMAL_SAME_VERSION_MATRIX_REQUIRED"
+    ],
+    "generation_required": true,
+    "historical_artifacts_reusable": true,
+    "historical_commit_shas": [
+      "431f7a65627ab6911bd11d1a4a8ae6f57094ab08"
+    ],
+    "historical_conditions": [
+      "A",
+      "B",
+      "C"
+    ],
+    "historical_repeat_count_by_condition": {
+      "A": 2,
+      "B": 2,
+      "C": 2
+    },
+    "impact_reasons": [
+      "GLOBAL_EXECUTION_PATH_CHANGED_SINCE_HISTORICAL_COMMIT",
+      "TASK_CONTRACT_FINAL_POLICY_ADDED",
+      "PLANNER_AND_TOKEN_ENVELOPE_CHANGED",
+      "BUDGET_AND_VITIS_EXECUTION_PATH_CHANGED",
+      "PHASE_A_ROUTER_FIX_RESTORES_BASELINE_FACT_AUTHORITY"
+    ],
+    "in_historical_12": true,
+    "mode": "REPAIR",
+    "mode_reason": "BASELINE_CSIM_FAILED",
+    "mode_source": "CURRENT_ROUTER_REPLAY_FROM_DEVELOPMENT_ACCEPTANCE_BASELINE_FACTS; development-only audit oracle, never Planner-visible",
+    "needs_current_head_fresh_run": true,
+    "requires_cosim": false,
+    "task_digest": "390083fd94faa171a1713eb08439e062f28bc75e1b5d9d06900adc7a230022b3",
+    "task_name": "v3d_fast_005",
+    "task_type": "generate"
+  },
+  {
+    "baseline_facts": {
+      "cosim": "NOT_RUN",
+      "csim": "FAIL",
+      "synth": "NOT_RUN"
+    },
+    "current_head": "65ab82c13f28921356b77ea454306d6dc1ca8e17",
+    "current_head_change_impact": "GLOBAL_BEHAVIORAL",
+    "effective_worktree_note": "Phase A router P0 fix is uncommitted and included in this audit state",
+    "fresh_run_reason_codes": [
+      "GLOBAL_BEHAVIORAL_CHANGE",
+      "FORMAL_SAME_VERSION_MATRIX_REQUIRED"
+    ],
+    "generation_required": true,
+    "historical_artifacts_reusable": false,
+    "historical_commit_shas": [],
+    "historical_conditions": [],
+    "historical_repeat_count_by_condition": {},
+    "impact_reasons": [
+      "GLOBAL_EXECUTION_PATH_CHANGED_SINCE_HISTORICAL_COMMIT",
+      "TASK_CONTRACT_FINAL_POLICY_ADDED",
+      "PLANNER_AND_TOKEN_ENVELOPE_CHANGED",
+      "BUDGET_AND_VITIS_EXECUTION_PATH_CHANGED",
+      "PHASE_A_ROUTER_FIX_RESTORES_BASELINE_FACT_AUTHORITY"
+    ],
+    "in_historical_12": false,
+    "mode": "REPAIR",
+    "mode_reason": "BASELINE_CSIM_FAILED",
+    "mode_source": "CURRENT_ROUTER_REPLAY_FROM_DEVELOPMENT_ACCEPTANCE_BASELINE_FACTS; development-only audit oracle, never Planner-visible",
+    "needs_current_head_fresh_run": true,
+    "requires_cosim": false,
+    "task_digest": "2da5c7a276cf9331fd4fcfb9abd4466a145691850c92c2ff0d486bb4dd9270c8",
+    "task_name": "v3d_fast_006",
+    "task_type": "generate"
+  },
+  {
+    "baseline_facts": {
+      "cosim": "NOT_RUN",
+      "csim": "FAIL",
+      "synth": "NOT_RUN"
+    },
+    "current_head": "65ab82c13f28921356b77ea454306d6dc1ca8e17",
+    "current_head_change_impact": "GLOBAL_BEHAVIORAL",
+    "effective_worktree_note": "Phase A router P0 fix is uncommitted and included in this audit state",
+    "fresh_run_reason_codes": [
+      "GLOBAL_BEHAVIORAL_CHANGE",
+      "FORMAL_SAME_VERSION_MATRIX_REQUIRED"
+    ],
+    "generation_required": true,
+    "historical_artifacts_reusable": false,
+    "historical_commit_shas": [],
+    "historical_conditions": [],
+    "historical_repeat_count_by_condition": {},
+    "impact_reasons": [
+      "GLOBAL_EXECUTION_PATH_CHANGED_SINCE_HISTORICAL_COMMIT",
+      "TASK_CONTRACT_FINAL_POLICY_ADDED",
+      "PLANNER_AND_TOKEN_ENVELOPE_CHANGED",
+      "BUDGET_AND_VITIS_EXECUTION_PATH_CHANGED",
+      "PHASE_A_ROUTER_FIX_RESTORES_BASELINE_FACT_AUTHORITY"
+    ],
+    "in_historical_12": false,
+    "mode": "REPAIR",
+    "mode_reason": "BASELINE_CSIM_FAILED",
+    "mode_source": "CURRENT_ROUTER_REPLAY_FROM_DEVELOPMENT_ACCEPTANCE_BASELINE_FACTS; development-only audit oracle, never Planner-visible",
+    "needs_current_head_fresh_run": true,
+    "requires_cosim": false,
+    "task_digest": "cb1013e3e99b824b1f085c997b148677988d6f2d9d584892fda100e6a2e94efc",
+    "task_name": "v3d_fast_007",
+    "task_type": "generate"
+  },
+  {
+    "baseline_facts": {
+      "cosim": "NOT_RUN",
+      "csim": "FAIL",
+      "synth": "NOT_RUN"
+    },
+    "current_head": "65ab82c13f28921356b77ea454306d6dc1ca8e17",
+    "current_head_change_impact": "GLOBAL_BEHAVIORAL",
+    "effective_worktree_note": "Phase A router P0 fix is uncommitted and included in this audit state",
+    "fresh_run_reason_codes": [
+      "GLOBAL_BEHAVIORAL_CHANGE",
+      "FORMAL_SAME_VERSION_MATRIX_REQUIRED"
+    ],
+    "generation_required": true,
+    "historical_artifacts_reusable": false,
+    "historical_commit_shas": [],
+    "historical_conditions": [],
+    "historical_repeat_count_by_condition": {},
+    "impact_reasons": [
+      "GLOBAL_EXECUTION_PATH_CHANGED_SINCE_HISTORICAL_COMMIT",
+      "TASK_CONTRACT_FINAL_POLICY_ADDED",
+      "PLANNER_AND_TOKEN_ENVELOPE_CHANGED",
+      "BUDGET_AND_VITIS_EXECUTION_PATH_CHANGED",
+      "PHASE_A_ROUTER_FIX_RESTORES_BASELINE_FACT_AUTHORITY"
+    ],
+    "in_historical_12": false,
+    "mode": "REPAIR",
+    "mode_reason": "BASELINE_CSIM_FAILED",
+    "mode_source": "CURRENT_ROUTER_REPLAY_FROM_DEVELOPMENT_ACCEPTANCE_BASELINE_FACTS; development-only audit oracle, never Planner-visible",
+    "needs_current_head_fresh_run": true,
+    "requires_cosim": false,
+    "task_digest": "1b3a4abf55b2da44f116e03f47837a49d642a44a3c8b39079779f84a9101609f",
+    "task_name": "v3d_fast_008",
+    "task_type": "generate"
+  },
+  {
+    "baseline_facts": {
+      "cosim": "NOT_RUN",
+      "csim": "PASS",
+      "synth": "FAIL"
+    },
+    "current_head": "65ab82c13f28921356b77ea454306d6dc1ca8e17",
+    "current_head_change_impact": "GLOBAL_BEHAVIORAL",
+    "effective_worktree_note": "Phase A router P0 fix is uncommitted and included in this audit state",
+    "fresh_run_reason_codes": [
+      "GLOBAL_BEHAVIORAL_CHANGE",
+      "FORMAL_SAME_VERSION_MATRIX_REQUIRED"
+    ],
+    "generation_required": true,
+    "historical_artifacts_reusable": true,
+    "historical_commit_shas": [
+      "431f7a65627ab6911bd11d1a4a8ae6f57094ab08"
+    ],
+    "historical_conditions": [
+      "A",
+      "B",
+      "C"
+    ],
+    "historical_repeat_count_by_condition": {
+      "A": 2,
+      "B": 2,
+      "C": 2
+    },
+    "impact_reasons": [
+      "GLOBAL_EXECUTION_PATH_CHANGED_SINCE_HISTORICAL_COMMIT",
+      "TASK_CONTRACT_FINAL_POLICY_ADDED",
+      "PLANNER_AND_TOKEN_ENVELOPE_CHANGED",
+      "BUDGET_AND_VITIS_EXECUTION_PATH_CHANGED",
+      "PHASE_A_ROUTER_FIX_RESTORES_BASELINE_FACT_AUTHORITY"
+    ],
+    "in_historical_12": true,
+    "mode": "SYNTH_FIX",
+    "mode_reason": "BASELINE_SYNTH_FAILED",
+    "mode_source": "CURRENT_ROUTER_REPLAY_FROM_DEVELOPMENT_ACCEPTANCE_BASELINE_FACTS; development-only audit oracle, never Planner-visible",
+    "needs_current_head_fresh_run": true,
+    "requires_cosim": false,
+    "task_digest": "501afd304aaf76fc4c5852973647137002c42d4847d480520ee885870e83fcd1",
+    "task_name": "v3d_fast_009",
+    "task_type": "generate"
+  },
+  {
+    "baseline_facts": {
+      "cosim": "NOT_RUN",
+      "csim": "PASS",
+      "synth": "FAIL"
+    },
+    "current_head": "65ab82c13f28921356b77ea454306d6dc1ca8e17",
+    "current_head_change_impact": "GLOBAL_BEHAVIORAL",
+    "effective_worktree_note": "Phase A router P0 fix is uncommitted and included in this audit state",
+    "fresh_run_reason_codes": [
+      "GLOBAL_BEHAVIORAL_CHANGE",
+      "FORMAL_SAME_VERSION_MATRIX_REQUIRED"
+    ],
+    "generation_required": true,
+    "historical_artifacts_reusable": false,
+    "historical_commit_shas": [],
+    "historical_conditions": [],
+    "historical_repeat_count_by_condition": {},
+    "impact_reasons": [
+      "GLOBAL_EXECUTION_PATH_CHANGED_SINCE_HISTORICAL_COMMIT",
+      "TASK_CONTRACT_FINAL_POLICY_ADDED",
+      "PLANNER_AND_TOKEN_ENVELOPE_CHANGED",
+      "BUDGET_AND_VITIS_EXECUTION_PATH_CHANGED",
+      "PHASE_A_ROUTER_FIX_RESTORES_BASELINE_FACT_AUTHORITY"
+    ],
+    "in_historical_12": false,
+    "mode": "SYNTH_FIX",
+    "mode_reason": "BASELINE_SYNTH_FAILED",
+    "mode_source": "CURRENT_ROUTER_REPLAY_FROM_DEVELOPMENT_ACCEPTANCE_BASELINE_FACTS; development-only audit oracle, never Planner-visible",
+    "needs_current_head_fresh_run": true,
+    "requires_cosim": false,
+    "task_digest": "be10b65a0af2e8a9772889870abe5a41e558f8ffdd712cdb6e9296b9d70342e9",
+    "task_name": "v3d_fast_010",
+    "task_type": "generate"
+  },
+  {
+    "baseline_facts": {
+      "cosim": "NOT_RUN",
+      "csim": "PASS",
+      "synth": "FAIL"
+    },
+    "current_head": "65ab82c13f28921356b77ea454306d6dc1ca8e17",
+    "current_head_change_impact": "GLOBAL_BEHAVIORAL",
+    "effective_worktree_note": "Phase A router P0 fix is uncommitted and included in this audit state",
+    "fresh_run_reason_codes": [
+      "GLOBAL_BEHAVIORAL_CHANGE",
+      "FORMAL_SAME_VERSION_MATRIX_REQUIRED"
+    ],
+    "generation_required": true,
+    "historical_artifacts_reusable": false,
+    "historical_commit_shas": [],
+    "historical_conditions": [],
+    "historical_repeat_count_by_condition": {},
+    "impact_reasons": [
+      "GLOBAL_EXECUTION_PATH_CHANGED_SINCE_HISTORICAL_COMMIT",
+      "TASK_CONTRACT_FINAL_POLICY_ADDED",
+      "PLANNER_AND_TOKEN_ENVELOPE_CHANGED",
+      "BUDGET_AND_VITIS_EXECUTION_PATH_CHANGED",
+      "PHASE_A_ROUTER_FIX_RESTORES_BASELINE_FACT_AUTHORITY"
+    ],
+    "in_historical_12": false,
+    "mode": "SYNTH_FIX",
+    "mode_reason": "BASELINE_SYNTH_FAILED",
+    "mode_source": "CURRENT_ROUTER_REPLAY_FROM_DEVELOPMENT_ACCEPTANCE_BASELINE_FACTS; development-only audit oracle, never Planner-visible",
+    "needs_current_head_fresh_run": true,
+    "requires_cosim": false,
+    "task_digest": "6c6e6a5d248b9acd2bcf8bd81f8e33dc2dd08a75abaf91359c174389b3e3f85d",
+    "task_name": "v3d_fast_011",
+    "task_type": "generate"
+  },
+  {
+    "baseline_facts": {
+      "cosim": "NOT_RUN",
+      "csim": "PASS",
+      "synth": "FAIL"
+    },
+    "current_head": "65ab82c13f28921356b77ea454306d6dc1ca8e17",
+    "current_head_change_impact": "GLOBAL_BEHAVIORAL",
+    "effective_worktree_note": "Phase A router P0 fix is uncommitted and included in this audit state",
+    "fresh_run_reason_codes": [
+      "GLOBAL_BEHAVIORAL_CHANGE",
+      "FORMAL_SAME_VERSION_MATRIX_REQUIRED"
+    ],
+    "generation_required": true,
+    "historical_artifacts_reusable": true,
+    "historical_commit_shas": [
+      "431f7a65627ab6911bd11d1a4a8ae6f57094ab08"
+    ],
+    "historical_conditions": [
+      "A",
+      "B",
+      "C"
+    ],
+    "historical_repeat_count_by_condition": {
+      "A": 2,
+      "B": 2,
+      "C": 2
+    },
+    "impact_reasons": [
+      "GLOBAL_EXECUTION_PATH_CHANGED_SINCE_HISTORICAL_COMMIT",
+      "TASK_CONTRACT_FINAL_POLICY_ADDED",
+      "PLANNER_AND_TOKEN_ENVELOPE_CHANGED",
+      "BUDGET_AND_VITIS_EXECUTION_PATH_CHANGED",
+      "PHASE_A_ROUTER_FIX_RESTORES_BASELINE_FACT_AUTHORITY"
+    ],
+    "in_historical_12": true,
+    "mode": "SYNTH_FIX",
+    "mode_reason": "BASELINE_SYNTH_FAILED",
+    "mode_source": "CURRENT_ROUTER_REPLAY_FROM_DEVELOPMENT_ACCEPTANCE_BASELINE_FACTS; development-only audit oracle, never Planner-visible",
+    "needs_current_head_fresh_run": true,
+    "requires_cosim": false,
+    "task_digest": "5e9cbefa5eca7c9efc10312581d1e7dcf23bf99bd63a44c2a5894d0d4143bc57",
+    "task_name": "v3d_fast_012",
+    "task_type": "generate"
+  },
+  {
+    "baseline_facts": {
+      "cosim": "NOT_RUN",
+      "csim": "PASS",
+      "synth": "FAIL"
+    },
+    "current_head": "65ab82c13f28921356b77ea454306d6dc1ca8e17",
+    "current_head_change_impact": "GLOBAL_BEHAVIORAL",
+    "effective_worktree_note": "Phase A router P0 fix is uncommitted and included in this audit state",
+    "fresh_run_reason_codes": [
+      "GLOBAL_BEHAVIORAL_CHANGE",
+      "FORMAL_SAME_VERSION_MATRIX_REQUIRED"
+    ],
+    "generation_required": true,
+    "historical_artifacts_reusable": true,
+    "historical_commit_shas": [
+      "431f7a65627ab6911bd11d1a4a8ae6f57094ab08"
+    ],
+    "historical_conditions": [
+      "A",
+      "B",
+      "C"
+    ],
+    "historical_repeat_count_by_condition": {
+      "A": 2,
+      "B": 2,
+      "C": 2
+    },
+    "impact_reasons": [
+      "GLOBAL_EXECUTION_PATH_CHANGED_SINCE_HISTORICAL_COMMIT",
+      "TASK_CONTRACT_FINAL_POLICY_ADDED",
+      "PLANNER_AND_TOKEN_ENVELOPE_CHANGED",
+      "BUDGET_AND_VITIS_EXECUTION_PATH_CHANGED",
+      "PHASE_A_ROUTER_FIX_RESTORES_BASELINE_FACT_AUTHORITY"
+    ],
+    "in_historical_12": true,
+    "mode": "SYNTH_FIX",
+    "mode_reason": "BASELINE_SYNTH_FAILED",
+    "mode_source": "CURRENT_ROUTER_REPLAY_FROM_DEVELOPMENT_ACCEPTANCE_BASELINE_FACTS; development-only audit oracle, never Planner-visible",
+    "needs_current_head_fresh_run": true,
+    "requires_cosim": false,
+    "task_digest": "5fbd90fa54d6be93d3a4c968fb5d4de89ceda1bbad61b896adb3944f2e91a31b",
+    "task_name": "v3d_fast_013",
+    "task_type": "generate"
+  },
+  {
+    "baseline_facts": {
+      "cosim": "NOT_RUN",
+      "csim": "PASS",
+      "synth": "FAIL"
+    },
+    "current_head": "65ab82c13f28921356b77ea454306d6dc1ca8e17",
+    "current_head_change_impact": "GLOBAL_BEHAVIORAL",
+    "effective_worktree_note": "Phase A router P0 fix is uncommitted and included in this audit state",
+    "fresh_run_reason_codes": [
+      "GLOBAL_BEHAVIORAL_CHANGE",
+      "FORMAL_SAME_VERSION_MATRIX_REQUIRED"
+    ],
+    "generation_required": true,
+    "historical_artifacts_reusable": false,
+    "historical_commit_shas": [],
+    "historical_conditions": [],
+    "historical_repeat_count_by_condition": {},
+    "impact_reasons": [
+      "GLOBAL_EXECUTION_PATH_CHANGED_SINCE_HISTORICAL_COMMIT",
+      "TASK_CONTRACT_FINAL_POLICY_ADDED",
+      "PLANNER_AND_TOKEN_ENVELOPE_CHANGED",
+      "BUDGET_AND_VITIS_EXECUTION_PATH_CHANGED",
+      "PHASE_A_ROUTER_FIX_RESTORES_BASELINE_FACT_AUTHORITY"
+    ],
+    "in_historical_12": false,
+    "mode": "SYNTH_FIX",
+    "mode_reason": "BASELINE_SYNTH_FAILED",
+    "mode_source": "CURRENT_ROUTER_REPLAY_FROM_DEVELOPMENT_ACCEPTANCE_BASELINE_FACTS; development-only audit oracle, never Planner-visible",
+    "needs_current_head_fresh_run": true,
+    "requires_cosim": false,
+    "task_digest": "d67d1ab9521bfc8e625d61babbbbc758ec6bebd846ae941fd5abd5d9d767a221",
+    "task_name": "v3d_fast_014",
+    "task_type": "generate"
+  },
+  {
+    "baseline_facts": {
+      "cosim": "FAIL",
+      "csim": "PASS",
+      "synth": "PASS"
+    },
+    "current_head": "65ab82c13f28921356b77ea454306d6dc1ca8e17",
+    "current_head_change_impact": "GLOBAL_BEHAVIORAL",
+    "effective_worktree_note": "Phase A router P0 fix is uncommitted and included in this audit state",
+    "fresh_run_reason_codes": [
+      "GLOBAL_BEHAVIORAL_CHANGE",
+      "FORMAL_SAME_VERSION_MATRIX_REQUIRED"
+    ],
+    "generation_required": true,
+    "historical_artifacts_reusable": true,
+    "historical_commit_shas": [
+      "431f7a65627ab6911bd11d1a4a8ae6f57094ab08"
+    ],
+    "historical_conditions": [
+      "A",
+      "B",
+      "C"
+    ],
+    "historical_repeat_count_by_condition": {
+      "A": 2,
+      "B": 2,
+      "C": 2
+    },
+    "impact_reasons": [
+      "GLOBAL_EXECUTION_PATH_CHANGED_SINCE_HISTORICAL_COMMIT",
+      "TASK_CONTRACT_FINAL_POLICY_ADDED",
+      "PLANNER_AND_TOKEN_ENVELOPE_CHANGED",
+      "BUDGET_AND_VITIS_EXECUTION_PATH_CHANGED",
+      "PHASE_A_ROUTER_FIX_RESTORES_BASELINE_FACT_AUTHORITY"
+    ],
+    "in_historical_12": true,
+    "mode": "STRUCTURAL_FIX",
+    "mode_reason": "REQUIRED_BASELINE_COSIM_FAILED",
+    "mode_source": "CURRENT_ROUTER_REPLAY_FROM_DEVELOPMENT_ACCEPTANCE_BASELINE_FACTS; development-only audit oracle, never Planner-visible",
+    "needs_current_head_fresh_run": true,
+    "requires_cosim": true,
+    "task_digest": "2e649717dc05c89b2c6c70d808abee08b1a472353e065e9e40920d47248eff6d",
+    "task_name": "v3d_fast_015",
+    "task_type": "generate"
+  },
+  {
+    "baseline_facts": {
+      "cosim": "FAIL",
+      "csim": "PASS",
+      "synth": "PASS"
+    },
+    "current_head": "65ab82c13f28921356b77ea454306d6dc1ca8e17",
+    "current_head_change_impact": "GLOBAL_BEHAVIORAL",
+    "effective_worktree_note": "Phase A router P0 fix is uncommitted and included in this audit state",
+    "fresh_run_reason_codes": [
+      "GLOBAL_BEHAVIORAL_CHANGE",
+      "FORMAL_SAME_VERSION_MATRIX_REQUIRED"
+    ],
+    "generation_required": true,
+    "historical_artifacts_reusable": true,
+    "historical_commit_shas": [
+      "431f7a65627ab6911bd11d1a4a8ae6f57094ab08"
+    ],
+    "historical_conditions": [
+      "A",
+      "B",
+      "C"
+    ],
+    "historical_repeat_count_by_condition": {
+      "A": 2,
+      "B": 2,
+      "C": 2
+    },
+    "impact_reasons": [
+      "GLOBAL_EXECUTION_PATH_CHANGED_SINCE_HISTORICAL_COMMIT",
+      "TASK_CONTRACT_FINAL_POLICY_ADDED",
+      "PLANNER_AND_TOKEN_ENVELOPE_CHANGED",
+      "BUDGET_AND_VITIS_EXECUTION_PATH_CHANGED",
+      "PHASE_A_ROUTER_FIX_RESTORES_BASELINE_FACT_AUTHORITY"
+    ],
+    "in_historical_12": true,
+    "mode": "STRUCTURAL_FIX",
+    "mode_reason": "REQUIRED_BASELINE_COSIM_FAILED",
+    "mode_source": "CURRENT_ROUTER_REPLAY_FROM_DEVELOPMENT_ACCEPTANCE_BASELINE_FACTS; development-only audit oracle, never Planner-visible",
+    "needs_current_head_fresh_run": true,
+    "requires_cosim": true,
+    "task_digest": "cecf93951be4cd5a4270ca4fa6d7b17a3d6a751e1cdbc720ad2242dc459d4f82",
+    "task_name": "v3d_fast_016",
+    "task_type": "generate"
+  },
+  {
+    "baseline_facts": {
+      "cosim": "FAIL",
+      "csim": "PASS",
+      "synth": "PASS"
+    },
+    "current_head": "65ab82c13f28921356b77ea454306d6dc1ca8e17",
+    "current_head_change_impact": "GLOBAL_BEHAVIORAL",
+    "effective_worktree_note": "Phase A router P0 fix is uncommitted and included in this audit state",
+    "fresh_run_reason_codes": [
+      "GLOBAL_BEHAVIORAL_CHANGE",
+      "FORMAL_SAME_VERSION_MATRIX_REQUIRED"
+    ],
+    "generation_required": true,
+    "historical_artifacts_reusable": true,
+    "historical_commit_shas": [
+      "431f7a65627ab6911bd11d1a4a8ae6f57094ab08"
+    ],
+    "historical_conditions": [
+      "A",
+      "B",
+      "C"
+    ],
+    "historical_repeat_count_by_condition": {
+      "A": 2,
+      "B": 2,
+      "C": 2
+    },
+    "impact_reasons": [
+      "GLOBAL_EXECUTION_PATH_CHANGED_SINCE_HISTORICAL_COMMIT",
+      "TASK_CONTRACT_FINAL_POLICY_ADDED",
+      "PLANNER_AND_TOKEN_ENVELOPE_CHANGED",
+      "BUDGET_AND_VITIS_EXECUTION_PATH_CHANGED",
+      "PHASE_A_ROUTER_FIX_RESTORES_BASELINE_FACT_AUTHORITY"
+    ],
+    "in_historical_12": true,
+    "mode": "STRUCTURAL_FIX",
+    "mode_reason": "REQUIRED_BASELINE_COSIM_FAILED",
+    "mode_source": "CURRENT_ROUTER_REPLAY_FROM_DEVELOPMENT_ACCEPTANCE_BASELINE_FACTS; development-only audit oracle, never Planner-visible",
+    "needs_current_head_fresh_run": true,
+    "requires_cosim": true,
+    "task_digest": "428e64e7ce4cc6b59e7232327ed5ca6c0997fd73be60429becb8688b13eaa25e",
+    "task_name": "v3d_fast_017",
+    "task_type": "generate"
+  },
+  {
+    "baseline_facts": {
+      "cosim": "FAIL",
+      "csim": "PASS",
+      "synth": "PASS"
+    },
+    "current_head": "65ab82c13f28921356b77ea454306d6dc1ca8e17",
+    "current_head_change_impact": "GLOBAL_BEHAVIORAL",
+    "effective_worktree_note": "Phase A router P0 fix is uncommitted and included in this audit state",
+    "fresh_run_reason_codes": [
+      "GLOBAL_BEHAVIORAL_CHANGE",
+      "FORMAL_SAME_VERSION_MATRIX_REQUIRED"
+    ],
+    "generation_required": true,
+    "historical_artifacts_reusable": false,
+    "historical_commit_shas": [],
+    "historical_conditions": [],
+    "historical_repeat_count_by_condition": {},
+    "impact_reasons": [
+      "GLOBAL_EXECUTION_PATH_CHANGED_SINCE_HISTORICAL_COMMIT",
+      "TASK_CONTRACT_FINAL_POLICY_ADDED",
+      "PLANNER_AND_TOKEN_ENVELOPE_CHANGED",
+      "BUDGET_AND_VITIS_EXECUTION_PATH_CHANGED",
+      "PHASE_A_ROUTER_FIX_RESTORES_BASELINE_FACT_AUTHORITY"
+    ],
+    "in_historical_12": false,
+    "mode": "STRUCTURAL_FIX",
+    "mode_reason": "REQUIRED_BASELINE_COSIM_FAILED",
+    "mode_source": "CURRENT_ROUTER_REPLAY_FROM_DEVELOPMENT_ACCEPTANCE_BASELINE_FACTS; development-only audit oracle, never Planner-visible",
+    "needs_current_head_fresh_run": true,
+    "requires_cosim": true,
+    "task_digest": "1addf76d0bd7be4a820883516e1f6d630b7e5a5d0ef4ea396f63054b2744028b",
+    "task_name": "v3d_fast_018",
+    "task_type": "generate"
+  },
+  {
+    "baseline_facts": {
+      "cosim": "FAIL",
+      "csim": "PASS",
+      "synth": "PASS"
+    },
+    "current_head": "65ab82c13f28921356b77ea454306d6dc1ca8e17",
+    "current_head_change_impact": "GLOBAL_BEHAVIORAL",
+    "effective_worktree_note": "Phase A router P0 fix is uncommitted and included in this audit state",
+    "fresh_run_reason_codes": [
+      "GLOBAL_BEHAVIORAL_CHANGE",
+      "FORMAL_SAME_VERSION_MATRIX_REQUIRED"
+    ],
+    "generation_required": true,
+    "historical_artifacts_reusable": false,
+    "historical_commit_shas": [],
+    "historical_conditions": [],
+    "historical_repeat_count_by_condition": {},
+    "impact_reasons": [
+      "GLOBAL_EXECUTION_PATH_CHANGED_SINCE_HISTORICAL_COMMIT",
+      "TASK_CONTRACT_FINAL_POLICY_ADDED",
+      "PLANNER_AND_TOKEN_ENVELOPE_CHANGED",
+      "BUDGET_AND_VITIS_EXECUTION_PATH_CHANGED",
+      "PHASE_A_ROUTER_FIX_RESTORES_BASELINE_FACT_AUTHORITY"
+    ],
+    "in_historical_12": false,
+    "mode": "STRUCTURAL_FIX",
+    "mode_reason": "REQUIRED_BASELINE_COSIM_FAILED",
+    "mode_source": "CURRENT_ROUTER_REPLAY_FROM_DEVELOPMENT_ACCEPTANCE_BASELINE_FACTS; development-only audit oracle, never Planner-visible",
+    "needs_current_head_fresh_run": true,
+    "requires_cosim": true,
+    "task_digest": "061dddca56335ee4234de9214cdfdf1079164399cf92aeda0f0550d63b3f8720",
+    "task_name": "v3d_fast_019",
+    "task_type": "generate"
+  },
+  {
+    "baseline_facts": {
+      "cosim": "FAIL",
+      "csim": "PASS",
+      "synth": "PASS"
+    },
+    "current_head": "65ab82c13f28921356b77ea454306d6dc1ca8e17",
+    "current_head_change_impact": "GLOBAL_BEHAVIORAL",
+    "effective_worktree_note": "Phase A router P0 fix is uncommitted and included in this audit state",
+    "fresh_run_reason_codes": [
+      "GLOBAL_BEHAVIORAL_CHANGE",
+      "FORMAL_SAME_VERSION_MATRIX_REQUIRED"
+    ],
+    "generation_required": true,
+    "historical_artifacts_reusable": false,
+    "historical_commit_shas": [],
+    "historical_conditions": [],
+    "historical_repeat_count_by_condition": {},
+    "impact_reasons": [
+      "GLOBAL_EXECUTION_PATH_CHANGED_SINCE_HISTORICAL_COMMIT",
+      "TASK_CONTRACT_FINAL_POLICY_ADDED",
+      "PLANNER_AND_TOKEN_ENVELOPE_CHANGED",
+      "BUDGET_AND_VITIS_EXECUTION_PATH_CHANGED",
+      "PHASE_A_ROUTER_FIX_RESTORES_BASELINE_FACT_AUTHORITY"
+    ],
+    "in_historical_12": false,
+    "mode": "STRUCTURAL_FIX",
+    "mode_reason": "REQUIRED_BASELINE_COSIM_FAILED",
+    "mode_source": "CURRENT_ROUTER_REPLAY_FROM_DEVELOPMENT_ACCEPTANCE_BASELINE_FACTS; development-only audit oracle, never Planner-visible",
+    "needs_current_head_fresh_run": true,
+    "requires_cosim": true,
+    "task_digest": "2dd707c22ec560adf7520c1ed950c95fdbb4088fe613a774f8ba544861d8f35d",
+    "task_name": "v3d_fast_020",
+    "task_type": "generate"
+  },
+  {
+    "baseline_facts": {
+      "cosim": "NOT_RUN",
+      "csim": "PASS",
+      "synth": "PASS"
+    },
+    "current_head": "65ab82c13f28921356b77ea454306d6dc1ca8e17",
+    "current_head_change_impact": "GLOBAL_BEHAVIORAL",
+    "effective_worktree_note": "Phase A router P0 fix is uncommitted and included in this audit state",
+    "fresh_run_reason_codes": [
+      "GLOBAL_BEHAVIORAL_CHANGE",
+      "FORMAL_SAME_VERSION_MATRIX_REQUIRED"
+    ],
+    "generation_required": true,
+    "historical_artifacts_reusable": true,
+    "historical_commit_shas": [
+      "431f7a65627ab6911bd11d1a4a8ae6f57094ab08"
+    ],
+    "historical_conditions": [
+      "A",
+      "B",
+      "C"
+    ],
+    "historical_repeat_count_by_condition": {
+      "A": 2,
+      "B": 2,
+      "C": 2
+    },
+    "impact_reasons": [
+      "GLOBAL_EXECUTION_PATH_CHANGED_SINCE_HISTORICAL_COMMIT",
+      "TASK_CONTRACT_FINAL_POLICY_ADDED",
+      "PLANNER_AND_TOKEN_ENVELOPE_CHANGED",
+      "BUDGET_AND_VITIS_EXECUTION_PATH_CHANGED",
+      "PHASE_A_ROUTER_FIX_RESTORES_BASELINE_FACT_AUTHORITY"
+    ],
+    "in_historical_12": true,
+    "mode": "OPTIMIZE",
+    "mode_reason": "BASELINE_CSIM_SYNTH_PASSED_COSIM_NOT_REQUIRED",
+    "mode_source": "CURRENT_ROUTER_REPLAY_FROM_DEVELOPMENT_ACCEPTANCE_BASELINE_FACTS; development-only audit oracle, never Planner-visible",
+    "needs_current_head_fresh_run": true,
+    "requires_cosim": false,
+    "task_digest": "12b799808d402b467ad1ed01e4bcc5e23893ed4386887425460e45e61ab5af55",
+    "task_name": "v3d_fast_021",
+    "task_type": "generate"
+  },
+  {
+    "baseline_facts": {
+      "cosim": "NOT_RUN",
+      "csim": "PASS",
+      "synth": "PASS"
+    },
+    "current_head": "65ab82c13f28921356b77ea454306d6dc1ca8e17",
+    "current_head_change_impact": "GLOBAL_BEHAVIORAL",
+    "effective_worktree_note": "Phase A router P0 fix is uncommitted and included in this audit state",
+    "fresh_run_reason_codes": [
+      "GLOBAL_BEHAVIORAL_CHANGE",
+      "FORMAL_SAME_VERSION_MATRIX_REQUIRED"
+    ],
+    "generation_required": true,
+    "historical_artifacts_reusable": false,
+    "historical_commit_shas": [],
+    "historical_conditions": [],
+    "historical_repeat_count_by_condition": {},
+    "impact_reasons": [
+      "GLOBAL_EXECUTION_PATH_CHANGED_SINCE_HISTORICAL_COMMIT",
+      "TASK_CONTRACT_FINAL_POLICY_ADDED",
+      "PLANNER_AND_TOKEN_ENVELOPE_CHANGED",
+      "BUDGET_AND_VITIS_EXECUTION_PATH_CHANGED",
+      "PHASE_A_ROUTER_FIX_RESTORES_BASELINE_FACT_AUTHORITY"
+    ],
+    "in_historical_12": false,
+    "mode": "OPTIMIZE",
+    "mode_reason": "BASELINE_CSIM_SYNTH_PASSED_COSIM_NOT_REQUIRED",
+    "mode_source": "CURRENT_ROUTER_REPLAY_FROM_DEVELOPMENT_ACCEPTANCE_BASELINE_FACTS; development-only audit oracle, never Planner-visible",
+    "needs_current_head_fresh_run": true,
+    "requires_cosim": false,
+    "task_digest": "fae44da8fbd1e4977e91da3daafddeec8c22c864a1af1d2297433167d1138059",
+    "task_name": "v3d_fast_022",
+    "task_type": "generate"
+  },
+  {
+    "baseline_facts": {
+      "cosim": "NOT_RUN",
+      "csim": "PASS",
+      "synth": "PASS"
+    },
+    "current_head": "65ab82c13f28921356b77ea454306d6dc1ca8e17",
+    "current_head_change_impact": "GLOBAL_BEHAVIORAL",
+    "effective_worktree_note": "Phase A router P0 fix is uncommitted and included in this audit state",
+    "fresh_run_reason_codes": [
+      "GLOBAL_BEHAVIORAL_CHANGE",
+      "FORMAL_SAME_VERSION_MATRIX_REQUIRED"
+    ],
+    "generation_required": true,
+    "historical_artifacts_reusable": true,
+    "historical_commit_shas": [
+      "431f7a65627ab6911bd11d1a4a8ae6f57094ab08"
+    ],
+    "historical_conditions": [
+      "A",
+      "B",
+      "C"
+    ],
+    "historical_repeat_count_by_condition": {
+      "A": 2,
+      "B": 2,
+      "C": 2
+    },
+    "impact_reasons": [
+      "GLOBAL_EXECUTION_PATH_CHANGED_SINCE_HISTORICAL_COMMIT",
+      "TASK_CONTRACT_FINAL_POLICY_ADDED",
+      "PLANNER_AND_TOKEN_ENVELOPE_CHANGED",
+      "BUDGET_AND_VITIS_EXECUTION_PATH_CHANGED",
+      "PHASE_A_ROUTER_FIX_RESTORES_BASELINE_FACT_AUTHORITY"
+    ],
+    "in_historical_12": true,
+    "mode": "OPTIMIZE",
+    "mode_reason": "BASELINE_CSIM_SYNTH_PASSED_COSIM_NOT_REQUIRED",
+    "mode_source": "CURRENT_ROUTER_REPLAY_FROM_DEVELOPMENT_ACCEPTANCE_BASELINE_FACTS; development-only audit oracle, never Planner-visible",
+    "needs_current_head_fresh_run": true,
+    "requires_cosim": false,
+    "task_digest": "341c8a69f851b86a9e3ad9e609c2474029b7a3d46a82a565e71ece6ae3a41569",
+    "task_name": "v3d_fast_023",
+    "task_type": "generate"
+  },
+  {
+    "baseline_facts": {
+      "cosim": "NOT_RUN",
+      "csim": "PASS",
+      "synth": "PASS"
+    },
+    "current_head": "65ab82c13f28921356b77ea454306d6dc1ca8e17",
+    "current_head_change_impact": "GLOBAL_BEHAVIORAL",
+    "effective_worktree_note": "Phase A router P0 fix is uncommitted and included in this audit state",
+    "fresh_run_reason_codes": [
+      "GLOBAL_BEHAVIORAL_CHANGE",
+      "FORMAL_SAME_VERSION_MATRIX_REQUIRED"
+    ],
+    "generation_required": true,
+    "historical_artifacts_reusable": false,
+    "historical_commit_shas": [],
+    "historical_conditions": [],
+    "historical_repeat_count_by_condition": {},
+    "impact_reasons": [
+      "GLOBAL_EXECUTION_PATH_CHANGED_SINCE_HISTORICAL_COMMIT",
+      "TASK_CONTRACT_FINAL_POLICY_ADDED",
+      "PLANNER_AND_TOKEN_ENVELOPE_CHANGED",
+      "BUDGET_AND_VITIS_EXECUTION_PATH_CHANGED",
+      "PHASE_A_ROUTER_FIX_RESTORES_BASELINE_FACT_AUTHORITY"
+    ],
+    "in_historical_12": false,
+    "mode": "OPTIMIZE",
+    "mode_reason": "BASELINE_CSIM_SYNTH_PASSED_COSIM_NOT_REQUIRED",
+    "mode_source": "CURRENT_ROUTER_REPLAY_FROM_DEVELOPMENT_ACCEPTANCE_BASELINE_FACTS; development-only audit oracle, never Planner-visible",
+    "needs_current_head_fresh_run": true,
+    "requires_cosim": false,
+    "task_digest": "3f926afd91a40fbca675d5e45ecd37a6e102cfe78f29286e83ed7b4f81a1e451",
+    "task_name": "v3d_fast_024",
+    "task_type": "generate"
+  },
+  {
+    "baseline_facts": {
+      "cosim": "NOT_RUN",
+      "csim": "PASS",
+      "synth": "PASS"
+    },
+    "current_head": "65ab82c13f28921356b77ea454306d6dc1ca8e17",
+    "current_head_change_impact": "GLOBAL_BEHAVIORAL",
+    "effective_worktree_note": "Phase A router P0 fix is uncommitted and included in this audit state",
+    "fresh_run_reason_codes": [
+      "GLOBAL_BEHAVIORAL_CHANGE",
+      "FORMAL_SAME_VERSION_MATRIX_REQUIRED"
+    ],
+    "generation_required": true,
+    "historical_artifacts_reusable": true,
+    "historical_commit_shas": [
+      "431f7a65627ab6911bd11d1a4a8ae6f57094ab08"
+    ],
+    "historical_conditions": [
+      "A",
+      "B",
+      "C"
+    ],
+    "historical_repeat_count_by_condition": {
+      "A": 2,
+      "B": 2,
+      "C": 2
+    },
+    "impact_reasons": [
+      "GLOBAL_EXECUTION_PATH_CHANGED_SINCE_HISTORICAL_COMMIT",
+      "TASK_CONTRACT_FINAL_POLICY_ADDED",
+      "PLANNER_AND_TOKEN_ENVELOPE_CHANGED",
+      "BUDGET_AND_VITIS_EXECUTION_PATH_CHANGED",
+      "PHASE_A_ROUTER_FIX_RESTORES_BASELINE_FACT_AUTHORITY"
+    ],
+    "in_historical_12": true,
+    "mode": "OPTIMIZE",
+    "mode_reason": "BASELINE_CSIM_SYNTH_PASSED_COSIM_NOT_REQUIRED",
+    "mode_source": "CURRENT_ROUTER_REPLAY_FROM_DEVELOPMENT_ACCEPTANCE_BASELINE_FACTS; development-only audit oracle, never Planner-visible",
+    "needs_current_head_fresh_run": true,
+    "requires_cosim": false,
+    "task_digest": "7572a8e2b9f3644e23753badf0943eec9662ab170ffb4b156abc2a1035c2cd9a",
+    "task_name": "v3d_fast_025",
+    "task_type": "generate"
+  },
+  {
+    "baseline_facts": {
+      "cosim": "NOT_RUN",
+      "csim": "PASS",
+      "synth": "PASS"
+    },
+    "current_head": "65ab82c13f28921356b77ea454306d6dc1ca8e17",
+    "current_head_change_impact": "GLOBAL_BEHAVIORAL",
+    "effective_worktree_note": "Phase A router P0 fix is uncommitted and included in this audit state",
+    "fresh_run_reason_codes": [
+      "GLOBAL_BEHAVIORAL_CHANGE",
+      "FORMAL_SAME_VERSION_MATRIX_REQUIRED"
+    ],
+    "generation_required": true,
+    "historical_artifacts_reusable": false,
+    "historical_commit_shas": [],
+    "historical_conditions": [],
+    "historical_repeat_count_by_condition": {},
+    "impact_reasons": [
+      "GLOBAL_EXECUTION_PATH_CHANGED_SINCE_HISTORICAL_COMMIT",
+      "TASK_CONTRACT_FINAL_POLICY_ADDED",
+      "PLANNER_AND_TOKEN_ENVELOPE_CHANGED",
+      "BUDGET_AND_VITIS_EXECUTION_PATH_CHANGED",
+      "PHASE_A_ROUTER_FIX_RESTORES_BASELINE_FACT_AUTHORITY"
+    ],
+    "in_historical_12": false,
+    "mode": "OPTIMIZE",
+    "mode_reason": "BASELINE_CSIM_SYNTH_PASSED_COSIM_NOT_REQUIRED",
+    "mode_source": "CURRENT_ROUTER_REPLAY_FROM_DEVELOPMENT_ACCEPTANCE_BASELINE_FACTS; development-only audit oracle, never Planner-visible",
+    "needs_current_head_fresh_run": true,
+    "requires_cosim": false,
+    "task_digest": "f8a4582b90341a7e437a4cc91dabfe9eca72b4b2703fb445fac0b26763c4588b",
+    "task_name": "v3d_fast_026",
+    "task_type": "generate"
+  },
+  {
+    "baseline_facts": {
+      "cosim": "NOT_RUN",
+      "csim": "PASS",
+      "synth": "PASS"
+    },
+    "current_head": "65ab82c13f28921356b77ea454306d6dc1ca8e17",
+    "current_head_change_impact": "GLOBAL_BEHAVIORAL",
+    "effective_worktree_note": "Phase A router P0 fix is uncommitted and included in this audit state",
+    "fresh_run_reason_codes": [
+      "GLOBAL_BEHAVIORAL_CHANGE",
+      "FORMAL_SAME_VERSION_MATRIX_REQUIRED"
+    ],
+    "generation_required": true,
+    "historical_artifacts_reusable": false,
+    "historical_commit_shas": [],
+    "historical_conditions": [],
+    "historical_repeat_count_by_condition": {},
+    "impact_reasons": [
+      "GLOBAL_EXECUTION_PATH_CHANGED_SINCE_HISTORICAL_COMMIT",
+      "TASK_CONTRACT_FINAL_POLICY_ADDED",
+      "PLANNER_AND_TOKEN_ENVELOPE_CHANGED",
+      "BUDGET_AND_VITIS_EXECUTION_PATH_CHANGED",
+      "PHASE_A_ROUTER_FIX_RESTORES_BASELINE_FACT_AUTHORITY"
+    ],
+    "in_historical_12": false,
+    "mode": "OPTIMIZE",
+    "mode_reason": "BASELINE_CSIM_SYNTH_PASSED_COSIM_NOT_REQUIRED",
+    "mode_source": "CURRENT_ROUTER_REPLAY_FROM_DEVELOPMENT_ACCEPTANCE_BASELINE_FACTS; development-only audit oracle, never Planner-visible",
+    "needs_current_head_fresh_run": true,
+    "requires_cosim": false,
+    "task_digest": "15043a29cb3268c045f1dbb6ee2e69aaebe46c3deb435fdc9c5f2f5815e4e904",
+    "task_name": "v3d_fast_027",
+    "task_type": "generate"
+  },
+  {
+    "baseline_facts": {
+      "cosim": "PASS",
+      "csim": "PASS",
+      "synth": "PASS"
+    },
+    "current_head": "65ab82c13f28921356b77ea454306d6dc1ca8e17",
+    "current_head_change_impact": "GLOBAL_BEHAVIORAL",
+    "effective_worktree_note": "Phase A router P0 fix is uncommitted and included in this audit state",
+    "fresh_run_reason_codes": [
+      "GLOBAL_BEHAVIORAL_CHANGE",
+      "FORMAL_SAME_VERSION_MATRIX_REQUIRED"
+    ],
+    "generation_required": true,
+    "historical_artifacts_reusable": false,
+    "historical_commit_shas": [],
+    "historical_conditions": [],
+    "historical_repeat_count_by_condition": {},
+    "impact_reasons": [
+      "GLOBAL_EXECUTION_PATH_CHANGED_SINCE_HISTORICAL_COMMIT",
+      "TASK_CONTRACT_FINAL_POLICY_ADDED",
+      "PLANNER_AND_TOKEN_ENVELOPE_CHANGED",
+      "BUDGET_AND_VITIS_EXECUTION_PATH_CHANGED",
+      "PHASE_A_ROUTER_FIX_RESTORES_BASELINE_FACT_AUTHORITY"
+    ],
+    "in_historical_12": false,
+    "mode": "OPTIMIZE",
+    "mode_reason": "BASELINE_VALIDATION_PASSED",
+    "mode_source": "CURRENT_ROUTER_REPLAY_FROM_DEVELOPMENT_ACCEPTANCE_BASELINE_FACTS; development-only audit oracle, never Planner-visible",
+    "needs_current_head_fresh_run": true,
+    "requires_cosim": true,
+    "task_digest": "4e5992816a8f0c756909ec76d0de0bc13a02117c5866cedba6f5093eddc615a7",
+    "task_name": "v3d_fast_028",
+    "task_type": "generate"
+  }
+]
