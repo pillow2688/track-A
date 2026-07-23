@@ -98,16 +98,38 @@ class V3PhaseRouterTests(unittest.TestCase):
         )
         self.assertEqual(decision.to_dict()["mode"], "OPTIMIZE")
 
-    def test_public_generate_task_routes_to_repair_after_baseline_passes(self) -> None:
+    def test_generation_metadata_does_not_override_passing_baseline(self) -> None:
         decision = self.router.route(
             baseline_csim={"status": "PASS"},
             baseline_synth={"status": "PASS"},
             baseline_cosim={"status": "NOT_RUN"},
-            task_metadata={"task_type": "generate", "requires_cosim": False},
+            task_metadata={
+                "task_type": "generate",
+                "requires_cosim": False,
+                "allow_large_kernel_patch": True,
+            },
+        )
+
+        self.assertEqual(decision.mode, PhaseMode.OPTIMIZE)
+        self.assertEqual(
+            decision.reason,
+            "BASELINE_CSIM_SYNTH_PASSED_COSIM_NOT_REQUIRED",
+        )
+
+    def test_generation_metadata_does_not_override_failing_csim(self) -> None:
+        decision = self.router.route(
+            baseline_csim={"status": "FAIL"},
+            baseline_synth={"status": "NOT_RUN"},
+            baseline_cosim={"status": "NOT_RUN"},
+            task_metadata={
+                "task_type": "generate",
+                "requires_cosim": False,
+                "provide_full_kernel_context": True,
+            },
         )
 
         self.assertEqual(decision.mode, PhaseMode.REPAIR)
-        self.assertEqual(decision.reason, "GENERATE_TASK_REQUIRES_IMPLEMENTATION")
+        self.assertEqual(decision.reason, "BASELINE_CSIM_FAILED")
 
     def test_optional_cosim_pass_also_routes_to_optimize(self) -> None:
         decision = self.router.route(

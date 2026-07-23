@@ -114,22 +114,6 @@ def _metadata_requires_cosim(task_metadata: object | None) -> bool | None:
     return value
 
 
-def _metadata_task_type(task_metadata: object | None) -> str | None:
-    """Read the optional public task type without widening router authority."""
-
-    if task_metadata is None:
-        return None
-    if isinstance(task_metadata, Mapping):
-        value = task_metadata.get("task_type")
-    else:
-        value = getattr(task_metadata, "task_type", None)
-    if value is None:
-        return None
-    if not isinstance(value, str) or not value.strip():
-        raise PhaseRoutingError("task metadata task_type must be a non-empty string")
-    return value.strip().lower()
-
-
 def _resolve_requires_cosim(
     *, task_metadata: object | None, requires_cosim: bool | None
 ) -> bool:
@@ -171,7 +155,6 @@ class PhaseRouter:
             "synth": _normalise_status("synth", baseline_synth),
             "cosim": _normalise_status("cosim", baseline_cosim),
         }
-        task_type = _metadata_task_type(task_metadata)
 
         if statuses["csim"] == _FAIL:
             return PhaseDecision(
@@ -211,18 +194,6 @@ class PhaseRouter:
                 mode=PhaseMode.STRUCTURAL_FIX,
                 reason="OBSERVED_OPTIONAL_BASELINE_COSIM_FAILED",
                 requires_cosim=False,
-                validation_status=statuses,
-            )
-
-        # A public generation/stub package asks the Planner to implement a
-        # kernel body, not to preserve and micro-optimize a baseline that
-        # happens to pass the supplied public checks.  All normal baseline
-        # correctness gates above still take precedence.
-        if task_type == "generate":
-            return PhaseDecision(
-                mode=PhaseMode.REPAIR,
-                reason="GENERATE_TASK_REQUIRES_IMPLEMENTATION",
-                requires_cosim=required_cosim,
                 validation_status=statuses,
             )
 
