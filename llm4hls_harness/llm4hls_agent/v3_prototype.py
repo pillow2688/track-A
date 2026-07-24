@@ -119,6 +119,77 @@ FINAL_VALIDATION_POLICIES = (
     TASK_CONTRACT_FINAL_POLICY,
     FULL_INTERNAL_AUDIT_FINAL_POLICY,
 )
+LATENCY_STATUSES = frozenset(
+    {"VALID", "MISSING", "INVALID", "NOT_REPORTED", "NOT_COMPARABLE"}
+)
+
+
+@dataclass(frozen=True)
+class LatencyObservation:
+    """Normalized worst-latency evidence that is always JSON-safe."""
+
+    status: str
+    value: float | None
+    raw_type: str
+    reason_codes: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if self.status not in LATENCY_STATUSES:
+            raise ValueError(f"unknown latency status: {self.status}")
+        if self.status == "VALID":
+            if (
+                self.value is None
+                or not math.isfinite(self.value)
+                or self.value < 0
+            ):
+                raise ValueError("VALID latency must be finite and non-negative")
+        elif self.value is not None:
+            raise ValueError("non-VALID latency must not expose a numeric value")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "status": self.status,
+            "value": self.value,
+            "raw_type": self.raw_type,
+            "reason_codes": list(self.reason_codes),
+        }
+
+
+@dataclass(frozen=True)
+class TerminalCandidateBinding:
+    """Durable terminal view of the selected or preserved Candidate."""
+
+    candidate_id: str | None
+    parent_id: str | None
+    source_ref: str | None
+    source_sha256: str | None
+    binding_source: str
+    required_validation_actions: tuple[str, ...]
+    validation_status: tuple[tuple[str, str], ...]
+    promotion_status: str
+    selection_reason: str
+    candidate_decision_ref: str | None
+    registry_revision: int
+
+    def to_dict(self) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "schema_version": "v3.terminal-candidate-binding.v1",
+            "candidate_id": self.candidate_id,
+            "parent_id": self.parent_id,
+            "source_ref": self.source_ref,
+            "source_sha256": self.source_sha256,
+            "binding_source": self.binding_source,
+            "required_validation_actions": list(
+                self.required_validation_actions
+            ),
+            "validation_status": dict(self.validation_status),
+            "promotion_status": self.promotion_status,
+            "selection_reason": self.selection_reason,
+            "candidate_decision_ref": self.candidate_decision_ref,
+            "registry_revision": self.registry_revision,
+        }
+        payload["binding_sha256"] = _sha256_json(payload)
+        return payload
 
 
 def _v3_task_spec(task: PublicTask) -> dict[str, object]:
@@ -955,6 +1026,7 @@ def _build_package_manifest(
         _verify_synth_evidence_bindings(runtime, registry)
         _verify_synth_evidence_bindings(runtime, result)
         score_artifacts = _validate_score_artifacts(runtime, registry, result)
+        _validate_terminal_candidate_binding(runtime, result, registry)
         candidate_operation_artifacts = _validate_candidate_operation_journals(
             runtime, registry, result
         )
@@ -1704,6 +1776,169 @@ def _validate_candidate_operation_journals(
     ):
         raise RuntimeError("terminal result does not bind the last Candidate decision")
     return sorted([*prepared_by_id.values(), *committed_by_id.values()])
+
+
+def _durable_candidate_decision_ref(
+    runtime: _Runtime, registry: Mapping[str, object]
+) -> str | None:
+    """Resolve the Registry's last Candidate decision without trusting state."""
+
+    revision = registry.get("v3_revision", 0)
+    operation_id = registry.get("v3_last_operation_id")
+    if revision == 0 and operation_id in {None, ""}:
+        return None
+    if (
+        not isinstance(revision, int)
+        or isinstance(revision, bool)
+        or revision <= 0
+        or not isinstance(operation_id, str)
+        or re.fullmatch(r"[0-9a-f]{64}", operation_id) is None
+    ):
+        raise RuntimeError("terminal Candidate decision identity is invalid")
+    reference = (
+        f"control/candidate_operations/{operation_id}.committed.json"
+    )
+    committed = _read_json_object(_safe_run_ref(runtime, reference))
+    if (
+        committed.get("registry_revision") != revision
+        or committed.get("registry_sha256") != _sha256_json(dict(registry))
+    ):
+        raise RuntimeError("terminal Candidate decision is not durable")
+    return reference
+
+
+def _terminal_candidate_binding(
+    runtime: _Runtime,
+    state: Mapping[str, object],
+    registry: Mapping[str, object] | None = None,
+) -> TerminalCandidateBinding:
+    """Bind a terminal to a verified final or the preserved incumbent.
+
+    This deliberately does not choose the last allocated Candidate.  The
+    Registry's final/best/baseline identities are authoritative, while the
+    durable Candidate-operation journal supplies the reconciliation anchor.
+    """
+
+    durable_registry = (
+        dict(registry)
+        if registry is not None
+        else CandidateManager(runtime.run_root, runtime.task).load_registry()
+    )
+    revision = durable_registry.get("v3_revision", 0)
+    if (
+        not isinstance(revision, int)
+        or isinstance(revision, bool)
+        or revision < 0
+    ):
+        raise RuntimeError("terminal Candidate Registry revision is invalid")
+    decision_ref = _durable_candidate_decision_ref(runtime, durable_registry)
+    raw_candidates = durable_registry.get("candidates")
+    candidates = raw_candidates if isinstance(raw_candidates, Mapping) else {}
+    identities = (
+        ("FINAL_VERIFIED_CANDIDATE", durable_registry.get("final_candidate_id")),
+        ("PRESERVED_INCUMBENT", durable_registry.get("best_candidate_id")),
+        ("PRESERVED_BASELINE", durable_registry.get("baseline_candidate_id")),
+    )
+    candidate_id: str | None = None
+    candidate: Mapping[str, object] | None = None
+    binding_source = "NO_LEGAL_CANDIDATE"
+    for source, identity in identities:
+        value = candidates.get(identity) if isinstance(identity, str) else None
+        if isinstance(value, Mapping):
+            candidate_id = identity
+            candidate = value
+            binding_source = source
+            break
+    if candidate is None:
+        return TerminalCandidateBinding(
+            candidate_id=None,
+            parent_id=None,
+            source_ref=None,
+            source_sha256=None,
+            binding_source=binding_source,
+            required_validation_actions=_final_required_stages(runtime),
+            validation_status=tuple(
+                (stage, "UNKNOWN") for stage in _final_required_stages(runtime)
+            ),
+            promotion_status="UNKNOWN",
+            selection_reason="NO_LEGAL_CANDIDATE",
+            candidate_decision_ref=decision_ref,
+            registry_revision=revision,
+        )
+    source_ref = candidate.get("source_ref")
+    if not isinstance(source_ref, str) or not source_ref:
+        raise RuntimeError("terminal Candidate source reference is missing")
+    source_path = _safe_run_ref(runtime, source_ref)
+    source_sha256 = _sha256_file(source_path)
+    recorded_code_hash = candidate.get("code_hash")
+    if (
+        isinstance(recorded_code_hash, str)
+        and recorded_code_hash
+        and recorded_code_hash != source_sha256
+    ):
+        raise RuntimeError("terminal Candidate source digest mismatch")
+    validation_key = (
+        "final_validation"
+        if binding_source == "FINAL_VERIFIED_CANDIDATE"
+        else "validation"
+    )
+    raw_validation = candidate.get(validation_key)
+    validation = (
+        raw_validation if isinstance(raw_validation, Mapping) else {}
+    )
+    required = _final_required_stages(runtime)
+    statuses: list[tuple[str, str]] = []
+    for stage in required:
+        raw_record = validation.get(stage)
+        record = raw_record if isinstance(raw_record, Mapping) else {}
+        status = record.get("status", "UNKNOWN")
+        statuses.append(
+            (stage, str(status) if isinstance(status, str) else "UNKNOWN")
+        )
+    selection_reason = (
+        "FINAL_CANDIDATE_COMMITTED"
+        if binding_source == "FINAL_VERIFIED_CANDIDATE"
+        else "LEGAL_INCUMBENT_PRESERVED"
+        if binding_source == "PRESERVED_INCUMBENT"
+        else "LEGAL_BASELINE_PRESERVED"
+    )
+    return TerminalCandidateBinding(
+        candidate_id=candidate_id,
+        parent_id=(
+            str(candidate.get("parent_id"))
+            if isinstance(candidate.get("parent_id"), str)
+            else None
+        ),
+        source_ref=source_ref,
+        source_sha256=source_sha256,
+        binding_source=binding_source,
+        required_validation_actions=required,
+        validation_status=tuple(statuses),
+        promotion_status=str(candidate.get("status", "UNKNOWN")),
+        selection_reason=selection_reason,
+        candidate_decision_ref=decision_ref,
+        registry_revision=revision,
+    )
+
+
+def _validate_terminal_candidate_binding(
+    runtime: _Runtime,
+    result: Mapping[str, object],
+    registry: Mapping[str, object],
+) -> None:
+    expected = _terminal_candidate_binding(runtime, result, registry).to_dict()
+    if result.get("terminal_candidate_binding") != expected:
+        raise RuntimeError("terminal Candidate binding is inconsistent")
+    if (
+        result.get("registry_revision") != expected["registry_revision"]
+        or result.get("decision_ref") != expected["candidate_decision_ref"]
+    ):
+        raise RuntimeError("terminal Candidate reconciliation is inconsistent")
+    if isinstance(result.get("final_candidate_id"), str) and (
+        result.get("final_candidate_id") != expected["candidate_id"]
+        or expected["binding_source"] != "FINAL_VERIFIED_CANDIDATE"
+    ):
+        raise RuntimeError("final Candidate and terminal binding diverge")
 
 
 def _verify_run_identity(
@@ -3311,11 +3546,24 @@ def _acceleration_cap_status(
             candidate_id=incumbent_id,
             validation_scope="exploration",
         )
-        baseline_latency = _worst_latency(baseline, name="baseline")
-        incumbent_latency = _worst_latency(incumbent, name="incumbent")
         validation = _registry_validation(runtime, incumbent_id)
     except (RuntimeError, ValueError, KeyError):
         return unknown
+    baseline_observation = _latency_observation(baseline)
+    incumbent_observation = _latency_observation(incumbent)
+    if (
+        baseline_observation.status != "VALID"
+        or incumbent_observation.status != "VALID"
+        or baseline_observation.value is None
+        or incumbent_observation.value is None
+    ):
+        return unknown | {
+            "performance_comparability": "NOT_COMPARABLE",
+            "baseline_latency_status": baseline_observation.to_dict(),
+            "incumbent_latency_status": incumbent_observation.to_dict(),
+        }
+    baseline_latency = baseline_observation.value
+    incumbent_latency = incumbent_observation.value
     required_stages = ("csim", "synth", "cosim") if runtime.task.requires_cosim else ("csim", "synth")
     correctness_passed = all(_stage_passed(validation, stage) for stage in required_stages)
     clock = _clock_constraint(incumbent, runtime.config.minimum_frequency_mhz)
@@ -4164,22 +4412,62 @@ def _candidate_synth(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeS
     return update
 
 
+def _latency_observation(
+    report: Mapping[str, object], *, allow_zero: bool = False
+) -> LatencyObservation:
+    if "latency" not in report:
+        return LatencyObservation(
+            "NOT_REPORTED", None, "absent", ("LATENCY_FIELD_NOT_REPORTED",)
+        )
+    latency = report.get("latency")
+    if latency is None:
+        return LatencyObservation(
+            "MISSING", None, "null", ("LATENCY_REPORT_MISSING",)
+        )
+    if not isinstance(latency, Mapping):
+        return LatencyObservation(
+            "INVALID",
+            None,
+            type(latency).__name__,
+            ("LATENCY_REPORT_NOT_OBJECT",),
+        )
+    if "worst" not in latency or latency.get("worst") is None:
+        return LatencyObservation(
+            "MISSING", None, "null", ("WORST_LATENCY_MISSING",)
+        )
+    value = latency.get("worst")
+    raw_type = type(value).__name__
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return LatencyObservation(
+            "INVALID", None, raw_type, ("WORST_LATENCY_NOT_NUMERIC",)
+        )
+    number = float(value)
+    if not math.isfinite(number):
+        return LatencyObservation(
+            "INVALID", None, raw_type, ("WORST_LATENCY_NOT_FINITE",)
+        )
+    if number < 0:
+        return LatencyObservation(
+            "INVALID", None, raw_type, ("WORST_LATENCY_NEGATIVE",)
+        )
+    if number == 0 and not allow_zero:
+        return LatencyObservation(
+            "INVALID", None, raw_type, ("WORST_LATENCY_ZERO",)
+        )
+    if number == 0:
+        return LatencyObservation("VALID", number, raw_type, ())
+    return LatencyObservation("VALID", number, raw_type, ())
+
+
 def _worst_latency(
     report: Mapping[str, object], *, name: str, allow_zero: bool = False
 ) -> float:
-    latency = report.get("latency")
-    if not isinstance(latency, Mapping):
+    observation = _latency_observation(report, allow_zero=allow_zero)
+    if observation.status == "NOT_REPORTED":
         raise RuntimeError(f"{name} has no latency report")
-    value = latency.get("worst")
-    if (
-        isinstance(value, bool)
-        or not isinstance(value, (int, float))
-        or not math.isfinite(float(value))
-        or float(value) < 0
-        or (float(value) == 0 and not allow_zero)
-    ):
+    if observation.status != "VALID" or observation.value is None:
         raise RuntimeError(f"{name} worst latency is invalid")
-    return float(value)
+    return observation.value
 
 
 def _optional_worst_latency(
@@ -4193,19 +4481,8 @@ def _optional_worst_latency(
     optimize score gate intentionally continues to use ``_worst_latency``.
     """
 
-    latency = report.get("latency")
-    if not isinstance(latency, Mapping):
-        return None
-    value = latency.get("worst")
-    if (
-        isinstance(value, bool)
-        or not isinstance(value, (int, float))
-        or not math.isfinite(float(value))
-        or float(value) < 0
-        or (float(value) == 0 and not allow_zero)
-    ):
-        return None
-    return float(value)
+    observation = _latency_observation(report, allow_zero=allow_zero)
+    return observation.value if observation.status == "VALID" else None
 
 
 def _fast_experiment_risk(
@@ -4334,16 +4611,27 @@ def _candidate_score_gate(
         else "ppa_gate"
     )
     if runtime.validation_profile == FAST_EXPERIMENT_PROFILE:
-        incumbent_latency = _worst_latency(
-            incumbent_metrics, name="incumbent"
+        incumbent_observation = _latency_observation(incumbent_metrics)
+        candidate_observation = _latency_observation(candidate_metrics)
+        comparable = bool(
+            incumbent_observation.status == "VALID"
+            and candidate_observation.status == "VALID"
+            and incumbent_observation.value is not None
+            and candidate_observation.value is not None
         )
-        candidate_latency = _worst_latency(
-            candidate_metrics, name="candidate"
+        incumbent_latency = incumbent_observation.value
+        candidate_latency = candidate_observation.value
+        strictly_improved = bool(
+            comparable
+            and candidate_latency is not None
+            and incumbent_latency is not None
+            and candidate_latency < incumbent_latency
         )
-        strictly_improved = candidate_latency < incumbent_latency
         risk_decision = _fast_experiment_risk(runtime, proposal)
         requires_cosim = risk_decision["requires_cosim"] is True
-        if not strictly_improved:
+        if not comparable:
+            reason = "LATENCY_NOT_COMPARABLE"
+        elif not strictly_improved:
             reason = "LATENCY_NOT_STRICTLY_IMPROVED"
         elif requires_cosim:
             reason = "STRICT_LATENCY_IMPROVEMENT_REQUIRES_COSIM"
@@ -4358,8 +4646,38 @@ def _candidate_score_gate(
             "reason": reason,
             "incumbent_latency_worst": incumbent_latency,
             "candidate_latency_worst": candidate_latency,
+            "incumbent_latency_status": incumbent_observation.to_dict(),
+            "candidate_latency_status": candidate_observation.to_dict(),
+            "performance_comparability": (
+                "COMPARABLE" if comparable else "NOT_COMPARABLE"
+            ),
+            "performance_reason_codes": (
+                []
+                if comparable
+                else [
+                    *(
+                        [
+                            "INCUMBENT_"
+                            + code
+                            for code in incumbent_observation.reason_codes
+                        ]
+                    ),
+                    *(
+                        [
+                            "CANDIDATE_"
+                            + code
+                            for code in candidate_observation.reason_codes
+                        ]
+                    ),
+                ]
+            ),
             "acceleration_vs_incumbent": (
                 incumbent_latency / candidate_latency
+                if comparable
+                and incumbent_latency is not None
+                and candidate_latency is not None
+                and candidate_latency > 0
+                else None
             ),
             "risk": risk_decision,
         }
@@ -5234,6 +5552,9 @@ def _candidate_round_summaries(
     if not isinstance(candidates, Mapping):
         return []
     baseline_latency: float | None = None
+    baseline_latency_observation = LatencyObservation(
+        "NOT_REPORTED", None, "absent", ("BASELINE_METRICS_NOT_AVAILABLE",)
+    )
     optimize_mode = state.get("mode") == PhaseMode.OPTIMIZE.value
     allow_zero_latency = not optimize_mode
     baseline_ref = state.get("baseline_metrics_ref")
@@ -5244,19 +5565,19 @@ def _candidate_round_summaries(
             candidate_id=str(state.get("baseline_candidate_id")),
             validation_scope="exploration",
         )
-        baseline_latency = (
-            _worst_latency(baseline_report, name="baseline")
-            if optimize_mode
-            else _optional_worst_latency(
-                baseline_report, allow_zero=allow_zero_latency
-            )
+        baseline_latency_observation = _latency_observation(
+            baseline_report, allow_zero=allow_zero_latency
         )
+        baseline_latency = baseline_latency_observation.value
     rows: list[dict[str, object]] = []
     for candidate_id, raw_candidate in candidates.items():
         if not isinstance(raw_candidate, Mapping) or raw_candidate.get("kind") == "baseline":
             continue
         candidate = dict(raw_candidate)
         latency: float | None = None
+        latency_observation = LatencyObservation(
+            "NOT_REPORTED", None, "absent", ("CANDIDATE_METRICS_NOT_AVAILABLE",)
+        )
         metrics_ref = candidate.get("metrics_ref")
         if isinstance(metrics_ref, str) and metrics_ref:
             report = _completed_synth_report(
@@ -5265,13 +5586,17 @@ def _candidate_round_summaries(
                 candidate_id=str(candidate_id),
                 validation_scope="exploration",
             )
-            latency = (
-                _worst_latency(report, name=str(candidate_id))
-                if optimize_mode
-                else _optional_worst_latency(
-                    report, allow_zero=allow_zero_latency
-                )
+            latency_observation = _latency_observation(
+                report, allow_zero=allow_zero_latency
             )
+            latency = latency_observation.value
+        comparable = bool(
+            baseline_latency_observation.status == "VALID"
+            and latency_observation.status == "VALID"
+            and baseline_latency is not None
+            and latency is not None
+            and (latency > 0 or not optimize_mode)
+        )
         validation = candidate.get("validation")
         validation = validation if isinstance(validation, Mapping) else {}
         cosim_record = validation.get("cosim")
@@ -5313,9 +5638,22 @@ def _candidate_round_summaries(
                 "strategy_bundle": str(candidate.get("change_class") or "").split("+"),
                 "patch_sha256": candidate.get("patch_sha256"),
                 "latency_worst": latency,
+                "latency_status": latency_observation.status,
+                "latency_observation": latency_observation.to_dict(),
+                "performance_comparability": (
+                    "COMPARABLE" if comparable else "NOT_COMPARABLE"
+                ),
+                "performance_reason_codes": (
+                    []
+                    if comparable
+                    else list(latency_observation.reason_codes)
+                ),
                 "acceleration_vs_baseline": (
                     baseline_latency / latency
-                    if baseline_latency is not None and latency is not None
+                    if comparable
+                    and baseline_latency is not None
+                    and latency is not None
+                    and latency > 0
                     else None
                 ),
                 "risk_decision": parsed_risk,
@@ -5876,6 +6214,12 @@ def _render_team_report(
             + str(result.get("final_candidate_id"))
             + "`",
             f"- Final attempt: `{result.get('final_attempt_candidate_id')}`",
+            "- Terminal Candidate binding: `"
+            + report_cell(result.get("terminal_candidate_binding", {}))
+            + "`",
+            "- Terminal reconciliation: `"
+            + report_cell(result.get("terminal_reconciliation", {}))
+            + "`",
             f"- Final attempt count: `{result.get('final_attempt_count', 0)}`",
             f"- Final attempt limit: `{result.get('max_final_attempts', 1)}`",
             f"- Credits / Tokens: `{budget.get('credits_used')} / {budget.get('tokens_used')}`",
@@ -6031,6 +6375,12 @@ def _write_report(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeStat
     token_rounds = _planner_token_rounds(runtime)
     token_policy_summary = _planner_token_summary(token_rounds, budget)
     planner_call_gates = _planner_call_gates(runtime)
+    registry = CandidateManager(runtime.run_root, runtime.task).load_registry()
+    terminal_binding = _terminal_candidate_binding(
+        runtime, state, registry
+    ).to_dict()
+    durable_decision_ref = terminal_binding["candidate_decision_ref"]
+    state_decision_ref = state.get("decision_ref")
     experience_summary: dict[str, object] | None = None
     if runtime.live_planner is not None:
         summary_method = getattr(runtime.live_planner, "experience_summary", None)
@@ -6094,8 +6444,20 @@ def _write_report(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeStat
         "final_attempted_candidate_ids": list(
             state.get("final_attempted_candidate_ids", [])
         ),
-        "registry_revision": int(state.get("registry_revision", 0)),
-        "decision_ref": state.get("decision_ref"),
+        "registry_revision": terminal_binding["registry_revision"],
+        "decision_ref": durable_decision_ref,
+        "terminal_candidate_binding": terminal_binding,
+        "terminal_reconciliation": {
+            "schema_version": "v3.terminal-reconciliation.v1",
+            "state_decision_ref": state_decision_ref,
+            "durable_candidate_decision_ref": durable_decision_ref,
+            "reconciled": state_decision_ref != durable_decision_ref,
+            "reason": (
+                "STATE_DECISION_REF_REBOUND_TO_DURABLE_CANDIDATE_JOURNAL"
+                if state_decision_ref != durable_decision_ref
+                else "STATE_ALREADY_BOUND_TO_DURABLE_CANDIDATE_JOURNAL"
+            ),
+        },
         "planner_contract": {
             "input_schema": PLANNER_INPUT_SCHEMA,
             "output_schema": PLANNER_OUTPUT_SCHEMA,
