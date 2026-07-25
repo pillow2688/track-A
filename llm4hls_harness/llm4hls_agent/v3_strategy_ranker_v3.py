@@ -455,6 +455,7 @@ class BayesianStrategyRankerV3:
         ]
         recommended = candidates[0] if candidates else None
         abstain_reason: str | None = None
+        tie_resolution: str | None = None
         if recommended is None:
             abstain_reason = (
                 "NO_SAFE_VERIFIED_STRATEGY"
@@ -466,8 +467,26 @@ class BayesianStrategyRankerV3:
                 candidates[1]["lower_bound"]
             )
             if margin < self.config.minimum_margin:
-                recommended = None
-                abstain_reason = "INSUFFICIENT_TOP_STRATEGY_MARGIN"
+                tied = [
+                    item
+                    for item in candidates
+                    if (
+                        float(recommended["lower_bound"])
+                        - float(item["lower_bound"])
+                    )
+                    < self.config.minimum_margin
+                ]
+                # A small utility margin is a ranking ambiguity, not a safety
+                # failure.  Resolve it deterministically only when every tied
+                # option has zero failed independent families and has already
+                # passed the unchanged support, diversity, posterior and
+                # lower-bound gates.  Any historically failed tied option
+                # preserves the conservative abstention.
+                if tied and all(int(item["failures"]) == 0 for item in tied):
+                    tie_resolution = "ZERO_FAILURE_SAFE_TIE_STABLE_ORDER"
+                else:
+                    recommended = None
+                    abstain_reason = "INSUFFICIENT_TOP_STRATEGY_MARGIN"
         discouraged = [
             item
             for item in entries
@@ -494,6 +513,7 @@ class BayesianStrategyRankerV3:
             "discouraged": discouraged,
             "all_atoms": entries,
             "abstain_reason": abstain_reason,
+            "tie_resolution": tie_resolution,
             "input_contract": {
                 "query_contains_outcome": False,
                 "support_outcomes_are_historical_only": True,

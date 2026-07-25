@@ -224,6 +224,54 @@ class BayesianStrategyRankerV3Tests(unittest.TestCase):
             result["input_contract"]["prompt_injection_authorized"]
         )
 
+    def test_zero_failure_safe_tie_uses_stable_order(self) -> None:
+        records = [
+            self.record(index, atom=atom)
+            for index, atom in (
+                (1, "ARRAY_PARTITION"),
+                (2, "ARRAY_PARTITION"),
+                (3, "ARRAY_PARTITION"),
+                (4, "LOOP_PIPELINE"),
+                (5, "LOOP_PIPELINE"),
+                (6, "LOOP_PIPELINE"),
+            )
+        ]
+
+        result = BayesianStrategyRankerV3().rank(self.query(), records)
+
+        self.assertEqual(result["decision"], "RECOMMEND")
+        self.assertEqual(
+            result["recommended"]["strategy_atom"],
+            "ARRAY_PARTITION",
+        )
+        self.assertEqual(
+            result["tie_resolution"],
+            "ZERO_FAILURE_SAFE_TIE_STABLE_ORDER",
+        )
+
+    def test_tie_with_verified_failed_families_still_abstains(self) -> None:
+        records = []
+        index = 1
+        for atom in ("ARRAY_PARTITION", "LOOP_PIPELINE"):
+            for offset in range(5):
+                records.append(
+                    self.record(
+                        index,
+                        atom=atom,
+                        final_status="FAIL" if offset == 0 else "PASS",
+                    )
+                )
+                index += 1
+
+        result = BayesianStrategyRankerV3().rank(self.query(), records)
+
+        self.assertEqual(result["decision"], "ABSTAIN")
+        self.assertEqual(
+            result["abstain_reason"],
+            "INSUFFICIENT_TOP_STRATEGY_MARGIN",
+        )
+        self.assertIsNone(result["tie_resolution"])
+
 
 if __name__ == "__main__":
     unittest.main()
