@@ -1,0 +1,127 @@
+{
+  "schema_version": "phase-b11.acceptance-metadata.v1",
+  "phase": "Phase B1.1",
+  "recorded_at": "2026-07-23T20:25:38+08:00",
+  "branch": "feat/track-a-empty-stub-generation-smoke",
+  "initial_commit_sha": "4a05763b593a527878a0056f64763126c58ee63b",
+  "final_commit_sha": "4a05763b593a527878a0056f64763126c58ee63b",
+  "head_unchanged": true,
+  "product_or_test_changes_during_phase": false,
+  "plan_change_only": true,
+  "revised_config_digest": "330c6e7334e59408e14db51a40a1ee3b35d4bc45b95d5460c61c3b0750e5ee5a",
+  "stage_status": "PARTIAL",
+  "acceptance": "PARTIALLY_ACCEPTED",
+  "matrix_readiness": "NOT_READY_FOR_28_TASK_MATRIX",
+  "reason": "The corrected token plan passed and all five accepted runs completed fresh final CSim/Synth/CoSim. However, v3d_fast_018 baseline CoSim passed, so the Router correctly selected OPTIMIZE instead of the expected STRUCTURAL_FIX. Five-mode acceptance is only 4/5.",
+  "gate1": {
+    "status": "PASS",
+    "policy": "fixed",
+    "public_task_token_limit": 32768,
+    "configured_output_cap": 4096,
+    "headroom_per_task": 128,
+    "total_frozen_token_cap": 49115,
+    "anchors_affordable": 5,
+    "anchors_checked": 5
+  },
+  "planned_anchors": 5,
+  "started_anchors": 5,
+  "terminal_anchors": 5,
+  "physical_run_attempts": 6,
+  "passed_anchors": 4,
+  "failed_anchors": 1,
+  "not_run_anchors": 0,
+  "expected_mode_matches": 4,
+  "expected_mode_planner_paths_exercised": 4,
+  "expected_mode_planner_paths_budget_gate_passed": 4,
+  "final_csim_pass": 5,
+  "final_synth_pass": 5,
+  "final_cosim_pass": 5,
+  "final_source_digests": 5,
+  "planner_dispatch_attempts": 6,
+  "successful_provider_responses_with_usage": 4,
+  "input_tokens": 5693,
+  "output_tokens": 2253,
+  "tokens": 7946,
+  "csim_calls": 15,
+  "synth_calls": 12,
+  "cosim_calls": 6,
+  "tool_credits": 183,
+  "ledger_runtime_seconds": 358.1746220588684,
+  "external_retries": 1,
+  "external_retry_reason": "TRANSIENT_MODEL_TRANSPORT",
+  "ledger_reconciliation": {
+    "physical_runs": 6,
+    "passed": 6,
+    "mismatches": 0,
+    "pending_credits": 0,
+    "pending_tokens": 0
+  },
+  "final_reserve": {
+    "terminal_failures": 0,
+    "fresh_final_closures": 5,
+    "exploration_stops_named_round_skipped_final_reserve": 2
+  },
+  "artifact_integrity": {
+    "terminal_manifests": 6,
+    "verified_manifests": 6,
+    "listed_artifacts": 382,
+    "verified_artifacts": 382,
+    "mismatches": 0
+  },
+  "interface_safety": {
+    "patch_candidates_checked": 4,
+    "top_interface_guard_allowed": 4,
+    "risk_level": "LOW",
+    "interface_mutation_detected": false
+  },
+  "information_isolation": {
+    "hidden_accessed": false,
+    "reference_accessed": false,
+    "golden_accessed": false,
+    "secret_values_recorded": false
+  },
+  "lightweight_tools": {
+    "continuation": "SHADOW / INSUFFICIENT_EVIDENCE",
+    "experience": "SHADOW",
+    "strategy_ranker": "BAYESIAN_SHADOW / TRAINING_NOT_READY",
+    "learned_ranker_trained": false
+  },
+  "preflight": {
+    "tests_run": 556,
+    "tests_passed": 556,
+    "failures": 0,
+    "errors": 0,
+    "compileall": "PASS",
+    "git_diff_check": "PASS",
+    "environment": "AVAILABLE"
+  },
+  "postflight": {
+    "tests_run": 556,
+    "tests_passed": 556,
+    "failures": 0,
+    "errors": 0,
+    "compileall": "PASS",
+    "git_diff_check": "PASS"
+  },
+  "previous_b1_evidence": {
+    "status_sha256": "96e4c43531be186a4142119338272e493b10881f36d0bad818332c0fa53e49fa",
+    "report_sha256": "665b13331dbdfbfa186370cff57f0deecdb209ef602423d1f6d98ca1e18c945b",
+    "acceptance_sha256": "a3f03ce5774e82e608d3f1b33ffd466244d81d0de699f1eef219d5ce7644f557",
+    "unchanged": true
+  },
+  "forbidden_actions": {
+    "matrix_28_started": false,
+    "multi_model_matrix_started": false,
+    "product_fix_applied": false,
+    "planner_prompt_changed": false,
+    "router_changed": false,
+    "budget_changed_after_gate2_start": false,
+    "continuation_enforce": false,
+    "experience_guided": false,
+    "ranker_training": false,
+    "hidden_accessed": false,
+    "git_commit_created": false,
+    "git_push": false,
+    "pull_request_created": false
+  }
+}

@@ -1,0 +1,15 @@
+task_id = "horizontal_repair_multistage"
+task_type = "repair"
+difficulty = 4
+top = "kernel"
+kernel_file = "kernel.cpp"
+header_files = ["kernel.h"]
+public_tb = "kernel_tb.cpp"
+budget = 60
+requires_cosim = false
+initial_condition = "The baseline compiles and synthesizes but fails the public functional checks. Repair the observed behavior without changing the interface."
+
+[target]
+part = "xcu55c-fsvh2892-2L-e"
+clock_ns = 5.0
+

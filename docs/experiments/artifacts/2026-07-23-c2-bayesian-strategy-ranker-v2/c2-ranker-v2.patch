@@ -1,0 +1,1131 @@
+diff --git a/llm4hls_harness/llm4hls_agent/v3_strategy_ranker_v2.py b/llm4hls_harness/llm4hls_agent/v3_strategy_ranker_v2.py
+new file mode 100644
+index 0000000..56d67a1
+--- /dev/null
++++ b/llm4hls_harness/llm4hls_agent/v3_strategy_ranker_v2.py
+@@ -0,0 +1,366 @@
++"""Conservative conditional Bayesian strategy ranking for offline Shadow use.
++
++The ranker is advisory only.  It cannot mutate a Candidate, authorize a tool
++call, change a budget, inject a prompt, or select a final result.
++"""
++
++from __future__ import annotations
++
++import json
++import math
++import statistics
++from dataclasses import dataclass
++from typing import Mapping, Sequence
++
++from .v3_experience_kb import validate_kb_query
++from .v3_experience_v2 import STRATEGIES_BY_MODE, validate_experience_v2
++
++
++STRATEGY_RANKER_V2_SCHEMA = "v3e.bayesian-strategy-ranker.v2"
++
++
++def _subtype_from_query(query: Mapping[str, object]) -> str:
++    return str(
++        query["bottleneck_subtype"]
++        if query["mode"] == "OPTIMIZE"
++        else query["failure_subtype"]
++    )
++
++
++def _subtype_from_record(record: Mapping[str, object]) -> str:
++    problem = record["problem"]
++    assert isinstance(problem, Mapping)
++    return str(
++        problem["bottleneck_subtype"]
++        if problem["mode"] == "OPTIMIZE"
++        else problem["failure_subtype"]
++    )
++
++
++def _success(record: Mapping[str, object]) -> bool:
++    problem = record["problem"]
++    validation = record["validation"]
++    performance = record["performance"]
++    assert isinstance(problem, Mapping)
++    assert isinstance(validation, Mapping)
++    assert isinstance(performance, Mapping)
++    mode = problem["mode"]
++    if mode == "REPAIR":
++        return validation["fresh_final_status"] == "PASS"
++    if mode == "SYNTH_FIX":
++        return bool(
++            validation["csim_status"] == "PASS"
++            and validation["synth_status"] == "PASS"
++            and validation["fresh_final_status"] == "PASS"
++        )
++    if mode == "STRUCTURAL_FIX":
++        return bool(
++            validation["csim_status"] == "PASS"
++            and validation["cosim_status"] == "PASS"
++            and validation["fresh_final_status"] == "PASS"
++        )
++    return bool(
++        validation["csim_status"] == "PASS"
++        and validation["synth_status"] == "PASS"
++        and validation["cosim_status"] != "FAIL"
++        and performance["strict_improvement"] is True
++        and validation["fresh_final_status"] == "PASS"
++    )
++
++
++def _finite(value: object) -> float | None:
++    if value is None or isinstance(value, bool):
++        return None
++    try:
++        number = float(value)
++    except (TypeError, ValueError, OverflowError):
++        return None
++    return number if math.isfinite(number) else None
++
++
++@dataclass(frozen=True)
++class BayesianStrategyRankerV2Config:
++    """Fixed pre-evaluation thresholds for the conservative Shadow policy."""
++
++    alpha: float = 1.0
++    beta: float = 1.0
++    minimum_attempts: int = 3
++    minimum_runs: int = 3
++    minimum_task_families: int = 2
++    minimum_patch_digests: int = 2
++    algorithm_condition_minimum_attempts: int = 4
++    algorithm_condition_minimum_families: int = 2
++    minimum_posterior: float = 0.65
++    minimum_lower_bound: float = 0.45
++    minimum_margin: float = 0.05
++    lower_bound_z: float = 1.2815515655446004
++
++    def __post_init__(self) -> None:
++        if self.alpha <= 0 or self.beta <= 0:
++            raise ValueError("Beta prior parameters must be positive")
++        for name in (
++            "minimum_attempts",
++            "minimum_runs",
++            "minimum_task_families",
++            "minimum_patch_digests",
++            "algorithm_condition_minimum_attempts",
++            "algorithm_condition_minimum_families",
++        ):
++            if int(getattr(self, name)) < 1:
++                raise ValueError(f"{name} must be positive")
++        for name in (
++            "minimum_posterior",
++            "minimum_lower_bound",
++            "minimum_margin",
++        ):
++            value = float(getattr(self, name))
++            if not 0 <= value <= 1:
++                raise ValueError(f"{name} must be in [0,1]")
++        if self.lower_bound_z <= 0:
++            raise ValueError("lower_bound_z must be positive")
++
++
++class BayesianStrategyRankerV2:
++    """Rank strategy atoms with conditional support and safe abstention."""
++
++    def __init__(self, config: BayesianStrategyRankerV2Config | None = None) -> None:
++        self.config = config or BayesianStrategyRankerV2Config()
++
++    def _eligible(
++        self,
++        query: Mapping[str, object],
++        records: Sequence[Mapping[str, object]],
++    ) -> list[dict[str, object]]:
++        mode = str(query["mode"])
++        subtype = _subtype_from_query(query)
++        output: list[dict[str, object]] = []
++        for raw in records:
++            record = validate_experience_v2(raw)
++            source = record["source"]
++            problem = record["problem"]
++            strategy = record["strategy"]
++            provenance = record["provenance"]
++            if (
++                source["evidence_level"] != "REAL_LLM_VITIS"
++                or source["task_split"] not in {"train", "dev"}
++                or provenance["eligible_for_ranking"] is not True
++                or problem["mode"] != mode
++                or _subtype_from_record(record) != subtype
++            ):
++                continue
++            if source["run_id"] == query["current_run_id"]:
++                continue
++            if (
++                query["current_candidate_id"] is not None
++                and source["candidate_id"] == query["current_candidate_id"]
++            ):
++                continue
++            if (
++                query["current_patch_digest"] is not None
++                and strategy["patch_digest"] == query["current_patch_digest"]
++            ):
++                continue
++            if (
++                query["exclude_same_task_family"] is True
++                and source["task_family_hash"] == query["task_family_hash"]
++            ):
++                continue
++            output.append(record)
++        output.sort(key=lambda item: str(item["record_id"]))
++        return output
++
++    def _entry(
++        self,
++        *,
++        atom: str,
++        mode: str,
++        subtype: str,
++        query_algorithm_family: str,
++        records: Sequence[Mapping[str, object]],
++    ) -> dict[str, object]:
++        exact = [
++            record
++            for record in records
++            if record["source"]["algorithm_family"] == query_algorithm_family
++            and atom in record["strategy"]["observed_strategy_atoms"]
++        ]
++        exact_families = {
++            str(record["source"]["task_family_hash"]) for record in exact
++        }
++        algorithm_conditioned = bool(
++            len(exact) >= self.config.algorithm_condition_minimum_attempts
++            and len(exact_families)
++            >= self.config.algorithm_condition_minimum_families
++        )
++        samples = (
++            exact
++            if algorithm_conditioned
++            else [
++                record
++                for record in records
++                if atom in record["strategy"]["observed_strategy_atoms"]
++            ]
++        )
++        successes = sum(_success(record) for record in samples)
++        attempts = len(samples)
++        posterior_alpha = successes + self.config.alpha
++        posterior_beta = attempts - successes + self.config.beta
++        posterior = posterior_alpha / (posterior_alpha + posterior_beta)
++        variance = (
++            posterior_alpha
++            * posterior_beta
++            / (
++                (posterior_alpha + posterior_beta) ** 2
++                * (posterior_alpha + posterior_beta + 1)
++            )
++        )
++        uncertainty = math.sqrt(variance)
++        lower_bound = max(0.0, posterior - self.config.lower_bound_z * uncertainty)
++        run_ids = {str(record["source"]["run_id"]) for record in samples}
++        families = {
++            str(record["source"]["task_family_hash"]) for record in samples
++        }
++        patches = {
++            str(record["strategy"]["patch_digest"])
++            for record in samples
++            if record["strategy"]["patch_digest"] is not None
++        }
++        success_families = {
++            str(record["source"]["task_family_hash"])
++            for record in samples
++            if _success(record)
++        }
++        accelerations = [
++            number
++            for record in samples
++            if (number := _finite(record["performance"]["acceleration"])) is not None
++        ]
++        reasons: list[str] = []
++        if attempts < self.config.minimum_attempts:
++            reasons.append("INSUFFICIENT_ATTEMPTS")
++        if len(run_ids) < self.config.minimum_runs:
++            reasons.append("INSUFFICIENT_RUN_DIVERSITY")
++        if len(families) < self.config.minimum_task_families:
++            reasons.append("INSUFFICIENT_FAMILY_DIVERSITY")
++        if len(patches) < self.config.minimum_patch_digests:
++            reasons.append("INSUFFICIENT_PATCH_DIVERSITY")
++        if len(success_families) < self.config.minimum_task_families:
++            reasons.append("SUCCESS_CONCENTRATED_BY_FAMILY")
++        if posterior < self.config.minimum_posterior:
++            reasons.append("POSTERIOR_BELOW_THRESHOLD")
++        if lower_bound < self.config.minimum_lower_bound:
++            reasons.append("LOWER_BOUND_BELOW_THRESHOLD")
++        return {
++            "strategy_atom": atom,
++            "key": [mode, subtype, query_algorithm_family, atom],
++            "conditioning": (
++                "MODE_SUBTYPE_ALGORITHM_FAMILY"
++                if algorithm_conditioned
++                else "MODE_SUBTYPE_BACKOFF"
++            ),
++            "attempts": attempts,
++            "successes": successes,
++            "failures": attempts - successes,
++            "run_count": len(run_ids),
++            "task_family_count": len(families),
++            "success_task_family_count": len(success_families),
++            "patch_digest_count": len(patches),
++            "posterior_success": round(posterior, 8),
++            "uncertainty": round(uncertainty, 8),
++            "lower_bound": round(lower_bound, 8),
++            "average_acceleration": (
++                round(statistics.fmean(accelerations), 8)
++                if accelerations
++                else None
++            ),
++            "eligible_for_recommendation": not reasons,
++            "ineligibility_reasons": reasons,
++            "evidence_ids": sorted(str(record["record_id"]) for record in samples),
++        }
++
++    def rank(
++        self,
++        query: Mapping[str, object],
++        records: Sequence[Mapping[str, object]],
++    ) -> dict[str, object]:
++        validated_query = validate_kb_query(query)
++        mode = str(validated_query["mode"])
++        subtype = _subtype_from_query(validated_query)
++        attempted = {str(item) for item in validated_query["strategy_context"]}
++        eligible = self._eligible(validated_query, records)
++        atoms = sorted(
++            {
++                str(atom)
++                for record in eligible
++                for atom in record["strategy"]["observed_strategy_atoms"]
++                if atom in STRATEGIES_BY_MODE[mode] and atom not in attempted
++            }
++        )
++        entries = [
++            self._entry(
++                atom=atom,
++                mode=mode,
++                subtype=subtype,
++                query_algorithm_family=str(validated_query["algorithm_family"]),
++                records=eligible,
++            )
++            for atom in atoms
++        ]
++        entries.sort(
++            key=lambda item: (
++                -float(item["lower_bound"]),
++                -float(item["posterior_success"]),
++                -int(item["attempts"]),
++                str(item["strategy_atom"]),
++            )
++        )
++        candidates = [
++            item for item in entries if item["eligible_for_recommendation"] is True
++        ]
++        recommended: dict[str, object] | None = candidates[0] if candidates else None
++        abstain_reason: str | None = None
++        if recommended is None:
++            abstain_reason = (
++                "NO_ELIGIBLE_STRATEGY" if entries else "NO_MATCHING_SUPPORT"
++            )
++        elif len(candidates) > 1:
++            margin = float(recommended["lower_bound"]) - float(
++                candidates[1]["lower_bound"]
++            )
++            if margin < self.config.minimum_margin:
++                recommended = None
++                abstain_reason = "INSUFFICIENT_TOP_STRATEGY_MARGIN"
++        discouraged = [
++            item
++            for item in entries
++            if (
++                float(item["posterior_success"]) <= 0.40
++                or int(item["failures"]) >= int(item["successes"])
++            )
++        ]
++        output = {
++            "schema_version": STRATEGY_RANKER_V2_SCHEMA,
++            "authority": "SHADOW",
++            "query_id": validated_query["query_id"],
++            "mode": mode,
++            "subtype": subtype,
++            "support_record_count": len(eligible),
++            "decision": "RECOMMEND" if recommended is not None else "ABSTAIN",
++            "recommended": recommended,
++            "discouraged": discouraged,
++            "all_atoms": entries,
++            "abstain_reason": abstain_reason,
++            "input_contract": {
++                "query_contains_outcome": False,
++                "support_outcomes_are_historical_only": True,
++                "prompt_injection_authorized": False,
++            },
++        }
++        return json.loads(json.dumps(output, sort_keys=True))
++
++
++__all__ = [
++    "BayesianStrategyRankerV2",
++    "BayesianStrategyRankerV2Config",
++    "STRATEGY_RANKER_V2_SCHEMA",
++]
+diff --git a/llm4hls_harness/tests/test_v3_strategy_ranker_v2.py b/llm4hls_harness/tests/test_v3_strategy_ranker_v2.py
+new file mode 100644
+index 0000000..526aec4
+--- /dev/null
++++ b/llm4hls_harness/tests/test_v3_strategy_ranker_v2.py
+@@ -0,0 +1,144 @@
++from __future__ import annotations
++
++import copy
++import unittest
++
++from llm4hls_agent.v3_experience_kb import build_kb_query
++from llm4hls_agent.v3_experience_v2 import seal_experience_v2
++from llm4hls_agent.v3_strategy_ranker_v2 import BayesianStrategyRankerV2
++
++from .test_v3_experience_v2_schema import sample_body
++
++
++class BayesianStrategyRankerV2Tests(unittest.TestCase):
++    def record(
++        self,
++        index: int,
++        *,
++        success: bool = True,
++        family: str | None = None,
++        run: str | None = None,
++        atom: str = "LOOP_UNROLL",
++        evidence_level: str = "REAL_LLM_VITIS",
++    ) -> dict[str, object]:
++        body = copy.deepcopy(sample_body())
++        body["source"].update(
++            {
++                "run_id": run or f"run-{index}",
++                "candidate_id": f"candidate-{index}",
++                "round_index": index,
++                "task_family_hash": family or f"{index + 10:064x}",
++                "evidence_level": evidence_level,
++            }
++        )
++        body["strategy"].update(
++            {
++                "declared_strategy_bundle": [atom],
++                "observed_strategy_atoms": [atom],
++                "patch_digest": f"{index + 100:064x}",
++            }
++        )
++        body["provenance"].update(
++            {
++                "source_record_hash": f"{index + 200:064x}",
++                "eligible_for_retrieval": evidence_level == "REAL_LLM_VITIS",
++                "eligible_for_ranking": evidence_level == "REAL_LLM_VITIS",
++            }
++        )
++        if not success:
++            body["validation"].update(
++                {
++                    "fresh_final_status": "FAIL",
++                    "promoted": False,
++                    "rejected": True,
++                }
++            )
++            body["performance"].update(
++                {
++                    "latency_after": 1027.0,
++                    "transaction_interval_after": 1025.0,
++                    "acceleration": 1.0,
++                    "strict_improvement": False,
++                }
++            )
++        return seal_experience_v2(body)
++
++    def query(self, *, attempted: tuple[str, ...] = ()) -> dict[str, object]:
++        return build_kb_query(
++            mode="OPTIMIZE",
++            task_split="hidden_like",
++            bottleneck_subtype="SERIAL_REDUCTION",
++            algorithm_family="DOT_PRODUCT",
++            task_family_hash="f" * 64,
++            strategy_context=attempted,
++            current_run_id="current-run",
++            toolchain="Vitis 2025.2",
++        )
++
++    def test_recommends_only_with_diverse_high_posterior_support(self) -> None:
++        result = BayesianStrategyRankerV2().rank(
++            self.query(),
++            [self.record(1), self.record(2), self.record(3), self.record(4)],
++        )
++        self.assertEqual(result["decision"], "RECOMMEND")
++        self.assertEqual(result["recommended"]["strategy_atom"], "LOOP_UNROLL")
++        self.assertGreaterEqual(result["recommended"]["task_family_count"], 2)
++        self.assertFalse(result["input_contract"]["prompt_injection_authorized"])
++
++    def test_same_family_support_abstains(self) -> None:
++        family = "a" * 64
++        result = BayesianStrategyRankerV2().rank(
++            self.query(),
++            [
++                self.record(1, family=family),
++                self.record(2, family=family),
++                self.record(3, family=family),
++                self.record(4, family=family),
++            ],
++        )
++        self.assertEqual(result["decision"], "ABSTAIN")
++        self.assertIn(
++            "INSUFFICIENT_FAMILY_DIVERSITY",
++            result["all_atoms"][0]["ineligibility_reasons"],
++        )
++
++    def test_current_run_fixture_and_attempted_strategy_are_excluded(self) -> None:
++        records = [
++            self.record(1, run="current-run"),
++            self.record(2, evidence_level="DETERMINISTIC_FIXTURE"),
++            self.record(3),
++            self.record(4),
++            self.record(5),
++        ]
++        result = BayesianStrategyRankerV2().rank(
++            self.query(attempted=("LOOP_UNROLL",)),
++            records,
++        )
++        self.assertEqual(result["decision"], "ABSTAIN")
++        self.assertEqual(result["support_record_count"], 3)
++        self.assertEqual(result["all_atoms"], [])
++
++    def test_failures_lower_posterior_and_create_discouragement(self) -> None:
++        result = BayesianStrategyRankerV2().rank(
++            self.query(),
++            [
++                self.record(1, success=False),
++                self.record(2, success=False),
++                self.record(3, success=True),
++                self.record(4, success=False),
++            ],
++        )
++        self.assertEqual(result["decision"], "ABSTAIN")
++        self.assertEqual(result["discouraged"][0]["strategy_atom"], "LOOP_UNROLL")
++
++    def test_output_is_deterministic_under_input_reordering(self) -> None:
++        records = [self.record(1), self.record(2), self.record(3), self.record(4)]
++        ranker = BayesianStrategyRankerV2()
++        self.assertEqual(
++            ranker.rank(self.query(), records),
++            ranker.rank(self.query(), list(reversed(records))),
++        )
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/docs/experiments/artifacts/2026-07-23-c2-bayesian-strategy-ranker-v2/c2_offline_evaluation.py b/docs/experiments/artifacts/2026-07-23-c2-bayesian-strategy-ranker-v2/c2_offline_evaluation.py
+new file mode 100644
+index 0000000..ad0e878
+--- /dev/null
++++ b/docs/experiments/artifacts/2026-07-23-c2-bayesian-strategy-ranker-v2/c2_offline_evaluation.py
+@@ -0,0 +1,340 @@
++#!/usr/bin/env python3
++"""Leakage-resistant holdout evaluation for Bayesian Strategy Ranker V2."""
++
++from __future__ import annotations
++
++import argparse
++import json
++from collections import Counter, defaultdict
++from pathlib import Path
++from typing import Callable, Mapping, Sequence
++
++from llm4hls_agent.v3_experience_analysis import experience_outcome
++from llm4hls_agent.v3_experience_evaluation import evaluate_generalization
++from llm4hls_agent.v3_experience_kb import build_kb_query
++from llm4hls_agent.v3_experience_v2 import validate_experience_v2
++from llm4hls_agent.v3_strategy_ranker_v2 import BayesianStrategyRankerV2
++
++
++def _query(record: Mapping[str, object]) -> dict[str, object]:
++    """Build the query before reading the held-out strategy or outcome."""
++
++    source = record["source"]
++    problem = record["problem"]
++    structure = record["structure_features"]
++    assert isinstance(source, Mapping)
++    assert isinstance(problem, Mapping)
++    assert isinstance(structure, Mapping)
++    return build_kb_query(
++        mode=str(problem["mode"]),
++        task_split=str(source["task_split"]),
++        failure_subtype=str(problem["failure_subtype"]),
++        bottleneck_subtype=str(problem["bottleneck_subtype"]),
++        algorithm_family=str(source["algorithm_family"]),
++        task_family_hash=str(source["task_family_hash"]),
++        structure_features={
++            **dict(structure),
++            "requires_cosim": problem["requires_cosim"],
++        },
++        strategy_context=(),
++        current_run_id=str(source["run_id"]),
++        current_candidate_id=None,
++        current_patch_digest=None,
++        toolchain=str(source["toolchain"]),
++        backend_fingerprint=str(source["backend_fingerprint"]),
++        prompt_version=str(source["prompt_version"]),
++    )
++
++
++def _summary(rows: Sequence[Mapping[str, object]]) -> dict[str, object]:
++    queries = len(rows)
++    recommendations = sum(row["decision"] == "RECOMMEND" for row in rows)
++    positives = sum(row["actual_positive"] is True for row in rows)
++    negatives = queries - positives
++    hits = sum(row["positive_strategy_hit"] is True for row in rows)
++    harmful = sum(row["harmful_duplicate_recommendation"] is True for row in rows)
++    suppressed = sum(row["failed_strategy_suppressed"] is True for row in rows)
++    return {
++        "queries": queries,
++        "recommend_count": recommendations,
++        "abstain_count": queries - recommendations,
++        "coverage": round(recommendations / queries, 8) if queries else 0.0,
++        "positive_queries": positives,
++        "negative_queries": negatives,
++        "positive_strategy_hit_rate": (
++            round(hits / positives, 8) if positives else None
++        ),
++        "harmful_duplicate_recommendation_rate": (
++            round(harmful / recommendations, 8) if recommendations else 0.0
++        ),
++        "failed_strategy_suppression_rate": (
++            round(suppressed / negatives, 8) if negatives else None
++        ),
++        "group_leakage_rate": round(
++            sum(row["support_group_leakage"] is True for row in rows) / queries,
++            8,
++        )
++        if queries
++        else 0.0,
++        "decision_distribution": dict(
++            sorted(Counter(str(row["decision"]) for row in rows).items())
++        ),
++        "abstain_reasons": dict(
++            sorted(
++                Counter(
++                    str(row["abstain_reason"])
++                    for row in rows
++                    if row["abstain_reason"] is not None
++                ).items()
++            )
++        ),
++    }
++
++
++def _evaluate_policy(
++    name: str,
++    records: Sequence[Mapping[str, object]],
++    group: Callable[[Mapping[str, object]], str | None],
++) -> dict[str, object]:
++    ranker = BayesianStrategyRankerV2()
++    rows: list[dict[str, object]] = []
++    skipped = 0
++    for held_record in records:
++        held_group = group(held_record)
++        if held_group is None:
++            skipped += 1
++            continue
++        support = [record for record in records if group(record) != held_group]
++        leakage = any(group(record) == held_group for record in support)
++
++        # The decision is completed here.  No held-out strategy, validation,
++        # performance, cost, or outcome has been read above this line.
++        decision = ranker.rank(_query(held_record), support)
++
++        actual_atoms = {
++            str(atom)
++            for atom in held_record["strategy"]["observed_strategy_atoms"]
++        }
++        actual_positive = experience_outcome(held_record) == "SUCCESS"
++        recommended = decision["recommended"]
++        recommended_atom = (
++            str(recommended["strategy_atom"])
++            if isinstance(recommended, Mapping)
++            else None
++        )
++        is_recommend = decision["decision"] == "RECOMMEND"
++        actual_match = bool(recommended_atom in actual_atoms if recommended_atom else False)
++        problem = held_record["problem"]
++        source = held_record["source"]
++        assert isinstance(problem, Mapping)
++        assert isinstance(source, Mapping)
++        rows.append(
++            {
++                "record_id": held_record["record_id"],
++                "mode": problem["mode"],
++                "algorithm_family": source["algorithm_family"],
++                "held_out_group": held_group,
++                "support_count": len(support),
++                "support_group_leakage": leakage,
++                "decision": decision["decision"],
++                "abstain_reason": decision["abstain_reason"],
++                "recommended_strategy_atom": recommended_atom,
++                "recommended_posterior": (
++                    recommended["posterior_success"]
++                    if isinstance(recommended, Mapping)
++                    else None
++                ),
++                "recommended_lower_bound": (
++                    recommended["lower_bound"]
++                    if isinstance(recommended, Mapping)
++                    else None
++                ),
++                "actual_strategy_atoms": sorted(actual_atoms),
++                "actual_positive": actual_positive,
++                "positive_strategy_hit": bool(
++                    is_recommend and actual_positive and actual_match
++                ),
++                "harmful_duplicate_recommendation": bool(
++                    is_recommend and not actual_positive and actual_match
++                ),
++                "failed_strategy_suppressed": bool(
++                    not actual_positive and not actual_match
++                ),
++            }
++        )
++    rows.sort(key=lambda item: str(item["record_id"]))
++    by_mode: dict[str, list[Mapping[str, object]]] = defaultdict(list)
++    for row in rows:
++        by_mode[str(row["mode"])].append(row)
++    return {
++        "policy": name,
++        "overall": _summary(rows),
++        "by_mode": {
++            mode: _summary(mode_rows)
++            for mode, mode_rows in sorted(by_mode.items())
++        },
++        "skipped_missing_group": skipped,
++        "leakage_check_pass": all(
++            row["support_group_leakage"] is False for row in rows
++        ),
++        "rows": rows,
++    }
++
++
++def evaluate(
++    records: Sequence[Mapping[str, object]],
++    audit_groups: Mapping[str, Mapping[str, str]],
++) -> dict[str, object]:
++    eligible = [
++        validate_experience_v2(record)
++        for record in records
++        if record["source"]["evidence_level"] == "REAL_LLM_VITIS"
++        and record["provenance"]["eligible_for_ranking"] is True
++    ]
++    eligible.sort(key=lambda item: str(item["record_id"]))
++
++    def run_group(record: Mapping[str, object]) -> str:
++        return str(record["source"]["run_id"])
++
++    def task_group(record: Mapping[str, object]) -> str | None:
++        value = audit_groups.get(str(record["record_id"]))
++        return str(value["task_audit_hash"]) if value else None
++
++    def family_group(record: Mapping[str, object]) -> str:
++        return str(record["source"]["task_family_hash"])
++
++    policies = {
++        "leave_one_run_out": _evaluate_policy(
++            "leave_one_run_out", eligible, run_group
++        ),
++        "leave_one_task_out": _evaluate_policy(
++            "leave_one_task_out", eligible, task_group
++        ),
++        "leave_one_task_family_out": _evaluate_policy(
++            "leave_one_task_family_out", eligible, family_group
++        ),
++    }
++    v1 = evaluate_generalization(eligible, audit_groups=audit_groups)
++    mode_counts = dict(
++        sorted(Counter(str(record["problem"]["mode"]) for record in eligible).items())
++    )
++    all_leakage_pass = all(
++        policy["leakage_check_pass"] for policy in policies.values()
++    )
++    task_metrics = policies["leave_one_task_out"]["overall"]
++    family_metrics = policies["leave_one_task_family_out"]["overall"]
++    overall_harmful_safe = (
++        float(task_metrics["harmful_duplicate_recommendation_rate"]) <= 0.05
++        and float(family_metrics["harmful_duplicate_recommendation_rate"]) <= 0.05
++    )
++    per_mode_harmful_safe = all(
++        float(metrics["harmful_duplicate_recommendation_rate"]) <= 0.05
++        for policy in (
++            policies["leave_one_task_out"],
++            policies["leave_one_task_family_out"],
++        )
++        for metrics in policy["by_mode"].values()
++        if int(metrics["recommend_count"]) > 0
++    )
++    harmful_safe = overall_harmful_safe and per_mode_harmful_safe
++    coverage_ready = (
++        float(task_metrics["coverage"]) >= 0.40
++        and float(family_metrics["coverage"]) >= 0.40
++    )
++    all_modes_ready = all(mode_counts.get(mode, 0) >= 10 for mode in (
++        "REPAIR",
++        "SYNTH_FIX",
++        "STRUCTURAL_FIX",
++        "OPTIMIZE",
++    ))
++    component_state = (
++        "GLOBAL_ABORT"
++        if not all_leakage_pass
++        else "NEGATIVE_RESULT"
++        if not harmful_safe
++        else "PASS_PROMOTABLE"
++        if coverage_ready and all_modes_ready
++        else "INSUFFICIENT_EVIDENCE"
++    )
++    return {
++        "schema_version": "c2.bayesian-strategy-ranker-v2-evaluation.v1",
++        "component_state": component_state,
++        "authority": "SHADOW",
++        "learned_ranker": "TRAINING_NOT_READY",
++        "input_dependency": {
++            "c1_state": "PASS_PROMOTABLE",
++            "record_count": len(records),
++            "ranking_eligible_count": len(eligible),
++        },
++        "fixed_candidate_thresholds": {
++            "leave_one_task_coverage_at_least": 0.40,
++            "leave_one_task_family_coverage_at_least": 0.40,
++            "harmful_duplicate_recommendation_rate_at_most": 0.05,
++            "harmful_rate_applies_per_mode": True,
++            "each_mode_records_at_least": 10,
++        },
++        "mode_counts": mode_counts,
++        "policies": policies,
++        "v1_formal_guidance_baseline": {
++            name: value["overall"] for name, value in v1["policies"].items()
++        },
++        "checks": {
++            "all_holdout_leakage_checks_pass": all_leakage_pass,
++            "query_outcome_fields_present": False,
++            "heldout_labels_read_after_decision": True,
++            "harmful_rate_gate_pass": harmful_safe,
++            "overall_harmful_rate_gate_pass": overall_harmful_safe,
++            "per_mode_harmful_rate_gate_pass": per_mode_harmful_safe,
++            "coverage_gate_pass": coverage_ready,
++            "all_modes_minimum_count_pass": all_modes_ready,
++            "hidden_reference_golden_support_allowed": False,
++        },
++        "real_budget": {
++            "llm_calls": 0,
++            "tokens": 0,
++            "csim": 0,
++            "synth": 0,
++            "cosim": 0,
++            "tool_credits": 0,
++        },
++    }
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--records", type=Path, required=True)
++    parser.add_argument("--audit-groups", type=Path, required=True)
++    parser.add_argument("--output", type=Path, required=True)
++    args = parser.parse_args()
++    records = [
++        json.loads(line)
++        for line in args.records.read_text(encoding="utf-8").splitlines()
++        if line.strip()
++    ]
++    audit_value = json.loads(args.audit_groups.read_text(encoding="utf-8"))
++    report = evaluate(records, audit_value["groups"])
++    args.output.parent.mkdir(parents=True, exist_ok=True)
++    args.output.write_text(
++        json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
++        encoding="utf-8",
++    )
++    print(
++        json.dumps(
++            {
++                "component_state": report["component_state"],
++                "mode_counts": report["mode_counts"],
++                "policies": {
++                    name: value["overall"]
++                    for name, value in report["policies"].items()
++                },
++                "checks": report["checks"],
++            },
++            ensure_ascii=False,
++            sort_keys=True,
++        )
++    )
++    return 2 if report["component_state"] == "GLOBAL_ABORT" else 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/docs/status/2026-07-23-phase-c2-bayesian-strategy-ranker-v2.md b/docs/status/2026-07-23-phase-c2-bayesian-strategy-ranker-v2.md
+new file mode 100644
+index 0000000..d394b76
+--- /dev/null
++++ b/docs/status/2026-07-23-phase-c2-bayesian-strategy-ranker-v2.md
+@@ -0,0 +1,91 @@
++# Phase C2：Bayesian Strategy Ranker V2 状态
++
++日期：2026-07-23  
++冻结 HEAD：`4a05763b593a527878a0056f64763126c58ee63b`  
++C1 依赖：`PASS_PROMOTABLE`  
++组件状态：`NEGATIVE_RESULT`  
++正式权限：`SHADOW`  
++Learned Ranker：`TRAINING_NOT_READY`
++
++## 结论
++
++Bayesian Strategy Ranker V2 的独立实现、专用测试和离线 holdout 评估均正确完成，
++但 Mode-specific 安全指标不满足候选门槛，因此不晋升。
++
++这是实验负结果，不是工程失败。保留产品 diff 和完整证据供人工审查；现有
++Bayesian Ranker V1、确定性主流程和 `ABSTAIN` 回退保持不变。
++
++## V2 设计边界
++
++- 只使用 `mode + subtype + algorithm_family` 和公开结构特征形成查询。
++- 历史 support 只接受 `REAL_LLM_VITIS`、train/dev、ranking eligible 记录。
++- 使用固定 Beta(1,1) prior、可信下界、最小 top margin。
++- 推荐前要求 attempts、run、task family、patch digest 和成功 family 多样性。
++- 当前 run/candidate/patch 与已尝试策略会被排除。
++- 只返回 `RECOMMEND` 或 `ABSTAIN` 的 Shadow 结果。
++- 不生成可注入 Prompt，不调用工具，不接入主 Graph。
++
++## 固定候选门槛
++
++评估前固定：
++
++- Leave-One-Task coverage ≥ 40%；
++- Leave-One-Task-Family coverage ≥ 40%；
++- 有害重复推荐率整体和每个有推荐的 Mode 均 ≤ 5%；
++- 每个 Mode 至少 10 条可排名记录；
++- 所有 holdout 泄漏检查为 0。
++
++没有根据 held-out 结果放宽阈值或删除负样本。
++
++## 离线结果
++
++| Holdout | 推荐/查询 | Coverage | 正例策略命中 | 有害重复推荐 | 失败策略抑制 | 泄漏 |
++| --- | ---: | ---: | ---: | ---: | ---: | ---: |
++| Leave-One-Run | 31/76 | 40.79% | 35.48% | 0.00% | 100.00% | 0 |
++| Leave-One-Task | 33/76 | 43.42% | 37.10% | 3.03% | 92.86% | 0 |
++| Leave-One-Task-Family | 33/76 | 43.42% | 37.10% | 3.03% | 92.86% | 0 |
++
++关键 Mode 结果（Leave-One-Task 与 Leave-One-Task-Family 相同）：
++
++| Mode | 可排名记录 | Coverage | 正例策略命中 | 有害重复推荐 |
++| --- | ---: | ---: | ---: | ---: |
++| OPTIMIZE | 26 | 30.77% | 8.33% | **12.50%** |
++| REPAIR | 25 | 48.00% | 48.00% | 0.00% |
++| STRUCTURAL_FIX | 6 | 0.00% | 0.00% | 0.00% |
++| SYNTH_FIX | 19 | 68.42% | 52.63% | 0.00% |
++
++现有 V1 正式 guidance baseline 在相同 76 条记录的四种 holdout 中均为
++0% coverage / 全部 ABSTAIN。V2 虽产生了非零 Shadow coverage，但不能用总体
++3.03% 掩盖 OPTIMIZE 单模式 12.5% 的风险。
++
++## 状态原因
++
++`NEGATIVE_RESULT` 的直接原因：
++
++1. OPTIMIZE 有害重复推荐率 12.5%，超过固定 5% Mode-specific Gate；
++2. OPTIMIZE 正例策略命中率仅 8.33%；
++3. STRUCTURAL_FIX 只有 6 条可排名记录，且全部 ABSTAIN；
++4. 各 Mode 最少 10 条记录的证据门槛未满足。
++
++## 验证与预算
++
++- C2 聚焦测试：19/19 PASS。
++- 全套测试：579/579 PASS。
++- `compileall`：PASS。
++- `git diff --check`：PASS。
++- run/task/task-family holdout leakage：0。
++- 查询 outcome 字段：0。
++- hidden/reference/golden support：不允许，未访问。
++- 当次真实 LLM、Token、CSim、Synth、CoSim、Tool Credits：全部 0。
++
++## 证据
++
++- 产品候选：
++  `llm4hls_harness/llm4hls_agent/v3_strategy_ranker_v2.py`
++- 专用测试：
++  `llm4hls_harness/tests/test_v3_strategy_ranker_v2.py`
++- 评估脚本：
++  `docs/experiments/artifacts/2026-07-23-c2-bayesian-strategy-ranker-v2/c2_offline_evaluation.py`
++- 完整结果：
++  `docs/experiments/artifacts/2026-07-23-c2-bayesian-strategy-ranker-v2/c2-offline-evaluation.json`
++
+diff --git a/docs/experiments/2026-07-23-phase-c2-bayesian-strategy-ranker-v2-report.zh-CN.md b/docs/experiments/2026-07-23-phase-c2-bayesian-strategy-ranker-v2-report.zh-CN.md
+new file mode 100644
+index 0000000..10a4fb2
+--- /dev/null
++++ b/docs/experiments/2026-07-23-phase-c2-bayesian-strategy-ranker-v2-report.zh-CN.md
+@@ -0,0 +1,107 @@
++# Phase C2：Bayesian Strategy Ranker V2 离线评估报告
++
++## 1. 实验目标
++
++在不改变主流程和正式权限的前提下，验证一个 Mode-specific、条件化、带安全
++ABSTAIN 的 Bayesian Strategy Ranker V2，判断它是否比现有全 ABSTAIN Shadow
++baseline 更接近可审查候选。
++
++C2 使用 C1 已验证的 103 条 Experience V2 冻结记录，其中 76 条满足真实证据和
++ranking eligibility。
++
++## 2. 实现
++
++V2 对每个策略 atom 计算 Beta posterior，并优先使用
++`mode + subtype + algorithm family` 条件证据；当算法族支持不足时只回退到
++`mode + subtype`。候选还必须同时满足：
++
++- 至少 3 次尝试、3 个独立 run；
++- 至少 2 个 task family 和 2 个 patch digest；
++- 成功证据至少跨 2 个 family；
++- posterior ≥ 0.65；
++- 80% 单侧近似可信下界 ≥ 0.45；
++- 第一与第二候选可信下界 margin ≥ 0.05。
++
++这些值在第一次正式 holdout 评估前固定，之后没有因结果而放宽。
++
++## 3. 泄漏隔离
++
++每个 held-out query 都先从 source/problem/structure 构造查询并完成排序，然后才
++读取 held-out 的 observed strategy 与 outcome 评分。查询不含 validation、
++performance、cost、promoted、rejected 或 outcome。
++
++分别执行 Leave-One-Run、Leave-One-Task 和 Leave-One-Task-Family。task audit
++hash 只用于剔除 support，不进入 Ranker 特征。三种评估的 group leakage 均为 0。
++
++## 4. 结果
++
++V1 正式 guidance baseline 在同一数据上为全 ABSTAIN。V2 的 Shadow coverage：
++
++```text
++Leave-One-Run         31/76 = 40.79%
++Leave-One-Task        33/76 = 43.42%
++Leave-One-Task-Family 33/76 = 43.42%
++```
++
++Leave-One-Task 与 Leave-One-Task-Family 均得到：
++
++```text
++positive strategy hit = 23/62 = 37.10%
++harmful duplicate recommendation = 1/33 = 3.03%
++failed strategy suppression = 13/14 = 92.86%
++```
++
++但总平均掩盖了 Mode-specific 风险：
++
++```text
++OPTIMIZE recommendations = 8/26
++OPTIMIZE positive hits = 1/12 = 8.33%
++OPTIMIZE harmful duplicate recommendations = 1/8 = 12.50%
++STRUCTURAL_FIX recommendations = 0/6
++```
++
++因此总体 coverage 和总体 harmful rate 虽达到门槛，单模式 harmful Gate 失败。
++
++## 5. 负结果判定
++
++C2 判定为 `NEGATIVE_RESULT`，不是 `PASS_PROMOTABLE`：
++
++- Ranker 是 Mode-specific，必须逐 Mode 检查风险；
++- OPTIMIZE 12.5% 超过固定 5% Gate；
++- STRUCTURAL_FIX 样本数与 coverage 均不足；
++- 继续调 held-out threshold 会破坏实验有效性。
++
++产品候选和测试保留用于人工分析，但不连接主 Graph，不晋升 Shadow Pilot，不启用
++Guided。回退继续使用 V1、现有确定性策略和 ABSTAIN。
++
++## 6. 验证
++
++```text
++C2 focused tests = 19/19 PASS
++Full suite = 579/579 PASS
++compileall = PASS
++git diff --check = PASS
++holdout leakage = 0
++```
++
++## 7. 后续数据需求
++
++优先补充：
++
++1. STRUCTURAL_FIX 至少补到 10 条可排名记录，且需跨多个 task family；
++2. OPTIMIZE 的失败/无提升反例，尤其同 subtype 下策略替代证据；
++3. 非 OPTIMIZE 模式的失败样本，降低仅成功记录造成的选择偏差。
++
++不得用当前 76 条 held-out 记录继续调阈值；新增独立数据后重新冻结评估协议。
++
++## 8. 当次预算
++
++```text
++真实 LLM calls = 0
++真实 Token = 0
++CSim = 0
++Synth = 0
++CoSim = 0
++Tool Credits = 0
++```
++
+diff --git a/docs/experiments/2026-07-23-phase-c2-bayesian-strategy-ranker-v2-acceptance.zh-CN.md b/docs/experiments/2026-07-23-phase-c2-bayesian-strategy-ranker-v2-acceptance.zh-CN.md
+new file mode 100644
+index 0000000..fa46ecf
+--- /dev/null
++++ b/docs/experiments/2026-07-23-phase-c2-bayesian-strategy-ranker-v2-acceptance.zh-CN.md
+@@ -0,0 +1,47 @@
++# Phase C2：Bayesian Strategy Ranker V2 验收报告
++
++## 验收结论
++
++**工程验收通过，实验结论为 `NEGATIVE_RESULT`，不晋升。**
++
++这意味着实现、测试、数据和泄漏隔离正确，但离线安全效果不满足
++Mode-specific Shadow 候选门槛。
++
++## 验收矩阵
++
++| 验收项 | 结果 | 说明 |
++| --- | --- | --- |
++| C1 输入依赖 | PASS | 103 条有效，76 条可排名 |
++| 条件化 Bayesian 排序 | PASS | mode/subtype/algorithm family |
++| 安全 ABSTAIN | PASS | 多样性、可信下界、margin |
++| 与主 Graph 隔离 | PASS | 无集成 |
++| 可注入 Prompt | DISABLED | Ranker 不授权注入 |
++| Leave-One-Run | PASS | leakage 0 |
++| Leave-One-Task | PASS | leakage 0 |
++| Leave-One-Task-Family | PASS | leakage 0 |
++| 总体 coverage Gate | PASS | 43.42% |
++| 总体 harmful Gate | PASS | 3.03% |
++| 逐 Mode harmful Gate | **FAIL** | OPTIMIZE 12.50% |
++| 每 Mode 最少 10 条 | **FAIL** | STRUCTURAL_FIX 6 |
++| C2 聚焦测试 | PASS | 19/19 |
++| 完整测试 | PASS | 579/579 |
++| compileall | PASS | 0 error |
++| diff check | PASS | 0 error |
++| 当次真实预算 | PASS | 全部 0 |
++
++## 权限判定
++
++```text
++Bayesian Ranker authority = SHADOW
++Learned Ranker = TRAINING_NOT_READY
++Guided = NOT_ADMITTED
++Fallback = V1 / FOLLOW_EXISTING_MAIN_POLICY / ABSTAIN
++```
++
++## 人工审查建议
++
++- 保留补丁用于理解 V2 的条件化和安全 Gate 设计。
++- 不合并为正式策略，不连接主 Graph。
++- 不在当前 held-out 数据上继续调阈值。
++- 新增独立 STRUCTURAL_FIX 与 OPTIMIZE 反例后，再开新冻结评估。
++

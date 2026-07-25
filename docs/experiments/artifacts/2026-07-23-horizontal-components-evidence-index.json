@@ -1,0 +1,59 @@
+{
+  "schema_version": "track-a.horizontal-components-evidence-index.v1",
+  "date": "2026-07-23",
+  "frozen_head": "4a05763b593a527878a0056f64763126c58ee63b",
+  "real_budget": {
+    "llm_calls": 0,
+    "tokens": 0,
+    "csim": 0,
+    "synth": 0,
+    "cosim": 0,
+    "tool_credits": 0
+  },
+  "components": {
+    "c0": {
+      "state": "INSUFFICIENT_EVIDENCE",
+      "status": "docs/status/2026-07-23-phase-c0-continuation-v2.md",
+      "report": "docs/experiments/2026-07-23-phase-c0-continuation-v2-report.zh-CN.md",
+      "acceptance": "docs/experiments/2026-07-23-phase-c0-continuation-v2-acceptance.zh-CN.md",
+      "artifact_dir": "docs/experiments/artifacts/2026-07-23-phase-c0-continuation-v2",
+      "patch": {
+        "path": "docs/experiments/artifacts/2026-07-23-phase-c0-continuation-v2/c0-continuation-v2.patch",
+        "sha256": "795f7b2551765cd777f79a94b166953c74a2c5d52c00800247fab08df6dd8e66"
+      }
+    },
+    "c1": {
+      "state": "PASS_PROMOTABLE",
+      "status": "docs/status/2026-07-23-phase-c1-experience-record-v2.md",
+      "report": "docs/experiments/2026-07-23-phase-c1-experience-record-v2-report.zh-CN.md",
+      "acceptance": "docs/experiments/2026-07-23-phase-c1-experience-record-v2-acceptance.zh-CN.md",
+      "artifact_dir": "docs/experiments/artifacts/2026-07-23-c1-experience-record-v2",
+      "frozen_records": {
+        "path": "docs/experiments/artifacts/2026-07-23-c1-experience-record-v2/experience-record-v2-freeze.jsonl",
+        "sha256": "ba452e1f57e433fae2727e614cb6ab2986ff4ae301762f852559bb909e004cb7",
+        "count": 103
+      },
+      "audit_summary_sha256": "37628bb828846454c7ae27e964fc1f682b01e9d51969438a0ce31c8e2747e687",
+      "patch": {
+        "path": "docs/experiments/artifacts/2026-07-23-c1-experience-record-v2/c1-experience-v2.patch",
+        "sha256": "ba65f4a524724388782a1b388e0b94fb67e132c8ebc581f56504f71d37ef54b1"
+      }
+    },
+    "c2": {
+      "state": "NEGATIVE_RESULT",
+      "status": "docs/status/2026-07-23-phase-c2-bayesian-strategy-ranker-v2.md",
+      "report": "docs/experiments/2026-07-23-phase-c2-bayesian-strategy-ranker-v2-report.zh-CN.md",
+      "acceptance": "docs/experiments/2026-07-23-phase-c2-bayesian-strategy-ranker-v2-acceptance.zh-CN.md",
+      "artifact_dir": "docs/experiments/artifacts/2026-07-23-c2-bayesian-strategy-ranker-v2",
+      "evaluation": {
+        "path": "docs/experiments/artifacts/2026-07-23-c2-bayesian-strategy-ranker-v2/c2-offline-evaluation.json",
+        "sha256": "cbc7a29a40a5c6255a8e649ff5dda2dc03f71e683008d8bf1d1e3bd771263dab",
+        "ranking_eligible_count": 76
+      },
+      "patch": {
+        "path": "docs/experiments/artifacts/2026-07-23-c2-bayesian-strategy-ranker-v2/c2-ranker-v2.patch",
+        "sha256": "75e9e96d9e63f23796febacbe6fe1507f240e7d9ddf37de3168ff512901586a8"
+      }
+    }
+  }
+}

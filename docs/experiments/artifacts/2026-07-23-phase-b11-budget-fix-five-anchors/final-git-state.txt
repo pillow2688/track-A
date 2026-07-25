@@ -1,0 +1,39 @@
+RECORDED_AT=2026-07-23T20:25:38+08:00
+BRANCH=feat/track-a-empty-stub-generation-smoke
+HEAD=4a05763b593a527878a0056f64763126c58ee63b
+INITIAL_HEAD=4a05763b593a527878a0056f64763126c58ee63b
+HEAD_UNCHANGED=true
+PRODUCT_OR_TEST_CHANGES_DURING_PHASE=false
+TRACKED_PRODUCT_DIFF_COUNT=0
+UNTRACKED_PRODUCT_FILE_COUNT=0
+GIT_DIFF_CHECK=PASS
+FULL_TESTS_AFTER=556/556 PASS
+COMPILEALL=PASS
+B1_STATUS_SHA256=96e4c43531be186a4142119338272e493b10881f36d0bad818332c0fa53e49fa
+B1_REPORT_SHA256=665b13331dbdfbfa186370cff57f0deecdb209ef602423d1f6d98ca1e18c945b
+B1_ACCEPTANCE_SHA256=a3f03ce5774e82e608d3f1b33ffd466244d81d0de699f1eef219d5ce7644f557
+B1_EVIDENCE_UNCHANGED=true
+
+GIT_STATUS_SHORT_BEGIN
+ M README.md
+ M doc/README.md
+ M doc/docs/README.md
+ M docs/status/2026-07-23-track-a-completion-board.md
+?? doc/docs/2026-07-22-new-member-complete-onboarding.md
+?? doc/docs/2026-07-23-one-week-project-completion-handbook.md
+?? docs/experiments/2026-07-23-phase-b1-five-real-anchors-acceptance.zh-CN.md
+?? docs/experiments/2026-07-23-phase-b1-five-real-anchors-report.zh-CN.md
+?? docs/experiments/2026-07-23-phase-b11-budget-fix-five-anchors-acceptance.zh-CN.md
+?? docs/experiments/2026-07-23-phase-b11-budget-fix-five-anchors-report.zh-CN.md
+?? docs/experiments/artifacts/2026-07-23-phase-a1-freeze/compileall-after-commit.txt
+?? docs/experiments/artifacts/2026-07-23-phase-a1-freeze/final-commit-summary.json
+?? docs/experiments/artifacts/2026-07-23-phase-a1-freeze/final-git-state.txt
+?? docs/experiments/artifacts/2026-07-23-phase-a1-freeze/full-tests-after-commit.txt
+?? docs/experiments/artifacts/2026-07-23-phase-a1-freeze/git-diff-check-after-commit.txt
+?? docs/experiments/artifacts/2026-07-23-phase-b1-five-real-anchors/
+?? docs/experiments/artifacts/2026-07-23-phase-b11-budget-fix-five-anchors/
+?? docs/status/2026-07-23-phase-b1-five-real-anchors.md
+?? docs/status/2026-07-23-phase-b11-budget-fix-five-anchors.md
+GIT_STATUS_SHORT_END
+
+NOTE=README/onboarding/Phase A.1/Phase B1 entries predated Phase B1.1 and were preserved. Phase B1.1 added only its docs/evidence and updated the completion board.

@@ -64,6 +64,27 @@ class EvidenceDeltaTests(unittest.TestCase):
         second = evidence_fingerprint("REPAIR", {"stage": "csim", "subtype": "mismatch", "source_location": "/another/run/kernel.cpp:10", "affected_symbol": "sum"})
         self.assertEqual(first["fingerprint"], second["fingerprint"])
 
+    def test_extractor_schema_stage_and_subtype_changes_are_actionable(self) -> None:
+        before = {
+            "schema_version": "v3c.synth-failure-evidence.v1",
+            "phase": "synth_error",
+            "failure_kind": "SYNTH_ERROR",
+            "source_locations": [],
+        }
+        after = {
+            "schema_version": "v3c.csim-failure-evidence.v1",
+            "phase": "compile_error",
+            "failure_kind": "COMPILE_ERROR",
+            "source_locations": ["kernel.cpp:9:10"],
+        }
+
+        delta = evidence_delta(before, after, mode="SYNTH_FIX")
+
+        self.assertTrue(delta["failure_stage_changed"])
+        self.assertTrue(delta["failure_subtype_changed"])
+        self.assertTrue(delta["source_location_changed"])
+        self.assertTrue(delta["has_actionable_new_evidence"])
+
 
 class StrategyAndDecisionTests(unittest.TestCase):
     def test_observed_patch_strategy_beats_declared_order(self) -> None:
@@ -107,4 +128,3 @@ class StrategyAndDecisionTests(unittest.TestCase):
             remaining_rounds=1,
         )
         self.assertEqual(decision["decision"], "DEFER_TO_FINAL")
-

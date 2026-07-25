@@ -1,0 +1,140 @@
+{
+  "branch": "feat/track-a-empty-stub-generation-smoke",
+  "formal_preflight": {
+    "ref": "docs/experiments/artifacts/2026-07-24-formal-matrix/per-task-token-preflight.json",
+    "sha256": "e0640a379e9630d7065c203c0d1068f438cb166dca3131a3aa2e562a952a3d16",
+    "status": "PASS"
+  },
+  "frozen_files": {
+    "llm4hls_harness/llm4hls_agent/budget.py": "baa06a7983baf806d8746c46db3040dc5605d3ea972d0c5a8f749346e2e1c111",
+    "llm4hls_harness/llm4hls_agent/openai_provider.py": "e991b9985f0f3ea76a4165bf13d7466af7f0d95003e612c8db2afef6d2a9828a",
+    "llm4hls_harness/llm4hls_agent/repair.py": "a2b7147ead7c9ce12357c798ad6ebbb32cf88ad7ccb6ac3b2fb74a04ea897e91",
+    "llm4hls_harness/llm4hls_agent/task.py": "69097f09d5b9987c76f736b7c60a0a57c01e0483082473e1f2a8d21a3d2e3424",
+    "llm4hls_harness/llm4hls_agent/tools.py": "66ac15da350cfcdea2168f87de33cf00217fdef4a4019debeccdcc614f9f94c0",
+    "llm4hls_harness/llm4hls_agent/v3_batch_benchmark.py": "22bd25029ba7a7d3e15b511685234fe32717873a5b746c9108e24154da75c4e9",
+    "llm4hls_harness/llm4hls_agent/v3_continuation_v2.py": "339d1a088aa8cd9cdd55e97ab3d993ad91b7e23beeda990670896f2336110893",
+    "llm4hls_harness/llm4hls_agent/v3_experience.py": "b8e90e8fb903b8f24590b12d86b02ab0a064fa6717d1e324f73703ed0b5639d1",
+    "llm4hls_harness/llm4hls_agent/v3_experience_guidance.py": "ddd43a35b2288803e595f51908c90735f54636e13a1fc3c6f1dd33598c88585f",
+    "llm4hls_harness/llm4hls_agent/v3_experience_importer.py": "1600d9b69ff2fbebee0ad2167eab090da96aaa694f64c45a46ea4a3bb44d9022",
+    "llm4hls_harness/llm4hls_agent/v3_experience_kb.py": "fc68a2dcae39522e9360ff6351fb3e765c51c73e458888bf1e95fbb4cf830ccc",
+    "llm4hls_harness/llm4hls_agent/v3_experience_store.py": "7ca6c2c86cd1974da62aaf81f0cea8c65d606bc7b9478712885703e66a8b226e",
+    "llm4hls_harness/llm4hls_agent/v3_openai_planner.py": "e84f4b0135c0a4c6171a8dc1eb6644620f1639d4c459d4d23fdcc25fb4bb6897",
+    "llm4hls_harness/llm4hls_agent/v3_phase_router.py": "6a7f0d024667238274d88f48cda860a2f83bc8b0af17cb45d4a2b3b6187e7707",
+    "llm4hls_harness/llm4hls_agent/v3_planner.py": "389b94902a12521a1da0da7ecfeaf0673ca8befe5178b45e64a02bca738cb5a4",
+    "llm4hls_harness/llm4hls_agent/v3_planner_action.py": "2690ddb2a602da3e52284c610cf8310f4b8dc263e57e6d989928cf2608ce7635",
+    "llm4hls_harness/llm4hls_agent/v3_prototype.py": "3972b4919e113a138d10dce81b7f2b54c5f11922bcdfa74478ad3c89ee9eaaa3",
+    "llm4hls_harness/llm4hls_agent/v3_prototype_cli.py": "71335b370c6d9abfc77f13faadedfa42e21452a25a016e52d912088df9c49919",
+    "llm4hls_harness/llm4hls_agent/v3_shadow_boundary.py": "cdeef0076f56c12aa43c187f30341023efa90f324af9863d2ca36012438cdef6",
+    "llm4hls_harness/llm4hls_agent/v3_strategy_ranker_v2.py": "577a5531711d16c47331be9a49fcdafcfd2ff4a7ae3ab47ddd07b53fc810bfab",
+    "llm4hls_harness/llm4hls_agent/vitis.py": "1e24498562cadf3f68348753386be58473db1529d5b301382d3725a18fa97356",
+    "llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_016/acceptance.json": "ad998945ee3f2798e2e253f3a23ca854259baad7d5b782e07a348f28da9fcbdf",
+    "llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_016/description.md": "4d51a3c2ffb1d60bbb1478093da4738da5a0fcd547513c24e5073134b132827b",
+    "llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_016/kernel.cpp": "56df635d7e811d72dac01f5e6f911d8af3a0b0566c66aa64589990894532e0fe",
+    "llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_016/kernel.h": "7e03e10dfbd796b730e4a59025c09c38710ec0b9a83f7ad6d0cf4b866fc14f3b",
+    "llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_016/kernel_tb.cpp": "c1eed665e793bb7bf07c150b8e91e4d1e8ec290d9dcb9eeac263837be721ec36",
+    "llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_016/mutation_manifest.json": "6b5c1a5b296a3fa269ea5012aaf72b1cdffc1d9935e8c22e8603a344ac5225a2",
+    "llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_016/task.toml": "9c1840fecbe0b3d5ce6ec1aec303c8e5c267ab3eaed63c8d8556488691024e98",
+    "llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_020/acceptance.json": "e54b10d56d28210ff7e4ab18cefc0a3e784e540c8a2e126e017f76baedcdc5fd",
+    "llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_020/description.md": "4d51a3c2ffb1d60bbb1478093da4738da5a0fcd547513c24e5073134b132827b",
+    "llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_020/kernel.cpp": "b8274124e9c9a124864a32f24721aa68d467290d6ecab58639b00f06f8ebf3b4",
+    "llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_020/kernel.h": "7e03e10dfbd796b730e4a59025c09c38710ec0b9a83f7ad6d0cf4b866fc14f3b",
+    "llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_020/kernel_tb.cpp": "c1eed665e793bb7bf07c150b8e91e4d1e8ec290d9dcb9eeac263837be721ec36",
+    "llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_020/mutation_manifest.json": "c4aa8170d9d33641197f55e6782c791dd4ac49571eb8a188dd3797c97300ec33",
+    "llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_020/task.toml": "ba37cc82d6ad7a6c65ed51fb7a2e75d179fc2211b507f4fd828fe6d861c589cd",
+    "llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_021/acceptance.json": "111c8b039c54fc02f7274c2d5fd86543ea4a2f512d7b60d83e5ad7d77a29db70",
+    "llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_021/description.md": "3ef4e1bcdda241c99c782f3b8ce4affa88cd810253dd70f33890dbfc1ea03992",
+    "llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_021/kernel.cpp": "6940119591ffdc3e06d3c5f4be77109e2f705746004b076811441c5cded32190",
+    "llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_021/kernel.h": "2a6de5cc045595bb4705c287c6fc8d33cbd19502dc8f0b5fbc12d760221f467a",
+    "llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_021/kernel_tb.cpp": "a373853921f90bc870bd6193f57427fee32e65ef43ec75b6002e75ed90219b8d",
+    "llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_021/mutation_manifest.json": "070bf87bb930093a72cb8d4b3bdf5f3c503bffcf7bc2d04bc238f5cf5f49beb7",
+    "llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_021/task.toml": "00f442adbb6a2f23554f6bc633569524fa9caf56088d0d261ebe57c751313c5e",
+    "llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_022/acceptance.json": "c9aa041295deba822d704c97e6ba30e575cd66e49989f5b7dd0a7f77fb74367e",
+    "llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_022/description.md": "3ef4e1bcdda241c99c782f3b8ce4affa88cd810253dd70f33890dbfc1ea03992",
+    "llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_022/kernel.cpp": "e29e48bf8fd0c342f7c6318a6cd0cc114bff81dbb55efcdc18eeec6506cafdec",
+    "llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_022/kernel.h": "2a6de5cc045595bb4705c287c6fc8d33cbd19502dc8f0b5fbc12d760221f467a",
+    "llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_022/kernel_tb.cpp": "a373853921f90bc870bd6193f57427fee32e65ef43ec75b6002e75ed90219b8d",
+    "llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_022/mutation_manifest.json": "7f4a4208975dde38102ef6203f74487f11e8a5ae5a08c3694949978368b64080",
+    "llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_022/task.toml": "62894ee9457e5a5f2a33d58597fafcb95241c4fc823f50e38a008b06d7762acb"
+  },
+  "frozen_head": "4a05763b593a527878a0056f64763126c58ee63b",
+  "matrix_protocol": {
+    "backend": "vitis",
+    "continuation_policy": "off",
+    "costs": {
+      "cosim": 20,
+      "csim": 1,
+      "synth": 4
+    },
+    "experience_mode": "off",
+    "failure_isolating": true,
+    "final_reserve_credits": 25,
+    "final_validation_policy": "task_contract",
+    "llm_max_output_tokens": 4096,
+    "max_no_improvement_rounds": 2,
+    "max_planner_rounds": 2,
+    "model": "deepseek-v4-pro",
+    "primary_retry_enabled": false,
+    "ranker_mode": "off",
+    "repeat": 1,
+    "run_token_limit": 32768,
+    "sampling": {
+      "temperature": 0.0,
+      "top_p": 1.0
+    },
+    "task_credit_limit_source": "task.toml budget",
+    "task_ids": [
+      "v3d_fast_016",
+      "v3d_fast_020",
+      "v3d_fast_021",
+      "v3d_fast_022"
+    ],
+    "timeouts_seconds": {
+      "cosim": 600,
+      "csim": 300,
+      "llm": 180,
+      "run": 3600,
+      "synth": 900
+    },
+    "token_budget_policy": "fixed",
+    "validation_profile": "fast-experiment"
+  },
+  "output_dir": "llm4hls_harness/runs/phase-d2-4a05763-d1cad2cd88-20260724T124625Z",
+  "patch_binding": {
+    "base_head": "4a05763b593a527878a0056f64763126c58ee63b",
+    "commit_created": false,
+    "product_diff_sha256": "cad2cd88a37bbef02b6ad4126992f98ae4890408a3fee37a41ec236255ba621c",
+    "product_file": "llm4hls_harness/llm4hls_agent/v3_prototype.py",
+    "product_file_sha256": "3972b4919e113a138d10dce81b7f2b54c5f11922bcdfa74478ad3c89ee9eaaa3",
+    "reason": "The task explicitly forbids automatic commit; the unchanged Git HEAD plus exact content hashes form the frozen execution identity.",
+    "snapshot_id": "4a05763+d1-cad2cd88"
+  },
+  "runner": {
+    "ref": "run_phase_d2.py",
+    "sha256": "7a13784324345a3e69b6ccfe604140bcfe74ee811c6d6cc98df0216bc00f4812"
+  },
+  "schema_version": "phase-d2.frozen-uncommitted-snapshot.v1",
+  "scope_guards": {
+    "c0_c1_c2_runtime_enabled": false,
+    "golden_accessed": false,
+    "hidden_accessed": false,
+    "planner_changed_by_d1": false,
+    "reference_accessed": false,
+    "router_changed_by_d1": false,
+    "secret_value_recorded": false,
+    "task_code_changed_by_d1": false,
+    "token_policy_changed_by_d1": false
+  },
+  "status": "FROZEN_UNCOMMITTED_FIX_SNAPSHOT",
+  "tests": {
+    "compileall": "PASS",
+    "focused": {
+      "failed": 0,
+      "passed": 79
+    },
+    "full": {
+      "failed": 0,
+      "passed": 605
+    },
+    "git_diff_check": "PASS"
+  }
+}

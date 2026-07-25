@@ -1,0 +1,23 @@
+CAPTURED_AT=2026-07-23T20:41:54+08:00
+BRANCH=feat/track-a-empty-stub-generation-smoke
+HEAD=4a05763b593a527878a0056f64763126c58ee63b
+PRODUCT_TEST_DIFF_COUNT=0
+
+PREEXISTING_WORKTREE_STATE:
+ M README.md
+ M doc/README.md
+ M doc/docs/README.md
+ M docs/status/2026-07-23-track-a-completion-board.md
+?? doc/docs/2026-07-22-new-member-complete-onboarding.md
+?? doc/docs/2026-07-23-one-week-project-completion-handbook.md
+?? docs/experiments/2026-07-23-phase-b1-five-real-anchors-acceptance.zh-CN.md
+?? docs/experiments/2026-07-23-phase-b1-five-real-anchors-report.zh-CN.md
+?? docs/experiments/2026-07-23-phase-b11-budget-fix-five-anchors-acceptance.zh-CN.md
+?? docs/experiments/2026-07-23-phase-b11-budget-fix-five-anchors-report.zh-CN.md
+?? docs/experiments/artifacts/2026-07-23-phase-a1-freeze/
+?? docs/experiments/artifacts/2026-07-23-phase-b1-five-real-anchors/
+?? docs/experiments/artifacts/2026-07-23-phase-b11-budget-fix-five-anchors/
+?? docs/status/2026-07-23-phase-b1-five-real-anchors.md
+?? docs/status/2026-07-23-phase-b11-budget-fix-five-anchors.md
+
+NOTE=All pre-existing user and prior-phase changes are preserved. No product or test file is modified for Phase B1.2.

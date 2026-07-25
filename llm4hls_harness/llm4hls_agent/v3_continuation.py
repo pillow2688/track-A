@@ -227,7 +227,57 @@ def evidence_fingerprint(mode: str, evidence: Mapping[str, object], metrics: Map
         kinds = sorted({str(_mapping(item).get("kind")) for item in observations if _mapping(item).get("kind")})
         facts.update({"bottleneck": kinds[0] if kinds else _text(evidence.get("primary_bottleneck")), "critical_loop": _text(critical.get("loop_id") or critical.get("name")), "achieved_ii": _bucket(critical.get("pipeline_ii")), "trip_count_bucket": _bucket(critical.get("trip_count"), scale=16), "transaction_interval_bucket": _bucket(_interval(metrics), scale=4), "scheduling": tuple(kinds), "resource_pressure": _text(evidence.get("resource_pressure"))})
     else:
-        facts.update({"failure_stage": _text(evidence.get("failure_stage") or evidence.get("stage")), "failure_subtype": _text(evidence.get("failure_subtype") or evidence.get("subtype") or evidence.get("category")), "source_location": _text(evidence.get("source_location")), "affected_object": _text(evidence.get("affected_symbol") or evidence.get("stream") or evidence.get("fifo") or evidence.get("interface")), "expected_actual_category": _text(evidence.get("expected_actual_category") or evidence.get("mismatch_category"))})
+        source_locations = evidence.get("source_locations")
+        source_location = (
+            source_locations[0]
+            if isinstance(source_locations, Sequence)
+            and not isinstance(source_locations, (str, bytes))
+            and source_locations
+            else evidence.get("source_location")
+        )
+        unsupported = evidence.get("unsupported_constructs")
+        stream_findings = evidence.get("stream_fifo_interface_findings")
+        affected_object = (
+            unsupported[0]
+            if isinstance(unsupported, Sequence)
+            and not isinstance(unsupported, (str, bytes))
+            and unsupported
+            else stream_findings[0]
+            if isinstance(stream_findings, Sequence)
+            and not isinstance(stream_findings, (str, bytes))
+            and stream_findings
+            else evidence.get("affected_symbol")
+            or evidence.get("stream")
+            or evidence.get("fifo")
+            or evidence.get("interface")
+        )
+        expected_actual = (
+            evidence.get("expected_actual_category")
+            or evidence.get("mismatch_category")
+        )
+        if expected_actual is None and (
+            evidence.get("expected") is not None
+            or evidence.get("actual") is not None
+        ):
+            expected_actual = "EXPECTED_ACTUAL_PRESENT"
+        facts.update(
+            {
+                "failure_stage": _text(
+                    evidence.get("failure_stage")
+                    or evidence.get("stage")
+                    or evidence.get("phase")
+                ),
+                "failure_subtype": _text(
+                    evidence.get("failure_subtype")
+                    or evidence.get("subtype")
+                    or evidence.get("category")
+                    or evidence.get("failure_kind")
+                ),
+                "source_location": _text(source_location),
+                "affected_object": _text(affected_object),
+                "expected_actual_category": _text(expected_actual),
+            }
+        )
     facts["fingerprint"] = canonical_sha256(facts)
     return facts
 

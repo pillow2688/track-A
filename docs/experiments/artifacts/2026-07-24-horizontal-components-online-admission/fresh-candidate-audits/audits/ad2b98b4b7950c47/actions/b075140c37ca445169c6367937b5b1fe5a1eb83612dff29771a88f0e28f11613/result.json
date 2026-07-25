@@ -1,0 +1,39 @@
+{
+  "action_id": "b075140c37ca445169c6367937b5b1fe5a1eb83612dff29771a88f0e28f11613",
+  "artifact_hashes": {
+    "csim_stderr": "5420b0e55ee48fea89ff1628fedd775ad90f51ceb015fb9f80ce2fcb1cfb007e",
+    "csim_stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "tcl": "61da5050135d5d6049cfe7f3162a6151557dd1b4fff448ab6ac7f127ecffba93",
+    "vitis_stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "vitis_stdout": "6357ceb01b0b8982dc6412df3b67c659998de34e1b51f5395e3d28bdf453b71f",
+    "vitis_toolchain": "692cf063d533be15c49bf71a2fa4186d76823484289880af86196e400c1c6bad"
+  },
+  "artifacts": {
+    "csim_stderr": "work/csim.stderr.log",
+    "csim_stdout": "work/csim.stdout.log",
+    "tcl": "work/run_hls.tcl",
+    "vitis_stderr": "work/vitis.stderr.log",
+    "vitis_stdout": "work/vitis.stdout.log",
+    "vitis_toolchain": "work/vitis_toolchain.json"
+  },
+  "backend_fingerprint": "llm4hls_agent.vitis.VitisBackend:v0.8",
+  "cached": false,
+  "candidate_id": "candidate_002",
+  "code_hash": "8295de89fc2564526e57a1f015fe9a2894391b362e3b66e34846f6d5afee9f08",
+  "cosim": null,
+  "effective_timeout_seconds": 300.0,
+  "elapsed_s": 2.916041699005291,
+  "evidence": [
+    "return_code=127",
+    "timeout: failed to run command ‘docs/experiments/artifacts/2026-07-24-horizontal-components-online-admission/fresh-candidate-audits/audits/ad2b98b4b7950c47/actions/b075140c37ca445169c6367937b5b1fe5a1eb83612dff29771a88f0e28f11613/work/csim_proj/sol/csim/build/csim.exe’: No such file or directory"
+  ],
+  "kind": "csim",
+  "ok": false,
+  "phase": "runtime_fail",
+  "report": null,
+  "result_ref": "actions/b075140c37ca445169c6367937b5b1fe5a1eb83612dff29771a88f0e28f11613/result.json",
+  "return_code": 127,
+  "task_fingerprint": "646bfdba1b97d359a1f14105e49fe95dcec23fe0a18b96a6fa13e26dec334463",
+  "tool_config_hash": "fe77e149a0e14c77851c007e416e7f4d7664035585d3c531295f74a3a27451b7",
+  "validation_scope": "final"
+}

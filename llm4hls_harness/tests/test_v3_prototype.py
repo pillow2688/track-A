@@ -348,6 +348,69 @@ class V3PrototypeTests(unittest.TestCase):
             self.assertEqual(decision["round_index"], 1)
             self.assertTrue((root / result["performance_area_ref"]).is_file())
 
+    def test_mode_specific_continuation_v2_is_bound_into_terminal_result(self) -> None:
+        project = Path(__file__).resolve().parents[1]
+        task = load_public_task(project / "examples" / "u55c_v2_optimize_task")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "v3f-shadow-v2"
+            result = run_v3_prototype(
+                task,
+                root,
+                prototype_config(task),
+                prototype_proposal(),
+                backend=PrototypeBackend(),
+                thread_id="v3f-shadow-v2-test",
+                continuation_policy_mode="shadow",
+                continuation_policy_version="v2",
+            )
+            decision = json.loads(
+                (root / result["continuation_decision_ref"]).read_text(
+                    encoding="utf-8"
+                )
+            )
+
+        self.assertEqual(result["continuation_policy_version"], "v2")
+        self.assertEqual(
+            decision["schema_version"], "v3.continuation-decision.v2"
+        )
+        self.assertEqual(
+            decision["policy_version"], "v3.continuation-policy.v2"
+        )
+        self.assertIn("pre_state", decision)
+        self.assertNotIn("outcome", decision["pre_state"])
+        self.assertNotIn("final_result", decision["pre_state"])
+
+    def test_continuation_enforce_fails_closed_without_v2_admission(self) -> None:
+        project = Path(__file__).resolve().parents[1]
+        task = load_public_task(project / "examples" / "u55c_v2_optimize_task")
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(
+                ValueError,
+                "requires the mode-specific v2 policy",
+            ):
+                run_v3_prototype(
+                    task,
+                    Path(directory) / "v1-enforce",
+                    prototype_config(task),
+                    prototype_proposal(),
+                    backend=PrototypeBackend(),
+                    continuation_policy_mode="enforce",
+                    continuation_policy_version="v1",
+                )
+            with self.assertRaisesRegex(
+                ValueError,
+                "requires a passing admission manifest",
+            ):
+                run_v3_prototype(
+                    task,
+                    Path(directory) / "v2-enforce-no-gate",
+                    prototype_config(task),
+                    prototype_proposal(),
+                    backend=PrototypeBackend(),
+                    continuation_policy_mode="enforce",
+                    continuation_policy_version="v2",
+                )
+
     def test_legacy_checkpoint_without_mode_keeps_optimize_cosim_route(self) -> None:
         self.assertIsNotNone(v3_prototype_module)
         for legacy_mode in (None, "", "UNROUTED"):

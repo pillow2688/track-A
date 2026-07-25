@@ -5,12 +5,14 @@
 
 ## Must Read
 
-1. [V3-E 经验知识库与 Token Budget Policy：当前真实架构和验收](2026-07-21-v3e-experience-kb-hardening.md)
-2. [V3 当前组件、模型控制链与参考信息报告](2026-07-21-current-components-and-model-context.md)
-3. [当前系统说明与团队月度进展（首次发布 2026-07-20，更新至 2026-07-21）](2026-07-20-current-system-and-team-progress.md)
-4. [V3-D 昨夜至今日执行总结](../../llm4hls_harness/releases/v3d-overnight-daytime-summary-2026-07-21.md)
-5. [Track A 比赛总览](track-a-competition-overview.md)
-6. [Track A 0 基础入门手册](track-a-zero-foundation-guide.md)
+1. [新成员完整接手指南（复核至 2026-07-23 当前 HEAD）](2026-07-22-new-member-complete-onboarding.md)
+2. [接手后 7 天完成项目执行手册（含 Strategy Ranker 等轻量工具）](2026-07-23-one-week-project-completion-handbook.md)
+3. [V3-E 经验知识库与 Token Budget Policy：当前真实架构和验收](2026-07-21-v3e-experience-kb-hardening.md)
+4. [V3 当前组件、模型控制链与参考信息报告](2026-07-21-current-components-and-model-context.md)
+5. [当前系统说明与团队月度进展（首次发布 2026-07-20，更新至 2026-07-21）](2026-07-20-current-system-and-team-progress.md)
+6. [V3-D 昨夜至今日执行总结](../../llm4hls_harness/releases/v3d-overnight-daytime-summary-2026-07-21.md)
+7. [Track A 比赛总览](track-a-competition-overview.md)
+8. [Track A 0 基础入门手册](track-a-zero-foundation-guide.md)
 
 ## Related Material Notes
 
@@ -27,17 +29,19 @@
 建议新队友按这个顺序读：
 
 ```text
-1. V3-E 经验知识库、Token Budget Policy 真实架构与组员上手说明
-2. V3 当前组件、模型控制链与参考信息报告
-3. 当前系统说明与团队月度进展
-4. V3-D 昨夜至今日执行总结
-5. Track A 比赛总览
-6. Track A 0 基础入门手册
-7. 官方规则快照和 Track-A Submission Guidelines
-8. reference harness 分析
-9. hls-generator 资源笔记
-10. Datawhale Hello-Agents 映射笔记
-11. LangGraph 混合架构和预算停止策略
-12. materials/README.md
-13. 按需进入 HLS、环境、模型和实验目录
+1. 新成员完整接手指南
+2. 接手后 7 天完成项目执行手册
+3. V3-E 经验知识库、Strategy Ranker 与 Token Budget Policy
+4. V3 当前组件、模型控制链与参考信息报告
+5. 当前系统说明与团队月度进展
+6. V3-D 昨夜至今日执行总结
+7. Track A 比赛总览
+8. Track A 0 基础入门手册
+9. 官方规则快照和 Track-A Submission Guidelines
+10. reference harness 分析
+11. hls-generator 资源笔记
+12. Datawhale Hello-Agents 映射笔记
+13. LangGraph 混合架构和预算停止策略
+14. materials/README.md
+15. 按需进入 HLS、环境、模型和实验目录
 ```

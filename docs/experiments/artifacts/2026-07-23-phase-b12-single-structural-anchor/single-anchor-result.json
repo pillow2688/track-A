@@ -1,0 +1,119 @@
+{
+  "schema_version": "phase-b12.single-anchor-result.v1",
+  "phase": "Phase B1.2",
+  "status": "DONE",
+  "acceptance": "ACCEPTED",
+  "task_id": "residual_stream_deadlock",
+  "task_source": "official/fpt26-harness-public",
+  "branch": "feat/track-a-empty-stub-generation-smoke",
+  "commit_sha": "4a05763b593a527878a0056f64763126c58ee63b",
+  "run_dir": "llm4hls_harness/runs/phase-b12-4a05763-residual-structural-20260723T124154Z",
+  "expected_mode": "STRUCTURAL_FIX",
+  "actual_mode": "STRUCTURAL_FIX",
+  "router_reason": "REQUIRED_BASELINE_COSIM_FAILED",
+  "baseline": {
+    "csim": "PASS",
+    "synth": "PASS",
+    "cosim": "FAIL",
+    "cosim_phase": "cosim_fail",
+    "cosim_elapsed_seconds": 27.34716031397693,
+    "source_sha256": "a0f40b47dea175d761e22f26edb42ac72f2ba5e25e21fdc460887fe2c639457b",
+    "source_unchanged": true
+  },
+  "stability": {
+    "current_head_fresh_baselines": 3,
+    "matching_csim_synth_cosim_pattern": 3,
+    "historical_same_task_match": true,
+    "result": "PASS"
+  },
+  "planner": {
+    "provider": "openai-compatible-task-aware",
+    "model": "deepseek-v4-pro",
+    "calls": 1,
+    "rounds_completed": 1,
+    "input_tokens": 1611,
+    "cached_input_tokens": 1536,
+    "output_tokens": 591,
+    "total_tokens": 2202
+  },
+  "candidate": {
+    "candidate_id": "candidate_001",
+    "change_class": "STRUCTURAL_REPAIR",
+    "source_sha256": "9b88f96f98526f06dca992c9524ae4052d77360623f3f11732d070a86d1d5cd8",
+    "patch_sha256": "6dd5917d8e9ffc8fc9ef493df61aa24eafad58aa60c0005478517c76bbc246a4",
+    "status": "FINAL_VERIFIED",
+    "repair": "Interleave s_main and s_skip writes in stageA to remove bounded-FIFO circular wait.",
+    "interface_guard_allowed": true,
+    "interface_risk": "LOW"
+  },
+  "exploration_validation": {
+    "csim": "PASS",
+    "cosim": "PASS",
+    "cosim_elapsed_seconds": 26.973914185073227
+  },
+  "final_validation": {
+    "policy": "full_internal_audit",
+    "csim": "PASS",
+    "synth": "PASS",
+    "cosim": "PASS",
+    "all_cached": false,
+    "final_cosim_elapsed_seconds": 27.34394463384524
+  },
+  "synth_metrics": {
+    "baseline_latency": 135,
+    "final_latency": 68,
+    "baseline_interval": 136,
+    "final_interval": 64,
+    "baseline_clock_ns": 2.796,
+    "final_clock_ns": 2.796,
+    "baseline_lut": 539,
+    "final_lut": 406,
+    "baseline_ff": 248,
+    "final_ff": 231,
+    "power": "UNSUPPORTED (artifact value: NOT_COLLECTED)"
+  },
+  "budget": {
+    "token_limit": 32768,
+    "tokens_used": 2202,
+    "credit_limit": 80,
+    "credits_used": 71,
+    "credits_remaining": 9,
+    "csim_calls": 3,
+    "synth_calls": 2,
+    "cosim_calls": 3,
+    "runtime_seconds": 122.69877481460571,
+    "terminal_final_reserve_failure": false,
+    "ledger_reconciled": true
+  },
+  "terminal": {
+    "status": "DONE",
+    "stop_reason": "STRUCTURAL_FIX_FINALIZED",
+    "exploration_stop_reason": "STRUCTURAL_FIX_VALIDATION_PASS"
+  },
+  "artifact_integrity": {
+    "manifest_schema": "v3a.package-manifest.v1",
+    "canonical_manifest_sha256": "db1dd938e28bbaff4198d0249e65b2870a842ea3569af2cffdc23af5278987f8",
+    "manifest_file_sha256": "d606a321da4e461713b14e381930f97de993ef61f1c05e92c4140c04541d85da",
+    "listed_artifacts": 85,
+    "verified_artifacts": 85,
+    "mismatches": 0
+  },
+  "scope_control": {
+    "other_four_anchors_rerun": false,
+    "matrix_28_started": false,
+    "multi_model_matrix_started": false,
+    "product_code_changed": false,
+    "head_changed": false,
+    "hidden_accessed": false,
+    "reference_accessed": false,
+    "golden_accessed": false,
+    "secret_values_recorded": false
+  },
+  "combined_five_mode_gate": {
+    "evidence_basis": "Phase B1.1 four passing modes plus this Phase B1.2 STRUCTURAL_FIX replacement anchor, all on the same HEAD",
+    "expected_modes_exercised": 5,
+    "expected_modes_passed": 5,
+    "matrix_readiness": "READY_FOR_28_TASK_MATRIX",
+    "matrix_started": false
+  }
+}

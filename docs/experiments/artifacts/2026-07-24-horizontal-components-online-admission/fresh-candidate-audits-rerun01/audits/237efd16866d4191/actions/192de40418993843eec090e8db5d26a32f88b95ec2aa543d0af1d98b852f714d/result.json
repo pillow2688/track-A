@@ -1,0 +1,57 @@
+{
+  "action_id": "192de40418993843eec090e8db5d26a32f88b95ec2aa543d0af1d98b852f714d",
+  "artifact_hashes": {
+    "cosim_report": "6b181ec77611b9e8152fe2c033a4c9b84d823c9c58bb64c0b64688adf3153dc9",
+    "csynth_xml": "313f853c3408456bf762a8dd578dd556938ec96d702389b2406b95834f87a469",
+    "tcl": "542fb4fb6e966af4404870107e4ba9797b8bb29ff800af06cad717dec37c107b",
+    "vitis_stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "vitis_stdout": "9d568da50992fd18e89aa9e6b8227cc1ce8ed19b21bfff200ca6a150094da903",
+    "vitis_toolchain": "692cf063d533be15c49bf71a2fa4186d76823484289880af86196e400c1c6bad"
+  },
+  "artifacts": {
+    "cosim_report": "work/cosim_proj/sol/sim/report/kernel_cosim.rpt",
+    "csynth_xml": "work/cosim_proj/sol/syn/report/csynth.xml",
+    "tcl": "work/run_hls.tcl",
+    "vitis_stderr": "work/vitis.stderr.log",
+    "vitis_stdout": "work/vitis.stdout.log",
+    "vitis_toolchain": "work/vitis_toolchain.json"
+  },
+  "backend_fingerprint": "llm4hls_agent.vitis.VitisBackend:v0.8",
+  "cached": false,
+  "candidate_id": "candidate_001",
+  "code_hash": "f667936f19dcbc570ecc48c0d879ccbde929b88ca6fd35a0c489bdbfb1bfb4dc",
+  "cosim": {
+    "latency": {
+      "average": null,
+      "max": null,
+      "min": null
+    },
+    "status": "Fail"
+  },
+  "effective_timeout_seconds": 900.0,
+  "elapsed_s": 22.372554369969293,
+  "evidence": [
+    "return_code=1",
+    "INFO: [VRFC 10-311] analyzing module AESL_deadlock_report_unit",
+    "INFO: [VRFC 10-2263] Analyzing SystemVerilog file \"/home/ying/CompetitionTrackA/track-A/docs/experiments/artifacts/2026-07-24-horizontal-components-online-admission/fresh-candidate-audits-rerun01/audits/237efd16866d4191/actions/192de40418993843eec090e8db5d26a32f88b95ec2aa543d0af1d98b852f714d/work/cosim_proj/sol/sim/verilog/AESL_deadlock_detector.v\" into library xil_defaultlib",
+    "INFO: [VRFC 10-311] analyzing module AESL_deadlock_detector",
+    "Compiling module xil_defaultlib.AESL_deadlock_detect_unit(PROC_N...",
+    "Compiling module xil_defaultlib.AESL_deadlock_detect_unit(PROC_N...",
+    "Compiling module xil_defaultlib.AESL_deadlock_report_unit(PROC_N...",
+    "Compiling module xil_defaultlib.AESL_deadlock_detector_1",
+    "# xsim {kernel} -testplusarg UVM_VERBOSITY=UVM_NONE -testplusarg UVM_TESTNAME=kernel_test_lib -testplusarg UVM_TIMEOUT=20000000000000 -autoloadwcfg -tclbatch {kernel.tcl}",
+    "ERROR: unexpected exception when evaluating tcl command",
+    "\"xsim {kernel} -testplusarg UVM_VERBOSITY=UVM_NONE -testplusarg UVM_TESTNAME=kernel_test_lib -testplusarg UVM_TIMEOUT=20000000000000 -autoloadwcfg -tcl...\"",
+    "ERROR: [COSIM 212-4] *** C/RTL co-simulation finished: FAIL ***",
+    "command 'ap_source' returned error code"
+  ],
+  "kind": "cosim",
+  "ok": false,
+  "phase": "cosim_fail",
+  "report": null,
+  "result_ref": "actions/192de40418993843eec090e8db5d26a32f88b95ec2aa543d0af1d98b852f714d/result.json",
+  "return_code": 1,
+  "task_fingerprint": "faa4cdedddda1df015e915089b4433ffe77371a19ef953bcbfef7c8fd572ff49",
+  "tool_config_hash": "5da30768776fbe68bd1d93f01ee9a604412847ad93d6be08452143fade2b147c",
+  "validation_scope": "final"
+}

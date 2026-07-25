@@ -1,0 +1,54 @@
+CAPTURED_AT=2026-07-23T19:59:16+08:00
+On branch feat/track-a-empty-stub-generation-smoke
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   README.md
+	modified:   doc/README.md
+	modified:   doc/docs/README.md
+	modified:   docs/status/2026-07-23-track-a-completion-board.md
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	doc/docs/2026-07-22-new-member-complete-onboarding.md
+	doc/docs/2026-07-23-one-week-project-completion-handbook.md
+	docs/experiments/2026-07-23-phase-b1-five-real-anchors-acceptance.zh-CN.md
+	docs/experiments/2026-07-23-phase-b1-five-real-anchors-report.zh-CN.md
+	docs/experiments/artifacts/2026-07-23-phase-a1-freeze/compileall-after-commit.txt
+	docs/experiments/artifacts/2026-07-23-phase-a1-freeze/final-commit-summary.json
+	docs/experiments/artifacts/2026-07-23-phase-a1-freeze/final-git-state.txt
+	docs/experiments/artifacts/2026-07-23-phase-a1-freeze/full-tests-after-commit.txt
+	docs/experiments/artifacts/2026-07-23-phase-a1-freeze/git-diff-check-after-commit.txt
+	docs/experiments/artifacts/2026-07-23-phase-b1-five-real-anchors/
+	docs/experiments/artifacts/2026-07-23-phase-b11-budget-fix-five-anchors/
+	docs/status/2026-07-23-phase-b1-five-real-anchors.md
+
+no changes added to commit (use "git add" and/or "git commit -a")
+ M README.md
+ M doc/README.md
+ M doc/docs/README.md
+ M docs/status/2026-07-23-track-a-completion-board.md
+?? doc/docs/2026-07-22-new-member-complete-onboarding.md
+?? doc/docs/2026-07-23-one-week-project-completion-handbook.md
+?? docs/experiments/2026-07-23-phase-b1-five-real-anchors-acceptance.zh-CN.md
+?? docs/experiments/2026-07-23-phase-b1-five-real-anchors-report.zh-CN.md
+?? docs/experiments/artifacts/2026-07-23-phase-a1-freeze/compileall-after-commit.txt
+?? docs/experiments/artifacts/2026-07-23-phase-a1-freeze/final-commit-summary.json
+?? docs/experiments/artifacts/2026-07-23-phase-a1-freeze/final-git-state.txt
+?? docs/experiments/artifacts/2026-07-23-phase-a1-freeze/full-tests-after-commit.txt
+?? docs/experiments/artifacts/2026-07-23-phase-a1-freeze/git-diff-check-after-commit.txt
+?? docs/experiments/artifacts/2026-07-23-phase-b1-five-real-anchors/
+?? docs/experiments/artifacts/2026-07-23-phase-b11-budget-fix-five-anchors/
+?? docs/status/2026-07-23-phase-b1-five-real-anchors.md
+BRANCH=feat/track-a-empty-stub-generation-smoke
+HEAD=4a05763b593a527878a0056f64763126c58ee63b
+4a05763 docs(audit): finalize phase A acceptance and run plan
+e5ba32a fix(router): restore baseline-fact phase routing
+65ab82c docs: record empty-stub generation smoke
+PRODUCT_TEST_DIFF_NAMES_BEGIN
+PRODUCT_TEST_DIFF_NAMES_END
+B1_REPORT_SHA256_BEGIN
+96e4c43531be186a4142119338272e493b10881f36d0bad818332c0fa53e49fa  docs/status/2026-07-23-phase-b1-five-real-anchors.md
+665b13331dbdfbfa186370cff57f0deecdb209ef602423d1f6d98ca1e18c945b  docs/experiments/2026-07-23-phase-b1-five-real-anchors-report.zh-CN.md
+a3f03ce5774e82e608d3f1b33ffd466244d81d0de699f1eef219d5ce7644f557  docs/experiments/2026-07-23-phase-b1-five-real-anchors-acceptance.zh-CN.md
+B1_REPORT_SHA256_END

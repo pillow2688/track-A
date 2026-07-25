@@ -1,0 +1,54 @@
+{
+  "combined_record_count": 134,
+  "files": {
+    "combined-experience-v2-audit-groups.json": "7cf654410662b169cc8801abbb5107c6b78bca5df1e8ad9856d28b9b2302eda2",
+    "combined-experience-v2.jsonl": "04e77cbb3581804a36a404685d437fc4d13899bdbde0b81875e9651c2a0e5798"
+  },
+  "fixed_protocol": {
+    "c2_threshold_source": "2026-07-23-c2-bayesian-strategy-ranker-v2/c2_offline_evaluation.py",
+    "c2_threshold_tuning": false,
+    "same_data_threshold_adjustment": false
+  },
+  "mode_distribution": {
+    "OPTIMIZE": 55,
+    "REPAIR": 43,
+    "STRUCTURAL_FIX": 11,
+    "SYNTH_FIX": 25
+  },
+  "new_record_count": 31,
+  "old_record_count": 103,
+  "outcome_distribution": {
+    "FAILURE": 43,
+    "NO_IMPROVEMENT": 25,
+    "SUCCESS": 66
+  },
+  "pool_policy": {
+    "guided_mode_enabled": false,
+    "main_graph_ingestion": false,
+    "new_pool": "FORMAL_MATRIX_PUBLIC_TRAIN_ISOLATED",
+    "old_pool": "C1_FROZEN_103_UNCHANGED",
+    "planner_ingestion": false,
+    "record_id_overlap": 0,
+    "source_identity_overlap": 0
+  },
+  "ranking_eligible_by_mode": {
+    "OPTIMIZE": 36,
+    "REPAIR": 32,
+    "STRUCTURAL_FIX": 9,
+    "SYNTH_FIX": 25
+  },
+  "ranking_eligible_count": 102,
+  "ranking_eligible_outcome_distribution": {
+    "FAILURE": 11,
+    "NO_IMPROVEMENT": 25,
+    "SUCCESS": 66
+  },
+  "schema_version": "post-matrix.combined-experience.v1",
+  "scope_guards": {
+    "golden_accessed": false,
+    "hidden_accessed": false,
+    "reference_accessed": false,
+    "secret_value_recorded": false
+  },
+  "status": "PASS"
+}

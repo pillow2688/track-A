@@ -1,0 +1,155 @@
+FINAL_CAPTURE_DATE=2026-07-23
+BRANCH=feat/track-a-empty-stub-generation-smoke
+HEAD=4a05763b593a527878a0056f64763126c58ee63b
+
+GIT_STATUS
+On branch feat/track-a-empty-stub-generation-smoke
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   README.md
+	modified:   doc/README.md
+	modified:   doc/docs/README.md
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	doc/docs/2026-07-22-new-member-complete-onboarding.md
+	doc/docs/2026-07-23-one-week-project-completion-handbook.md
+	docs/experiments/artifacts/2026-07-23-phase-a1-freeze/compileall-after-commit.txt
+	docs/experiments/artifacts/2026-07-23-phase-a1-freeze/final-commit-summary.json
+	docs/experiments/artifacts/2026-07-23-phase-a1-freeze/final-git-state.txt
+	docs/experiments/artifacts/2026-07-23-phase-a1-freeze/full-tests-after-commit.txt
+	docs/experiments/artifacts/2026-07-23-phase-a1-freeze/git-diff-check-after-commit.txt
+
+no changes added to commit (use "git add" and/or "git commit -a")
+
+GIT_STATUS_SHORT
+ M README.md
+ M doc/README.md
+ M doc/docs/README.md
+?? doc/docs/2026-07-22-new-member-complete-onboarding.md
+?? doc/docs/2026-07-23-one-week-project-completion-handbook.md
+?? docs/experiments/artifacts/2026-07-23-phase-a1-freeze/compileall-after-commit.txt
+?? docs/experiments/artifacts/2026-07-23-phase-a1-freeze/final-commit-summary.json
+?? docs/experiments/artifacts/2026-07-23-phase-a1-freeze/final-git-state.txt
+?? docs/experiments/artifacts/2026-07-23-phase-a1-freeze/full-tests-after-commit.txt
+?? docs/experiments/artifacts/2026-07-23-phase-a1-freeze/git-diff-check-after-commit.txt
+
+GIT_LOG_3
+4a05763 docs(audit): finalize phase A acceptance and run plan
+e5ba32a fix(router): restore baseline-fact phase routing
+65ab82c docs: record empty-stub generation smoke
+
+COMMITS_CREATED
+e5ba32a fix(router): restore baseline-fact phase routing
+ llm4hls_harness/llm4hls_agent/v3_phase_router.py | 29 ------------------------
+ llm4hls_harness/tests/test_v3_phase_router.py    | 28 ++++++++++++++++++++---
+ 2 files changed, 25 insertions(+), 32 deletions(-)
+4a05763 docs(audit): finalize phase A acceptance and run plan
+ ...23-phase-a-baseline-offline-audit-acceptance.md |  240 ++
+ .../acceptance-metadata.json                       |   64 +
+ .../chinese-analysis-validation.txt                |    9 +
+ .../compileall.txt                                 |    2 +
+ .../continuation_replay_candidate_dataset.jsonl    |    9 +
+ .../continuation_replay_exclusion_log.jsonl        |    1 +
+ .../current-28task-inventory.json                  | 1102 ++++++++++
+ .../current-head-impact-analysis.json              |  179 ++
+ .../current-head-paid-run-proposal.json            |  372 ++++
+ .../diff-check-after.txt                           |    2 +
+ .../experience_candidate_records.jsonl             |   81 +
+ .../final-git-state.txt                            |   57 +
+ .../focused-router-tests.txt                       |    6 +
+ .../full-tests-after.txt                           |    6 +
+ .../full-tests-before.txt                          |   94 +
+ .../git-diff-check.txt                             |    1 +
+ .../historical-72run-discovery-summary.json        |   71 +
+ .../historical-72run-integrity-summary.json        |  964 ++++++++
+ .../historical-72run-inventory.jsonl               |   72 +
+ .../historical-72run-reuse-eligibility.jsonl       |   72 +
+ .../historical_failure_taxonomy.json               |   55 +
+ .../initial-git-state.txt                          |   25 +
+ .../offline-audit-summary.json                     | 1060 +++++++++
+ .../offline-evidence-validation.txt                |    2 +
+ .../phase_a_offline_audit.py                       | 2325 ++++++++++++++++++++
+ .../preexisting-worktree-files.txt                 |    5 +
+ .../secret-scan.txt                                |    2 +
+ .../strategy_ranker_candidate_pool.jsonl           |   81 +
+ .../2026-07-23-phase-a1-freeze/compileall.txt      |    2 +
+ .../documentation-budget-validation.txt            |   12 +
+ .../2026-07-23-phase-a1-freeze/evidence-index.md   |   51 +
+ .../focused-router-tests.txt                       |    6 +
+ .../2026-07-23-phase-a1-freeze/full-tests.txt      |    6 +
+ .../git-diff-check-before-commit.txt               |    2 +
+ .../git-diff-check-before-doc-commit.txt           |    2 +
+ .../initial-diff-stat.txt                          |    6 +
+ .../initial-git-state.txt                          |   21 +
+ .../next-real-run-options-decision.json            |  133 ++
+ .../next-real-run-options-decision.md              |   14 +
+ .../preexisting-files.txt                          |   50 +
+ .../proposed-frozen-run-config.json                |   75 +
+ .../2026-07-23-phase-a1-freeze/router-commit.txt   |    8 +
+ .../staged-scope-and-secret-check.txt              |    9 +
+ docs/experiments/current-28task-inventory.md       |   44 +
+ docs/experiments/current-28task-inventory.zh-CN.md |   44 +
+ docs/experiments/current-head-impact-analysis.md   |   43 +
+ .../current-head-impact-analysis.zh-CN.md          |   43 +
+ docs/experiments/current-head-paid-run-proposal.md |  256 +++
+ .../current-head-paid-run-proposal.zh-CN.md        |  256 +++
+ .../historical_12task_stability_report.md          |   90 +
+ .../historical_12task_stability_report.zh-CN.md    |   90 +
+ .../2026-07-23-phase-a-baseline-offline-audit.md   |  150 ++
+ docs/status/2026-07-23-track-a-completion-board.md |   21 +
+ 53 files changed, 8393 insertions(+)
+ create mode 100644 docs/experiments/2026-07-23-phase-a-baseline-offline-audit-acceptance.md
+ create mode 100644 docs/experiments/artifacts/2026-07-23-phase-a-offline-audit/acceptance-metadata.json
+ create mode 100644 docs/experiments/artifacts/2026-07-23-phase-a-offline-audit/chinese-analysis-validation.txt
+ create mode 100644 docs/experiments/artifacts/2026-07-23-phase-a-offline-audit/compileall.txt
+ create mode 100644 docs/experiments/artifacts/2026-07-23-phase-a-offline-audit/continuation_replay_candidate_dataset.jsonl
+ create mode 100644 docs/experiments/artifacts/2026-07-23-phase-a-offline-audit/continuation_replay_exclusion_log.jsonl
+ create mode 100644 docs/experiments/artifacts/2026-07-23-phase-a-offline-audit/current-28task-inventory.json
+ create mode 100644 docs/experiments/artifacts/2026-07-23-phase-a-offline-audit/current-head-impact-analysis.json
+ create mode 100644 docs/experiments/artifacts/2026-07-23-phase-a-offline-audit/current-head-paid-run-proposal.json
+ create mode 100644 docs/experiments/artifacts/2026-07-23-phase-a-offline-audit/diff-check-after.txt
+ create mode 100644 docs/experiments/artifacts/2026-07-23-phase-a-offline-audit/experience_candidate_records.jsonl
+ create mode 100644 docs/experiments/artifacts/2026-07-23-phase-a-offline-audit/final-git-state.txt
+ create mode 100644 docs/experiments/artifacts/2026-07-23-phase-a-offline-audit/focused-router-tests.txt
+ create mode 100644 docs/experiments/artifacts/2026-07-23-phase-a-offline-audit/full-tests-after.txt
+ create mode 100644 docs/experiments/artifacts/2026-07-23-phase-a-offline-audit/full-tests-before.txt
+ create mode 100644 docs/experiments/artifacts/2026-07-23-phase-a-offline-audit/git-diff-check.txt
+ create mode 100644 docs/experiments/artifacts/2026-07-23-phase-a-offline-audit/historical-72run-discovery-summary.json
+ create mode 100644 docs/experiments/artifacts/2026-07-23-phase-a-offline-audit/historical-72run-integrity-summary.json
+ create mode 100644 docs/experiments/artifacts/2026-07-23-phase-a-offline-audit/historical-72run-inventory.jsonl
+ create mode 100644 docs/experiments/artifacts/2026-07-23-phase-a-offline-audit/historical-72run-reuse-eligibility.jsonl
+ create mode 100644 docs/experiments/artifacts/2026-07-23-phase-a-offline-audit/historical_failure_taxonomy.json
+ create mode 100644 docs/experiments/artifacts/2026-07-23-phase-a-offline-audit/initial-git-state.txt
+ create mode 100644 docs/experiments/artifacts/2026-07-23-phase-a-offline-audit/offline-audit-summary.json
+ create mode 100644 docs/experiments/artifacts/2026-07-23-phase-a-offline-audit/offline-evidence-validation.txt
+ create mode 100644 docs/experiments/artifacts/2026-07-23-phase-a-offline-audit/phase_a_offline_audit.py
+ create mode 100644 docs/experiments/artifacts/2026-07-23-phase-a-offline-audit/preexisting-worktree-files.txt
+ create mode 100644 docs/experiments/artifacts/2026-07-23-phase-a-offline-audit/secret-scan.txt
+ create mode 100644 docs/experiments/artifacts/2026-07-23-phase-a-offline-audit/strategy_ranker_candidate_pool.jsonl
+ create mode 100644 docs/experiments/artifacts/2026-07-23-phase-a1-freeze/compileall.txt
+ create mode 100644 docs/experiments/artifacts/2026-07-23-phase-a1-freeze/documentation-budget-validation.txt
+ create mode 100644 docs/experiments/artifacts/2026-07-23-phase-a1-freeze/evidence-index.md
+ create mode 100644 docs/experiments/artifacts/2026-07-23-phase-a1-freeze/focused-router-tests.txt
+ create mode 100644 docs/experiments/artifacts/2026-07-23-phase-a1-freeze/full-tests.txt
+ create mode 100644 docs/experiments/artifacts/2026-07-23-phase-a1-freeze/git-diff-check-before-commit.txt
+ create mode 100644 docs/experiments/artifacts/2026-07-23-phase-a1-freeze/git-diff-check-before-doc-commit.txt
+ create mode 100644 docs/experiments/artifacts/2026-07-23-phase-a1-freeze/initial-diff-stat.txt
+ create mode 100644 docs/experiments/artifacts/2026-07-23-phase-a1-freeze/initial-git-state.txt
+ create mode 100644 docs/experiments/artifacts/2026-07-23-phase-a1-freeze/next-real-run-options-decision.json
+ create mode 100644 docs/experiments/artifacts/2026-07-23-phase-a1-freeze/next-real-run-options-decision.md
+ create mode 100644 docs/experiments/artifacts/2026-07-23-phase-a1-freeze/preexisting-files.txt
+ create mode 100644 docs/experiments/artifacts/2026-07-23-phase-a1-freeze/proposed-frozen-run-config.json
+ create mode 100644 docs/experiments/artifacts/2026-07-23-phase-a1-freeze/router-commit.txt
+ create mode 100644 docs/experiments/artifacts/2026-07-23-phase-a1-freeze/staged-scope-and-secret-check.txt
+ create mode 100644 docs/experiments/current-28task-inventory.md
+ create mode 100644 docs/experiments/current-28task-inventory.zh-CN.md
+ create mode 100644 docs/experiments/current-head-impact-analysis.md
+ create mode 100644 docs/experiments/current-head-impact-analysis.zh-CN.md
+ create mode 100644 docs/experiments/current-head-paid-run-proposal.md
+ create mode 100644 docs/experiments/current-head-paid-run-proposal.zh-CN.md
+ create mode 100644 docs/experiments/historical_12task_stability_report.md
+ create mode 100644 docs/experiments/historical_12task_stability_report.zh-CN.md
+ create mode 100644 docs/status/2026-07-23-phase-a-baseline-offline-audit.md
+ create mode 100644 docs/status/2026-07-23-track-a-completion-board.md

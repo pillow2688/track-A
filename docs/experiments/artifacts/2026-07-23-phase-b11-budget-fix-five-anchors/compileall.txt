@@ -1,0 +1,2 @@
+COMMAND=.venv/bin/python -m compileall -q llm4hls_harness
+EXIT_CODE=0

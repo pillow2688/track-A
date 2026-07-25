@@ -1,0 +1,57 @@
+{
+  "action_id": "b77183474fe202b198abdec9b122fdeeeecf7f28cfa289a9e210d3605f96b774",
+  "artifact_hashes": {
+    "cosim_report": "50f1ea69f43a55875677635688ba7844c040d828ab8b3570cdad782f42b98283",
+    "csynth_xml": "c1080bc9a17b99f807cc2c3025cf737e5dd7f1282677387517b0f7b0fb0ade31",
+    "tcl": "542fb4fb6e966af4404870107e4ba9797b8bb29ff800af06cad717dec37c107b",
+    "vitis_stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "vitis_stdout": "2ea8bf9971fad83916555d9c6ac3317bc58672f3573ee831732d59d7475c3855",
+    "vitis_toolchain": "692cf063d533be15c49bf71a2fa4186d76823484289880af86196e400c1c6bad"
+  },
+  "artifacts": {
+    "cosim_report": "work/cosim_proj/sol/sim/report/kernel_cosim.rpt",
+    "csynth_xml": "work/cosim_proj/sol/syn/report/csynth.xml",
+    "tcl": "work/run_hls.tcl",
+    "vitis_stderr": "work/vitis.stderr.log",
+    "vitis_stdout": "work/vitis.stdout.log",
+    "vitis_toolchain": "work/vitis_toolchain.json"
+  },
+  "backend_fingerprint": "llm4hls_agent.vitis.VitisBackend:v0.8",
+  "cached": false,
+  "candidate_id": "candidate_001",
+  "code_hash": "22f5aef8e002426476efe6f1ec0676a22c62628659351c68bbcb16ccf620440f",
+  "cosim": {
+    "latency": {
+      "average": null,
+      "max": null,
+      "min": null
+    },
+    "status": "Fail"
+  },
+  "effective_timeout_seconds": 900.0,
+  "elapsed_s": 26.964904439868405,
+  "evidence": [
+    "return_code=1",
+    "Compiling module xil_defaultlib.kernel_gmem0_m_axi_fifo(DATA_WID...",
+    "Compiling module xil_defaultlib.kernel_gmem1_m_axi_fifo(DATA_WID...",
+    "Compiling module xil_defaultlib.kernel_gmem1_m_axi_fifo(DATA_WID...",
+    "Compiling module xil_defaultlib.kernel_gmem1_m_axi_fifo(DATA_WID...",
+    "Compiling module xil_defaultlib.kernel_gmem1_m_axi_fifo(DATA_WID...",
+    "Compiling module xil_defaultlib.kernel_gmem1_m_axi_fifo(DATA_WID...",
+    "Compiling module xil_defaultlib.kernel_gmem1_m_axi_fifo(DATA_WID...",
+    "# xsim {kernel} -testplusarg UVM_VERBOSITY=UVM_NONE -testplusarg UVM_TESTNAME=kernel_test_lib -testplusarg UVM_TIMEOUT=20000000000000 -autoloadwcfg -tclbatch {kernel.tcl}",
+    "ERROR: unexpected exception when evaluating tcl command",
+    "\"xsim {kernel} -testplusarg UVM_VERBOSITY=UVM_NONE -testplusarg UVM_TESTNAME=kernel_test_lib -testplusarg UVM_TIMEOUT=20000000000000 -autoloadwcfg -tcl...\"",
+    "ERROR: [COSIM 212-4] *** C/RTL co-simulation finished: FAIL ***",
+    "command 'ap_source' returned error code"
+  ],
+  "kind": "cosim",
+  "ok": false,
+  "phase": "cosim_fail",
+  "report": null,
+  "result_ref": "actions/b77183474fe202b198abdec9b122fdeeeecf7f28cfa289a9e210d3605f96b774/result.json",
+  "return_code": 1,
+  "task_fingerprint": "fa08d82ba25e388fb3b3e234a414b8bb48a99fb80b47e4462cdfc91264fa79ec",
+  "tool_config_hash": "5da30768776fbe68bd1d93f01ee9a604412847ad93d6be08452143fade2b147c",
+  "validation_scope": "final"
+}

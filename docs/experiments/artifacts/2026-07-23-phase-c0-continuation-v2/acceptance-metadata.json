@@ -1,0 +1,34 @@
+{
+  "acceptance": "NOT_ADMITTED_TO_SHADOW_PILOT",
+  "comparison_digest": "f03a4f10c38a3aa67dcb2210d9a7c31ab67c37f131e4ebbd15ba0d9d25d678cc",
+  "continuation_authority": "SHADOW",
+  "dataset_digest": "6ae300205ff172c4cbeacabd8b107936c5f3ac9b9016eb4bf6028810c7fe9f18",
+  "experience_guided": "NOT_ADMITTED",
+  "head": "4a05763b593a527878a0056f64763126c58ee63b",
+  "hidden_reference_golden_accessed": false,
+  "main_graph_modified": false,
+  "offline_only": true,
+  "phase": "Phase C0",
+  "ranker_training": "NOT_READY",
+  "reproducibility": {
+    "compileall": "PASS",
+    "core_generated_artifacts_deterministic": "5/5",
+    "focused_tests": "27/27 PASS",
+    "full_tests": "572/572 PASS",
+    "git_diff_check": "PASS"
+  },
+  "real_llm_calls": 0,
+  "real_tokens": 0,
+  "real_tool_calls": {
+    "cosim": 0,
+    "csim": 0,
+    "synth": 0
+  },
+  "real_tool_credits": 0,
+  "required_checks_pending": [],
+  "schema_version": "phase-c0.acceptance-metadata.v1",
+  "split_digest": "a86232bb46d3c28286af0505c99d07fe1a2c268a2af82a5f1302ecdaad5cb6f4",
+  "status": "INSUFFICIENT_EVIDENCE",
+  "v1_modified": false,
+  "v2_authority": "OFFLINE_ONLY"
+}

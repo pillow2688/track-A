@@ -1,0 +1,9 @@
+COMMAND:
+PYTHONPATH=llm4hls_harness:. .venv/bin/python -m unittest discover \
+  -s llm4hls_harness/tests -t . -q
+
+----------------------------------------------------------------------
+Ran 605 tests in 111.636s
+
+OK
+EXIT_CODE=0

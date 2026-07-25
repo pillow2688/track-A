@@ -1,0 +1,38 @@
+# Focused Continuation V1/V2/replay tests
+test_final_reserve_unavailable_never_allows (llm4hls_harness.tests.test_v3_continuation_v2.ContinuationV2CommonTests.test_final_reserve_unavailable_never_allows) ... ok
+test_future_fields_cannot_change_decision_or_digest (llm4hls_harness.tests.test_v3_continuation_v2.ContinuationV2CommonTests.test_future_fields_cannot_change_decision_or_digest) ... ok
+test_missing_evidence_is_not_high_confidence_block (llm4hls_harness.tests.test_v3_continuation_v2.ContinuationV2CommonTests.test_missing_evidence_is_not_high_confidence_block) ... ok
+test_same_input_and_digest_are_stable (llm4hls_harness.tests.test_v3_continuation_v2.ContinuationV2CommonTests.test_same_input_and_digest_are_stable) ... ok
+test_eight_x_cap_defers (llm4hls_harness.tests.test_v3_continuation_v2.ContinuationV2OptimizeTests.test_eight_x_cap_defers) ... ok
+test_low_gain_with_incumbent_and_repeat_defers (llm4hls_harness.tests.test_v3_continuation_v2.ContinuationV2OptimizeTests.test_low_gain_with_incumbent_and_repeat_defers) ... ok
+test_missing_resources_remain_unknown_not_zero (llm4hls_harness.tests.test_v3_continuation_v2.ContinuationV2OptimizeTests.test_missing_resources_remain_unknown_not_zero) ... ok
+test_significant_latency_gain_allows (llm4hls_harness.tests.test_v3_continuation_v2.ContinuationV2OptimizeTests.test_significant_latency_gain_allows) ... ok
+test_changed_error_allows (llm4hls_harness.tests.test_v3_continuation_v2.ContinuationV2RepairTests.test_changed_error_allows) ... ok
+test_one_failure_does_not_block (llm4hls_harness.tests.test_v3_continuation_v2.ContinuationV2RepairTests.test_one_failure_does_not_block) ... ok
+test_repeated_identical_repair_can_block_or_defer (llm4hls_harness.tests.test_v3_continuation_v2.ContinuationV2RepairTests.test_repeated_identical_repair_can_block_or_defer) ... ok
+test_new_deadlock_location_allows_despite_cosim_failure (llm4hls_harness.tests.test_v3_continuation_v2.ContinuationV2StructuralTests.test_new_deadlock_location_allows_despite_cosim_failure) ... ok
+test_new_fifo_evidence_allows (llm4hls_harness.tests.test_v3_continuation_v2.ContinuationV2StructuralTests.test_new_fifo_evidence_allows) ... ok
+test_only_complete_repetition_can_block (llm4hls_harness.tests.test_v3_continuation_v2.ContinuationV2StructuralTests.test_only_complete_repetition_can_block) ... ok
+test_repeated_unsupported_construct_tends_to_stop (llm4hls_harness.tests.test_v3_continuation_v2.ContinuationV2SynthTests.test_repeated_unsupported_construct_tends_to_stop) ... ok
+test_stage_advance_allows (llm4hls_harness.tests.test_v3_continuation_v2.ContinuationV2SynthTests.test_stage_advance_allows) ... ok
+test_latency_only_is_not_actionable (llm4hls_harness.tests.test_v3_continuation.EvidenceDeltaTests.test_latency_only_is_not_actionable) ... ok
+test_memory_bottleneck_change_is_actionable (llm4hls_harness.tests.test_v3_continuation.EvidenceDeltaTests.test_memory_bottleneck_change_is_actionable) ... ok
+test_path_and_timestamp_are_removed_from_fingerprint (llm4hls_harness.tests.test_v3_continuation.EvidenceDeltaTests.test_path_and_timestamp_are_removed_from_fingerprint) ... ok
+test_dominates_and_preserves_raw_resources (llm4hls_harness.tests.test_v3_continuation.PerformanceAreaTests.test_dominates_and_preserves_raw_resources) ... ok
+test_policy_is_versioned (llm4hls_harness.tests.test_v3_continuation.PerformanceAreaTests.test_policy_is_versioned) ... ok
+test_tradeoff_and_unknown_are_not_hidden (llm4hls_harness.tests.test_v3_continuation.PerformanceAreaTests.test_tradeoff_and_unknown_are_not_hidden) ... ok
+test_hard_reserve_blocks (llm4hls_harness.tests.test_v3_continuation.StrategyAndDecisionTests.test_hard_reserve_blocks) ... ok
+test_observed_patch_strategy_beats_declared_order (llm4hls_harness.tests.test_v3_continuation.StrategyAndDecisionTests.test_observed_patch_strategy_beats_declared_order) ... ok
+test_optimize_improvement_without_new_bottleneck_blocks (llm4hls_harness.tests.test_v3_continuation.StrategyAndDecisionTests.test_optimize_improvement_without_new_bottleneck_blocks) ... ok
+test_structural_new_subtype_is_allowed (llm4hls_harness.tests.test_v3_continuation.StrategyAndDecisionTests.test_structural_new_subtype_is_allowed) ... ok
+test_evaluator_reads_only_pre_state_and_reports_descriptive_status (llm4hls_harness.tests.test_v3_continuation_replay.ContinuationReplayTests.test_evaluator_reads_only_pre_state_and_reports_descriptive_status) ... ok
+
+----------------------------------------------------------------------
+Ran 27 tests in 0.002s
+
+OK
+# Full unittest discovery
+----------------------------------------------------------------------
+Ran 572 tests in 33.266s
+
+OK

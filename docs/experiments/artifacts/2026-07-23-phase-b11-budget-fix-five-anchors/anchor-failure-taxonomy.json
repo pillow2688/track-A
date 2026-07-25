@@ -1,0 +1,52 @@
+{
+  "schema_version": "phase-b11.anchor-failure-taxonomy.v1",
+  "phase": "Phase B1.1",
+  "summary": {
+    "physical_attempt_failures": 1,
+    "anchor_acceptance_failures": 1,
+    "final_reserve_failures": 0,
+    "shared_framework_defects": 0,
+    "product_fixes_applied": 0
+  },
+  "events": [
+    {
+      "event": "REPAIR_INITIAL_TRANSPORT_FAILURE",
+      "scope": "PHYSICAL_ATTEMPT",
+      "task_id": "v3d_fast_002",
+      "primary_category": "TRANSIENT_MODEL_TRANSPORT",
+      "evidence": "Both OpenAI-compatible calls ended immediately with URLError, no request id and no token usage.",
+      "retry_eligible": true,
+      "retry_used": true,
+      "retry_result": "PASS",
+      "original_evidence_preserved": true,
+      "framework_defect": false
+    },
+    {
+      "event": "STRUCTURAL_ANCHOR_MODE_MISMATCH",
+      "scope": "ANCHOR_ACCEPTANCE",
+      "task_id": "v3d_fast_018",
+      "primary_category": "ANCHOR_PRECONDITION_NOT_REPRODUCED",
+      "secondary_category": "MODE_MISMATCH",
+      "expected_mode": "STRUCTURAL_FIX",
+      "actual_mode": "OPTIMIZE",
+      "evidence": "Baseline CSim, Synth and CoSim all passed; baseline CoSim completed in about 25.989 seconds. The Router therefore selected OPTIMIZE according to current baseline facts. In B1, the same public anchor's baseline CoSim reached the 600-second timeout.",
+      "retry_eligible": false,
+      "retry_used": false,
+      "router_defect": false,
+      "framework_defect": false,
+      "acceptance_impact": "Five-mode gate remains incomplete; STRUCTURAL_FIX was not exercised in B1.1."
+    }
+  ],
+  "non_failure_observations": [
+    {
+      "category": "EXPLORATION_FINAL_RESERVE_STOP",
+      "runs": [
+        "v3d_fast_022",
+        "v3d_fast_018"
+      ],
+      "reason": "ROUND_SKIPPED_FINAL_RESERVE",
+      "terminal_final_reserve_failure": false,
+      "fresh_final_validation": "PASS"
+    }
+  ]
+}

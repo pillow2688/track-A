@@ -1,0 +1,14 @@
+task_id = "horizontal_synth_multistage"
+task_type = "generate"
+difficulty = 4
+top = "kernel"
+kernel_file = "kernel.cpp"
+header_files = ["kernel.h"]
+public_tb = "kernel_tb.cpp"
+budget = 120
+requires_cosim = true
+initial_condition = "The baseline is C-simulation correct. Make it synthesizable and preserve output[i] = input[i] * 2 + 1 for all 16 elements through RTL co-simulation."
+
+[target]
+part = "xcu55c-fsvh2892-2L-e"
+clock_ns = 5.0

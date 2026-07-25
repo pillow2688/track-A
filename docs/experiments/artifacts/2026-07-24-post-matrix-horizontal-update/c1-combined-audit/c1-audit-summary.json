@@ -1,0 +1,75 @@
+{
+  "authority": "SHADOW",
+  "canonical_sha256": "04e77cbb3581804a36a404685d437fc4d13899bdbde0b81875e9651c2a0e5798",
+  "canonical_store_match": true,
+  "checks": {
+    "all_four_modes_present": true,
+    "all_records_valid": true,
+    "canonical_store_stable": true,
+    "no_forbidden_artifact_ref": true,
+    "no_secret_marker": true,
+    "only_real_evidence": true,
+    "ranking_data_available": true,
+    "record_ids_unique": true,
+    "source_identities_unique": true
+  },
+  "component_state": "PASS_PROMOTABLE",
+  "downstream_contract": {
+    "labels_may_be_read_only_after_decision": true,
+    "query_must_exclude": [
+      "validation",
+      "performance",
+      "cost",
+      "outcome",
+      "promoted",
+      "rejected"
+    ]
+  },
+  "evidence_distribution": {
+    "REAL_LLM_VITIS": 134
+  },
+  "forbidden_artifact_refs": [],
+  "forbidden_secret_hits": [],
+  "future_outcome_input_status": "NOT_APPLICABLE_RECORD_AUDIT_ONLY",
+  "guided": "NOT_ADMITTED",
+  "mode_distribution": {
+    "OPTIMIZE": 55,
+    "REPAIR": 43,
+    "STRUCTURAL_FIX": 11,
+    "SYNTH_FIX": 25
+  },
+  "outcome_distribution": {
+    "FAILURE": 43,
+    "NO_IMPROVEMENT": 25,
+    "SUCCESS": 66
+  },
+  "ranking_eligible_by_mode": {
+    "OPTIMIZE": 36,
+    "REPAIR": 32,
+    "STRUCTURAL_FIX": 9,
+    "SYNTH_FIX": 25
+  },
+  "ranking_eligible_count": 102,
+  "real_budget": {
+    "cosim": 0,
+    "csim": 0,
+    "llm_calls": 0,
+    "synth": 0,
+    "tokens": 0,
+    "tool_credits": 0
+  },
+  "record_count": 134,
+  "record_id_unique_count": 134,
+  "retrieval_eligible_count": 102,
+  "run_count": 96,
+  "schema_version": "c1.experience-record-v2-offline-audit.v1",
+  "source_identity_unique_count": 134,
+  "source_store": "docs/experiments/artifacts/2026-07-24-post-matrix-horizontal-update/combined-experience-v2.jsonl",
+  "store_sha256": "04e77cbb3581804a36a404685d437fc4d13899bdbde0b81875e9651c2a0e5798",
+  "task_family_count": 31,
+  "task_split_distribution": {
+    "train": 134
+  },
+  "valid_for_offline_downstream": true,
+  "valid_record_count": 134
+}

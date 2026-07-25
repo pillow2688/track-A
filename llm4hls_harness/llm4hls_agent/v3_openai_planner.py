@@ -402,15 +402,48 @@ def _source_only(
 def _task_aware_failure_evidence(
     round_state: Mapping[str, object], *, mode: str
 ) -> dict[str, object]:
-    """Accept only the bounded extractor output expected for the routed mode."""
+    """Accept bounded baseline or latest Candidate-stage failure evidence.
+
+    The baseline schema must match the routed mode.  A later Candidate may
+    fail an earlier validation stage (for example, a SYNTH_FIX patch may stop
+    compiling in CSim), so fail-closed stage compatibility is wider for a
+    non-baseline Candidate while remaining mode-specific.
+    """
 
     raw = _mapping(round_state.get("failure_evidence"), "round.failure_evidence")
-    expected_schema = {
+    routed_schema = {
         "REPAIR": "v3c.csim-failure-evidence.v1",
         "SYNTH_FIX": "v3c.synth-failure-evidence.v1",
         "STRUCTURAL_FIX": "v3c.cosim-failure-evidence.v1",
     }[mode]
-    if raw.get("schema_version") != expected_schema:
+    candidate_id = raw.get("candidate_id")
+    candidate_stage_evidence = (
+        isinstance(candidate_id, str)
+        and candidate_id.startswith("candidate_")
+        and candidate_id != "candidate_000"
+    )
+    compatible_candidate_schemas = {
+        "REPAIR": {
+            "v3c.csim-failure-evidence.v1",
+            "v3c.synth-failure-evidence.v1",
+            "v3c.cosim-failure-evidence.v1",
+        },
+        "SYNTH_FIX": {
+            "v3c.csim-failure-evidence.v1",
+            "v3c.synth-failure-evidence.v1",
+        },
+        "STRUCTURAL_FIX": {
+            "v3c.csim-failure-evidence.v1",
+            "v3c.cosim-failure-evidence.v1",
+        },
+    }[mode]
+    schema = raw.get("schema_version")
+    schema_allowed = (
+        schema in compatible_candidate_schemas
+        if candidate_stage_evidence
+        else schema == routed_schema
+    )
+    if not schema_allowed:
         raise V3OpenAIPlannerError(
             "Planner input failure evidence does not match the routed mode"
         )
@@ -422,6 +455,98 @@ def _task_aware_failure_evidence(
     if len(canonical_json(evidence)) > 24_000:
         raise V3OpenAIPlannerError("Planner input failure evidence is not bounded")
     return evidence
+
+
+def _task_aware_recent_failures(
+    run_root: Path,
+    history: object,
+    *,
+    mode: str,
+    current_candidate_id: object,
+) -> list[dict[str, object]]:
+    """Resolve the baseline blocker and latest rejected-Candidate summary.
+
+    Every task-aware proposal is applied to the current incumbent, not layered
+    onto a rejected Candidate.  Keeping the hash-bound baseline failure in this
+    bounded history prevents a later-stage repair from fixing only a new
+    regression while accidentally reintroducing the original routed blocker.
+    """
+
+    if not isinstance(history, list):
+        raise V3OpenAIPlannerError("Planner input history must be a list")
+    rows: list[dict[str, object]] = []
+    for item in history:
+        if not isinstance(item, Mapping):
+            raise V3OpenAIPlannerError("Planner input history item is invalid")
+        baseline_failure = item.get("kind") == "baseline_failure"
+        if not baseline_failure and item.get("status") != "REJECTED":
+            continue
+        binding = item.get("failure_evidence")
+        if (
+            not isinstance(binding, Mapping)
+            or binding.get("ref") is None
+            or binding.get("sha256") is None
+        ):
+            continue
+        artifact = _resolve_binding(
+            run_root,
+            binding,
+            name="history.failure_evidence",
+            optional=True,
+        )
+        if artifact is None:
+            continue
+        raw = _read_json(artifact.data, "history.failure_evidence")
+        evidence = _task_aware_failure_evidence(
+            {"failure_evidence": raw},
+            mode=mode,
+        )
+        if evidence.get("candidate_id") == current_candidate_id:
+            continue
+        summary = (
+            evidence.get("synthesis_error")
+            or evidence.get("error_summary")
+            or evidence.get("failure_kind")
+        )
+        unsupported = evidence.get("unsupported_constructs")
+        relevant = evidence.get("relevant_log_lines")
+        rows.append(
+            {
+                "round_index": item.get("round_index"),
+                "candidate_id": item.get("candidate_id"),
+                "change_class": item.get("change_class"),
+                "rejection_reason": item.get("rejection_reason"),
+                "failure_kind": evidence.get("failure_kind"),
+                "phase": evidence.get("phase"),
+                "summary": summary,
+                "unsupported_constructs": (
+                    list(unsupported[:4])
+                    if isinstance(unsupported, list)
+                    else []
+                ),
+                "relevant_log_lines": (
+                    list(relevant[:4]) if isinstance(relevant, list) else []
+                ),
+            }
+        )
+    baseline_rows = [
+        row for row in rows if row.get("round_index") == 0
+    ]
+    candidate_rows = [
+        row for row in rows if row.get("round_index") != 0
+    ]
+    selected = [
+        *baseline_rows[-1:],
+        *candidate_rows[-1:],
+    ]
+    sanitized = _sanitize_evidence_value(selected)
+    if not isinstance(sanitized, list):
+        raise V3OpenAIPlannerError("Planner history failure summary is invalid")
+    if len(canonical_json(sanitized)) > 8_000:
+        raise V3OpenAIPlannerError(
+            "Planner history failure summary is not bounded"
+        )
+    return sanitized
 
 
 _POSIX_LOCAL_PATH = re.compile(
@@ -659,6 +784,26 @@ class OpenAICompatibleV3PlannerAdapter:
                     )
                 self._experience_disabled = True
                 self._experience_error_type = "ExperienceCoordinatorUnavailable"
+            if (
+                self.experience_mode is ExperienceMode.GUIDED
+                and experience_coordinator is not None
+                and bool(
+                    getattr(
+                        experience_coordinator,
+                        "requires_admission_gate",
+                        False,
+                    )
+                )
+                and getattr(
+                    experience_coordinator,
+                    "prompt_injection_authorized",
+                    False,
+                )
+                is not True
+            ):
+                raise ValueError(
+                    "guided Experience V2 coordinator is not Gate-authorized"
+                )
             for method_name in (
                 "build_guidance",
                 "persist_recommendation",
@@ -734,9 +879,12 @@ class OpenAICompatibleV3PlannerAdapter:
             "fast_experiment": self.fast_experiment,
             "read_only_headers_sha256": canonical_sha256(self.read_only_headers),
         }
-        # `off` deliberately hashes the exact pre-V3-E identity.  This is the
-        # compatibility contract used to resume old V3-D checkpoints.
-        if self.experience_mode is not ExperienceMode.OFF:
+        # Shadow is a run-local sidecar and deliberately shares the exact
+        # execution identity of ``off``.  Its seed and audit identity are
+        # reported by experience_summary(), never by the Planner fingerprint.
+        # Guided changes the Provider request and therefore remains part of the
+        # durable execution identity.
+        if self.experience_mode is ExperienceMode.GUIDED:
             identity["experience"] = {
                 "mode": self.experience_mode.value,
                 "task_split": self._experience_task_split,
@@ -791,7 +939,11 @@ class OpenAICompatibleV3PlannerAdapter:
             "task_split": self._experience_task_split,
             "seed_snapshot": self._experience_snapshot,
             "seed_fingerprint": self._experience_fingerprint,
-            "authority": "ADVISORY_ONLY",
+            "authority": (
+                "PROMPT_CONTEXT_GUIDANCE"
+                if self.experience_mode is ExperienceMode.GUIDED
+                else "ADVISORY_ONLY"
+            ),
             "status": "DISABLED" if self._experience_disabled else "ACTIVE",
         }
         if self._experience_error_type is not None:
@@ -1265,7 +1417,7 @@ class OpenAICompatibleV3PlannerAdapter:
             final_estimate=base_estimate,
             guidance_tokens=0,
             guidance_allowed=(
-                self.experience_mode is not ExperienceMode.OFF
+                self.experience_mode is ExperienceMode.GUIDED
                 and not self._experience_disabled
             ),
         )
@@ -1307,7 +1459,7 @@ class OpenAICompatibleV3PlannerAdapter:
                 final_estimate=candidate_estimate,
                 guidance_tokens=guidance_tokens,
                 guidance_allowed=(
-                    self.experience_mode is not ExperienceMode.OFF
+                    self.experience_mode is ExperienceMode.GUIDED
                     and not self._experience_disabled
                 ),
             )
@@ -1379,7 +1531,7 @@ class OpenAICompatibleV3PlannerAdapter:
                 final_estimate=final_estimate,
                 guidance_tokens=guidance_tokens,
                 guidance_allowed=(
-                    self.experience_mode is not ExperienceMode.OFF
+                    self.experience_mode is ExperienceMode.GUIDED
                     and not self._experience_disabled
                 ),
             )
@@ -1397,7 +1549,16 @@ class OpenAICompatibleV3PlannerAdapter:
             raise V3OpenAIPlannerError(
                 "Prompt TokenEnvelope and provider max output diverged"
             )
-        self._persist_guidance(planner_input, guidance)
+        if self.experience_mode is ExperienceMode.SHADOW:
+            self._build_experience_guidance(
+                planner_input,
+                mode=mode,
+                guidance_token_cap=None,
+                persist=True,
+                **dict(guidance_kwargs),
+            )
+        else:
+            self._persist_guidance(planner_input, guidance)
         return _BudgetedPreparedContext(
             context=final_context,
             provider_request=final_request,
@@ -1562,7 +1723,7 @@ class OpenAICompatibleV3PlannerAdapter:
             final_estimate=base_estimate,
             guidance_tokens=0,
             guidance_allowed=(
-                self.experience_mode is not ExperienceMode.OFF
+                self.experience_mode is ExperienceMode.GUIDED
                 and not self._experience_disabled
             ),
         )
@@ -1596,7 +1757,7 @@ class OpenAICompatibleV3PlannerAdapter:
             final_estimate=final_estimate,
             guidance_tokens=guidance_tokens,
             guidance_allowed=(
-                self.experience_mode is not ExperienceMode.OFF
+                self.experience_mode is ExperienceMode.GUIDED
                 and not self._experience_disabled
             ),
         )
@@ -1636,7 +1797,7 @@ class OpenAICompatibleV3PlannerAdapter:
                 final_estimate=final_estimate,
                 guidance_tokens=guidance_tokens,
                 guidance_allowed=(
-                    self.experience_mode is not ExperienceMode.OFF
+                    self.experience_mode is ExperienceMode.GUIDED
                     and not self._experience_disabled
                 ),
             )
@@ -1654,7 +1815,16 @@ class OpenAICompatibleV3PlannerAdapter:
             raise V3OpenAIPlannerError(
                 "hard-capped Provider max output diverged from TokenEnvelope"
             )
-        self._persist_guidance(planner_input, guidance)
+        if self.experience_mode is ExperienceMode.SHADOW:
+            self._build_experience_guidance(
+                planner_input,
+                mode=mode,
+                guidance_token_cap=None,
+                persist=True,
+                **dict(guidance_kwargs),
+            )
+        else:
+            self._persist_guidance(planner_input, guidance)
         return _BudgetedPreparedContext(
             context=final_context,
             provider_request=final_request,
@@ -1693,7 +1863,7 @@ class OpenAICompatibleV3PlannerAdapter:
             final_estimate=base_estimate,
             guidance_tokens=0,
             guidance_allowed=(
-                self.experience_mode is not ExperienceMode.OFF
+                self.experience_mode is ExperienceMode.GUIDED
                 and not self._experience_disabled
             ),
         )
@@ -1735,7 +1905,7 @@ class OpenAICompatibleV3PlannerAdapter:
                 final_estimate=final_estimate,
                 guidance_tokens=guidance_tokens,
                 guidance_allowed=(
-                    self.experience_mode is not ExperienceMode.OFF
+                    self.experience_mode is ExperienceMode.GUIDED
                     and not self._experience_disabled
                 ),
             )
@@ -1785,7 +1955,7 @@ class OpenAICompatibleV3PlannerAdapter:
                 final_estimate=final_estimate,
                 guidance_tokens=guidance_tokens,
                 guidance_allowed=(
-                    self.experience_mode is not ExperienceMode.OFF
+                    self.experience_mode is ExperienceMode.GUIDED
                     and not self._experience_disabled
                 ),
             )
@@ -1803,7 +1973,18 @@ class OpenAICompatibleV3PlannerAdapter:
             raise V3OpenAIPlannerError(
                 "Prompt TokenEnvelope and provider max output diverged"
             )
-        self._persist_guidance(planner_input, guidance)
+        if self.experience_mode is ExperienceMode.SHADOW:
+            self._build_experience_guidance(
+                planner_input,
+                mode="OPTIMIZE",
+                source=source,
+                synth_report=synth_report,
+                synth_evidence=synth_evidence,
+                guidance_token_cap=None,
+                persist=True,
+            )
+        else:
+            self._persist_guidance(planner_input, guidance)
         dispatch = _BudgetedOptimizationDispatch(
             context=context,
             token_envelope=envelope.to_dict(),
@@ -1839,7 +2020,7 @@ class OpenAICompatibleV3PlannerAdapter:
             final_estimate=base_estimate,
             guidance_tokens=0,
             guidance_allowed=(
-                self.experience_mode is not ExperienceMode.OFF
+                self.experience_mode is ExperienceMode.GUIDED
                 and not self._experience_disabled
             ),
         )
@@ -1879,7 +2060,7 @@ class OpenAICompatibleV3PlannerAdapter:
                 final_estimate=final_estimate,
                 guidance_tokens=guidance_tokens,
                 guidance_allowed=(
-                    self.experience_mode is not ExperienceMode.OFF
+                    self.experience_mode is ExperienceMode.GUIDED
                     and not self._experience_disabled
                 ),
             )
@@ -1897,7 +2078,18 @@ class OpenAICompatibleV3PlannerAdapter:
             raise V3OpenAIPlannerError(
                 "hard-capped optimization Provider max diverged"
             )
-        self._persist_guidance(planner_input, guidance)
+        if self.experience_mode is ExperienceMode.SHADOW:
+            self._build_experience_guidance(
+                planner_input,
+                mode="OPTIMIZE",
+                source=source,
+                synth_report=synth_report,
+                synth_evidence=synth_evidence,
+                guidance_token_cap=None,
+                persist=True,
+            )
+        else:
+            self._persist_guidance(planner_input, guidance)
         dispatch = _BudgetedOptimizationDispatch(
             context=context,
             token_envelope=envelope.to_dict(),
@@ -1941,6 +2133,12 @@ class OpenAICompatibleV3PlannerAdapter:
             failure_evidence = _task_aware_failure_evidence(
                 round_state, mode=mode_value
             )
+            recent_failures = _task_aware_recent_failures(
+                self.run_root,
+                value.get("history"),
+                mode=mode_value,
+                current_candidate_id=failure_evidence.get("candidate_id"),
+            )
             requires_cosim = task.get("requires_cosim")
             if not isinstance(requires_cosim, bool):
                 raise V3OpenAIPlannerError(
@@ -1973,6 +2171,7 @@ class OpenAICompatibleV3PlannerAdapter:
                 "description": str(task.get("description") or ""),
                 "read_only_headers": dict(self.read_only_headers),
                 "failure_evidence": failure_evidence,
+                "recent_failures": recent_failures,
                 "budget": {
                     "remaining_tokens": budget.get("tokens_remaining"),
                     "remaining_credits": budget.get("credits_remaining"),

@@ -1,0 +1,605 @@
+{
+  "admission": "INSUFFICIENT_EVIDENCE",
+  "authority": {
+    "enforce": "DISABLED",
+    "shadow_pilot": "NOT_READY",
+    "v1": "SHADOW",
+    "v2": "OFFLINE_ONLY"
+  },
+  "dataset": {
+    "all_screening_exclusions": 81,
+    "bindable_decisions": 20,
+    "candidate_decision_points": 21,
+    "followup_excluded": 1,
+    "future_fields_separated": true,
+    "leakage_violations": [],
+    "mode_counts": {
+      "OPTIMIZE": 17,
+      "STRUCTURAL_FIX": 3
+    },
+    "outcome_counts": {
+      "BENEFICIAL_PERFORMANCE": 8,
+      "HARMFUL": 12
+    },
+    "source_screening_records": 101
+  },
+  "delta": {
+    "beneficial_retention_rate": 0.5,
+    "false_block_count": -4,
+    "offline_potential_credit_saving": -73.0,
+    "offline_potential_token_saving": -12189.0,
+    "waste_block_rate": -0.4166666666666667
+  },
+  "evaluation_protocol": {
+    "calibration": "NONE; rules were transcribed from the frozen Phase C0 specification",
+    "held_out": "LEAVE_ONE_RUN_OUT_AND_LEAVE_ONE_TASK_OUT",
+    "leave_one_run_out": {
+      "evaluated_decisions": 20,
+      "interpretation": "Pure non-fitted policy is context-free; each held-out decision matched its full-set decision.",
+      "rate": 1.0,
+      "stable_decisions": 20
+    },
+    "leave_one_task_out": {
+      "evaluated_task_groups": 9,
+      "interpretation": "No task-specific threshold, ID, or outcome enters the policy.",
+      "rate": 1.0,
+      "stable_task_groups": 9
+    },
+    "split_digest": "a86232bb46d3c28286af0505c99d07fe1a2c268a2af82a5f1302ecdaad5cb6f4"
+  },
+  "phase": "Phase C0",
+  "reason_codes": [
+    "NO_REPAIR_FOLLOWUP_SAMPLES",
+    "NO_SYNTH_FIX_FOLLOWUP_SAMPLES",
+    "NO_ESSENTIAL_STRUCTURAL_OUTCOMES",
+    "WASTE_BLOCK_RATE_REGRESSED"
+  ],
+  "schema_version": "phase-c0.policy-comparison.v1",
+  "status": "INSUFFICIENT_EVIDENCE",
+  "v1": {
+    "allow_rate": {
+      "denominator": 20,
+      "numerator": 11,
+      "rate": 0.55,
+      "status": "OK"
+    },
+    "beneficial_or_essential_retention": {
+      "denominator": 8,
+      "numerator": 4,
+      "rate": 0.5,
+      "status": "OK"
+    },
+    "bindable_decisions": 20,
+    "block_rate": {
+      "denominator": 20,
+      "numerator": 9,
+      "rate": 0.45,
+      "status": "OK"
+    },
+    "by_mode": {
+      "OPTIMIZE": {
+        "allow_rate": {
+          "denominator": 17,
+          "numerator": 11,
+          "rate": 0.6470588235294118,
+          "status": "OK"
+        },
+        "beneficial_or_essential_retention": {
+          "denominator": 8,
+          "numerator": 4,
+          "rate": 0.5,
+          "status": "OK"
+        },
+        "block_rate": {
+          "denominator": 17,
+          "numerator": 6,
+          "rate": 0.35294117647058826,
+          "status": "OK"
+        },
+        "coverage": {
+          "denominator": 20,
+          "numerator": 17,
+          "rate": 0.85,
+          "status": "OK"
+        },
+        "decision_count": {
+          "ALLOW": 11,
+          "BLOCK": 6
+        },
+        "defer_rate": {
+          "denominator": 17,
+          "numerator": 0,
+          "rate": 0.0,
+          "status": "OK"
+        },
+        "false_block": {
+          "beneficial_or_essential_denominator": 8,
+          "count": 4
+        },
+        "false_defer": {
+          "beneficial_or_essential_denominator": 8,
+          "count": 0
+        },
+        "unresolved": {
+          "count": 0,
+          "denominator": 17
+        },
+        "waste_block_rate": {
+          "denominator": 9,
+          "numerator": 2,
+          "rate": 0.2222222222222222,
+          "status": "OK"
+        }
+      },
+      "REPAIR": {
+        "allow_rate": {
+          "denominator": 0,
+          "numerator": 0,
+          "rate": null,
+          "status": "INSUFFICIENT_EVIDENCE"
+        },
+        "beneficial_or_essential_retention": {
+          "denominator": 0,
+          "numerator": 0,
+          "rate": null,
+          "status": "INSUFFICIENT_EVIDENCE"
+        },
+        "block_rate": {
+          "denominator": 0,
+          "numerator": 0,
+          "rate": null,
+          "status": "INSUFFICIENT_EVIDENCE"
+        },
+        "coverage": {
+          "denominator": 20,
+          "numerator": 0,
+          "rate": 0.0,
+          "status": "OK"
+        },
+        "decision_count": {},
+        "defer_rate": {
+          "denominator": 0,
+          "numerator": 0,
+          "rate": null,
+          "status": "INSUFFICIENT_EVIDENCE"
+        },
+        "false_block": {
+          "beneficial_or_essential_denominator": 0,
+          "count": 0
+        },
+        "false_defer": {
+          "beneficial_or_essential_denominator": 0,
+          "count": 0
+        },
+        "unresolved": {
+          "count": 0,
+          "denominator": 0
+        },
+        "waste_block_rate": {
+          "denominator": 0,
+          "numerator": 0,
+          "rate": null,
+          "status": "INSUFFICIENT_EVIDENCE"
+        }
+      },
+      "STRUCTURAL_FIX": {
+        "allow_rate": {
+          "denominator": 3,
+          "numerator": 0,
+          "rate": 0.0,
+          "status": "OK"
+        },
+        "beneficial_or_essential_retention": {
+          "denominator": 0,
+          "numerator": 0,
+          "rate": null,
+          "status": "INSUFFICIENT_EVIDENCE"
+        },
+        "block_rate": {
+          "denominator": 3,
+          "numerator": 3,
+          "rate": 1.0,
+          "status": "OK"
+        },
+        "coverage": {
+          "denominator": 20,
+          "numerator": 3,
+          "rate": 0.15,
+          "status": "OK"
+        },
+        "decision_count": {
+          "BLOCK": 3
+        },
+        "defer_rate": {
+          "denominator": 3,
+          "numerator": 0,
+          "rate": 0.0,
+          "status": "OK"
+        },
+        "false_block": {
+          "beneficial_or_essential_denominator": 0,
+          "count": 0
+        },
+        "false_defer": {
+          "beneficial_or_essential_denominator": 0,
+          "count": 0
+        },
+        "unresolved": {
+          "count": 0,
+          "denominator": 3
+        },
+        "waste_block_rate": {
+          "denominator": 3,
+          "numerator": 3,
+          "rate": 1.0,
+          "status": "OK"
+        }
+      },
+      "SYNTH_FIX": {
+        "allow_rate": {
+          "denominator": 0,
+          "numerator": 0,
+          "rate": null,
+          "status": "INSUFFICIENT_EVIDENCE"
+        },
+        "beneficial_or_essential_retention": {
+          "denominator": 0,
+          "numerator": 0,
+          "rate": null,
+          "status": "INSUFFICIENT_EVIDENCE"
+        },
+        "block_rate": {
+          "denominator": 0,
+          "numerator": 0,
+          "rate": null,
+          "status": "INSUFFICIENT_EVIDENCE"
+        },
+        "coverage": {
+          "denominator": 20,
+          "numerator": 0,
+          "rate": 0.0,
+          "status": "OK"
+        },
+        "decision_count": {},
+        "defer_rate": {
+          "denominator": 0,
+          "numerator": 0,
+          "rate": null,
+          "status": "INSUFFICIENT_EVIDENCE"
+        },
+        "false_block": {
+          "beneficial_or_essential_denominator": 0,
+          "count": 0
+        },
+        "false_defer": {
+          "beneficial_or_essential_denominator": 0,
+          "count": 0
+        },
+        "unresolved": {
+          "count": 0,
+          "denominator": 0
+        },
+        "waste_block_rate": {
+          "denominator": 0,
+          "numerator": 0,
+          "rate": null,
+          "status": "INSUFFICIENT_EVIDENCE"
+        }
+      }
+    },
+    "decision_count": {
+      "ALLOW": 11,
+      "BLOCK": 9
+    },
+    "defer_rate": {
+      "denominator": 20,
+      "numerator": 0,
+      "rate": 0.0,
+      "status": "OK"
+    },
+    "essential_structural_retention": {
+      "denominator": 0,
+      "numerator": 0,
+      "rate": null,
+      "status": "INSUFFICIENT_EVIDENCE"
+    },
+    "false_block": {
+      "beneficial_or_essential_denominator": 8,
+      "count": 4
+    },
+    "false_defer": {
+      "beneficial_or_essential_denominator": 8,
+      "count": 0
+    },
+    "offline_potential_savings": {
+      "claim": "OFFLINE_POTENTIAL_ONLY",
+      "credit_cost_known": 5,
+      "credits": 73.0,
+      "stopped_waste_decisions": 5,
+      "token_cost_known": 5,
+      "tokens": 12189.0
+    },
+    "unresolved": {
+      "count": 0,
+      "denominator": 20
+    },
+    "waste_block_rate": {
+      "denominator": 12,
+      "numerator": 5,
+      "rate": 0.4166666666666667,
+      "status": "OK"
+    }
+  },
+  "v2": {
+    "allow_rate": {
+      "denominator": 20,
+      "numerator": 20,
+      "rate": 1.0,
+      "status": "OK"
+    },
+    "beneficial_or_essential_retention": {
+      "denominator": 8,
+      "numerator": 8,
+      "rate": 1.0,
+      "status": "OK"
+    },
+    "bindable_decisions": 20,
+    "block_rate": {
+      "denominator": 20,
+      "numerator": 0,
+      "rate": 0.0,
+      "status": "OK"
+    },
+    "by_mode": {
+      "OPTIMIZE": {
+        "allow_rate": {
+          "denominator": 17,
+          "numerator": 17,
+          "rate": 1.0,
+          "status": "OK"
+        },
+        "beneficial_or_essential_retention": {
+          "denominator": 8,
+          "numerator": 8,
+          "rate": 1.0,
+          "status": "OK"
+        },
+        "block_rate": {
+          "denominator": 17,
+          "numerator": 0,
+          "rate": 0.0,
+          "status": "OK"
+        },
+        "coverage": {
+          "denominator": 20,
+          "numerator": 17,
+          "rate": 0.85,
+          "status": "OK"
+        },
+        "decision_count": {
+          "ALLOW": 17
+        },
+        "defer_rate": {
+          "denominator": 17,
+          "numerator": 0,
+          "rate": 0.0,
+          "status": "OK"
+        },
+        "false_block": {
+          "beneficial_or_essential_denominator": 8,
+          "count": 0
+        },
+        "false_defer": {
+          "beneficial_or_essential_denominator": 8,
+          "count": 0
+        },
+        "unresolved": {
+          "count": 0,
+          "denominator": 17
+        },
+        "waste_block_rate": {
+          "denominator": 9,
+          "numerator": 0,
+          "rate": 0.0,
+          "status": "OK"
+        }
+      },
+      "REPAIR": {
+        "allow_rate": {
+          "denominator": 0,
+          "numerator": 0,
+          "rate": null,
+          "status": "INSUFFICIENT_EVIDENCE"
+        },
+        "beneficial_or_essential_retention": {
+          "denominator": 0,
+          "numerator": 0,
+          "rate": null,
+          "status": "INSUFFICIENT_EVIDENCE"
+        },
+        "block_rate": {
+          "denominator": 0,
+          "numerator": 0,
+          "rate": null,
+          "status": "INSUFFICIENT_EVIDENCE"
+        },
+        "coverage": {
+          "denominator": 20,
+          "numerator": 0,
+          "rate": 0.0,
+          "status": "OK"
+        },
+        "decision_count": {},
+        "defer_rate": {
+          "denominator": 0,
+          "numerator": 0,
+          "rate": null,
+          "status": "INSUFFICIENT_EVIDENCE"
+        },
+        "false_block": {
+          "beneficial_or_essential_denominator": 0,
+          "count": 0
+        },
+        "false_defer": {
+          "beneficial_or_essential_denominator": 0,
+          "count": 0
+        },
+        "unresolved": {
+          "count": 0,
+          "denominator": 0
+        },
+        "waste_block_rate": {
+          "denominator": 0,
+          "numerator": 0,
+          "rate": null,
+          "status": "INSUFFICIENT_EVIDENCE"
+        }
+      },
+      "STRUCTURAL_FIX": {
+        "allow_rate": {
+          "denominator": 3,
+          "numerator": 3,
+          "rate": 1.0,
+          "status": "OK"
+        },
+        "beneficial_or_essential_retention": {
+          "denominator": 0,
+          "numerator": 0,
+          "rate": null,
+          "status": "INSUFFICIENT_EVIDENCE"
+        },
+        "block_rate": {
+          "denominator": 3,
+          "numerator": 0,
+          "rate": 0.0,
+          "status": "OK"
+        },
+        "coverage": {
+          "denominator": 20,
+          "numerator": 3,
+          "rate": 0.15,
+          "status": "OK"
+        },
+        "decision_count": {
+          "ALLOW": 3
+        },
+        "defer_rate": {
+          "denominator": 3,
+          "numerator": 0,
+          "rate": 0.0,
+          "status": "OK"
+        },
+        "false_block": {
+          "beneficial_or_essential_denominator": 0,
+          "count": 0
+        },
+        "false_defer": {
+          "beneficial_or_essential_denominator": 0,
+          "count": 0
+        },
+        "unresolved": {
+          "count": 0,
+          "denominator": 3
+        },
+        "waste_block_rate": {
+          "denominator": 3,
+          "numerator": 0,
+          "rate": 0.0,
+          "status": "OK"
+        }
+      },
+      "SYNTH_FIX": {
+        "allow_rate": {
+          "denominator": 0,
+          "numerator": 0,
+          "rate": null,
+          "status": "INSUFFICIENT_EVIDENCE"
+        },
+        "beneficial_or_essential_retention": {
+          "denominator": 0,
+          "numerator": 0,
+          "rate": null,
+          "status": "INSUFFICIENT_EVIDENCE"
+        },
+        "block_rate": {
+          "denominator": 0,
+          "numerator": 0,
+          "rate": null,
+          "status": "INSUFFICIENT_EVIDENCE"
+        },
+        "coverage": {
+          "denominator": 20,
+          "numerator": 0,
+          "rate": 0.0,
+          "status": "OK"
+        },
+        "decision_count": {},
+        "defer_rate": {
+          "denominator": 0,
+          "numerator": 0,
+          "rate": null,
+          "status": "INSUFFICIENT_EVIDENCE"
+        },
+        "false_block": {
+          "beneficial_or_essential_denominator": 0,
+          "count": 0
+        },
+        "false_defer": {
+          "beneficial_or_essential_denominator": 0,
+          "count": 0
+        },
+        "unresolved": {
+          "count": 0,
+          "denominator": 0
+        },
+        "waste_block_rate": {
+          "denominator": 0,
+          "numerator": 0,
+          "rate": null,
+          "status": "INSUFFICIENT_EVIDENCE"
+        }
+      }
+    },
+    "decision_count": {
+      "ALLOW": 20
+    },
+    "defer_rate": {
+      "denominator": 20,
+      "numerator": 0,
+      "rate": 0.0,
+      "status": "OK"
+    },
+    "essential_structural_retention": {
+      "denominator": 0,
+      "numerator": 0,
+      "rate": null,
+      "status": "INSUFFICIENT_EVIDENCE"
+    },
+    "false_block": {
+      "beneficial_or_essential_denominator": 8,
+      "count": 0
+    },
+    "false_defer": {
+      "beneficial_or_essential_denominator": 8,
+      "count": 0
+    },
+    "offline_potential_savings": {
+      "claim": "OFFLINE_POTENTIAL_ONLY",
+      "credit_cost_known": 0,
+      "credits": 0,
+      "stopped_waste_decisions": 0,
+      "token_cost_known": 0,
+      "tokens": 0
+    },
+    "unresolved": {
+      "count": 0,
+      "denominator": 20
+    },
+    "waste_block_rate": {
+      "denominator": 12,
+      "numerator": 0,
+      "rate": 0.0,
+      "status": "OK"
+    }
+  }
+}

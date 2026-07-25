@@ -233,6 +233,22 @@ def _parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--continuation-policy-version",
+        choices=("v1", "v2"),
+        default="v1",
+        help=(
+            "Continuation decision implementation. v2 is the mode-specific "
+            "leakage-safe controller and must be selected explicitly."
+        ),
+    )
+    parser.add_argument(
+        "--continuation-admission-manifest",
+        help=(
+            "Hash-bound online Shadow Gate evidence. Required for "
+            "--continuation-policy enforce and rejected in off/shadow mode."
+        ),
+    )
+    parser.add_argument(
         "--enable-final-fallback",
         action="store_true",
         help=(
@@ -272,6 +288,23 @@ def _parser() -> argparse.ArgumentParser:
         help=(
             "Read-only JSONL seed store used for retrieval. New Candidate "
             "experience is written under the run directory, never back here."
+        ),
+    )
+    parser.add_argument(
+        "--experience-ranker-version",
+        choices=("v1", "v3"),
+        default="v1",
+        help=(
+            "v1 preserves the legacy advisory coordinator. v3 consumes the "
+            "frozen Experience V2 store and uses independent-family verified "
+            "labels; guided mode requires v3 plus a passing admission manifest."
+        ),
+    )
+    parser.add_argument(
+        "--experience-admission-manifest",
+        help=(
+            "Hash-bound fixed-protocol Ranker V3 Gate result. Required for "
+            "--experience-mode guided; ignored by the legacy v1 coordinator."
         ),
     )
     parser.add_argument(
@@ -371,9 +404,6 @@ def main(argv: list[str] | None = None) -> int:
                 OpenAICompatibleOptimizationProvider,
             )
             from .v3_openai_planner import OpenAICompatibleV3PlannerAdapter
-            from .v3_experience_guidance import ExperienceCoordinator
-            from .v3_experience_store import JsonlExperienceRepository
-
             run_root = Path(args.run_dir).resolve()
             seed_store = (
                 Path(args.experience_store).expanduser().resolve()
@@ -384,18 +414,57 @@ def main(argv: list[str] | None = None) -> int:
                 raise ValueError(
                     "--experience-store must name an existing JSONL file"
                 )
+            if args.experience_ranker_version == "v3" and not args.experience_store:
+                raise ValueError(
+                    "--experience-ranker-version v3 requires --experience-store"
+                )
+            if args.experience_mode == "guided":
+                if args.experience_ranker_version != "v3":
+                    raise ValueError(
+                        "guided experience requires the Gate-controlled v3 ranker"
+                    )
+                if not args.experience_admission_manifest:
+                    raise ValueError(
+                        "guided experience requires --experience-admission-manifest"
+                    )
             experience_coordinator = None
             if args.experience_mode != "off":
                 try:
-                    experience_coordinator = ExperienceCoordinator(
-                        JsonlExperienceRepository(seed_store),
-                        recommendation_path=(
-                            run_root
-                            / "experience"
-                            / "experience_recommendations.jsonl"
-                        ),
-                        max_guidance_tokens=args.experience_max_guidance_tokens,
-                    )
+                    if args.experience_ranker_version == "v3":
+                        from .v3_experience_v2_runtime import (
+                            ExperienceV2RuntimeCoordinator,
+                        )
+
+                        experience_coordinator = ExperienceV2RuntimeCoordinator(
+                            seed_store,
+                            recommendation_path=(
+                                run_root
+                                / "experience"
+                                / "experience_recommendations.jsonl"
+                            ),
+                            admission_manifest_path=(
+                                args.experience_admission_manifest
+                            ),
+                            injection_requested=args.experience_mode == "guided",
+                            max_guidance_tokens=(
+                                args.experience_max_guidance_tokens
+                            ),
+                        )
+                    else:
+                        from .v3_experience_guidance import ExperienceCoordinator
+                        from .v3_experience_store import JsonlExperienceRepository
+
+                        experience_coordinator = ExperienceCoordinator(
+                            JsonlExperienceRepository(seed_store),
+                            recommendation_path=(
+                                run_root
+                                / "experience"
+                                / "experience_recommendations.jsonl"
+                            ),
+                            max_guidance_tokens=(
+                                args.experience_max_guidance_tokens
+                            ),
+                        )
                 except Exception as exc:
                     if args.experience_mode == "guided":
                         raise
@@ -625,6 +694,10 @@ def main(argv: list[str] | None = None) -> int:
                 validation_profile=args.validation_profile,
                 final_validation_policy=args.final_validation_policy,
                 continuation_policy_mode=args.continuation_policy,
+                continuation_policy_version=args.continuation_policy_version,
+                continuation_admission_manifest=(
+                    args.continuation_admission_manifest
+                ),
             )
         else:
             result = run_v3_prototype(
@@ -640,6 +713,10 @@ def main(argv: list[str] | None = None) -> int:
                 validation_profile=args.validation_profile,
                 final_validation_policy=args.final_validation_policy,
                 continuation_policy_mode=args.continuation_policy,
+                continuation_policy_version=args.continuation_policy_version,
+                continuation_admission_manifest=(
+                    args.continuation_admission_manifest
+                ),
             )
         if args.experience_mode != "off":
             # Rebuild Candidate-level records from terminal, hash-bound run

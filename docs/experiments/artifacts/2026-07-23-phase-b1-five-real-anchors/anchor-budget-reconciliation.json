@@ -1,0 +1,123 @@
+{
+  "schema_version": "phase-b1.anchor-budget-reconciliation.v1",
+  "usage_source": "BudgetLedger, terminal result and tool action artifacts",
+  "records": [
+    {
+      "task_name": "v3d_fast_018",
+      "planner_calls": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "total_tokens": 0,
+      "csim_calls": 1,
+      "synth_calls": 1,
+      "cosim_calls": 1,
+      "tool_credits": 25,
+      "wall_time_seconds": 614.8029520511627,
+      "within_task_budget": true,
+      "fresh_final_budget_reserved": false,
+      "ledger_reconciled": true,
+      "token_usage_complete": true,
+      "budget_gate_policy": "structural_fix_candidate_plus_final_closure",
+      "budget_gate_required_tokens": 10562,
+      "budget_gate_available_tokens": 8000,
+      "budget_gate_blockers": [
+        "tokens:8000<10562"
+      ]
+    },
+    {
+      "task_name": "v3d_fast_002",
+      "planner_calls": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "total_tokens": 0,
+      "csim_calls": 1,
+      "synth_calls": 0,
+      "cosim_calls": 0,
+      "tool_credits": 1,
+      "wall_time_seconds": 4.163111209869385,
+      "within_task_budget": true,
+      "fresh_final_budget_reserved": false,
+      "ledger_reconciled": true,
+      "token_usage_complete": true,
+      "budget_gate_policy": "repair_candidate_plus_final_closure",
+      "budget_gate_required_tokens": 8511,
+      "budget_gate_available_tokens": 8000,
+      "budget_gate_blockers": [
+        "tokens:8000<8511"
+      ]
+    },
+    {
+      "task_name": "v3d_fast_010",
+      "planner_calls": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "total_tokens": 0,
+      "csim_calls": 0,
+      "synth_calls": 0,
+      "cosim_calls": 0,
+      "tool_credits": 0,
+      "wall_time_seconds": 0.0,
+      "within_task_budget": false,
+      "fresh_final_budget_reserved": false,
+      "ledger_reconciled": null,
+      "not_applicable_reason": "NOT_RUN_GLOBAL_BUDGET_DEFECT"
+    },
+    {
+      "task_name": "v3d_fast_022",
+      "planner_calls": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "total_tokens": 0,
+      "csim_calls": 0,
+      "synth_calls": 0,
+      "cosim_calls": 0,
+      "tool_credits": 0,
+      "wall_time_seconds": 0.0,
+      "within_task_budget": false,
+      "fresh_final_budget_reserved": false,
+      "ledger_reconciled": null,
+      "not_applicable_reason": "NOT_RUN_GLOBAL_BUDGET_DEFECT"
+    },
+    {
+      "task_name": "track_a_empty_stub_generation",
+      "planner_calls": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "total_tokens": 0,
+      "csim_calls": 0,
+      "synth_calls": 0,
+      "cosim_calls": 0,
+      "tool_credits": 0,
+      "wall_time_seconds": 0.0,
+      "within_task_budget": false,
+      "fresh_final_budget_reserved": false,
+      "ledger_reconciled": null,
+      "not_applicable_reason": "NOT_RUN_GLOBAL_BUDGET_DEFECT"
+    }
+  ],
+  "totals": {
+    "planner_calls": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "total_tokens": 0,
+    "csim_calls": 2,
+    "synth_calls": 1,
+    "cosim_calls": 1,
+    "tool_credits": 26,
+    "wall_time_seconds": 618.966063261,
+    "budget_overrun_tasks": 0,
+    "final_budget_insufficient_started_tasks": 2,
+    "ledger_reconciled_started_tasks": 2,
+    "ledger_applicable_started_tasks": 2,
+    "provider_requests_sent": 0,
+    "external_retries": 0
+  },
+  "phase_caps": {
+    "planner_calls": 10,
+    "tokens": 40000,
+    "csim_calls": 20,
+    "synth_calls": 16,
+    "cosim_calls": 8,
+    "tool_credits": 244
+  }
+}

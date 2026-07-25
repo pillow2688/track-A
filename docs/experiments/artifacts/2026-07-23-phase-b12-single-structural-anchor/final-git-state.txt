@@ -1,0 +1,23 @@
+RECORDED_AT=2026-07-23T20:52:00+08:00
+BRANCH=feat/track-a-empty-stub-generation-smoke
+INITIAL_HEAD=4a05763b593a527878a0056f64763126c58ee63b
+FINAL_HEAD=4a05763b593a527878a0056f64763126c58ee63b
+HEAD_UNCHANGED=true
+PRODUCT_TEST_DIFF_COUNT=0
+UNTRACKED_PRODUCT_FILE_COUNT=0
+FULL_TESTS=556/556 PASS
+COMPILEALL=PASS
+GIT_DIFF_CHECK=PASS
+OTHER_FOUR_ANCHORS_RERUN=false
+MATRIX_28_STARTED=false
+MULTI_MODEL_MATRIX_STARTED=false
+
+PHASE_B12_FILES:
+docs/status/2026-07-23-phase-b12-single-structural-anchor.md
+docs/experiments/2026-07-23-phase-b12-single-structural-anchor-report.zh-CN.md
+docs/experiments/artifacts/2026-07-23-phase-b12-single-structural-anchor/
+
+FORMAL_RUN:
+llm4hls_harness/runs/phase-b12-4a05763-residual-structural-20260723T124154Z
+
+NOTE=Pre-existing README, onboarding, Phase A.1, Phase B1 and Phase B1.1 worktree entries were preserved. Phase B1.2 changed only its documentation/evidence and the completion board.

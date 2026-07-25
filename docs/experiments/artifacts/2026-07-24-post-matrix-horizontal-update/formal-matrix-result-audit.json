@@ -1,0 +1,280 @@
+{
+  "actual_usage_from_each_run_budget_state": {
+    "cached_input_tokens_used": 5632,
+    "credits_used": 775,
+    "note": "Run-local BudgetLedger is authoritative. Outer ERROR rows report zero because the CLI lacked a standard terminal result, so aggregate usage is not taken from outer rows.",
+    "tokens_used": 85768,
+    "tool_calls": {
+      "cosim": 21,
+      "csim": 83,
+      "llm": 39,
+      "synth": 68
+    }
+  },
+  "artifact_hashes": {
+    "benchmark_plan.json": "7a7c5561c12917db55265544ce26145cc029fc477c2485aa36f93b82e4ebf322",
+    "benchmark_results.jsonl": "f9f492982a42bc79bd3fa2deebe1601a7d8e194ce10b8ee24a1fbb1b872de416",
+    "terminal_coverage.json": "296cc2f7b2f0ff1cd1ff8c7e07ceb9a248fd5cbdef7f5705b6c7138ad7e1638f"
+  },
+  "by_expected_mode": {
+    "OPTIMIZE": {
+      "done": 6,
+      "e2e_success": 6,
+      "error": 2,
+      "failed": 0,
+      "tasks": 8
+    },
+    "REPAIR": {
+      "done": 7,
+      "e2e_success": 7,
+      "error": 0,
+      "failed": 1,
+      "tasks": 8
+    },
+    "STRUCTURAL_FIX": {
+      "done": 4,
+      "e2e_success": 4,
+      "error": 2,
+      "failed": 0,
+      "tasks": 6
+    },
+    "SYNTH_FIX": {
+      "done": 6,
+      "e2e_success": 6,
+      "error": 0,
+      "failed": 0,
+      "tasks": 6
+    }
+  },
+  "e2e": {
+    "failure": 5,
+    "success": 23,
+    "success_rate": 0.8214285714285714
+  },
+  "failure_class_counts": {
+    "INVALID_CANDIDATE_WORST_LATENCY": 2,
+    "MAX_TASK_REPAIR_ROUNDS": 1,
+    "TERMINAL_LAST_CANDIDATE_BINDING": 2
+  },
+  "failures": [
+    {
+      "actual_usage": {
+        "cached_input_tokens_used": 0,
+        "credits_used": 1,
+        "task_id": "v3d_fast_006",
+        "tokens_used": 3322,
+        "tool_used": {
+          "cosim": 0,
+          "csim": 1,
+          "llm": 2,
+          "synth": 0
+        }
+      },
+      "error_class": null,
+      "error_detail": null,
+      "expected_mode": "REPAIR",
+      "failure_stage": "BUDGET",
+      "routed_mode": "REPAIR",
+      "status": "FAILED",
+      "stop_reason": "MAX_TASK_REPAIR_ROUNDS",
+      "task_id": "v3d_fast_006"
+    },
+    {
+      "actual_usage": {
+        "cached_input_tokens_used": 256,
+        "credits_used": 46,
+        "task_id": "v3d_fast_016",
+        "tokens_used": 4345,
+        "tool_used": {
+          "cosim": 2,
+          "csim": 2,
+          "llm": 2,
+          "synth": 1
+        }
+      },
+      "error_class": "TERMINAL_LAST_CANDIDATE_BINDING",
+      "error_detail": "V3 CLI exited 3 without a terminal result: {\"detail\": \"terminal result does not bind the last Candidate decision\", \"error_type\": \"RuntimeError\", \"status\": \"ERROR\"}",
+      "expected_mode": "STRUCTURAL_FIX",
+      "failure_stage": "EXECUTOR",
+      "routed_mode": null,
+      "status": "ERROR",
+      "stop_reason": "BenchmarkExecutionError",
+      "task_id": "v3d_fast_016"
+    },
+    {
+      "actual_usage": {
+        "cached_input_tokens_used": 512,
+        "credits_used": 46,
+        "task_id": "v3d_fast_020",
+        "tokens_used": 4764,
+        "tool_used": {
+          "cosim": 2,
+          "csim": 2,
+          "llm": 2,
+          "synth": 1
+        }
+      },
+      "error_class": "TERMINAL_LAST_CANDIDATE_BINDING",
+      "error_detail": "V3 CLI exited 3 without a terminal result: {\"detail\": \"terminal result does not bind the last Candidate decision\", \"error_type\": \"RuntimeError\", \"status\": \"ERROR\"}",
+      "expected_mode": "STRUCTURAL_FIX",
+      "failure_stage": "EXECUTOR",
+      "routed_mode": null,
+      "status": "ERROR",
+      "stop_reason": "BenchmarkExecutionError",
+      "task_id": "v3d_fast_020"
+    },
+    {
+      "actual_usage": {
+        "cached_input_tokens_used": 0,
+        "credits_used": 15,
+        "task_id": "v3d_fast_021",
+        "tokens_used": 4345,
+        "tool_used": {
+          "cosim": 0,
+          "csim": 3,
+          "llm": 2,
+          "synth": 3
+        }
+      },
+      "error_class": "INVALID_CANDIDATE_WORST_LATENCY",
+      "error_detail": "V3 CLI exited 3 without a terminal result: {\"detail\": \"candidate worst latency is invalid\", \"error_type\": \"RuntimeError\", \"status\": \"ERROR\"}",
+      "expected_mode": "OPTIMIZE",
+      "failure_stage": "EXECUTOR",
+      "routed_mode": null,
+      "status": "ERROR",
+      "stop_reason": "BenchmarkExecutionError",
+      "task_id": "v3d_fast_021"
+    },
+    {
+      "actual_usage": {
+        "cached_input_tokens_used": 0,
+        "credits_used": 15,
+        "task_id": "v3d_fast_022",
+        "tokens_used": 5540,
+        "tool_used": {
+          "cosim": 0,
+          "csim": 3,
+          "llm": 2,
+          "synth": 3
+        }
+      },
+      "error_class": "INVALID_CANDIDATE_WORST_LATENCY",
+      "error_detail": "V3 CLI exited 3 without a terminal result: {\"detail\": \"candidate worst latency is invalid\", \"error_type\": \"RuntimeError\", \"status\": \"ERROR\"}",
+      "expected_mode": "OPTIMIZE",
+      "failure_stage": "EXECUTOR",
+      "routed_mode": null,
+      "status": "ERROR",
+      "stop_reason": "BenchmarkExecutionError",
+      "task_id": "v3d_fast_022"
+    }
+  ],
+  "frozen_head": "4a05763b593a527878a0056f64763126c58ee63b",
+  "performance_improvements": {
+    "acceleration_stop_8x_observed": true,
+    "count": 4,
+    "maximum_acceleration": 8.7,
+    "records": [
+      {
+        "acceleration_vs_baseline": 2.0285714285714285,
+        "credits_used": 60,
+        "stop_reason": "CANDIDATE_PROMOTED_AND_FINALIZED",
+        "task_id": "v3d_fast_025",
+        "tokens_used": 5324
+      },
+      {
+        "acceleration_vs_baseline": 8.7,
+        "credits_used": 15,
+        "stop_reason": "CANDIDATE_PROMOTED_AND_FINALIZED",
+        "task_id": "v3d_fast_026",
+        "tokens_used": 2918
+      },
+      {
+        "acceleration_vs_baseline": 5.0625,
+        "credits_used": 40,
+        "stop_reason": "CANDIDATE_PROMOTED_AND_FINALIZED",
+        "task_id": "v3d_fast_027",
+        "tokens_used": 5023
+      },
+      {
+        "acceleration_vs_baseline": 2.1666666666666665,
+        "credits_used": 80,
+        "stop_reason": "CANDIDATE_PROMOTED_AND_FINALIZED",
+        "task_id": "v3d_fast_028",
+        "tokens_used": 4624
+      }
+    ]
+  },
+  "preflight_archives": [
+    {
+      "directory": "formal_matrix_20260724_4a05763_deepseek_28x1_aborted_network_sandbox_preflight01",
+      "formal_statistics_included": false,
+      "reason": "sandbox network unavailable"
+    },
+    {
+      "directory": "formal_matrix_20260724_4a05763_deepseek_28x1_aborted_task_contract_validator_preflight01",
+      "formal_statistics_included": false,
+      "reason": "old Batch provenance validator required optional CoSim"
+    }
+  ],
+  "protocol": {
+    "continuation": "off",
+    "experience": "off",
+    "final_validation_policy": "task_contract",
+    "models": [
+      "deepseek-v4-pro"
+    ],
+    "primary_retry": false,
+    "ranker": "off",
+    "repeats": 1,
+    "tasks": 28,
+    "token_policy": "fixed"
+  },
+  "router": {
+    "comparable": 24,
+    "correct": 23,
+    "incorrect": 1,
+    "mismatches": [
+      {
+        "expected_mode": "STRUCTURAL_FIX",
+        "reason": "baseline CoSim passed in this run, so the measured Router correctly selected OPTIMIZE although the acceptance label expected STRUCTURAL_FIX",
+        "routed_mode": "OPTIMIZE",
+        "task_id": "v3d_fast_018"
+      }
+    ],
+    "unavailable_due_preterminal_error": 4
+  },
+  "schema_version": "formal-matrix.result-audit.v1",
+  "scope_guards": {
+    "golden_accessed": false,
+    "hidden_accessed": false,
+    "reference_accessed": false,
+    "secret_value_recorded": false
+  },
+  "status": "COMPLETE_WITH_MEASURED_FAILURES",
+  "status_counts": {
+    "DONE": 23,
+    "ERROR": 4,
+    "FAILED": 1
+  },
+  "task_contract": {
+    "batch_provenance_compatibility_patch": "ACCEPTED_EXACT_AND_EXERCISED",
+    "requires_cosim_false": 21,
+    "requires_cosim_true": 7
+  },
+  "terminal_coverage": {
+    "e2e_failure_count": 5,
+    "e2e_success_count": 23,
+    "expected_slots": 28,
+    "missing_task_ids": [],
+    "non_unit_task_counts": [],
+    "retry_failures_used": false,
+    "schema_version": "formal-matrix.terminal-coverage.v1",
+    "status": "COMPLETE",
+    "status_counts": {
+      "DONE": 23,
+      "ERROR": 4,
+      "FAILED": 1
+    },
+    "terminal_slots": 28
+  }
+}

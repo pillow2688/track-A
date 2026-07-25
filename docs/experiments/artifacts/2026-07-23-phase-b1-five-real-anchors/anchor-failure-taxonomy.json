@@ -1,0 +1,74 @@
+{
+  "schema_version": "phase-b1.anchor-failure-taxonomy.v1",
+  "global_stop": {
+    "triggered": true,
+    "shared_cause": "FROZEN_BUDGET_PLAN_DEFECT",
+    "primary_allowed_category": "FINAL_RESERVE_FAILURE",
+    "detail": "The frozen 8000-token cap cannot satisfy the repository's candidate-plus-fresh-final token reserve in two independently routed modes. The protocol forbids changing Budget or rerunning inside the same frozen phase."
+  },
+  "failures": [
+    {
+      "task_name": "v3d_fast_018",
+      "terminal_status": "FAILED",
+      "primary_category": "FINAL_RESERVE_FAILURE",
+      "secondary_observation": "COSIM_TIMEOUT",
+      "stop_reason": "TASK_REPAIR_SKIPPED_FINAL_RESERVE",
+      "evidence_refs": [
+        "llm4hls_harness/runs/phase-b1-4a05763-v3d_fast_018-20260723T050704Z/v3_prototype_result.json",
+        "llm4hls_harness/runs/phase-b1-4a05763-v3d_fast_018-20260723T050704Z/evidence/failures/baseline_cosim.json",
+        "llm4hls_harness/runs/phase-b1-4a05763-v3d_fast_018-20260723T050704Z/budget_ledger.jsonl"
+      ],
+      "detail": "Baseline CSim and Synth passed; required baseline CoSim timed out at 600.0165913859382 seconds. Routing was STRUCTURAL_FIX, then the reserve gate blocked Planner because 8000 < 10562 tokens."
+    },
+    {
+      "task_name": "v3d_fast_002",
+      "terminal_status": "FAILED",
+      "primary_category": "FINAL_RESERVE_FAILURE",
+      "secondary_observation": "CSIM_FAIL",
+      "stop_reason": "TASK_REPAIR_SKIPPED_FINAL_RESERVE",
+      "evidence_refs": [
+        "llm4hls_harness/runs/phase-b1-4a05763-v3d_fast_002-20260723T050704Z/v3_prototype_result.json",
+        "llm4hls_harness/runs/phase-b1-4a05763-v3d_fast_002-20260723T050704Z/evidence/failures/baseline_csim.json",
+        "llm4hls_harness/runs/phase-b1-4a05763-v3d_fast_002-20260723T050704Z/budget_ledger.jsonl"
+      ],
+      "detail": "Baseline CSim failed as expected and routing was REPAIR. The reserve gate blocked Planner because 8000 < 8511 tokens."
+    },
+    {
+      "task_name": "v3d_fast_010",
+      "terminal_status": "NOT_RUN_GLOBAL_BUDGET_DEFECT",
+      "primary_category": "FINAL_RESERVE_FAILURE",
+      "secondary_observation": null,
+      "stop_reason": "GLOBAL_STOP_PROPAGATED",
+      "evidence_refs": [
+        "docs/experiments/artifacts/2026-07-23-phase-b1-five-real-anchors/anchor-result-summary.json"
+      ]
+    },
+    {
+      "task_name": "v3d_fast_022",
+      "terminal_status": "NOT_RUN_GLOBAL_BUDGET_DEFECT",
+      "primary_category": "FINAL_RESERVE_FAILURE",
+      "secondary_observation": null,
+      "stop_reason": "GLOBAL_STOP_PROPAGATED",
+      "evidence_refs": [
+        "docs/experiments/artifacts/2026-07-23-phase-b1-five-real-anchors/anchor-result-summary.json"
+      ]
+    },
+    {
+      "task_name": "track_a_empty_stub_generation",
+      "terminal_status": "NOT_RUN_GLOBAL_BUDGET_DEFECT",
+      "primary_category": "FINAL_RESERVE_FAILURE",
+      "secondary_observation": null,
+      "stop_reason": "GLOBAL_STOP_PROPAGATED",
+      "evidence_refs": [
+        "docs/experiments/artifacts/2026-07-23-phase-b1-five-real-anchors/anchor-result-summary.json"
+      ]
+    }
+  ],
+  "counts": {
+    "FINAL_RESERVE_FAILURE_STARTED": 2,
+    "FINAL_RESERVE_FAILURE_PROPAGATED_NOT_RUN": 3,
+    "COSIM_TIMEOUT_OBSERVED": 1,
+    "CSIM_FAIL_OBSERVED": 1,
+    "EXTERNAL_RETRY": 0
+  }
+}

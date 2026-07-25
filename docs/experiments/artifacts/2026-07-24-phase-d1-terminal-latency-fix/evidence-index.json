@@ -1,0 +1,132 @@
+{
+  "acceptance": "ACCEPTED",
+  "documents": [
+    {
+      "path": "docs/status/2026-07-24-phase-d1-terminal-latency-fix.md",
+      "sha256": "da172980cc568b30cc4abe60f176109252e183b69869f7bb06dc00cc7ad39d14"
+    },
+    {
+      "path": "docs/experiments/2026-07-24-phase-d1-terminal-latency-fix-report.zh-CN.md",
+      "sha256": "e43952e59836f9c4c96e60b02536d42cd0692d6972074a22348cdf79ef44c18f"
+    },
+    {
+      "path": "docs/experiments/2026-07-24-phase-d1-terminal-latency-fix-acceptance.zh-CN.md",
+      "sha256": "db2d25f1ee36ace7e129869ae3def49ac9d76903edbc306a8f00df5faf213a83"
+    }
+  ],
+  "evidence": [
+    {
+      "path": "docs/experiments/artifacts/2026-07-24-phase-d1-terminal-latency-fix/initial-git-state.txt",
+      "sha256": "09c3f023c89ea7123e5411198c031efac23a4da38275b2dd6e3cb0d36b9eda98"
+    },
+    {
+      "path": "docs/experiments/artifacts/2026-07-24-phase-d1-terminal-latency-fix/old-artifact-reconciliation.json",
+      "sha256": "c65c5a8ca9519f379e08d9d63f1d38f76940329de805dbb9e6a4d3411932fda7"
+    },
+    {
+      "path": "docs/experiments/artifacts/2026-07-24-phase-d1-terminal-latency-fix/old-artifact-replay-after-fix.json",
+      "sha256": "2178d4c275e29289642f8d13470768c76b2bdcf387eb3523fdb09498b6ca7914"
+    },
+    {
+      "path": "docs/experiments/artifacts/2026-07-24-phase-d1-terminal-latency-fix/focused-tests.txt",
+      "sha256": "5895a33869eb6289bba1a8e06b45b82eff44a3313569a2691282879094ede44f"
+    },
+    {
+      "path": "docs/experiments/artifacts/2026-07-24-phase-d1-terminal-latency-fix/full-tests.txt",
+      "sha256": "476b94feed2c27c824436721c83b42e67072afbf0f5f310d42e4545d97d36b74"
+    },
+    {
+      "path": "docs/experiments/artifacts/2026-07-24-phase-d1-terminal-latency-fix/static-verification.txt",
+      "sha256": "dbf9e1deb1a97e6d4127ee954823f17107e6f0b7a6441ab89605ec7f80dd32ba"
+    },
+    {
+      "path": "docs/experiments/artifacts/2026-07-24-phase-d1-terminal-latency-fix/phase-d2-frozen-snapshot.json",
+      "sha256": "537e827d3058903b82ac6008e396be87d0afe0b8358bfef43495092ba4feaf14"
+    },
+    {
+      "path": "docs/experiments/artifacts/2026-07-24-phase-d1-terminal-latency-fix/phase-d2-prelaunch.json",
+      "sha256": "516680eab7370d8ca197a2806164dc98ccba01897d85c56b2af215bd9f7bb17c"
+    },
+    {
+      "path": "docs/experiments/artifacts/2026-07-24-phase-d1-terminal-latency-fix/phase-d2-postrun.json",
+      "sha256": "0366fbc65d07f0fa1f74af5fd6457193fb3a56e8e46c8d1dddd8d0c56758c5cc"
+    },
+    {
+      "path": "docs/experiments/artifacts/2026-07-24-phase-d1-terminal-latency-fix/phase-d2-real-run-acceptance.json",
+      "sha256": "3f31afae88c3e086b838018a61aa2545134ec315c5ea8fd2bdee92680b8d59f9"
+    }
+  ],
+  "frozen_identity": {
+    "head": "4a05763b593a527878a0056f64763126c58ee63b",
+    "product_diff_sha256": "cad2cd88a37bbef02b6ad4126992f98ae4890408a3fee37a41ec236255ba621c",
+    "product_file_sha256": "3972b4919e113a138d10dce81b7f2b54c5f11922bcdfa74478ad3c89ee9eaaa3",
+    "snapshot_id": "4a05763+d1-cad2cd88"
+  },
+  "product_and_tests": [
+    {
+      "path": "llm4hls_harness/llm4hls_agent/v3_prototype.py",
+      "sha256": "3972b4919e113a138d10dce81b7f2b54c5f11922bcdfa74478ad3c89ee9eaaa3"
+    },
+    {
+      "path": "llm4hls_harness/tests/test_v3_terminal_latency_fix.py",
+      "sha256": "437b70cf821e11db333bc5afe3b2b80290bc57fbbbb65944890d7d36aab22c14"
+    }
+  ],
+  "real_run": {
+    "aggregate_usage": {
+      "cosim": 4,
+      "credits": 127,
+      "csim": 11,
+      "llm_calls": 8,
+      "synth": 9,
+      "tokens": 18553,
+      "wall_time_seconds": 1434.1049660020508
+    },
+    "files": [
+      {
+        "path": "llm4hls_harness/runs/phase-d2-4a05763-d1cad2cd88-20260724T124625Z/benchmark_plan.json",
+        "sha256": "ce12f84cf4664632eb64182a3a97430c20b4a1437c860b0c30dbdbfed0c6982f"
+      },
+      {
+        "path": "llm4hls_harness/runs/phase-d2-4a05763-d1cad2cd88-20260724T124625Z/benchmark_results.jsonl",
+        "sha256": "e3343fc13e561b64f0f81130de38e5afdae17cb7601e6474877bdc6fee99e7a1"
+      },
+      {
+        "path": "llm4hls_harness/runs/phase-d2-4a05763-d1cad2cd88-20260724T124625Z/benchmark_summary.json",
+        "sha256": "6d7d715f228eb72242bf53ca387b70309e270f3eba1803f3bbec453dae8bf825"
+      },
+      {
+        "path": "llm4hls_harness/runs/phase-d2-4a05763-d1cad2cd88-20260724T124625Z/terminal_coverage.json",
+        "sha256": "9c134e531f664efa84469d6294e35e31d9a90749a8bb38e7b59eaf31d4532321"
+      }
+    ],
+    "output_dir": "llm4hls_harness/runs/phase-d2-4a05763-d1cad2cd88-20260724T124625Z",
+    "terminal_status_counts": {
+      "DONE": 2,
+      "FAILED": 2,
+      "ERROR": 0
+    }
+  },
+  "schema_version": "phase-d1-d2.evidence-index.v1",
+  "scripts": [
+    {
+      "path": "docs/experiments/artifacts/2026-07-24-phase-d1-terminal-latency-fix/replay_old_artifacts.py",
+      "sha256": "27d99822bcf2e3209e9c38572de76a099ca2b08cdad367a4270d024eb4cd5ff9"
+    },
+    {
+      "path": "docs/experiments/artifacts/2026-07-24-phase-d1-terminal-latency-fix/run_phase_d2.py",
+      "sha256": "7a13784324345a3e69b6ccfe604140bcfe74ee811c6d6cc98df0216bc00f4812"
+    },
+    {
+      "path": "docs/experiments/artifacts/2026-07-24-phase-d1-terminal-latency-fix/verify_phase_d2.py",
+      "sha256": "4109e8b5bba0e49e94a1b9f9de2354449f451e8ee4f9150ff1282165e8c0e7b6"
+    }
+  ],
+  "scope": {
+    "golden_accessed": false,
+    "hidden_accessed": false,
+    "reference_accessed": false,
+    "secret_value_recorded": false,
+    "task_code_changed": false
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "schema_version": "phase-b1.anchor-command-index.v1",
+  "secrets_expanded": false,
+  "provider_environment": [
+    "OPENAI_BASE_URL",
+    "OPENAI_API_KEY",
+    "LLM4HLS_MODEL"
+  ],
+  "vitis_environment": [
+    "LLM4HLS_VITIS_HLS_ROOT"
+  ],
+  "commands": [
+    {
+      "order": 1,
+      "task_name": "v3d_fast_018",
+      "credit_limit": 92,
+      "run_dir": "llm4hls_harness/runs/phase-b1-4a05763-v3d_fast_018-20260723T050704Z"
+    },
+    {
+      "order": 2,
+      "task_name": "v3d_fast_002",
+      "credit_limit": 36,
+      "run_dir": "llm4hls_harness/runs/phase-b1-4a05763-v3d_fast_002-20260723T050704Z"
+    },
+    {
+      "order": 3,
+      "task_name": "v3d_fast_010",
+      "credit_limit": 40,
+      "run_dir": "llm4hls_harness/runs/phase-b1-4a05763-v3d_fast_010-20260723T050704Z"
+    },
+    {
+      "order": 4,
+      "task_name": "v3d_fast_022",
+      "credit_limit": 40,
+      "run_dir": "llm4hls_harness/runs/phase-b1-4a05763-v3d_fast_022-20260723T050704Z"
+    },
+    {
+      "order": 5,
+      "task_name": "track_a_empty_stub_generation",
+      "credit_limit": 36,
+      "run_dir": "llm4hls_harness/runs/phase-b1-4a05763-track_a_empty_stub_generation-20260723T050704Z"
+    }
+  ],
+  "template_ref": "frozen-run-plan.json#command_template"
+}

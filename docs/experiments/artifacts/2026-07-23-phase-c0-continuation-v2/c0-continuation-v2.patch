@@ -1,0 +1,898 @@
+diff --git a/llm4hls_harness/llm4hls_agent/v3_continuation_v2.py b/llm4hls_harness/llm4hls_agent/v3_continuation_v2.py
+new file mode 100644
+index 0000000..2d78c7f
+--- /dev/null
++++ b/llm4hls_harness/llm4hls_agent/v3_continuation_v2.py
+@@ -0,0 +1,630 @@
++"""Mode-specific, deterministic Continuation V2 shadow advice.
++
++The policy deliberately has no graph, Candidate, BudgetLedger, tool, or LLM
++authority.  It accepts only the mode and a bounded pre-decision state.  Unknown
++or unrecognised fields are ignored so future outcome material cannot affect the
++decision or its digest.
++"""
++
++from __future__ import annotations
++
++import hashlib
++import json
++import math
++from collections.abc import Mapping, Sequence
++
++
++CONTINUATION_DECISION_SCHEMA_V2 = "v3.continuation-decision.v2"
++MODES = frozenset({"REPAIR", "SYNTH_FIX", "STRUCTURAL_FIX", "OPTIMIZE"})
++DECISIONS = frozenset({"ALLOW", "BLOCK", "DEFER_TO_FINAL"})
++CONFIDENCE_LEVELS = frozenset({"LOW", "MEDIUM", "HIGH"})
++FALLBACK = "FOLLOW_EXISTING_MAIN_POLICY"
++
++_TOP_LEVEL_FIELDS = frozenset(
++    {
++        "previous_failure_signature",
++        "failure_signature",
++        "previous_failure_location_signature",
++        "failure_location_signature",
++        "previous_evidence_fingerprint",
++        "evidence_fingerprint",
++        "evidence_delta",
++        "observed_strategy_history",
++        "current_observed_strategy",
++        "strategy_novelty",
++        "current_csim",
++        "current_synth",
++        "current_cosim",
++        "previous_latency",
++        "current_latency",
++        "previous_ii",
++        "current_ii",
++        "previous_interval",
++        "current_interval",
++        "previous_clock_ns",
++        "current_clock_ns",
++        "current_resource_utilization",
++        "remaining_tokens",
++        "remaining_credits",
++        "remaining_time_seconds",
++        "final_reserve_available",
++        "reserve_tight",
++        "has_verified_incumbent",
++        "has_better_verified_candidate_needing_final",
++        "consecutive_no_progress",
++        "evidence_complete",
++        "evidence_conflict",
++        "acceleration_vs_baseline",
++        "scoring_cap",
++    }
++)
++_DELTA_FIELDS = frozenset(
++    {
++        "failure_subtype_changed",
++        "failure_location_changed",
++        "error_count_reduced",
++        "new_actionable_evidence",
++        "correctness_progress",
++        "synth_stage_advanced",
++        "unsupported_construct_removed",
++        "scheduling_evidence_new",
++        "memory_evidence_new",
++        "fifo_evidence_new",
++        "producer_consumer_imbalance_new",
++        "deadlock_location_changed",
++        "topology_understanding_improved",
++        "transaction_mismatch_more_specific",
++        "structural_strategy_new",
++        "bottleneck_changed",
++        "latency_improved",
++        "ii_improved",
++        "interval_improved",
++        "clock_improved",
++        "resource_pressure_changed",
++        "same_failure_signature",
++        "same_failure_location",
++        "same_fifo_evidence",
++        "same_observed_strategy",
++    }
++)
++
++
++def canonical_json(value: object) -> str:
++    """Return stable JSON used for all V2 decision digests."""
++
++    return json.dumps(
++        value,
++        sort_keys=True,
++        separators=(",", ":"),
++        ensure_ascii=False,
++        allow_nan=False,
++    )
++
++
++def canonical_sha256(value: object) -> str:
++    return hashlib.sha256(canonical_json(value).encode("utf-8")).hexdigest()
++
++
++def _mapping(value: object) -> Mapping[str, object]:
++    return value if isinstance(value, Mapping) else {}
++
++
++def _text(value: object) -> str | None:
++    if not isinstance(value, str):
++        return None
++    normalized = " ".join(value.split())
++    return normalized[:160] or None
++
++
++def _number(value: object) -> float | None:
++    if value is None or isinstance(value, bool):
++        return None
++    try:
++        number = float(value)
++    except (TypeError, ValueError):
++        return None
++    return number if math.isfinite(number) and number >= 0 else None
++
++
++def _optional_bool(value: object) -> bool | None:
++    return value if isinstance(value, bool) else None
++
++
++def _atoms(value: object) -> tuple[str, ...]:
++    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
++        return ()
++    return tuple(
++        sorted(
++            {
++                normalized
++                for item in value[:32]
++                if (normalized := (_text(item) or "").upper())
++            }
++        )
++    )
++
++
++def _history(value: object) -> tuple[tuple[str, ...], ...]:
++    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
++        return ()
++    rows: list[tuple[str, ...]] = []
++    for item in value[-16:]:
++        if isinstance(item, Mapping):
++            item = item.get("observed_strategy_atoms")
++        atoms = _atoms(item)
++        if atoms:
++            rows.append(atoms)
++    return tuple(rows)
++
++
++def _resource_utilization(value: object) -> dict[str, float] | float | None:
++    number = _number(value)
++    if number is not None:
++        return number
++    mapping = _mapping(value)
++    bounded = {
++        str(key)[:32]: number
++        for key, item in sorted(mapping.items(), key=lambda row: str(row[0]))[:16]
++        if (number := _number(item)) is not None
++    }
++    return bounded or None
++
++
++def _bounded_pre_state(pre_state: Mapping[str, object]) -> dict[str, object]:
++    """Copy only the documented decision-time feature allow-list."""
++
++    state: dict[str, object] = {}
++    for key in _TOP_LEVEL_FIELDS:
++        value = pre_state.get(key)
++        if key == "evidence_delta":
++            delta = _mapping(value)
++            state[key] = {
++                name: bool(delta[name])
++                for name in sorted(_DELTA_FIELDS)
++                if isinstance(delta.get(name), bool)
++            }
++        elif key == "observed_strategy_history":
++            state[key] = _history(value)
++        elif key == "current_observed_strategy":
++            state[key] = _atoms(value)
++        elif key in {
++            "previous_failure_signature",
++            "failure_signature",
++            "previous_failure_location_signature",
++            "failure_location_signature",
++            "previous_evidence_fingerprint",
++            "evidence_fingerprint",
++            "strategy_novelty",
++            "current_csim",
++            "current_synth",
++            "current_cosim",
++        }:
++            state[key] = _text(value)
++        elif key in {
++            "final_reserve_available",
++            "reserve_tight",
++            "has_verified_incumbent",
++            "has_better_verified_candidate_needing_final",
++            "evidence_complete",
++            "evidence_conflict",
++        }:
++            state[key] = _optional_bool(value)
++        elif key == "current_resource_utilization":
++            state[key] = _resource_utilization(value)
++        else:
++            state[key] = _number(value)
++    return state
++
++
++def _same(left: object, right: object) -> bool:
++    return left not in (None, "") and left == right
++
++
++def _strategy_state(state: Mapping[str, object]) -> tuple[bool, bool, bool]:
++    novelty = str(state.get("strategy_novelty") or "UNKNOWN").upper()
++    current = tuple(state.get("current_observed_strategy") or ())
++    history = tuple(state.get("observed_strategy_history") or ())
++    same = novelty in {"NONE", "DUPLICATE"} or bool(current and current in history[:-1])
++    novel = novelty in {"HIGH", "NOVEL"} or bool(current and current not in history[:-1])
++    known = novelty != "UNKNOWN" or bool(current)
++    return same, novel, known
++
++
++def _no_progress_count(state: Mapping[str, object]) -> int:
++    value = state.get("consecutive_no_progress")
++    return int(value) if isinstance(value, (int, float)) and value >= 0 else 0
++
++
++def _decision(
++    *,
++    mode: str,
++    decision: str,
++    confidence: str,
++    reason_codes: Sequence[str],
++    supporting_evidence: Sequence[str],
++) -> dict[str, object]:
++    if decision not in DECISIONS or confidence not in CONFIDENCE_LEVELS:
++        raise ValueError("invalid V2 decision")
++    record: dict[str, object] = {
++        "schema_version": CONTINUATION_DECISION_SCHEMA_V2,
++        "mode": mode,
++        "decision": decision,
++        "confidence": confidence,
++        "reason_codes": list(dict.fromkeys(reason_codes)),
++        "supporting_evidence": list(dict.fromkeys(supporting_evidence)),
++        "fallback": FALLBACK,
++    }
++    record["decision_digest"] = canonical_sha256(record)
++    return record
++
++
++def _generic_guard(mode: str, state: Mapping[str, object]) -> dict[str, object] | None:
++    reserve = state.get("final_reserve_available")
++    incumbent = state.get("has_verified_incumbent") is True
++    if reserve is False:
++        return _decision(
++            mode=mode,
++            decision="DEFER_TO_FINAL",
++            confidence="HIGH",
++            reason_codes=("FINAL_RESERVE_UNAVAILABLE",),
++            supporting_evidence=("final_reserve_available=false",),
++        )
++    if state.get("evidence_conflict") is True:
++        return _decision(
++            mode=mode,
++            decision="DEFER_TO_FINAL" if incumbent else "ALLOW",
++            confidence="LOW",
++            reason_codes=("CONFLICTING_PRE_STATE_EVIDENCE",),
++            supporting_evidence=("evidence_conflict=true",),
++        )
++    return None
++
++
++def _repair(mode: str, state: Mapping[str, object]) -> dict[str, object]:
++    delta = _mapping(state.get("evidence_delta"))
++    same_strategy, novel_strategy, strategy_known = _strategy_state(state)
++    progress = [
++        ("FAILURE_SUBTYPE_CHANGED", delta.get("failure_subtype_changed")),
++        ("FAILURE_LOCATION_CHANGED", delta.get("failure_location_changed")),
++        ("ERROR_COUNT_REDUCED", delta.get("error_count_reduced")),
++        ("NEW_ACTIONABLE_EVIDENCE", delta.get("new_actionable_evidence")),
++        ("CORRECTNESS_PROGRESS", delta.get("correctness_progress")),
++        ("NOVEL_REPAIR_STRATEGY", novel_strategy),
++    ]
++    positive = [reason for reason, present in progress if present]
++    if positive:
++        return _decision(
++            mode=mode,
++            decision="ALLOW",
++            confidence="HIGH" if len(positive) >= 2 else "MEDIUM",
++            reason_codes=positive,
++            supporting_evidence=tuple(reason.lower() for reason in positive),
++        )
++
++    same_failure = bool(delta.get("same_failure_signature")) or _same(
++        state.get("previous_failure_signature"), state.get("failure_signature")
++    )
++    same_location = bool(delta.get("same_failure_location")) or _same(
++        state.get("previous_failure_location_signature"),
++        state.get("failure_location_signature"),
++    )
++    repeated_no_progress = _no_progress_count(state) >= 2
++    if same_failure and same_location and same_strategy and repeated_no_progress:
++        incumbent = state.get("has_verified_incumbent") is True
++        reserve_tight = state.get("reserve_tight") is True
++        return _decision(
++            mode=mode,
++            decision="DEFER_TO_FINAL" if incumbent and reserve_tight else "BLOCK",
++            confidence="MEDIUM",
++            reason_codes=("REPEATED_IDENTICAL_REPAIR_WITHOUT_PROGRESS",),
++            supporting_evidence=(
++                "same_failure_signature",
++                "same_failure_location",
++                "same_observed_strategy",
++                "consecutive_no_progress>=2",
++            ),
++        )
++
++    incomplete = state.get("evidence_complete") is False or not (
++        state.get("failure_signature") or delta or strategy_known
++    )
++    return _decision(
++        mode=mode,
++        decision="ALLOW",
++        confidence="LOW",
++        reason_codes=(
++            "INCOMPLETE_EVIDENCE_CONTINUE_CONSERVATIVELY"
++            if incomplete
++            else "SINGLE_OR_UNCONFIRMED_FAILURE_NOT_ENOUGH_TO_STOP",
++        ),
++        supporting_evidence=("one_failure_is_not_a_stop_condition",),
++    )
++
++
++def _synth_fix(mode: str, state: Mapping[str, object]) -> dict[str, object]:
++    delta = _mapping(state.get("evidence_delta"))
++    same_strategy, novel_strategy, strategy_known = _strategy_state(state)
++    progress = [
++        ("SYNTH_STAGE_ADVANCED", delta.get("synth_stage_advanced")),
++        ("UNSUPPORTED_CONSTRUCT_REMOVED", delta.get("unsupported_construct_removed")),
++        ("NEW_SCHEDULING_EVIDENCE", delta.get("scheduling_evidence_new")),
++        ("NEW_MEMORY_EVIDENCE", delta.get("memory_evidence_new")),
++        ("NEW_ACTIONABLE_EVIDENCE", delta.get("new_actionable_evidence")),
++        ("NOVEL_SYNTH_STRATEGY", novel_strategy),
++    ]
++    positive = [reason for reason, present in progress if present]
++    if positive:
++        return _decision(
++            mode=mode,
++            decision="ALLOW",
++            confidence="HIGH" if len(positive) >= 2 else "MEDIUM",
++            reason_codes=positive,
++            supporting_evidence=tuple(reason.lower() for reason in positive),
++        )
++
++    same_failure = bool(delta.get("same_failure_signature")) or _same(
++        state.get("previous_failure_signature"), state.get("failure_signature")
++    )
++    same_location = bool(delta.get("same_failure_location")) or _same(
++        state.get("previous_failure_location_signature"),
++        state.get("failure_location_signature"),
++    )
++    if (
++        same_failure
++        and same_location
++        and same_strategy
++        and _no_progress_count(state) >= 2
++    ):
++        incumbent = state.get("has_verified_incumbent") is True
++        return _decision(
++            mode=mode,
++            decision="DEFER_TO_FINAL" if incumbent else "BLOCK",
++            confidence="MEDIUM",
++            reason_codes=("REPEATED_IDENTICAL_SYNTH_FAILURE_WITHOUT_PROGRESS",),
++            supporting_evidence=(
++                "same_unsupported_construct",
++                "same_failure_location",
++                "same_observed_strategy",
++                "consecutive_no_progress>=2",
++            ),
++        )
++
++    incomplete = state.get("evidence_complete") is False or not (
++        state.get("failure_signature") or delta or strategy_known
++    )
++    return _decision(
++        mode=mode,
++        decision="ALLOW",
++        confidence="LOW",
++        reason_codes=(
++            "INCOMPLETE_EVIDENCE_CONTINUE_CONSERVATIVELY"
++            if incomplete
++            else "SYNTH_FAILURE_ALONE_NOT_ENOUGH_TO_STOP",
++        ),
++        supporting_evidence=("synth_failure_is_not_a_stop_condition",),
++    )
++
++
++def _structural_fix(mode: str, state: Mapping[str, object]) -> dict[str, object]:
++    delta = _mapping(state.get("evidence_delta"))
++    same_strategy, novel_strategy, strategy_known = _strategy_state(state)
++    progress = [
++        ("NEW_FIFO_EVIDENCE", delta.get("fifo_evidence_new")),
++        (
++            "NEW_PRODUCER_CONSUMER_IMBALANCE",
++            delta.get("producer_consumer_imbalance_new"),
++        ),
++        ("DEADLOCK_LOCATION_CHANGED", delta.get("deadlock_location_changed")),
++        (
++            "TOPOLOGY_UNDERSTANDING_IMPROVED",
++            delta.get("topology_understanding_improved"),
++        ),
++        (
++            "TRANSACTION_MISMATCH_MORE_SPECIFIC",
++            delta.get("transaction_mismatch_more_specific"),
++        ),
++        ("NEW_ACTIONABLE_EVIDENCE", delta.get("new_actionable_evidence")),
++        ("NOVEL_STRUCTURAL_STRATEGY", delta.get("structural_strategy_new") or novel_strategy),
++    ]
++    positive = [reason for reason, present in progress if present]
++    if positive:
++        return _decision(
++            mode=mode,
++            decision="ALLOW",
++            confidence="MEDIUM",
++            reason_codes=positive,
++            supporting_evidence=tuple(reason.lower() for reason in positive),
++        )
++
++    same_failure = bool(delta.get("same_failure_signature")) or _same(
++        state.get("previous_failure_signature"), state.get("failure_signature")
++    )
++    same_location = bool(delta.get("same_failure_location")) or _same(
++        state.get("previous_failure_location_signature"),
++        state.get("failure_location_signature"),
++    )
++    same_fifo = delta.get("same_fifo_evidence") is True
++    no_actionable = delta.get("new_actionable_evidence") is not True
++    reserve_safe = state.get("final_reserve_available") is True
++    if (
++        same_failure
++        and same_location
++        and same_fifo
++        and same_strategy
++        and no_actionable
++        and reserve_safe
++        and _no_progress_count(state) >= 2
++    ):
++        return _decision(
++            mode=mode,
++            decision="BLOCK",
++            confidence="MEDIUM",
++            reason_codes=("REPEATED_IDENTICAL_STRUCTURAL_FAILURE_WITHOUT_PROGRESS",),
++            supporting_evidence=(
++                "same_structural_failure_signature",
++                "same_deadlock_location",
++                "same_stream_fifo_evidence",
++                "same_observed_structural_strategy",
++                "consecutive_no_progress>=2",
++            ),
++        )
++
++    incomplete = state.get("evidence_complete") is False or not (
++        state.get("failure_signature") or delta or strategy_known
++    )
++    return _decision(
++        mode=mode,
++        decision="ALLOW",
++        confidence="LOW",
++        reason_codes=(
++            "INCOMPLETE_STRUCTURAL_EVIDENCE_CONTINUE_CONSERVATIVELY"
++            if incomplete
++            else "STRUCTURAL_STOP_CONDITIONS_NOT_ALL_MET",
++        ),
++        supporting_evidence=("structural_policy_is_false_block_averse",),
++    )
++
++
++def _improved(previous: object, current: object) -> bool | None:
++    before, after = _number(previous), _number(current)
++    if before is None or after is None:
++        return None
++    return after < before
++
++
++def _optimize(mode: str, state: Mapping[str, object]) -> dict[str, object]:
++    delta = _mapping(state.get("evidence_delta"))
++    same_strategy, novel_strategy, strategy_known = _strategy_state(state)
++    previous_latency = _number(state.get("previous_latency"))
++    current_latency = _number(state.get("current_latency"))
++    if previous_latency is None or current_latency is None or previous_latency == 0:
++        relative_gain = None
++    else:
++        relative_gain = (previous_latency - current_latency) / previous_latency
++
++    incumbent = state.get("has_verified_incumbent") is True
++    acceleration = _number(state.get("acceleration_vs_baseline"))
++    scoring_cap = _number(state.get("scoring_cap")) or 8.0
++    cap_reached = acceleration is not None and acceleration >= scoring_cap
++    low_gain = relative_gain is not None and relative_gain <= 0.01
++    no_gain = relative_gain is not None and relative_gain <= 0
++
++    if incumbent and cap_reached:
++        return _decision(
++            mode=mode,
++            decision="DEFER_TO_FINAL",
++            confidence="HIGH",
++            reason_codes=("SCORING_ACCELERATION_CAP_REACHED",),
++            supporting_evidence=("acceleration_vs_baseline>=scoring_cap",),
++        )
++    if incumbent and low_gain and same_strategy:
++        return _decision(
++            mode=mode,
++            decision="DEFER_TO_FINAL",
++            confidence="MEDIUM",
++            reason_codes=("LOW_MARGINAL_GAIN_WITH_REPEATED_STRATEGY",),
++            supporting_evidence=(
++                "relative_latency_gain<=0.01",
++                "has_verified_incumbent",
++                "same_observed_strategy",
++            ),
++        )
++
++    progress = [
++        (
++            "SIGNIFICANT_LATENCY_IMPROVEMENT",
++            relative_gain is not None and relative_gain > 0.01,
++        ),
++        ("II_IMPROVED", delta.get("ii_improved") or _improved(state.get("previous_ii"), state.get("current_ii"))),
++        (
++            "TRANSACTION_INTERVAL_IMPROVED",
++            delta.get("interval_improved")
++            or _improved(state.get("previous_interval"), state.get("current_interval")),
++        ),
++        (
++            "CLOCK_IMPROVED",
++            delta.get("clock_improved")
++            or _improved(state.get("previous_clock_ns"), state.get("current_clock_ns")),
++        ),
++        ("BOTTLENECK_CHANGED", delta.get("bottleneck_changed")),
++        ("NEW_OPTIMIZATION_STRATEGY", novel_strategy),
++    ]
++    positive = [reason for reason, present in progress if present]
++    if positive:
++        return _decision(
++            mode=mode,
++            decision="ALLOW",
++            confidence="HIGH" if len(positive) >= 2 else "MEDIUM",
++            reason_codes=positive,
++            supporting_evidence=tuple(reason.lower() for reason in positive),
++        )
++
++    repeated_no_progress = (
++        no_gain
++        and same_strategy
++        and delta.get("new_actionable_evidence") is not True
++        and _no_progress_count(state) >= 2
++    )
++    if repeated_no_progress:
++        needs_final = (
++            state.get("has_better_verified_candidate_needing_final") is True or incumbent
++        )
++        return _decision(
++            mode=mode,
++            decision="DEFER_TO_FINAL" if needs_final else "BLOCK",
++            confidence="MEDIUM",
++            reason_codes=("REPEATED_OPTIMIZATION_WITHOUT_GAIN_OR_NEW_EVIDENCE",),
++            supporting_evidence=(
++                "no_latency_gain",
++                "same_observed_strategy",
++                "no_new_actionable_evidence",
++                "consecutive_no_progress>=2",
++            ),
++        )
++
++    incomplete = state.get("evidence_complete") is False or not (
++        relative_gain is not None or delta or strategy_known
++    )
++    resource_evidence = (
++        "resource_utilization=UNKNOWN"
++        if state.get("current_resource_utilization") is None
++        else "resource_utilization=KNOWN"
++    )
++    return _decision(
++        mode=mode,
++        decision="DEFER_TO_FINAL" if incumbent and incomplete else "ALLOW",
++        confidence="LOW",
++        reason_codes=(
++            "INCOMPLETE_OPTIMIZATION_EVIDENCE"
++            if incomplete
++            else "OPTIMIZATION_STOP_CONDITIONS_NOT_MET",
++        ),
++        supporting_evidence=(
++            "unknown_metrics_are_not_zero",
++            "existing_incumbent_available" if incumbent else "no_verified_incumbent",
++            resource_evidence,
++        ),
++    )
++
++
++def continuation_decision_v2(
++    *, mode: str, pre_state: Mapping[str, object]
++) -> dict[str, object]:
++    """Return deterministic offline/shadow advice from pre-decision facts only."""
++
++    normalized_mode = str(mode).upper()
++    if normalized_mode not in MODES:
++        raise ValueError("unsupported continuation mode")
++    if not isinstance(pre_state, Mapping):
++        raise TypeError("pre_state must be a mapping")
++    state = _bounded_pre_state(pre_state)
++    guarded = _generic_guard(normalized_mode, state)
++    if guarded is not None:
++        return guarded
++    if normalized_mode == "REPAIR":
++        return _repair(normalized_mode, state)
++    if normalized_mode == "SYNTH_FIX":
++        return _synth_fix(normalized_mode, state)
++    if normalized_mode == "STRUCTURAL_FIX":
++        return _structural_fix(normalized_mode, state)
++    return _optimize(normalized_mode, state)
+diff --git a/llm4hls_harness/tests/test_v3_continuation_v2.py b/llm4hls_harness/tests/test_v3_continuation_v2.py
+new file mode 100644
+index 0000000..960da1d
+--- /dev/null
++++ b/llm4hls_harness/tests/test_v3_continuation_v2.py
+@@ -0,0 +1,256 @@
++from __future__ import annotations
++
++import copy
++import unittest
++
++from llm4hls_agent.v3_continuation_v2 import (
++    canonical_sha256,
++    continuation_decision_v2,
++)
++
++
++class ContinuationV2CommonTests(unittest.TestCase):
++    def test_same_input_and_digest_are_stable(self) -> None:
++        state = {
++            "failure_signature": "compile:error",
++            "evidence_delta": {"failure_subtype_changed": True},
++            "final_reserve_available": True,
++        }
++        first = continuation_decision_v2(mode="REPAIR", pre_state=state)
++        second = continuation_decision_v2(mode="REPAIR", pre_state=copy.deepcopy(state))
++        self.assertEqual(first, second)
++        payload = {key: value for key, value in first.items() if key != "decision_digest"}
++        self.assertEqual(first["decision_digest"], canonical_sha256(payload))
++
++    def test_future_fields_cannot_change_decision_or_digest(self) -> None:
++        state = {
++            "failure_signature": "compile:error",
++            "evidence_complete": False,
++            "final_reserve_available": True,
++        }
++        expected = continuation_decision_v2(mode="REPAIR", pre_state=state)
++        leaked = dict(state)
++        leaked.update(
++            {
++                "outcome": {"class": "BENEFICIAL_CORRECTNESS"},
++                "future_latency": 1,
++                "candidate_promoted": True,
++                "followup_patch": "secret future patch",
++                "final_result": "PASS",
++            }
++        )
++        self.assertEqual(
++            expected, continuation_decision_v2(mode="REPAIR", pre_state=leaked)
++        )
++
++    def test_final_reserve_unavailable_never_allows(self) -> None:
++        value = continuation_decision_v2(
++            mode="OPTIMIZE",
++            pre_state={
++                "final_reserve_available": False,
++                "previous_latency": 100,
++                "current_latency": 1,
++            },
++        )
++        self.assertEqual(value["decision"], "DEFER_TO_FINAL")
++
++    def test_missing_evidence_is_not_high_confidence_block(self) -> None:
++        for mode in ("REPAIR", "SYNTH_FIX", "STRUCTURAL_FIX", "OPTIMIZE"):
++            value = continuation_decision_v2(
++                mode=mode,
++                pre_state={
++                    "evidence_complete": False,
++                    "final_reserve_available": True,
++                },
++            )
++            self.assertFalse(
++                value["decision"] == "BLOCK" and value["confidence"] == "HIGH"
++            )
++
++
++class ContinuationV2RepairTests(unittest.TestCase):
++    def test_changed_error_allows(self) -> None:
++        value = continuation_decision_v2(
++            mode="REPAIR",
++            pre_state={
++                "evidence_delta": {"failure_subtype_changed": True},
++                "final_reserve_available": True,
++            },
++        )
++        self.assertEqual(value["decision"], "ALLOW")
++
++    def test_repeated_identical_repair_can_block_or_defer(self) -> None:
++        state = {
++            "previous_failure_signature": "mismatch",
++            "failure_signature": "mismatch",
++            "previous_failure_location_signature": "kernel.cpp:9",
++            "failure_location_signature": "kernel.cpp:9",
++            "current_observed_strategy": ["INDEX_FIX"],
++            "observed_strategy_history": [["INDEX_FIX"], ["INDEX_FIX"]],
++            "strategy_novelty": "DUPLICATE",
++            "consecutive_no_progress": 2,
++            "final_reserve_available": True,
++        }
++        blocked = continuation_decision_v2(mode="REPAIR", pre_state=state)
++        self.assertEqual(blocked["decision"], "BLOCK")
++        state.update({"has_verified_incumbent": True, "reserve_tight": True})
++        deferred = continuation_decision_v2(mode="REPAIR", pre_state=state)
++        self.assertEqual(deferred["decision"], "DEFER_TO_FINAL")
++
++    def test_one_failure_does_not_block(self) -> None:
++        value = continuation_decision_v2(
++            mode="REPAIR",
++            pre_state={
++                "previous_failure_signature": "mismatch",
++                "failure_signature": "mismatch",
++                "previous_failure_location_signature": "kernel.cpp:9",
++                "failure_location_signature": "kernel.cpp:9",
++                "strategy_novelty": "DUPLICATE",
++                "consecutive_no_progress": 1,
++                "final_reserve_available": True,
++            },
++        )
++        self.assertEqual(value["decision"], "ALLOW")
++
++
++class ContinuationV2SynthTests(unittest.TestCase):
++    def test_stage_advance_allows(self) -> None:
++        value = continuation_decision_v2(
++            mode="SYNTH_FIX",
++            pre_state={
++                "evidence_delta": {"synth_stage_advanced": True},
++                "final_reserve_available": True,
++            },
++        )
++        self.assertEqual(value["decision"], "ALLOW")
++
++    def test_repeated_unsupported_construct_tends_to_stop(self) -> None:
++        value = continuation_decision_v2(
++            mode="SYNTH_FIX",
++            pre_state={
++                "previous_failure_signature": "unsupported:malloc",
++                "failure_signature": "unsupported:malloc",
++                "previous_failure_location_signature": "kernel.cpp:12",
++                "failure_location_signature": "kernel.cpp:12",
++                "strategy_novelty": "DUPLICATE",
++                "consecutive_no_progress": 2,
++                "final_reserve_available": True,
++            },
++        )
++        self.assertEqual(value["decision"], "BLOCK")
++
++
++class ContinuationV2StructuralTests(unittest.TestCase):
++    def test_new_fifo_evidence_allows(self) -> None:
++        value = continuation_decision_v2(
++            mode="STRUCTURAL_FIX",
++            pre_state={
++                "evidence_delta": {"fifo_evidence_new": True},
++                "current_cosim": "FAIL",
++                "final_reserve_available": True,
++            },
++        )
++        self.assertEqual(value["decision"], "ALLOW")
++
++    def test_new_deadlock_location_allows_despite_cosim_failure(self) -> None:
++        value = continuation_decision_v2(
++            mode="STRUCTURAL_FIX",
++            pre_state={
++                "evidence_delta": {"deadlock_location_changed": True},
++                "current_cosim": "FAIL",
++                "final_reserve_available": True,
++            },
++        )
++        self.assertEqual(value["decision"], "ALLOW")
++
++    def test_only_complete_repetition_can_block(self) -> None:
++        base = {
++            "evidence_delta": {
++                "same_failure_signature": True,
++                "same_failure_location": True,
++                "same_fifo_evidence": True,
++                "same_observed_strategy": True,
++                "new_actionable_evidence": False,
++            },
++            "strategy_novelty": "DUPLICATE",
++            "consecutive_no_progress": 2,
++            "final_reserve_available": True,
++        }
++        value = continuation_decision_v2(mode="STRUCTURAL_FIX", pre_state=base)
++        self.assertEqual(value["decision"], "BLOCK")
++        self.assertNotEqual(value["confidence"], "HIGH")
++        advanced = copy.deepcopy(base)
++        advanced["evidence_delta"]["fifo_evidence_new"] = True
++        self.assertEqual(
++            continuation_decision_v2(
++                mode="STRUCTURAL_FIX", pre_state=advanced
++            )["decision"],
++            "ALLOW",
++        )
++
++
++class ContinuationV2OptimizeTests(unittest.TestCase):
++    def test_significant_latency_gain_allows(self) -> None:
++        value = continuation_decision_v2(
++            mode="OPTIMIZE",
++            pre_state={
++                "previous_latency": 100,
++                "current_latency": 80,
++                "final_reserve_available": True,
++            },
++        )
++        self.assertEqual(value["decision"], "ALLOW")
++
++    def test_low_gain_with_incumbent_and_repeat_defers(self) -> None:
++        value = continuation_decision_v2(
++            mode="OPTIMIZE",
++            pre_state={
++                "previous_latency": 1000,
++                "current_latency": 995,
++                "has_verified_incumbent": True,
++                "strategy_novelty": "DUPLICATE",
++                "final_reserve_available": True,
++            },
++        )
++        self.assertEqual(value["decision"], "DEFER_TO_FINAL")
++
++    def test_eight_x_cap_defers(self) -> None:
++        value = continuation_decision_v2(
++            mode="OPTIMIZE",
++            pre_state={
++                "acceleration_vs_baseline": 8,
++                "scoring_cap": 8,
++                "has_verified_incumbent": True,
++                "final_reserve_available": True,
++            },
++        )
++        self.assertEqual(value["decision"], "DEFER_TO_FINAL")
++
++    def test_missing_resources_remain_unknown_not_zero(self) -> None:
++        missing = continuation_decision_v2(
++            mode="OPTIMIZE",
++            pre_state={
++                "current_resource_utilization": None,
++                "evidence_complete": False,
++                "has_verified_incumbent": True,
++                "final_reserve_available": True,
++            },
++        )
++        zero = continuation_decision_v2(
++            mode="OPTIMIZE",
++            pre_state={
++                "current_resource_utilization": 0,
++                "evidence_complete": False,
++                "has_verified_incumbent": True,
++                "final_reserve_available": True,
++            },
++        )
++        self.assertEqual(missing["decision"], "DEFER_TO_FINAL")
++        self.assertEqual(zero["decision"], "DEFER_TO_FINAL")
++        self.assertIn("unknown_metrics_are_not_zero", missing["supporting_evidence"])
++        self.assertIn("resource_utilization=UNKNOWN", missing["supporting_evidence"])
++        self.assertIn("resource_utilization=KNOWN", zero["supporting_evidence"])
++
++
++if __name__ == "__main__":
++    unittest.main()

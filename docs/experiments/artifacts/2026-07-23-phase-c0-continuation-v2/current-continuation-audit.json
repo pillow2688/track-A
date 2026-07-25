@@ -1,0 +1,52 @@
+{
+  "graph": {
+    "modified_by_phase_c0": false,
+    "sha256": "ac68ed5120c4e121da287fce509df8da8720e7bea1fb461380ed0d1ee2984079"
+  },
+  "leakage_audit": {
+    "legacy_r02_budget_affected_recorded_v1_decisions": false,
+    "legacy_r02_replay_budget": "TERMINAL_RESULT_BUDGET_WAS_POLICY_VISIBLE",
+    "main_graph_predecision_path": "NO_KNOWN_FUTURE_LEAKAGE",
+    "phase_c0_action": "REMOVE_LEGACY_BUDGET_FROM_V2_PRE_STATE",
+    "violations_in_v2_dataset": []
+  },
+  "schema_version": "phase-c0.current-continuation-audit.v1",
+  "v1": {
+    "accepted_authority": "SHADOW",
+    "enforce_supported_but_admitted": false,
+    "inputs": [
+      "run_id",
+      "round_index",
+      "mode",
+      "policy_mode",
+      "has_correct_candidate",
+      "has_strict_latency_improvement",
+      "performance_area",
+      "evidence_delta",
+      "strategy_novelty",
+      "continuation_cost",
+      "remaining_rounds"
+    ],
+    "mode_specific_rules": {
+      "OPTIMIZE": [
+        "improvement without new bottleneck penalty",
+        "performance-area tradeoff opportunity"
+      ],
+      "REPAIR": [],
+      "STRUCTURAL_FIX": [
+        "failure_subtype_changed bonus"
+      ],
+      "SYNTH_FIX": []
+    },
+    "module_sha256": "c023d81bf0cca62b60142a2ac1fa9dcaf4df4f482f40edfa303e64878b2b302d",
+    "progress_dimensions_explicitly_separated": false,
+    "runtime_default": "off",
+    "schema_version": "v3.continuation-decision.v1",
+    "shared_rules": [
+      "budget/reserve hard reasons",
+      "generic evidence score",
+      "generic strategy novelty score",
+      "single score threshold"
+    ]
+  }
+}

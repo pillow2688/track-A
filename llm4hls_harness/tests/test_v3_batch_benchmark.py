@@ -35,6 +35,7 @@ def write_task(
     difficulty: int = 1,
     split: str | None = None,
     expected_mode: str | None = None,
+    requires_cosim: bool = False,
 ) -> Path:
     directory = root / task_id
     directory.mkdir(parents=True)
@@ -47,6 +48,7 @@ def write_task(
         'public_tb = "kernel_tb.cpp"',
         "header_files = []",
         "budget = 80",
+        f"requires_cosim = {str(requires_cosim).lower()}",
         "",
     ]
     if split is not None or expected_mode is not None:
@@ -64,6 +66,91 @@ def write_task(
         "int main() { return 0; }\n", encoding="utf-8"
     )
     return directory
+
+
+def write_ranker_admission(path: Path, seed: Path) -> Path:
+    by_mode = {
+        mode: {
+            "records": 10,
+            "coverage": 0.5,
+            "harmful_rate": 0.0,
+            "positive_hit_rate": 0.5,
+        }
+        for mode in ("OPTIMIZE", "REPAIR", "STRUCTURAL_FIX", "SYNTH_FIX")
+    }
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": "v3e.strategy-ranker-admission.v1",
+                "decision": "PASS",
+                "ranker_version": "v3e.bayesian-strategy-ranker.v3",
+                "seed_sha256": hashlib.sha256(seed.read_bytes()).hexdigest(),
+                "protocol": "LOTO_AND_LEAVE_ONE_TASK_FAMILY_OUT",
+                "thresholds": {
+                    "minimum_coverage": 0.40,
+                    "maximum_harmful_rate": 0.05,
+                    "minimum_records_per_mode": 10,
+                    "minimum_global_positive_hit_rate": 0.2727,
+                    "maximum_leakage_violations": 0,
+                },
+                "metrics": {
+                    "coverage": 0.5,
+                    "harmful_rate": 0.0,
+                    "global_positive_hit_rate": 0.5,
+                    "leakage_violations": 0,
+                    "by_mode": by_mode,
+                },
+                "evidence_sha256": "a" * 64,
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def write_continuation_admission(path: Path) -> Path:
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": "v3.continuation-admission.v1",
+                "decision": "PASS",
+                "policy_version": "v3.continuation-policy.v2",
+                "protocol": "MODE_SPECIFIC_PRE_STATE_ONLINE_SHADOW",
+                "thresholds": {
+                    "minimum_samples_per_mode": 1,
+                    "maximum_false_blocks": 0,
+                    "minimum_structural_essential_samples": 1,
+                    "minimum_structural_essential_retention": 1.0,
+                    "maximum_leakage_violations": 0,
+                    "beneficial_retention_not_below_v1": True,
+                    "waste_block_rate_not_below_v1": True,
+                },
+                "metrics": {
+                    "mode_counts": {
+                        "REPAIR": 1,
+                        "SYNTH_FIX": 1,
+                        "STRUCTURAL_FIX": 1,
+                        "OPTIMIZE": 1,
+                    },
+                    "beneficial_retention": 1.0,
+                    "v1_beneficial_retention": 1.0,
+                    "waste_block_rate": 0.5,
+                    "v1_waste_block_rate": 0.5,
+                    "false_blocks": 0,
+                    "structural_essential_samples": 1,
+                    "structural_essential_retention": 1.0,
+                    "leakage_violations": 0,
+                },
+                "evidence_sha256": "b" * 64,
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return path
 
 
 def fake_result(
@@ -162,6 +249,7 @@ def write_real_fixture(
     *,
     outcome_model: str | None = None,
     ledger_tokens: int | None = None,
+    final_validation_policy: str = "full_internal_audit",
 ) -> dict[str, object]:
     """Write a minimal internally hash-bound REAL terminal package."""
 
@@ -195,6 +283,7 @@ def write_real_fixture(
             "thread_id": spec.run_id,
             "backend_fingerprint": backend_fingerprint,
             "budget": budget_config,
+            "final_validation_policy": final_validation_policy,
         },
     )
     write_canonical_json(
@@ -202,6 +291,7 @@ def write_real_fixture(
         {
             "task_id": spec.task.id,
             "public_file_hashes": dict(spec.task.public_file_hashes),
+            "requires_cosim": spec.task.requires_cosim,
         },
     )
 
@@ -375,7 +465,13 @@ def write_real_fixture(
     )
 
     final_validation: dict[str, object] = {}
+    required_final_stages = {"csim", "synth"}
+    if final_validation_policy == "full_internal_audit" or spec.task.requires_cosim:
+        required_final_stages.add("cosim")
     for stage in ("csim", "synth", "cosim"):
+        if stage not in required_final_stages:
+            final_validation[stage] = {"status": "NOT_RUN"}
+            continue
         final_ref = f"actions/final-{stage}/result.json"
         write_canonical_json(
             run_dir / final_ref,
@@ -662,10 +758,16 @@ class V3BatchBenchmarkTests(unittest.TestCase):
             store.write_text('{"experience_id":"exp-1"}\n', encoding="utf-8")
             copied_store = Path(directory) / "copied-experience.jsonl"
             copied_store.write_bytes(store.read_bytes())
+            admission = write_ranker_admission(
+                Path(directory) / "ranker-admission.json",
+                store,
+            )
             executor = V3PrototypeCLIExecutor(
                 validation_profile="fast-experiment",
                 experience_mode="guided",
                 experience_store=store,
+                experience_ranker_version="v3",
+                experience_admission_manifest=admission,
                 experience_task_split="dev",
             )
             spec = BenchmarkRunSpec(
@@ -684,6 +786,8 @@ class V3BatchBenchmarkTests(unittest.TestCase):
                 "--validation-profile": "fast-experiment",
                 "--experience-mode": "guided",
                 "--experience-store": str(store.resolve()),
+                "--experience-ranker-version": "v3",
+                "--experience-admission-manifest": str(admission.resolve()),
                 "--experience-task-split": "dev",
             }
             for option, expected in expected_values.items():
@@ -696,6 +800,8 @@ class V3BatchBenchmarkTests(unittest.TestCase):
                     validation_profile="fast-experiment",
                     experience_mode="guided",
                     experience_store=copied_store,
+                    experience_ranker_version="v3",
+                    experience_admission_manifest=admission,
                     experience_task_split="dev",
                 ).fingerprint(),
             )
@@ -705,6 +811,8 @@ class V3BatchBenchmarkTests(unittest.TestCase):
                     validation_profile="fast-experiment",
                     experience_mode="shadow",
                     experience_store=copied_store,
+                    experience_ranker_version="v3",
+                    experience_admission_manifest=admission,
                     experience_task_split="dev",
                 ).fingerprint(),
             )
@@ -714,6 +822,8 @@ class V3BatchBenchmarkTests(unittest.TestCase):
                     validation_profile="strict",
                     experience_mode="guided",
                     experience_store=copied_store,
+                    experience_ranker_version="v3",
+                    experience_admission_manifest=admission,
                     experience_task_split="dev",
                 ).fingerprint(),
             )
@@ -735,6 +845,76 @@ class V3BatchBenchmarkTests(unittest.TestCase):
                 BenchmarkError, "BenchmarkConfig snapshot was frozen"
             ):
                 BatchBenchmarkRunner(config)
+
+    def test_continuation_v2_enforce_is_gate_bound_and_forwarded(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "corpus"
+            write_task(root, "pilot")
+            descriptor = discover_tasks(root)[0]
+            assert descriptor.task is not None
+            admission = write_continuation_admission(
+                Path(directory) / "continuation-admission.json"
+            )
+            executor = V3PrototypeCLIExecutor(
+                final_validation_policy="full_internal_audit",
+                max_planner_rounds=3,
+                max_no_improvement_rounds=2,
+                enable_final_fallback=True,
+                continuation_policy_mode="enforce",
+                continuation_policy_version="v2",
+                continuation_admission_manifest=admission,
+            )
+            spec = BenchmarkRunSpec(
+                task=descriptor.task,
+                descriptor=descriptor,
+                model="scheduled-model",
+                repeat_index=1,
+                backend="vitis",
+                run_id="continuation-policy",
+                run_fingerprint="c" * 64,
+                run_dir=Path(directory) / "run",
+            )
+            command = executor._command(spec)
+            self.assertEqual(
+                command[command.index("--continuation-policy") + 1],
+                "enforce",
+            )
+            self.assertEqual(
+                command[command.index("--continuation-policy-version") + 1],
+                "v2",
+            )
+            self.assertEqual(
+                command[
+                    command.index("--continuation-admission-manifest") + 1
+                ],
+                str(admission.resolve()),
+            )
+            self.assertEqual(
+                command[command.index("--final-validation-policy") + 1],
+                "full_internal_audit",
+            )
+            self.assertEqual(
+                command[command.index("--max-planner-rounds") + 1],
+                "3",
+            )
+            self.assertEqual(
+                command[command.index("--max-no-improvement-rounds") + 1],
+                "2",
+            )
+            self.assertIn("--enable-final-fallback", command)
+            with self.assertRaisesRegex(
+                BenchmarkError, "requires an admission manifest"
+            ):
+                V3PrototypeCLIExecutor(
+                    continuation_policy_mode="enforce",
+                    continuation_policy_version="v2",
+                )
+            admission.write_text("{}\n", encoding="utf-8")
+            with self.assertRaisesRegex(
+                BenchmarkExecutionError,
+                "changed after the batch snapshot",
+            ):
+                executor._command(spec)
 
     def test_restricted_descriptor_cannot_be_relabelled_for_experience(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -780,6 +960,15 @@ class V3BatchBenchmarkTests(unittest.TestCase):
                 profile: str = "strict",
                 store: Path | None = None,
             ) -> str:
+                admission = None
+                ranker_version = "v1"
+                if mode == "guided":
+                    assert store is not None
+                    ranker_version = "v3"
+                    admission = write_ranker_admission(
+                        Path(directory) / f"{output_name}-admission.json",
+                        store,
+                    )
                 config = BenchmarkConfig(
                     corpus=root,
                     output_dir=Path(directory) / output_name,
@@ -787,6 +976,8 @@ class V3BatchBenchmarkTests(unittest.TestCase):
                     validation_profile=profile,
                     experience_mode=mode,
                     experience_store=store,
+                    experience_ranker_version=ranker_version,
+                    experience_admission_manifest=admission,
                     experience_task_split="dev",
                 )
                 runner = BatchBenchmarkRunner(config, FakeExecutor())
@@ -1197,8 +1388,17 @@ class V3BatchBenchmarkTests(unittest.TestCase):
             "--patch-file",
             "--model",
             "--validation-profile",
+            "--final-validation-policy",
+            "--max-planner-rounds",
+            "--max-no-improvement-rounds",
+            "--enable-final-fallback",
+            "--continuation-policy",
+            "--continuation-policy-version",
+            "--continuation-admission-manifest",
             "--experience-mode",
             "--experience-store",
+            "--experience-ranker-version",
+            "--experience-admission-manifest",
             "--experience-task-split",
         )
         for option in forbidden:
@@ -1303,6 +1503,10 @@ class V3BatchBenchmarkTests(unittest.TestCase):
             experience_store.write_text(
                 '{"experience_id":"exp-cli"}\n', encoding="utf-8"
             )
+            admission = write_ranker_admission(
+                Path(directory) / "experience-admission.json",
+                experience_store,
+            )
             output = Path(directory) / "out"
             stdout = io.StringIO()
             code = main(
@@ -1319,6 +1523,10 @@ class V3BatchBenchmarkTests(unittest.TestCase):
                     "guided",
                     "--experience-store",
                     str(experience_store),
+                    "--experience-ranker-version",
+                    "v3",
+                    "--experience-admission-manifest",
+                    str(admission),
                     "--experience-task-split",
                     "dev",
                     "--models",
@@ -1415,6 +1623,7 @@ class V3BatchBenchmarkTests(unittest.TestCase):
                     "phase_router",
                     "planner_and_prompts",
                     "experience_layer",
+                    "continuation_layer",
                     "backend_and_accounting",
                 },
             )
@@ -1499,6 +1708,74 @@ class V3BatchBenchmarkTests(unittest.TestCase):
                 executor._validate_terminal_provenance(
                     bad_ledger_spec, bad_ledger_result
                 )
+
+    def test_real_validator_accepts_task_contract_without_optional_cosim(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "corpus"
+            write_task(root, "task_contract_real", requires_cosim=False)
+            descriptor = discover_tasks(root)[0]
+            assert descriptor.task is not None
+            executor = V3PrototypeCLIExecutor(
+                final_validation_policy="task_contract"
+            )
+            spec = BenchmarkRunSpec(
+                task=descriptor.task,
+                descriptor=descriptor,
+                model="scheduled-model",
+                repeat_index=1,
+                backend="vitis",
+                run_id="task-contract-real-run",
+                run_fingerprint="a" * 64,
+                run_dir=Path(directory) / "run",
+            )
+            result = write_real_fixture(
+                executor,
+                spec,
+                final_validation_policy="task_contract",
+            )
+            receipt = executor._validate_terminal_provenance(spec, result)
+            self.assertEqual(
+                set(receipt["final_validation_artifacts"]),
+                {"csim", "synth"},
+            )
+            self.assertEqual(
+                result["final_validation"]["cosim"],
+                {"status": "NOT_RUN"},
+            )
+
+    def test_real_validator_task_contract_still_requires_contract_cosim(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "corpus"
+            write_task(root, "task_contract_cosim", requires_cosim=True)
+            descriptor = discover_tasks(root)[0]
+            assert descriptor.task is not None
+            executor = V3PrototypeCLIExecutor(
+                final_validation_policy="task_contract"
+            )
+            spec = BenchmarkRunSpec(
+                task=descriptor.task,
+                descriptor=descriptor,
+                model="scheduled-model",
+                repeat_index=1,
+                backend="vitis",
+                run_id="task-contract-cosim-run",
+                run_fingerprint="b" * 64,
+                run_dir=Path(directory) / "run",
+            )
+            result = write_real_fixture(
+                executor,
+                spec,
+                final_validation_policy="task_contract",
+            )
+            receipt = executor._validate_terminal_provenance(spec, result)
+            self.assertEqual(
+                set(receipt["final_validation_artifacts"]),
+                {"csim", "synth", "cosim"},
+            )
 
     def test_real_resume_revalidates_package_and_recovers_in_a_new_run(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

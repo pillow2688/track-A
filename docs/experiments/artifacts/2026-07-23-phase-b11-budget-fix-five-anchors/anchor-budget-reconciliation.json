@@ -1,0 +1,133 @@
+{
+  "schema_version": "phase-b11.anchor-budget-reconciliation.v1",
+  "phase": "Phase B1.1",
+  "accounting_scope": "ALL_PHYSICAL_ATTEMPTS_INCLUDING_ALLOWED_RETRY",
+  "phase_caps": {
+    "planner_calls": 10,
+    "tokens": 49115,
+    "csim_calls": 20,
+    "synth_calls": 16,
+    "cosim_calls": 8,
+    "tool_credits": 244,
+    "phase_wall_window_seconds": 9600
+  },
+  "actual": {
+    "physical_run_attempts": 6,
+    "planner_dispatch_attempts": 6,
+    "successful_provider_responses_with_usage": 4,
+    "input_tokens": 5693,
+    "output_tokens": 2253,
+    "tokens": 7946,
+    "csim_calls": 15,
+    "synth_calls": 12,
+    "cosim_calls": 6,
+    "tool_credits": 183,
+    "ledger_runtime_seconds": 358.1746220588684
+  },
+  "within_phase_caps": {
+    "planner_calls": true,
+    "tokens": true,
+    "csim_calls": true,
+    "synth_calls": true,
+    "cosim_calls": true,
+    "tool_credits": true,
+    "phase_wall_window": true
+  },
+  "ledger_reconciliation": {
+    "physical_runs_checked": 6,
+    "passed": 6,
+    "mismatches": 0,
+    "pending_credits": 0,
+    "pending_tokens": 0,
+    "token_usage_complete": true
+  },
+  "accepted_anchor_runs_only": {
+    "runs": 5,
+    "planner_dispatch_attempts": 4,
+    "tokens": 7946,
+    "csim_calls": 14,
+    "synth_calls": 12,
+    "cosim_calls": 6,
+    "tool_credits": 182,
+    "ledger_runtime_seconds": 353.5866367816925
+  },
+  "per_task": [
+    {
+      "anchor": "REPAIR_INITIAL",
+      "token_cap": 8639,
+      "tokens": 0,
+      "credits": 1,
+      "csim": 1,
+      "synth": 0,
+      "cosim": 0,
+      "llm_dispatches": 2,
+      "runtime_seconds": 4.587985277175903,
+      "result": "TRANSIENT_MODEL_TRANSPORT"
+    },
+    {
+      "anchor": "REPAIR_RETRY1",
+      "token_cap": 8639,
+      "tokens": 1521,
+      "credits": 31,
+      "csim": 3,
+      "synth": 2,
+      "cosim": 1,
+      "llm_dispatches": 1,
+      "runtime_seconds": 61.05281043052673,
+      "result": "PASS"
+    },
+    {
+      "anchor": "SYNTH_FIX",
+      "token_cap": 9201,
+      "tokens": 1743,
+      "credits": 35,
+      "csim": 3,
+      "synth": 3,
+      "cosim": 1,
+      "llm_dispatches": 1,
+      "runtime_seconds": 71.06073713302612,
+      "result": "PASS"
+    },
+    {
+      "anchor": "OPTIMIZE",
+      "token_cap": 10802,
+      "tokens": 2573,
+      "credits": 35,
+      "csim": 3,
+      "synth": 3,
+      "cosim": 1,
+      "llm_dispatches": 1,
+      "runtime_seconds": 77.42181539535522,
+      "result": "PASS"
+    },
+    {
+      "anchor": "EMPTY_STUB",
+      "token_cap": 9782,
+      "tokens": 2109,
+      "credits": 31,
+      "csim": 3,
+      "synth": 2,
+      "cosim": 1,
+      "llm_dispatches": 1,
+      "runtime_seconds": 63.60806369781494,
+      "result": "PASS"
+    },
+    {
+      "anchor": "STRUCTURAL_FIX_TARGET",
+      "token_cap": 10691,
+      "tokens": 0,
+      "credits": 50,
+      "csim": 2,
+      "synth": 2,
+      "cosim": 2,
+      "llm_dispatches": 0,
+      "runtime_seconds": 80.44321012496948,
+      "result": "FAIL_MODE_MISMATCH"
+    }
+  ],
+  "final_reserve": {
+    "terminal_final_reserve_failures": 0,
+    "fresh_final_validation_completed_for_accepted_anchor_runs": 5,
+    "note": "ROUND_SKIPPED_FINAL_RESERVE is an exploration stop on two runs; their terminal final-closure gates remained allowed and all fresh final validations passed."
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "schema_version": "post-matrix.final-verification.v1",
+  "status": "PASS",
+  "focused_tests": {
+    "command": "PYTHONPATH=.:.. ../.venv/bin/python -m unittest -q tests.test_v3_batch_benchmark tests.test_v3_continuation_v2 tests.test_v3_strategy_ranker_v2 tests.test_c1_experience_record_v2_audit tests.test_c11_shadow_boundary",
+    "passed": 52,
+    "failed": 0,
+    "errors": 0,
+    "elapsed_seconds": 0.891
+  },
+  "full_tests": {
+    "command": "PYTHONPATH=.:.. ../.venv/bin/python -m unittest discover -s tests -t . -q",
+    "passed": 587,
+    "failed": 0,
+    "errors": 0,
+    "elapsed_seconds": 103.893
+  },
+  "compileall": "PASS",
+  "key_json_parse": "PASS",
+  "git_diff_check": "PASS",
+  "changed_and_untracked_secret_scan": {
+    "long_sk_token_matches": 0,
+    "authorization_bearer_matches": 0,
+    "status": "PASS"
+  },
+  "artifact_sha256": {
+    "terminal_coverage.json": "296cc2f7b2f0ff1cd1ff8c7e07ceb9a248fd5cbdef7f5705b6c7138ad7e1638f",
+    "formal-matrix-result-audit.json": "dbe0c4640bbe9119720e4b1696c7290f8f383b029d3ea9be3cbf310227a9b4ed",
+    "combined-experience-manifest.json": "696503ff3c4766280abf4bdb076900abb691d3f74bbac442b3ce62c94f2dc348",
+    "continuation-fixed-protocol-reevaluation.json": "f81379875b7090d53b63d7264630bc46b455c733c557da906d8a0f00db2e7006",
+    "c2-fixed-protocol-reevaluation.json": "b1594167faffe0199ccdc59cc16ec6436022f42ea56ffcd14415996e808ef5ff",
+    "post-matrix-acceptance.json": "327f3a2b42e61d1cb6edaa2cec2ce99d7b7702e3c29263e32551aa93438c58c5"
+  },
+  "notes": [
+    "The historical prelaunch-verification artifact remains unchanged at its original 585-test checkpoint.",
+    "The final regression includes the later C1.1 equivalence tests and reports 587 tests.",
+    "No environment file or secret value was read into or recorded by this artifact."
+  ]
+}

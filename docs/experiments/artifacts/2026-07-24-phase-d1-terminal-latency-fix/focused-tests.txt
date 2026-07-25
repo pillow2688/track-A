@@ -1,0 +1,18 @@
+COMMAND:
+PYTHONPATH=llm4hls_harness:. .venv/bin/python -m unittest \
+  llm4hls_harness.tests.test_v3_terminal_latency_fix \
+  llm4hls_harness.tests.test_v3_prototype \
+  llm4hls_harness.tests.test_scoring \
+  llm4hls_harness.tests.test_candidate -v
+
+MODULE RESULTS:
+- test_v3_terminal_latency_fix: PASS
+- test_v3_prototype: PASS
+- test_scoring: PASS
+- test_candidate: PASS
+
+----------------------------------------------------------------------
+Ran 79 tests in 42.860s
+
+OK
+EXIT_CODE=0

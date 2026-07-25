@@ -1,0 +1,100 @@
+{
+  "action_id": "0deba0f03740d11d7ef29d006b10800da866e929da16482f67df92c740c35327",
+  "artifact_hashes": {
+    "csynth_xml": "a16499f7cb452069d13054e3bfcc6d021e4138bbed9a9cbf6cb09b63eb980aa9",
+    "tcl": "be0b1cc80076422d342729e32347ee30a9498a80e238e65aa3a10f59a5c9ce59",
+    "vitis_stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "vitis_stdout": "84bc469b1a1fedcde6b2be7d4b21506a54d905ab18e8d09d5e24350da4cd49c2",
+    "vitis_toolchain": "692cf063d533be15c49bf71a2fa4186d76823484289880af86196e400c1c6bad"
+  },
+  "artifacts": {
+    "csynth_xml": "work/synth_proj/sol/syn/report/csynth.xml",
+    "tcl": "work/run_hls.tcl",
+    "vitis_stderr": "work/vitis.stderr.log",
+    "vitis_stdout": "work/vitis.stdout.log",
+    "vitis_toolchain": "work/vitis_toolchain.json"
+  },
+  "backend_fingerprint": "llm4hls_agent.vitis.VitisBackend:v0.8",
+  "cached": false,
+  "candidate_id": "candidate_002",
+  "code_hash": "8295de89fc2564526e57a1f015fe9a2894391b362e3b66e34846f6d5afee9f08",
+  "cosim": null,
+  "effective_timeout_seconds": 900.0,
+  "elapsed_s": 9.496202887035906,
+  "evidence": [
+    "return_code=0",
+    "INFO: [HLS 200-111] Finished Creating RTL model: CPU user time: 0 seconds. CPU system time: 0.01 seconds. Elapsed time: 0.01 seconds; current allocated memory: 497.320 MB.",
+    "INFO: [HLS 200-111] Finished Generating all RTL models: CPU user time: 0.07 seconds. CPU system time: 0 seconds. Elapsed time: 0.08 seconds; current allocated memory: 497.320 MB.",
+    "INFO: [HLS 200-2225] Wrote inferred directives to file /home/ying/CompetitionTrackA/track-A/docs/experiments/artifacts/2026-07-24-horizontal-components-online-admission/fresh-candidate-audits-rerun01/audits/ad2b98b4b7950c47/actions/0deba0f03740d11d7ef29d006b10800da866e929da16482f67df92c740c35327/work/synth_proj/sol/syn/inferred_directives.ini",
+    "INFO: [HLS 200-111] Finished Updating report files: CPU user time: 0.1 seconds. CPU system time: 0.02 seconds. Elapsed time: 0.12 seconds; current allocated memory: 497.320 MB.",
+    "INFO: [VHDL 208-304] Generating VHDL RTL for kernel.",
+    "INFO: [VLOG 209-307] Generating Verilog RTL for kernel.",
+    "INFO: [HLS 200-790] **** Loop Constraint Status: All loop constraints were satisfied.",
+    "INFO: [HLS 200-789] **** Estimated Fmax: 674.76 MHz",
+    "INFO: [HLS 200-2161] Finished Command csynth_design Elapsed time: 00:00:06; Allocated memory: 31.699 MB.",
+    "INFO: [HLS 200-112] Total CPU user time: 2.38 seconds. Total CPU system time: 0.75 seconds. Total elapsed time: 7.92 seconds; peak allocated memory: 497.320 MB.",
+    "INFO: [vitis-run 60-791] Total elapsed time: 0h 0m 8s",
+    "INFO: [vitis-run 60-1662] Stopping dispatch session having empty uuid."
+  ],
+  "kind": "synth",
+  "ok": true,
+  "phase": "pass",
+  "report": {
+    "available_resources": {
+      "BRAM_18K": 4032,
+      "DSP": 9024,
+      "FF": 2607360,
+      "LUT": 1303680,
+      "URAM": 960
+    },
+    "estimated_clock_period_ns": 1.482,
+    "interval": {
+      "max": 16,
+      "min": 16
+    },
+    "latency": {
+      "average": 18,
+      "best": 18,
+      "worst": 18
+    },
+    "loop_evidence": {
+      "loops": [
+        {
+          "issue_type": null,
+          "latency_cycles": 16,
+          "loop_id": "kernel/VITIS_LOOP_5_1",
+          "module": "kernel",
+          "name": "VITIS_LOOP_5_1",
+          "perfect_nested": false,
+          "performance_pragma": null,
+          "pipeline_depth": 2,
+          "pipeline_ii": 1,
+          "slack_ns": 3.65,
+          "source_location": "kernel.cpp:5",
+          "trip_count": 16,
+          "violation_type": null
+        }
+      ],
+      "report_version": "2025.2"
+    },
+    "resources": {
+      "BRAM_18K": 0,
+      "DSP": 0,
+      "FF": 12,
+      "LUT": 128,
+      "URAM": 0
+    },
+    "utilization_percent": {
+      "BRAM_18K": 0.0,
+      "DSP": 0.0,
+      "FF": 0.0,
+      "LUT": 0.01,
+      "URAM": 0.0
+    }
+  },
+  "result_ref": "actions/0deba0f03740d11d7ef29d006b10800da866e929da16482f67df92c740c35327/result.json",
+  "return_code": 0,
+  "task_fingerprint": "646bfdba1b97d359a1f14105e49fe95dcec23fe0a18b96a6fa13e26dec334463",
+  "tool_config_hash": "c269efe245d3d3c234b8cb8f0f5cf41d40c9d9205ace93fab341f460a6fe91c3",
+  "validation_scope": "final"
+}

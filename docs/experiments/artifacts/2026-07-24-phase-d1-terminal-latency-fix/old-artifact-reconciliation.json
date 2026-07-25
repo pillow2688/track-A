@@ -1,0 +1,175 @@
+{
+  "schema_version": "phase-d1.old-artifact-reconciliation.v1",
+  "source_matrix": "llm4hls_harness/experiments/formal_matrix_20260724_4a05763_deepseek_28x1",
+  "read_only": true,
+  "old_artifacts_modified": false,
+  "records": [
+    {
+      "task": "v3d_fast_016",
+      "run_dir": "llm4hls_harness/experiments/formal_matrix_20260724_4a05763_deepseek_28x1/runs/v3d_fast_016--deepseek-v4-pro--r001--4161e1478c6f",
+      "terminal_status": "ERROR",
+      "stop_reason": "BenchmarkExecutionError",
+      "error": "terminal result does not bind the last Candidate decision",
+      "baseline_id": "candidate_000",
+      "last_materialized_candidate_id": "candidate_001",
+      "incumbent_id": "candidate_000",
+      "selected_final_id": null,
+      "candidate_validation_status": {
+        "candidate_001": {
+          "csim": "PASS",
+          "synth": "NOT_RUN",
+          "cosim": "FAIL",
+          "decision": "REJECTED",
+          "reason": "CANDIDATE_COSIM_FAILED"
+        }
+      },
+      "terminal_binding": {
+        "registry_revision": 1,
+        "registry_last_operation_id": "8c0c736d6cd9a064bd7fa46744e42b1c11771656885e41175e8db51bf4715e33",
+        "durable_candidate_decision_ref": "control/candidate_operations/8c0c736d6cd9a064bd7fa46744e42b1c11771656885e41175e8db51bf4715e33.committed.json",
+        "state_decision_ref_at_report": "control/proposal_rejections/round_002.json",
+        "binding_valid": false,
+        "root_cause": "A non-Candidate proposal rejection overwrote the shared decision_ref after the durable REJECT journal."
+      },
+      "final_source_digest": null,
+      "preserved_incumbent_source_digest": "56df635d7e811d72dac01f5e6f911d8af3a0b0566c66aa64589990894532e0fe",
+      "latency_raw_value": null,
+      "latency_validity": "NOT_APPLICABLE_BINDING_FAILURE",
+      "ledger_reconciliation": true,
+      "budget": {
+        "tokens": 4345,
+        "cached_input_tokens": 256,
+        "credits": 46,
+        "tool_calls": {"llm": 2, "csim": 2, "synth": 1, "cosim": 2}
+      },
+      "manifest_validity": "NOT_CREATED_REPORT_SEAL_FAILED"
+    },
+    {
+      "task": "v3d_fast_020",
+      "run_dir": "llm4hls_harness/experiments/formal_matrix_20260724_4a05763_deepseek_28x1/runs/v3d_fast_020--deepseek-v4-pro--r001--6b209d29fd4f",
+      "terminal_status": "ERROR",
+      "stop_reason": "BenchmarkExecutionError",
+      "error": "terminal result does not bind the last Candidate decision",
+      "baseline_id": "candidate_000",
+      "last_materialized_candidate_id": "candidate_001",
+      "incumbent_id": "candidate_000",
+      "selected_final_id": null,
+      "candidate_validation_status": {
+        "candidate_001": {
+          "csim": "PASS",
+          "synth": "NOT_RUN",
+          "cosim": "TIMEOUT",
+          "decision": "REJECTED",
+          "reason": "CANDIDATE_COSIM_FAILED"
+        }
+      },
+      "terminal_binding": {
+        "registry_revision": 1,
+        "registry_last_operation_id": "8c0c736d6cd9a064bd7fa46744e42b1c11771656885e41175e8db51bf4715e33",
+        "durable_candidate_decision_ref": "control/candidate_operations/8c0c736d6cd9a064bd7fa46744e42b1c11771656885e41175e8db51bf4715e33.committed.json",
+        "state_decision_ref_at_report": "control/proposal_rejections/round_002.json",
+        "binding_valid": false,
+        "root_cause": "A non-Candidate duplicate-patch rejection overwrote the shared decision_ref after the durable REJECT journal."
+      },
+      "final_source_digest": null,
+      "preserved_incumbent_source_digest": "b8274124e9c9a124864a32f24721aa68d467290d6ecab58639b00f06f8ebf3b4",
+      "latency_raw_value": null,
+      "latency_validity": "NOT_APPLICABLE_BINDING_FAILURE",
+      "ledger_reconciliation": true,
+      "budget": {
+        "tokens": 4764,
+        "cached_input_tokens": 512,
+        "credits": 46,
+        "tool_calls": {"llm": 2, "csim": 2, "synth": 1, "cosim": 2}
+      },
+      "manifest_validity": "NOT_CREATED_REPORT_SEAL_FAILED"
+    },
+    {
+      "task": "v3d_fast_021",
+      "run_dir": "llm4hls_harness/experiments/formal_matrix_20260724_4a05763_deepseek_28x1/runs/v3d_fast_021--deepseek-v4-pro--r001--a5ae903077f2",
+      "terminal_status": "ERROR",
+      "stop_reason": "BenchmarkExecutionError",
+      "error": "candidate worst latency is invalid",
+      "baseline_id": "candidate_000",
+      "last_materialized_candidate_id": "candidate_002",
+      "incumbent_id": "candidate_001",
+      "selected_final_id": null,
+      "candidate_validation_status": {
+        "candidate_002": {
+          "csim": "PASS",
+          "synth": "PASS",
+          "cosim": "NOT_RUN",
+          "decision": "EVALUATING"
+        }
+      },
+      "terminal_binding": {
+        "registry_revision": 1,
+        "registry_last_operation_id": "b48c0ac61f6a4e22de5be856c0956281842730369d4cc145c0a61b94891c0cd4",
+        "durable_candidate_decision_ref": "control/candidate_operations/b48c0ac61f6a4e22de5be856c0956281842730369d4cc145c0a61b94891c0cd4.committed.json",
+        "binding_valid": true,
+        "note": "The exception occurred before a terminal selection was attempted."
+      },
+      "final_source_digest": null,
+      "preserved_incumbent_source_digest": "282ebdd4f60861a5783256a403fa57bb9f2051f70f3e46e1ef0fd344ae7c6ef8",
+      "latency_raw_value": 0,
+      "latency_validity": "INVALID_ZERO",
+      "performance_comparability": "NOT_COMPARABLE",
+      "acceleration": null,
+      "ledger_reconciliation": true,
+      "budget": {
+        "tokens": 4345,
+        "cached_input_tokens": 0,
+        "credits": 15,
+        "tool_calls": {"llm": 2, "csim": 3, "synth": 3, "cosim": 0}
+      },
+      "manifest_validity": "NOT_CREATED_PRETERMINAL_EXCEPTION"
+    },
+    {
+      "task": "v3d_fast_022",
+      "run_dir": "llm4hls_harness/experiments/formal_matrix_20260724_4a05763_deepseek_28x1/runs/v3d_fast_022--deepseek-v4-pro--r001--cc0b8e8f21b8",
+      "terminal_status": "ERROR",
+      "stop_reason": "BenchmarkExecutionError",
+      "error": "candidate worst latency is invalid",
+      "baseline_id": "candidate_000",
+      "last_materialized_candidate_id": "candidate_002",
+      "incumbent_id": "candidate_001",
+      "selected_final_id": null,
+      "candidate_validation_status": {
+        "candidate_002": {
+          "csim": "PASS",
+          "synth": "PASS",
+          "cosim": "NOT_RUN",
+          "decision": "EVALUATING"
+        }
+      },
+      "terminal_binding": {
+        "registry_revision": 1,
+        "registry_last_operation_id": "b48c0ac61f6a4e22de5be856c0956281842730369d4cc145c0a61b94891c0cd4",
+        "durable_candidate_decision_ref": "control/candidate_operations/b48c0ac61f6a4e22de5be856c0956281842730369d4cc145c0a61b94891c0cd4.committed.json",
+        "binding_valid": true,
+        "note": "The exception occurred before a terminal selection was attempted."
+      },
+      "final_source_digest": null,
+      "preserved_incumbent_source_digest": "708fd2d1b3e224ec9ddafaa6910f83a51ad2abb95b56091247971859f2e2aab6",
+      "latency_raw_value": 0,
+      "latency_validity": "INVALID_ZERO",
+      "performance_comparability": "NOT_COMPARABLE",
+      "acceleration": null,
+      "ledger_reconciliation": true,
+      "budget": {
+        "tokens": 5540,
+        "cached_input_tokens": 0,
+        "credits": 15,
+        "tool_calls": {"llm": 2, "csim": 3, "synth": 3, "cosim": 0}
+      },
+      "manifest_validity": "NOT_CREATED_PRETERMINAL_EXCEPTION"
+    }
+  ],
+  "scope_guards": {
+    "tasks_modified": false,
+    "old_results_rewritten": false,
+    "hidden_accessed": false,
+    "reference_accessed": false,
+    "golden_accessed": false
+  }
+}

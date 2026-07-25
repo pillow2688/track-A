@@ -1,0 +1,30 @@
+{
+  "schema_version": "formal-matrix.prelaunch-verification.v1",
+  "status": "PASS",
+  "frozen_head": "4a05763b593a527878a0056f64763126c58ee63b",
+  "tests": {
+    "command": "PYTHONPATH=.:.. ../.venv/bin/python -m unittest discover -s tests -t . -q",
+    "working_directory": "llm4hls_harness",
+    "passed": 585,
+    "failed": 0,
+    "errors": 0,
+    "elapsed_seconds": 106.403
+  },
+  "compileall": "PASS",
+  "git_diff_check": "PASS",
+  "new_artifact_secret_scan": {
+    "pattern": "word-boundary sk- token",
+    "matches": 0,
+    "status": "PASS"
+  },
+  "c11_machine_gate": "PASS_FAIL_CLOSED",
+  "matrix_freeze_gate": "FROZEN_READY_FOR_ENV",
+  "real_budget": {
+    "llm_calls": 0,
+    "tokens": 0,
+    "csim": 0,
+    "synth": 0,
+    "cosim": 0,
+    "tool_credits": 0
+  }
+}

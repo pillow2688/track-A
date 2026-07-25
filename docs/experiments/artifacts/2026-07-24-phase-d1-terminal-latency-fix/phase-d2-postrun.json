@@ -1,0 +1,35 @@
+{
+  "checks": {
+    "frozen_files_unchanged": true,
+    "head_unchanged": true,
+    "terminal_coverage_complete": true
+  },
+  "coverage": {
+    "expected_slots": 4,
+    "expected_task_ids": [
+      "v3d_fast_016",
+      "v3d_fast_020",
+      "v3d_fast_021",
+      "v3d_fast_022"
+    ],
+    "missing_task_ids": [],
+    "non_unit_task_counts": [],
+    "primary_retry_enabled": false,
+    "schema_version": "phase-d2.terminal-coverage.v1",
+    "status": "COMPLETE",
+    "status_counts": {
+      "DONE": 2,
+      "FAILED": 2
+    },
+    "terminal_slots": 4,
+    "unexpected_task_ids": []
+  },
+  "frozen_files": {
+    "checked_file_count": 49,
+    "mismatches": [],
+    "status": "PASS"
+  },
+  "schema_version": "phase-d2.postrun.v1",
+  "secret_value_recorded": false,
+  "status": "PASS"
+}

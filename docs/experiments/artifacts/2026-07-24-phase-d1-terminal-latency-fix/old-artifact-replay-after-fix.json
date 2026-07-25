@@ -1,0 +1,166 @@
+{
+  "schema_version": "phase-d1.old-artifact-replay.v1",
+  "source_matrix": "llm4hls_harness/experiments/formal_matrix_20260724_4a05763_deepseek_28x1",
+  "read_only": true,
+  "records": [
+    {
+      "task": "v3d_fast_016",
+      "original_terminal": {
+        "status": "ERROR",
+        "stop_reason": "BenchmarkExecutionError",
+        "error": "terminal result does not bind the last Candidate decision"
+      },
+      "replayed_terminal": "FAILED",
+      "candidate_binding_before": {
+        "final_candidate_id": null,
+        "incumbent_id": "candidate_000",
+        "last_materialized_candidate_id": "candidate_001",
+        "state_decision_ref": "control/proposal_rejections/round_002.json"
+      },
+      "candidate_binding_after": {
+        "schema_version": "v3.terminal-candidate-binding.v1",
+        "candidate_id": "candidate_000",
+        "parent_id": null,
+        "source_ref": "baseline/source/kernel.cpp",
+        "source_sha256": "56df635d7e811d72dac01f5e6f911d8af3a0b0566c66aa64589990894532e0fe",
+        "binding_source": "PRESERVED_INCUMBENT",
+        "required_validation_actions": ["csim", "synth", "cosim"],
+        "candidate_decision_ref": "control/candidate_operations/8c0c736d6cd9a064bd7fa46744e42b1c11771656885e41175e8db51bf4715e33.committed.json",
+        "registry_revision": 1,
+        "validation_status": {"csim": "PASS", "synth": "PASS", "cosim": "FAIL"},
+        "promotion_status": "EVALUATING",
+        "selection_reason": "LEGAL_INCUMBENT_PRESERVED",
+        "binding_sha256": "fdec3890a7c7317e0a4198351805942bc586806b58a3969e2ab587caec884c31"
+      },
+      "latency_status_before": "NOT_APPLICABLE",
+      "latency_status_after": "NOT_APPLICABLE",
+      "correctness_preserved": true,
+      "performance_comparable": false,
+      "acceleration": null,
+      "replay_decision": "RECONCILED_FROM_DURABLE_ARTIFACTS",
+      "ledger_reconciliation": true,
+      "manifest_validity": "NOT_CREATED_IN_SOURCE_RUN"
+    },
+    {
+      "task": "v3d_fast_020",
+      "original_terminal": {
+        "status": "ERROR",
+        "stop_reason": "BenchmarkExecutionError",
+        "error": "terminal result does not bind the last Candidate decision"
+      },
+      "replayed_terminal": "FAILED",
+      "candidate_binding_before": {
+        "final_candidate_id": null,
+        "incumbent_id": "candidate_000",
+        "last_materialized_candidate_id": "candidate_001",
+        "state_decision_ref": "control/proposal_rejections/round_002.json"
+      },
+      "candidate_binding_after": {
+        "schema_version": "v3.terminal-candidate-binding.v1",
+        "candidate_id": "candidate_000",
+        "parent_id": null,
+        "source_ref": "baseline/source/kernel.cpp",
+        "source_sha256": "b8274124e9c9a124864a32f24721aa68d467290d6ecab58639b00f06f8ebf3b4",
+        "binding_source": "PRESERVED_INCUMBENT",
+        "required_validation_actions": ["csim", "synth", "cosim"],
+        "candidate_decision_ref": "control/candidate_operations/8c0c736d6cd9a064bd7fa46744e42b1c11771656885e41175e8db51bf4715e33.committed.json",
+        "registry_revision": 1,
+        "validation_status": {"csim": "PASS", "synth": "PASS", "cosim": "TIMEOUT"},
+        "promotion_status": "EVALUATING",
+        "selection_reason": "LEGAL_INCUMBENT_PRESERVED",
+        "binding_sha256": "3e4d2b0ad0b583de3fbeb78898a8212ad6571c6e74c839f00345eefef22078b0"
+      },
+      "latency_status_before": "NOT_APPLICABLE",
+      "latency_status_after": "NOT_APPLICABLE",
+      "correctness_preserved": true,
+      "performance_comparable": false,
+      "acceleration": null,
+      "replay_decision": "RECONCILED_FROM_DURABLE_ARTIFACTS",
+      "ledger_reconciliation": true,
+      "manifest_validity": "NOT_CREATED_IN_SOURCE_RUN"
+    },
+    {
+      "task": "v3d_fast_021",
+      "original_terminal": {
+        "status": "ERROR",
+        "stop_reason": "BenchmarkExecutionError",
+        "error": "candidate worst latency is invalid"
+      },
+      "replayed_terminal": "PRETERMINAL_NOT_COMPARABLE",
+      "candidate_binding_before": {
+        "final_candidate_id": null,
+        "incumbent_id": "candidate_001",
+        "last_materialized_candidate_id": "candidate_002"
+      },
+      "candidate_binding_after": {
+        "schema_version": "phase-d1.incomplete-terminal-binding.v1",
+        "candidate_id": "candidate_001",
+        "parent_id": "candidate_000",
+        "source_ref": "candidates/candidate_001/source/kernel.cpp",
+        "source_sha256": "282ebdd4f60861a5783256a403fa57bb9f2051f70f3e46e1ef0fd344ae7c6ef8",
+        "binding_source": "PRESERVED_INCUMBENT_FROM_INCOMPLETE_REGISTRY",
+        "required_validation_actions": ["csim", "synth"],
+        "candidate_decision_ref": "control/candidate_operations/b48c0ac61f6a4e22de5be856c0956281842730369d4cc145c0a61b94891c0cd4.committed.json",
+        "registry_revision": 1,
+        "validation_status": {"csim": "PASS", "synth": "PASS", "cosim": "NOT_RUN"},
+        "promotion_status": "PROMOTED",
+        "selection_reason": "INCOMPLETE_PRETERMINAL_ARTIFACT",
+        "reconciliation_error": "terminal Candidate decision is not durable",
+        "binding_sha256": "3f141945840bae26b8217ad2d43a5cd8cf7623fd5b4baf52e866479b9378d22f"
+      },
+      "latency_raw_value": 0,
+      "latency_status_before": "EXCEPTION",
+      "latency_status_after": "INVALID",
+      "correctness_preserved": true,
+      "performance_comparable": false,
+      "acceleration": null,
+      "replay_decision": "INSUFFICIENT_ARTIFACT",
+      "ledger_reconciliation": true,
+      "manifest_validity": "NOT_CREATED_IN_SOURCE_RUN"
+    },
+    {
+      "task": "v3d_fast_022",
+      "original_terminal": {
+        "status": "ERROR",
+        "stop_reason": "BenchmarkExecutionError",
+        "error": "candidate worst latency is invalid"
+      },
+      "replayed_terminal": "PRETERMINAL_NOT_COMPARABLE",
+      "candidate_binding_before": {
+        "final_candidate_id": null,
+        "incumbent_id": "candidate_001",
+        "last_materialized_candidate_id": "candidate_002"
+      },
+      "candidate_binding_after": {
+        "schema_version": "phase-d1.incomplete-terminal-binding.v1",
+        "candidate_id": "candidate_001",
+        "parent_id": "candidate_000",
+        "source_ref": "candidates/candidate_001/source/kernel.cpp",
+        "source_sha256": "708fd2d1b3e224ec9ddafaa6910f83a51ad2abb95b56091247971859f2e2aab6",
+        "binding_source": "PRESERVED_INCUMBENT_FROM_INCOMPLETE_REGISTRY",
+        "required_validation_actions": ["csim", "synth"],
+        "candidate_decision_ref": "control/candidate_operations/b48c0ac61f6a4e22de5be856c0956281842730369d4cc145c0a61b94891c0cd4.committed.json",
+        "registry_revision": 1,
+        "validation_status": {"csim": "PASS", "synth": "PASS", "cosim": "NOT_RUN"},
+        "promotion_status": "PROMOTED",
+        "selection_reason": "INCOMPLETE_PRETERMINAL_ARTIFACT",
+        "reconciliation_error": "terminal Candidate decision is not durable",
+        "binding_sha256": "899f80ae1a22f9882f36affa1aa3dbfe62087c9335953a4e9cb4f20c4e8e3da0"
+      },
+      "latency_raw_value": 0,
+      "latency_status_before": "EXCEPTION",
+      "latency_status_after": "INVALID",
+      "correctness_preserved": true,
+      "performance_comparable": false,
+      "acceleration": null,
+      "replay_decision": "INSUFFICIENT_ARTIFACT",
+      "ledger_reconciliation": true,
+      "manifest_validity": "NOT_CREATED_IN_SOURCE_RUN"
+    }
+  ],
+  "summary": {
+    "reconciled_from_durable_artifacts": 2,
+    "insufficient_artifact": 2,
+    "old_artifacts_modified": false
+  }
+}

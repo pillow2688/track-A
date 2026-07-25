@@ -1,0 +1,599 @@
+diff --git a/llm4hls_harness/tests/test_c1_experience_record_v2_audit.py b/llm4hls_harness/tests/test_c1_experience_record_v2_audit.py
+new file mode 100644
+index 0000000..c32e387
+--- /dev/null
++++ b/llm4hls_harness/tests/test_c1_experience_record_v2_audit.py
+@@ -0,0 +1,101 @@
++from __future__ import annotations
++
++import json
++import re
++import unittest
++from pathlib import Path
++
++from llm4hls_agent.v3_experience import canonical_json
++from llm4hls_agent.v3_experience_v2 import MODES, validate_experience_v2
++
++
++ROOT = Path(__file__).resolve().parents[2]
++STORE = (
++    ROOT
++    / "llm4hls_harness"
++    / "experiments"
++    / "v3e"
++    / "kb_v2"
++    / "experience"
++    / "derived"
++    / "experience_v2.jsonl"
++)
++
++
++def _records() -> list[dict[str, object]]:
++    return [
++        json.loads(line)
++        for line in STORE.read_text(encoding="utf-8").splitlines()
++        if line.strip()
++    ]
++
++
++class C1ExperienceRecordV2AuditTests(unittest.TestCase):
++    def test_frozen_store_is_canonical_valid_and_unique(self) -> None:
++        records = _records()
++        self.assertEqual(len(records), 103)
++        validated = [validate_experience_v2(record) for record in records]
++        self.assertEqual(
++            len({str(record["record_id"]) for record in validated}),
++            len(validated),
++        )
++        self.assertEqual(
++            len(
++                {
++                    (
++                        str(record["source"]["run_id"]),
++                        str(record["source"]["candidate_id"]),
++                        int(record["source"]["round_index"]),
++                    )
++                    for record in validated
++                }
++            ),
++            len(validated),
++        )
++        self.assertEqual(
++            STORE.read_bytes(),
++            b"".join(canonical_json(record) + b"\n" for record in validated),
++        )
++
++    def test_frozen_store_has_public_real_evidence_for_all_modes(self) -> None:
++        records = [validate_experience_v2(record) for record in _records()]
++        self.assertEqual(
++            {str(record["problem"]["mode"]) for record in records},
++            set(MODES),
++        )
++        self.assertTrue(
++            all(
++                record["source"]["evidence_level"] == "REAL_LLM_VITIS"
++                for record in records
++            )
++        )
++        self.assertEqual(
++            sum(
++                record["provenance"]["eligible_for_ranking"] is True
++                for record in records
++            ),
++            76,
++        )
++
++        serialized = canonical_json(records).decode("utf-8").lower()
++        for forbidden in (
++            "/home/",
++            "api_key",
++            "api-key",
++            "authorization",
++            "bearer ",
++        ):
++            self.assertNotIn(forbidden, serialized)
++        self.assertIsNone(
++            re.search(r"(?<![a-z0-9])sk-[a-z0-9]{8,}", serialized)
++        )
++        for record in records:
++            for artifact in record["provenance"]["artifact_refs"]:
++                segments = set(str(artifact["ref"]).lower().split("/"))
++                self.assertTrue(
++                    segments.isdisjoint({"hidden", "reference", "golden"})
++                )
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/docs/experiments/artifacts/2026-07-23-c1-experience-record-v2/c1_offline_audit.py b/docs/experiments/artifacts/2026-07-23-c1-experience-record-v2/c1_offline_audit.py
+new file mode 100644
+index 0000000..e7755c2
+--- /dev/null
++++ b/docs/experiments/artifacts/2026-07-23-c1-experience-record-v2/c1_offline_audit.py
+@@ -0,0 +1,172 @@
++#!/usr/bin/env python3
++"""Freeze and audit the existing public-only Experience Record V2 store."""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import json
++import re
++from collections import Counter
++from pathlib import Path
++
++from llm4hls_agent.v3_experience import canonical_json
++from llm4hls_agent.v3_experience_analysis import experience_outcome
++from llm4hls_agent.v3_experience_v2 import validate_experience_v2
++
++
++def _sha256(data: bytes) -> str:
++    return hashlib.sha256(data).hexdigest()
++
++
++def _counter(values: list[str]) -> dict[str, int]:
++    return dict(sorted(Counter(values).items()))
++
++
++def audit(store: Path) -> tuple[dict[str, object], bytes]:
++    raw = store.read_bytes()
++    records = [
++        validate_experience_v2(json.loads(line))
++        for line in raw.decode("utf-8").splitlines()
++        if line.strip()
++    ]
++    canonical = b"".join(canonical_json(record) + b"\n" for record in records)
++
++    record_ids = [str(record["record_id"]) for record in records]
++    source_keys = [
++        "|".join(
++            (
++                str(record["source"]["run_id"]),
++                str(record["source"]["candidate_id"]),
++                str(record["source"]["round_index"]),
++            )
++        )
++        for record in records
++    ]
++    serialized = canonical.decode("utf-8").lower()
++    forbidden_secret_hits = [
++        marker
++        for marker in (
++            "/home/",
++            "api_key",
++            "api-key",
++            "authorization",
++            "bearer ",
++        )
++        if marker in serialized
++    ]
++    if re.search(r"(?<![a-z0-9])sk-[a-z0-9]{8,}", serialized):
++        forbidden_secret_hits.append("secret-key-pattern")
++    forbidden_artifact_refs: list[str] = []
++    for record in records:
++        for artifact in record["provenance"]["artifact_refs"]:
++            ref = str(artifact["ref"])
++            segments = set(ref.lower().split("/"))
++            if not segments.isdisjoint({"hidden", "reference", "golden"}):
++                forbidden_artifact_refs.append(ref)
++
++    ranking = [
++        record
++        for record in records
++        if record["provenance"]["eligible_for_ranking"] is True
++    ]
++    summary: dict[str, object] = {
++        "schema_version": "c1.experience-record-v2-offline-audit.v1",
++        "component_state": "PASS_PROMOTABLE",
++        "authority": "SHADOW",
++        "guided": "NOT_ADMITTED",
++        "source_store": store.as_posix(),
++        "record_count": len(records),
++        "valid_record_count": len(records),
++        "record_id_unique_count": len(set(record_ids)),
++        "source_identity_unique_count": len(set(source_keys)),
++        "canonical_store_match": raw == canonical,
++        "store_sha256": _sha256(raw),
++        "canonical_sha256": _sha256(canonical),
++        "mode_distribution": _counter(
++            [str(record["problem"]["mode"]) for record in records]
++        ),
++        "outcome_distribution": _counter(
++            [experience_outcome(record) for record in records]
++        ),
++        "evidence_distribution": _counter(
++            [str(record["source"]["evidence_level"]) for record in records]
++        ),
++        "task_split_distribution": _counter(
++            [str(record["source"]["task_split"]) for record in records]
++        ),
++        "run_count": len({str(record["source"]["run_id"]) for record in records}),
++        "task_family_count": len(
++            {str(record["source"]["task_family_hash"]) for record in records}
++        ),
++        "ranking_eligible_count": len(ranking),
++        "ranking_eligible_by_mode": _counter(
++            [str(record["problem"]["mode"]) for record in ranking]
++        ),
++        "retrieval_eligible_count": sum(
++            record["provenance"]["eligible_for_retrieval"] is True
++            for record in records
++        ),
++        "forbidden_secret_hits": forbidden_secret_hits,
++        "forbidden_artifact_refs": sorted(forbidden_artifact_refs),
++        "future_outcome_input_status": "NOT_APPLICABLE_RECORD_AUDIT_ONLY",
++        "downstream_contract": {
++            "query_must_exclude": [
++                "validation",
++                "performance",
++                "cost",
++                "outcome",
++                "promoted",
++                "rejected",
++            ],
++            "labels_may_be_read_only_after_decision": True,
++        },
++        "real_budget": {
++            "llm_calls": 0,
++            "tokens": 0,
++            "csim": 0,
++            "synth": 0,
++            "cosim": 0,
++            "tool_credits": 0,
++        },
++    }
++    checks = {
++        "all_records_valid": summary["valid_record_count"] == summary["record_count"],
++        "record_ids_unique": summary["record_id_unique_count"] == summary["record_count"],
++        "source_identities_unique": (
++            summary["source_identity_unique_count"] == summary["record_count"]
++        ),
++        "canonical_store_stable": summary["canonical_store_match"],
++        "all_four_modes_present": set(summary["mode_distribution"])
++        == {"REPAIR", "SYNTH_FIX", "STRUCTURAL_FIX", "OPTIMIZE"},
++        "only_real_evidence": summary["evidence_distribution"]
++        == {"REAL_LLM_VITIS": len(records)},
++        "no_secret_marker": not forbidden_secret_hits,
++        "no_forbidden_artifact_ref": not forbidden_artifact_refs,
++        "ranking_data_available": len(ranking) > 0,
++    }
++    summary["checks"] = checks
++    summary["valid_for_offline_downstream"] = all(checks.values())
++    if not summary["valid_for_offline_downstream"]:
++        summary["component_state"] = "BLOCKED_ENGINEERING"
++    return summary, canonical
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--store", type=Path, required=True)
++    parser.add_argument("--output-dir", type=Path, required=True)
++    args = parser.parse_args()
++    summary, canonical = audit(args.store)
++    args.output_dir.mkdir(parents=True, exist_ok=True)
++    (args.output_dir / "experience-record-v2-freeze.jsonl").write_bytes(canonical)
++    (args.output_dir / "c1-audit-summary.json").write_text(
++        json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
++        encoding="utf-8",
++    )
++    print(json.dumps(summary, ensure_ascii=False, sort_keys=True))
++    return 0 if summary["valid_for_offline_downstream"] else 1
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/docs/experiments/artifacts/2026-07-23-c1-experience-record-v2/c1-audit-summary.json b/docs/experiments/artifacts/2026-07-23-c1-experience-record-v2/c1-audit-summary.json
+new file mode 100644
+index 0000000..11ec25f
+--- /dev/null
++++ b/docs/experiments/artifacts/2026-07-23-c1-experience-record-v2/c1-audit-summary.json
+@@ -0,0 +1,75 @@
++{
++  "authority": "SHADOW",
++  "canonical_sha256": "ba452e1f57e433fae2727e614cb6ab2986ff4ae301762f852559bb909e004cb7",
++  "canonical_store_match": true,
++  "checks": {
++    "all_four_modes_present": true,
++    "all_records_valid": true,
++    "canonical_store_stable": true,
++    "no_forbidden_artifact_ref": true,
++    "no_secret_marker": true,
++    "only_real_evidence": true,
++    "ranking_data_available": true,
++    "record_ids_unique": true,
++    "source_identities_unique": true
++  },
++  "component_state": "PASS_PROMOTABLE",
++  "downstream_contract": {
++    "labels_may_be_read_only_after_decision": true,
++    "query_must_exclude": [
++      "validation",
++      "performance",
++      "cost",
++      "outcome",
++      "promoted",
++      "rejected"
++    ]
++  },
++  "evidence_distribution": {
++    "REAL_LLM_VITIS": 103
++  },
++  "forbidden_artifact_refs": [],
++  "forbidden_secret_hits": [],
++  "future_outcome_input_status": "NOT_APPLICABLE_RECORD_AUDIT_ONLY",
++  "guided": "NOT_ADMITTED",
++  "mode_distribution": {
++    "OPTIMIZE": 42,
++    "REPAIR": 34,
++    "STRUCTURAL_FIX": 8,
++    "SYNTH_FIX": 19
++  },
++  "outcome_distribution": {
++    "FAILURE": 32,
++    "NO_IMPROVEMENT": 9,
++    "SUCCESS": 62
++  },
++  "ranking_eligible_by_mode": {
++    "OPTIMIZE": 26,
++    "REPAIR": 25,
++    "STRUCTURAL_FIX": 6,
++    "SYNTH_FIX": 19
++  },
++  "ranking_eligible_count": 76,
++  "real_budget": {
++    "cosim": 0,
++    "csim": 0,
++    "llm_calls": 0,
++    "synth": 0,
++    "tokens": 0,
++    "tool_credits": 0
++  },
++  "record_count": 103,
++  "record_id_unique_count": 103,
++  "retrieval_eligible_count": 76,
++  "run_count": 72,
++  "schema_version": "c1.experience-record-v2-offline-audit.v1",
++  "source_identity_unique_count": 103,
++  "source_store": "llm4hls_harness/experiments/v3e/kb_v2/experience/derived/experience_v2.jsonl",
++  "store_sha256": "ba452e1f57e433fae2727e614cb6ab2986ff4ae301762f852559bb909e004cb7",
++  "task_family_count": 25,
++  "task_split_distribution": {
++    "train": 103
++  },
++  "valid_for_offline_downstream": true,
++  "valid_record_count": 103
++}
+diff --git a/docs/status/2026-07-23-phase-c1-experience-record-v2.md b/docs/status/2026-07-23-phase-c1-experience-record-v2.md
+new file mode 100644
+index 0000000..c6014bd
+--- /dev/null
++++ b/docs/status/2026-07-23-phase-c1-experience-record-v2.md
+@@ -0,0 +1,77 @@
++# Phase C1：Experience Record V2 状态
++
++日期：2026-07-23  
++冻结 HEAD：`4a05763b593a527878a0056f64763126c58ee63b`  
++组件状态：`PASS_PROMOTABLE`  
++正式权限：`SHADOW`  
++Guided：`NOT_ADMITTED`
++
++## 结论
++
++当前仓库已有的 `v3e.experience.v2` Schema、V1→V2 转换链和 103 条
++Experience V2 记录通过独立离线冻结审计。C1 没有另造 Schema，也没有修改
++主 Graph、预算、Candidate、fresh final 或 Experience 正式权限。
++
++`PASS_PROMOTABLE` 只表示这批结构正确的数据可以作为 C2 离线评估输入并进入
++人工 Shadow 审查；不表示 Experience Guided 已准入。
++
++## 冻结数据
++
++| 项目 | 结果 |
++| --- | ---: |
++| V2 记录 | 103 |
++| Schema 校验通过 | 103 |
++| 唯一 record_id | 103 |
++| 唯一 run/candidate/round 身份 | 103 |
++| 历史运行数 | 72 |
++| task family | 25 |
++| 可检索 | 76 |
++| 可排名 | 76 |
++| quarantine | 0 |
++| Store SHA-256 | `ba452e1f57e433fae2727e614cb6ab2986ff4ae301762f852559bb909e004cb7` |
++
++模式分布：
++
++| Mode | 全部记录 | 可排名 |
++| --- | ---: | ---: |
++| REPAIR | 34 | 25 |
++| SYNTH_FIX | 19 | 19 |
++| STRUCTURAL_FIX | 8 | 6 |
++| OPTIMIZE | 42 | 26 |
++
++Outcome 分布为 SUCCESS 62、FAILURE 32、NO_IMPROVEMENT 9。所有 103 条记录的
++evidence level 均为 `REAL_LLM_VITIS`，但它们是已有历史证据；C1 当次运行没有
++调用真实 LLM 或 Vitis。
++
++## 边界与缺口
++
++- Record 只保存派生元数据，不保存源码、Patch 文本、Prompt 或日志正文。
++- 未发现 API Key、Authorization、绝对主目录路径或 hidden/reference/golden
++  Artifact 引用。
++- C1 只审计记录，不作策略决策；C2 查询输入必须排除 `validation`、
++  `performance`、`cost`、outcome、promoted 和 rejected。
++- 全部 103 条记录的 task split 都是 train；必须由 C2 重新执行按 family/task
++  留出评估，不能把训练内表现当作泛化证据。
++- STRUCTURAL_FIX 只有 8 条、其中可排名 6 条，仍是最明显的数据缺口。
++
++## 验证
++
++- C1 聚焦测试：41/41 PASS。
++- 全套测试：574/574 PASS。
++- `compileall`：PASS。
++- `git diff --check`：PASS。
++- 审计器初版的字节类型与秘密模式误报在同一局部修复循环内修正；正式重跑通过。
++- 当次真实预算：LLM calls 0、Token 0、CSim 0、Synth 0、CoSim 0、
++  Tool Credits 0。
++
++## 证据
++
++- 审计摘要：
++  `docs/experiments/artifacts/2026-07-23-c1-experience-record-v2/c1-audit-summary.json`
++- 冻结 JSONL：
++  `docs/experiments/artifacts/2026-07-23-c1-experience-record-v2/experience-record-v2-freeze.jsonl`
++- 审计脚本：
++  `docs/experiments/artifacts/2026-07-23-c1-experience-record-v2/c1_offline_audit.py`
++- 专用测试：
++  `llm4hls_harness/tests/test_c1_experience_record_v2_audit.py`
++
+diff --git a/docs/experiments/2026-07-23-phase-c1-experience-record-v2-report.zh-CN.md b/docs/experiments/2026-07-23-phase-c1-experience-record-v2-report.zh-CN.md
+new file mode 100644
+index 0000000..84bfd1c
+--- /dev/null
++++ b/docs/experiments/2026-07-23-phase-c1-experience-record-v2-report.zh-CN.md
+@@ -0,0 +1,93 @@
++# Phase C1：Experience Record V2 离线审计报告
++
++## 1. 目标与范围
++
++C1 的目标不是重写既有 Experience 系统，而是确认当前
++`v3e.experience.v2` 是否具备稳定 Schema、可复现记录、公开边界和可供 C2
++离线使用的数据契约。
++
++本阶段只新增 C1 专用审计脚本、冻结 Artifact、测试和文档。没有修改 Experience
++运行时、主 Graph、BudgetLedger、Candidate、final 或任何策略权限。
++
++## 2. 已有实现核对
++
++当前 HEAD 已包含：
++
++- 严格的 `v3e.experience.v2` Schema 与四模式 taxonomy；
++- 稳定的 canonical record ID 和完整字段校验；
++- V1→V2 normalizer、backfill、quarantine 与 snapshot；
++- 检索、数据质量、ML export、LORO 和 learning readiness；
++- 对秘密、绝对路径、task identity 和非声明字段的拒绝。
++
++因此 C1 复用并审计现有实现，没有建立第二套不兼容 Schema。
++
++## 3. 数据审计结果
++
++103/103 条记录通过 `validate_experience_v2`。record ID 与
++`run_id/candidate_id/round_index` 组合均无重复；原 Store 与逐条 canonical
++重新序列化的 SHA-256 都是：
++
++```text
++ba452e1f57e433fae2727e614cb6ab2986ff4ae301762f852559bb909e004cb7
++```
++
++数据覆盖 REPAIR、SYNTH_FIX、STRUCTURAL_FIX、OPTIMIZE 四种 Mode，来自 72 个
++历史运行和 25 个 task family。76 条记录可用于离线检索/排名。
++
++现有质量缺口没有被隐藏：
++
++- STRUCTURAL_FIX 可排名记录只有 6 条；
++- 103 条记录全部标记为 train；
++- 历史数据中 provider/model/prompt 与 failure/bottleneck subtype 仍存在 UNKNOWN；
++- 数据可用不等于 Guided 效果已经证明。
++
++## 4. 泄漏边界
++
++C1 是记录质量审计，因此会读取完整历史 outcome 来验证记录一致性，但没有产生
++策略决策。为避免 C2 future leakage，冻结摘要显式规定：查询特征不能包含
++`validation`、`performance`、`cost`、outcome、promoted 或 rejected；held-out
++label 只能在排序决策生成后用于打分。
++
++记录与 Artifact 引用中未发现秘密标记、绝对 `/home` 路径或
++hidden/reference/golden 目录引用。本阶段没有访问这些目录或内容。
++
++## 5. 测试与复现
++
++正式结果：
++
++```text
++C1 focused: 41/41 PASS
++Full suite: 574/574 PASS
++compileall: PASS
++git diff --check: PASS
++```
++
++审计器初版出现两个实现级误报：把普通 `task-` 子串误当作 `sk-` 密钥，并在
++canonical bytes 比较中使用了错误类型。它们在一个局部修复循环内完成修正；
++Experience 原数据没有改动。
++
++## 6. 状态判定
++
++C1 判定为 `PASS_PROMOTABLE`：
++
++- Schema 和 canonical digest 稳定；
++- 数据全部有效且身份唯一；
++- 四 Mode 都有真实历史记录；
++- 专用与完整测试、compileall、diff check 全部通过；
++- 没有秘密或禁止数据边界问题；
++- C2 所需的离线输入有效。
++
++该状态只授权人工审查/Shadow 数据使用。Experience authority 保持 `SHADOW`，
++Experience Guided 保持 `NOT_ADMITTED`。
++
++## 7. 当次预算
++
++```text
++真实 LLM calls = 0
++真实 Token = 0
++CSim = 0
++Synth = 0
++CoSim = 0
++Tool Credits = 0
++```
++
+diff --git a/docs/experiments/2026-07-23-phase-c1-experience-record-v2-acceptance.zh-CN.md b/docs/experiments/2026-07-23-phase-c1-experience-record-v2-acceptance.zh-CN.md
+new file mode 100644
+index 0000000..f48f534
+--- /dev/null
++++ b/docs/experiments/2026-07-23-phase-c1-experience-record-v2-acceptance.zh-CN.md
+@@ -0,0 +1,45 @@
++# Phase C1：Experience Record V2 验收报告
++
++## 验收结论
++
++**通过，状态为 `PASS_PROMOTABLE`。**
++
++验收对象是 Experience Record V2 的数据层与离线输入资格，不是 Guided
++策略权限。现有正式状态保持：
++
++```text
++Experience authority = SHADOW
++Experience Guided = NOT_ADMITTED
++```
++
++## 验收项
++
++| 验收项 | 结果 | 证据 |
++| --- | --- | --- |
++| `v3e.experience.v2` 记录可校验 | PASS | 103/103 |
++| record ID 唯一 | PASS | 103/103 |
++| source identity 唯一 | PASS | 103/103 |
++| canonical digest 稳定 | PASS | Store 与重建 digest 一致 |
++| 四 Mode 覆盖 | PASS | 34/19/8/42 |
++| C2 可排名输入 | PASS | 76 条 |
++| quarantine | PASS | 0 |
++| 秘密与绝对路径 | PASS | 0 命中 |
++| hidden/reference/golden 引用 | PASS | 0 命中 |
++| future-outcome 输入隔离契约 | PASS | 查询显式排除 outcome 字段 |
++| C1 聚焦测试 | PASS | 41/41 |
++| 完整测试 | PASS | 574/574 |
++| compileall | PASS | 0 error |
++| diff check | PASS | 0 error |
++| 当次真实预算 | PASS | 全部 0 |
++
++## 人工审查重点
++
++1. 确认 C2 只使用冻结摘要声明的 pre-outcome 查询字段。
++2. 确认 `PASS_PROMOTABLE` 不被误解释为 Experience Guided 已准入。
++3. 评估 STRUCTURAL_FIX 可排名记录仅 6 条是否需要优先补数。
++
++## C2 依赖判定
++
++Experience V2 Schema 与 records 有效，允许执行 C2 Bayesian Strategy Ranker V2
++离线评估。C2 必须自行进行 task/family 留出，不能复用训练内指标作为结论。
++

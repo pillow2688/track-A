@@ -1,0 +1,49 @@
+CAPTURED_AT=2026-07-23T13:33:36+08:00
+BRANCH=feat/track-a-empty-stub-generation-smoke
+HEAD=4a05763b593a527878a0056f64763126c58ee63b
+ROUTER_FIX_ANCESTOR=YES
+PRODUCT_TEST_DIFF_NAMES_BEGIN
+PRODUCT_TEST_DIFF_NAMES_END
+GIT_STATUS_BEGIN
+On branch feat/track-a-empty-stub-generation-smoke
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   README.md
+	modified:   doc/README.md
+	modified:   doc/docs/README.md
+	modified:   docs/status/2026-07-23-track-a-completion-board.md
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	doc/docs/2026-07-22-new-member-complete-onboarding.md
+	doc/docs/2026-07-23-one-week-project-completion-handbook.md
+	docs/experiments/2026-07-23-phase-b1-five-real-anchors-acceptance.zh-CN.md
+	docs/experiments/2026-07-23-phase-b1-five-real-anchors-report.zh-CN.md
+	docs/experiments/artifacts/2026-07-23-phase-a1-freeze/compileall-after-commit.txt
+	docs/experiments/artifacts/2026-07-23-phase-a1-freeze/final-commit-summary.json
+	docs/experiments/artifacts/2026-07-23-phase-a1-freeze/final-git-state.txt
+	docs/experiments/artifacts/2026-07-23-phase-a1-freeze/full-tests-after-commit.txt
+	docs/experiments/artifacts/2026-07-23-phase-a1-freeze/git-diff-check-after-commit.txt
+	docs/experiments/artifacts/2026-07-23-phase-b1-five-real-anchors/
+	docs/status/2026-07-23-phase-b1-five-real-anchors.md
+
+no changes added to commit (use "git add" and/or "git commit -a")
+GIT_STATUS_END
+GIT_STATUS_SHORT_BEGIN
+ M README.md
+ M doc/README.md
+ M doc/docs/README.md
+ M docs/status/2026-07-23-track-a-completion-board.md
+?? doc/docs/2026-07-22-new-member-complete-onboarding.md
+?? doc/docs/2026-07-23-one-week-project-completion-handbook.md
+?? docs/experiments/2026-07-23-phase-b1-five-real-anchors-acceptance.zh-CN.md
+?? docs/experiments/2026-07-23-phase-b1-five-real-anchors-report.zh-CN.md
+?? docs/experiments/artifacts/2026-07-23-phase-a1-freeze/compileall-after-commit.txt
+?? docs/experiments/artifacts/2026-07-23-phase-a1-freeze/final-commit-summary.json
+?? docs/experiments/artifacts/2026-07-23-phase-a1-freeze/final-git-state.txt
+?? docs/experiments/artifacts/2026-07-23-phase-a1-freeze/full-tests-after-commit.txt
+?? docs/experiments/artifacts/2026-07-23-phase-a1-freeze/git-diff-check-after-commit.txt
+?? docs/experiments/artifacts/2026-07-23-phase-b1-five-real-anchors/
+?? docs/status/2026-07-23-phase-b1-five-real-anchors.md
+GIT_STATUS_SHORT_END

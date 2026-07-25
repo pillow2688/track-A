@@ -1,0 +1,7 @@
+compileall_command=.venv/bin/python -m compileall -q llm4hls_harness
+compileall_status=PASS
+compileall_exit_code=0
+
+git_diff_check_command=git diff --check
+git_diff_check_status=PASS
+git_diff_check_exit_code=0

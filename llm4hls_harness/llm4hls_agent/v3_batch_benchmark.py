@@ -35,6 +35,8 @@ from pathlib import Path
 from typing import Callable, Iterator, Mapping, Protocol, Sequence, TextIO
 
 from .task import PublicTask, load_public_task
+from .v3_continuation_admission import load_continuation_admission
+from .v3_experience_v2_runtime import validate_ranker_admission_manifest
 
 
 RUN_SCHEMA = "v3d.benchmark-run.v1"
@@ -55,6 +57,11 @@ _CRITICAL_IMPLEMENTATION_MODULES = (
     "v3_experience_store.py",
     "v3_experience_guidance.py",
     "v3_experience_importer.py",
+    "v3_experience_v2.py",
+    "v3_experience_v2_runtime.py",
+    "v3_strategy_ranker_v3.py",
+    "v3_continuation_v2.py",
+    "v3_continuation_admission.py",
     "v3_phase_router.py",
     "v3_planner.py",
     "v3_planner_action.py",
@@ -69,8 +76,12 @@ _CRITICAL_IMPLEMENTATION_MODULES = (
 
 _MODES = {"REPAIR", "SYNTH_FIX", "STRUCTURAL_FIX", "OPTIMIZE"}
 _VALIDATION_PROFILES = {"strict", "fast-experiment"}
+_FINAL_VALIDATION_POLICIES = {"task_contract", "full_internal_audit"}
 _EXPERIENCE_MODES = {"off", "shadow", "guided"}
 _EXPERIENCE_TASK_SPLITS = {"train", "dev", "hidden_like"}
+_EXPERIENCE_RANKER_VERSIONS = {"v1", "v3"}
+_CONTINUATION_POLICY_MODES = {"off", "shadow", "enforce"}
+_CONTINUATION_POLICY_VERSIONS = {"v1", "v2"}
 _MODE_ALIASES = {
     "REPAIR": "REPAIR",
     "BUGFIX": "REPAIR",
@@ -173,6 +184,67 @@ def _experience_store_snapshot(
     }
 
 
+def _admission_manifest_snapshot(
+    path: Path | str | None,
+    *,
+    role: str,
+    label: str,
+    error_type: type[Exception] = BenchmarkError,
+) -> tuple[Path | None, dict[str, object]]:
+    """Resolve and content-bind one immutable component admission decision."""
+
+    if path is None:
+        return None, {
+            "role": role,
+            "present": False,
+            "size_bytes": 0,
+            "sha256": None,
+        }
+    resolved = Path(path).expanduser().resolve()
+    if not resolved.is_file():
+        raise error_type(f"{label} must be an existing regular file: {resolved}")
+    try:
+        data = resolved.read_bytes()
+    except OSError as exc:
+        raise error_type(f"cannot snapshot {label}: {resolved}") from exc
+    return resolved, {
+        "role": role,
+        "present": True,
+        "size_bytes": len(data),
+        "sha256": _sha256_bytes(data),
+    }
+
+
+def _validate_component_admissions(
+    *,
+    continuation_path: Path | None,
+    experience_path: Path | None,
+    experience_seed_sha256: str | None,
+    error_type: type[Exception],
+) -> None:
+    """Fail before scheduling when an admission artifact is malformed."""
+
+    try:
+        if continuation_path is not None:
+            load_continuation_admission(continuation_path)
+        if experience_path is not None:
+            if experience_seed_sha256 is None:
+                raise ValueError(
+                    "experience admission requires a frozen experience store"
+                )
+            decoded = json.loads(experience_path.read_text(encoding="utf-8"))
+            if not isinstance(decoded, Mapping):
+                raise ValueError("experience admission manifest must be an object")
+            validate_ranker_admission_manifest(
+                decoded,
+                seed_sha256=experience_seed_sha256,
+            )
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        raise error_type(
+            f"component admission preflight failed: {type(exc).__name__}: {exc}"
+        ) from exc
+
+
 @lru_cache(maxsize=1)
 def _implementation_facts() -> dict[str, object]:
     """Return secret-free, content-addressed facts for run identity.
@@ -206,6 +278,13 @@ def _implementation_facts() -> dict[str, object]:
             modules["v3_experience_store.py"],
             modules["v3_experience_guidance.py"],
             modules["v3_experience_importer.py"],
+            modules["v3_experience_v2.py"],
+            modules["v3_experience_v2_runtime.py"],
+            modules["v3_strategy_ranker_v3.py"],
+        ),
+        "continuation_layer": (
+            modules["v3_continuation_v2.py"],
+            modules["v3_continuation_admission.py"],
         ),
         "backend_and_accounting": (
             modules["vitis.py"],
@@ -375,13 +454,34 @@ class BenchmarkConfig:
     max_tasks: int | None = None
     max_runtime_seconds: float | None = None
     validation_profile: str = "strict"
+    final_validation_policy: str = "task_contract"
+    max_planner_rounds: int | None = None
+    max_no_improvement_rounds: int = 2
+    enable_final_fallback: bool = False
+    continuation_policy_mode: str = "shadow"
+    continuation_policy_version: str = "v1"
+    continuation_admission_manifest: Path | str | None = None
+    continuation_admission_sha256: str | None = field(
+        init=False, default=None, repr=False
+    )
+    continuation_admission_size_bytes: int = field(
+        init=False, default=0, repr=False
+    )
     experience_mode: str = "shadow"
     experience_store: Path | str | None = None
+    experience_ranker_version: str = "v1"
+    experience_admission_manifest: Path | str | None = None
     experience_task_split: str | None = None
     experience_store_sha256: str | None = field(
         init=False, default=None, repr=False
     )
     experience_store_size_bytes: int = field(
+        init=False, default=0, repr=False
+    )
+    experience_admission_sha256: str | None = field(
+        init=False, default=None, repr=False
+    )
+    experience_admission_size_bytes: int = field(
         init=False, default=0, repr=False
     )
 
@@ -409,9 +509,66 @@ class BenchmarkConfig:
             raise ValueError(
                 "validation_profile must be strict or fast-experiment"
             )
+        final_validation_policy = (
+            str(self.final_validation_policy).strip().casefold()
+        )
+        if final_validation_policy not in _FINAL_VALIDATION_POLICIES:
+            raise ValueError(
+                "final_validation_policy must be task_contract or "
+                "full_internal_audit"
+            )
+        max_planner_rounds = self.max_planner_rounds
+        if max_planner_rounds is not None:
+            max_planner_rounds = int(max_planner_rounds)
+            if max_planner_rounds <= 0:
+                raise ValueError("max_planner_rounds must be positive")
+        max_no_improvement_rounds = int(self.max_no_improvement_rounds)
+        if max_no_improvement_rounds <= 0:
+            raise ValueError(
+                "max_no_improvement_rounds must be positive"
+            )
+        continuation_policy_mode = (
+            str(self.continuation_policy_mode).strip().casefold()
+        )
+        if continuation_policy_mode not in _CONTINUATION_POLICY_MODES:
+            raise ValueError(
+                "continuation_policy_mode must be off, shadow, or enforce"
+            )
+        continuation_policy_version = (
+            str(self.continuation_policy_version).strip().casefold()
+        )
+        if continuation_policy_version not in _CONTINUATION_POLICY_VERSIONS:
+            raise ValueError("continuation_policy_version must be v1 or v2")
+        (
+            continuation_admission_manifest,
+            continuation_admission_snapshot,
+        ) = _admission_manifest_snapshot(
+            self.continuation_admission_manifest,
+            role="CONTINUATION_ENFORCE_ADMISSION",
+            label="continuation_admission_manifest",
+            error_type=ValueError,
+        )
+        if continuation_policy_mode == "enforce":
+            if continuation_policy_version != "v2":
+                raise ValueError(
+                    "continuation enforce requires continuation policy v2"
+                )
+            if continuation_admission_manifest is None:
+                raise ValueError(
+                    "continuation enforce requires an admission manifest"
+                )
+        elif continuation_admission_manifest is not None:
+            raise ValueError(
+                "continuation admission manifest is valid only in enforce mode"
+            )
         experience_mode = str(self.experience_mode).strip().casefold()
         if experience_mode not in _EXPERIENCE_MODES:
             raise ValueError("experience_mode must be off, shadow, or guided")
+        experience_ranker_version = (
+            str(self.experience_ranker_version).strip().casefold()
+        )
+        if experience_ranker_version not in _EXPERIENCE_RANKER_VERSIONS:
+            raise ValueError("experience_ranker_version must be v1 or v3")
         experience_task_split = self.experience_task_split
         if experience_task_split is not None:
             experience_task_split = (
@@ -426,6 +583,32 @@ class BenchmarkConfig:
                 )
         experience_store, experience_snapshot = _experience_store_snapshot(
             self.experience_store,
+            error_type=ValueError,
+        )
+        (
+            experience_admission_manifest,
+            experience_admission_snapshot,
+        ) = _admission_manifest_snapshot(
+            self.experience_admission_manifest,
+            role="EXPERIENCE_GUIDED_ADMISSION",
+            label="experience_admission_manifest",
+            error_type=ValueError,
+        )
+        if experience_ranker_version == "v3" and experience_store is None:
+            raise ValueError("experience ranker v3 requires an experience store")
+        if experience_mode == "guided":
+            if experience_ranker_version != "v3":
+                raise ValueError(
+                    "guided experience requires the Gate-controlled v3 ranker"
+                )
+            if experience_admission_manifest is None:
+                raise ValueError(
+                    "guided experience requires an admission manifest"
+                )
+        _validate_component_admissions(
+            continuation_path=continuation_admission_manifest,
+            experience_path=experience_admission_manifest,
+            experience_seed_sha256=experience_snapshot["sha256"],
             error_type=ValueError,
         )
         max_tasks = self.max_tasks
@@ -452,8 +635,49 @@ class BenchmarkConfig:
         object.__setattr__(self, "repeats", repeats)
         object.__setattr__(self, "backend", backend)
         object.__setattr__(self, "validation_profile", validation_profile)
+        object.__setattr__(
+            self, "final_validation_policy", final_validation_policy
+        )
+        object.__setattr__(self, "max_planner_rounds", max_planner_rounds)
+        object.__setattr__(
+            self,
+            "max_no_improvement_rounds",
+            max_no_improvement_rounds,
+        )
+        object.__setattr__(
+            self, "enable_final_fallback", bool(self.enable_final_fallback)
+        )
+        object.__setattr__(
+            self, "continuation_policy_mode", continuation_policy_mode
+        )
+        object.__setattr__(
+            self, "continuation_policy_version", continuation_policy_version
+        )
+        object.__setattr__(
+            self,
+            "continuation_admission_manifest",
+            continuation_admission_manifest,
+        )
+        object.__setattr__(
+            self,
+            "continuation_admission_sha256",
+            continuation_admission_snapshot["sha256"],
+        )
+        object.__setattr__(
+            self,
+            "continuation_admission_size_bytes",
+            continuation_admission_snapshot["size_bytes"],
+        )
         object.__setattr__(self, "experience_mode", experience_mode)
         object.__setattr__(self, "experience_store", experience_store)
+        object.__setattr__(
+            self, "experience_ranker_version", experience_ranker_version
+        )
+        object.__setattr__(
+            self,
+            "experience_admission_manifest",
+            experience_admission_manifest,
+        )
         object.__setattr__(
             self, "experience_task_split", experience_task_split
         )
@@ -466,6 +690,16 @@ class BenchmarkConfig:
             self,
             "experience_store_size_bytes",
             experience_snapshot["size_bytes"],
+        )
+        object.__setattr__(
+            self,
+            "experience_admission_sha256",
+            experience_admission_snapshot["sha256"],
+        )
+        object.__setattr__(
+            self,
+            "experience_admission_size_bytes",
+            experience_admission_snapshot["size_bytes"],
         )
         object.__setattr__(
             self,
@@ -496,10 +730,33 @@ class BenchmarkConfig:
             "max_tasks": self.max_tasks,
             "max_runtime_seconds": self.max_runtime_seconds,
             "validation_profile": self.validation_profile,
+            "final_validation_policy": self.final_validation_policy,
+            "max_planner_rounds": self.max_planner_rounds,
+            "max_no_improvement_rounds": self.max_no_improvement_rounds,
+            "enable_final_fallback": self.enable_final_fallback,
+            "continuation_policy_mode": self.continuation_policy_mode,
+            "continuation_policy_version": self.continuation_policy_version,
+            "continuation_admission_manifest": (
+                str(self.continuation_admission_manifest)
+                if self.continuation_admission_manifest is not None
+                else None
+            ),
+            "continuation_admission_snapshot": {
+                "role": "CONTINUATION_ENFORCE_ADMISSION",
+                "present": self.continuation_admission_manifest is not None,
+                "size_bytes": self.continuation_admission_size_bytes,
+                "sha256": self.continuation_admission_sha256,
+            },
             "experience_mode": self.experience_mode,
             "experience_store": (
                 str(self.experience_store)
                 if self.experience_store is not None
+                else None
+            ),
+            "experience_ranker_version": self.experience_ranker_version,
+            "experience_admission_manifest": (
+                str(self.experience_admission_manifest)
+                if self.experience_admission_manifest is not None
                 else None
             ),
             "experience_task_split": self.experience_task_split,
@@ -508,6 +765,12 @@ class BenchmarkConfig:
                 "present": self.experience_store is not None,
                 "size_bytes": self.experience_store_size_bytes,
                 "sha256": self.experience_store_sha256,
+            },
+            "experience_admission_snapshot": {
+                "role": "EXPERIENCE_GUIDED_ADMISSION",
+                "present": self.experience_admission_manifest is not None,
+                "size_bytes": self.experience_admission_size_bytes,
+                "sha256": self.experience_admission_sha256,
             },
         }
 
@@ -938,8 +1201,17 @@ class V3PrototypeCLIExecutor:
         "--patch-file",
         "--model",
         "--validation-profile",
+        "--final-validation-policy",
+        "--max-planner-rounds",
+        "--max-no-improvement-rounds",
+        "--enable-final-fallback",
+        "--continuation-policy",
+        "--continuation-policy-version",
+        "--continuation-admission-manifest",
         "--experience-mode",
         "--experience-store",
+        "--experience-ranker-version",
+        "--experience-admission-manifest",
         "--experience-task-split",
     }
 
@@ -948,8 +1220,17 @@ class V3PrototypeCLIExecutor:
         extra_args: Sequence[str] = (),
         *,
         validation_profile: str = "strict",
+        final_validation_policy: str = "task_contract",
+        max_planner_rounds: int | None = None,
+        max_no_improvement_rounds: int = 2,
+        enable_final_fallback: bool = False,
+        continuation_policy_mode: str = "shadow",
+        continuation_policy_version: str = "v1",
+        continuation_admission_manifest: Path | str | None = None,
         experience_mode: str = "shadow",
         experience_store: Path | str | None = None,
+        experience_ranker_version: str = "v1",
+        experience_admission_manifest: Path | str | None = None,
         experience_task_split: str | None = None,
     ) -> None:
         self.extra_args = tuple(str(item) for item in extra_args)
@@ -964,11 +1245,71 @@ class V3PrototypeCLIExecutor:
             raise BenchmarkError(
                 "validation_profile must be strict or fast-experiment"
             )
+        self.final_validation_policy = (
+            str(final_validation_policy).strip().casefold()
+        )
+        if self.final_validation_policy not in _FINAL_VALIDATION_POLICIES:
+            raise BenchmarkError(
+                "final_validation_policy must be task_contract or "
+                "full_internal_audit"
+            )
+        self.max_planner_rounds = (
+            None if max_planner_rounds is None else int(max_planner_rounds)
+        )
+        if (
+            self.max_planner_rounds is not None
+            and self.max_planner_rounds <= 0
+        ):
+            raise BenchmarkError("max_planner_rounds must be positive")
+        self.max_no_improvement_rounds = int(max_no_improvement_rounds)
+        if self.max_no_improvement_rounds <= 0:
+            raise BenchmarkError(
+                "max_no_improvement_rounds must be positive"
+            )
+        self.enable_final_fallback = bool(enable_final_fallback)
+        self.continuation_policy_mode = (
+            str(continuation_policy_mode).strip().casefold()
+        )
+        if self.continuation_policy_mode not in _CONTINUATION_POLICY_MODES:
+            raise BenchmarkError(
+                "continuation_policy_mode must be off, shadow, or enforce"
+            )
+        self.continuation_policy_version = (
+            str(continuation_policy_version).strip().casefold()
+        )
+        if self.continuation_policy_version not in _CONTINUATION_POLICY_VERSIONS:
+            raise BenchmarkError("continuation_policy_version must be v1 or v2")
+        (
+            self.continuation_admission_manifest,
+            self.continuation_admission_snapshot,
+        ) = _admission_manifest_snapshot(
+            continuation_admission_manifest,
+            role="CONTINUATION_ENFORCE_ADMISSION",
+            label="continuation_admission_manifest",
+        )
+        if self.continuation_policy_mode == "enforce":
+            if self.continuation_policy_version != "v2":
+                raise BenchmarkError(
+                    "continuation enforce requires continuation policy v2"
+                )
+            if self.continuation_admission_manifest is None:
+                raise BenchmarkError(
+                    "continuation enforce requires an admission manifest"
+                )
+        elif self.continuation_admission_manifest is not None:
+            raise BenchmarkError(
+                "continuation admission manifest is valid only in enforce mode"
+            )
         self.experience_mode = str(experience_mode).strip().casefold()
         if self.experience_mode not in _EXPERIENCE_MODES:
             raise BenchmarkError(
                 "experience_mode must be off, shadow, or guided"
             )
+        self.experience_ranker_version = (
+            str(experience_ranker_version).strip().casefold()
+        )
+        if self.experience_ranker_version not in _EXPERIENCE_RANKER_VERSIONS:
+            raise BenchmarkError("experience_ranker_version must be v1 or v3")
         if experience_task_split is None:
             self.experience_task_split = None
         else:
@@ -986,21 +1327,79 @@ class V3PrototypeCLIExecutor:
         self.experience_store, self.experience_store_snapshot = (
             _experience_store_snapshot(experience_store)
         )
-
-    def _verify_experience_store_snapshot(self) -> None:
-        if self.experience_store is None:
-            return
-        try:
-            _path, current = _experience_store_snapshot(self.experience_store)
-        except BenchmarkError as exc:
-            raise BenchmarkExecutionError(
-                "experience_store is unavailable after the batch snapshot "
-                "was frozen"
-            ) from exc
-        if current != self.experience_store_snapshot:
-            raise BenchmarkExecutionError(
-                "experience_store changed after the batch snapshot was frozen"
+        (
+            self.experience_admission_manifest,
+            self.experience_admission_snapshot,
+        ) = _admission_manifest_snapshot(
+            experience_admission_manifest,
+            role="EXPERIENCE_GUIDED_ADMISSION",
+            label="experience_admission_manifest",
+        )
+        if self.experience_ranker_version == "v3" and self.experience_store is None:
+            raise BenchmarkError(
+                "experience ranker v3 requires an experience store"
             )
+        if self.experience_mode == "guided":
+            if self.experience_ranker_version != "v3":
+                raise BenchmarkError(
+                    "guided experience requires the Gate-controlled v3 ranker"
+                )
+            if self.experience_admission_manifest is None:
+                raise BenchmarkError(
+                    "guided experience requires an admission manifest"
+                )
+        _validate_component_admissions(
+            continuation_path=self.continuation_admission_manifest,
+            experience_path=self.experience_admission_manifest,
+            experience_seed_sha256=self.experience_store_snapshot["sha256"],
+            error_type=BenchmarkError,
+        )
+
+    def _verify_frozen_component_inputs(self) -> None:
+        if self.experience_store is None:
+            pass
+        else:
+            try:
+                _path, current = _experience_store_snapshot(self.experience_store)
+            except BenchmarkError as exc:
+                raise BenchmarkExecutionError(
+                    "experience_store is unavailable after the batch snapshot "
+                    "was frozen"
+                ) from exc
+            if current != self.experience_store_snapshot:
+                raise BenchmarkExecutionError(
+                    "experience_store changed after the batch snapshot was frozen"
+                )
+        for path, expected, role, label in (
+            (
+                self.continuation_admission_manifest,
+                self.continuation_admission_snapshot,
+                "CONTINUATION_ENFORCE_ADMISSION",
+                "continuation_admission_manifest",
+            ),
+            (
+                self.experience_admission_manifest,
+                self.experience_admission_snapshot,
+                "EXPERIENCE_GUIDED_ADMISSION",
+                "experience_admission_manifest",
+            ),
+        ):
+            if path is None:
+                continue
+            try:
+                _path, current = _admission_manifest_snapshot(
+                    path,
+                    role=role,
+                    label=label,
+                )
+            except BenchmarkError as exc:
+                raise BenchmarkExecutionError(
+                    f"{label} is unavailable after the batch snapshot was frozen"
+                ) from exc
+            if current != expected:
+                raise BenchmarkExecutionError(
+                    f"{label} changed after the batch snapshot was frozen"
+                )
 
     def fingerprint(self) -> str:
         # Only hashes of environment-derived values are retained.  The API key
@@ -1025,9 +1424,24 @@ class V3PrototypeCLIExecutor:
                 "python": sys.version.split()[0],
                 "extra_args": self.extra_args,
                 "validation_profile": self.validation_profile,
+                "final_validation_policy": self.final_validation_policy,
+                "max_planner_rounds": self.max_planner_rounds,
+                "max_no_improvement_rounds": (
+                    self.max_no_improvement_rounds
+                ),
+                "enable_final_fallback": self.enable_final_fallback,
+                "continuation_policy_mode": self.continuation_policy_mode,
+                "continuation_policy_version": self.continuation_policy_version,
+                "continuation_admission_snapshot": (
+                    self.continuation_admission_snapshot
+                ),
                 "experience_mode": self.experience_mode,
+                "experience_ranker_version": self.experience_ranker_version,
                 "experience_task_split": self.experience_task_split,
                 "experience_store_snapshot": self.experience_store_snapshot,
+                "experience_admission_snapshot": (
+                    self.experience_admission_snapshot
+                ),
                 "implementation_fingerprint": _implementation_fingerprint(),
                 "effective_environment_sha256": _sha256_json(
                     effective_environment
@@ -1036,7 +1450,7 @@ class V3PrototypeCLIExecutor:
         )
 
     def _command(self, spec: BenchmarkRunSpec) -> list[str]:
-        self._verify_experience_store_snapshot()
+        self._verify_frozen_component_inputs()
         command = [
             sys.executable,
             "-m",
@@ -1055,11 +1469,41 @@ class V3PrototypeCLIExecutor:
             spec.model,
             "--validation-profile",
             self.validation_profile,
+            "--final-validation-policy",
+            self.final_validation_policy,
+            "--max-no-improvement-rounds",
+            str(self.max_no_improvement_rounds),
+            "--continuation-policy",
+            self.continuation_policy_mode,
+            "--continuation-policy-version",
+            self.continuation_policy_version,
             "--experience-mode",
             self.experience_mode,
+            "--experience-ranker-version",
+            self.experience_ranker_version,
         ]
+        if self.max_planner_rounds is not None:
+            command.extend(
+                ("--max-planner-rounds", str(self.max_planner_rounds))
+            )
+        if self.enable_final_fallback:
+            command.append("--enable-final-fallback")
+        if self.continuation_admission_manifest is not None:
+            command.extend(
+                (
+                    "--continuation-admission-manifest",
+                    str(self.continuation_admission_manifest),
+                )
+            )
         if self.experience_store is not None:
             command.extend(("--experience-store", str(self.experience_store)))
+        if self.experience_admission_manifest is not None:
+            command.extend(
+                (
+                    "--experience-admission-manifest",
+                    str(self.experience_admission_manifest),
+                )
+            )
         task_split = self.experience_task_split
         descriptor_split = spec.descriptor.split.replace("-", "_")
         if descriptor_split in {"hidden_like", "test", "holdout"}:
@@ -1727,9 +2171,25 @@ class V3PrototypeCLIExecutor:
 
         final_artifacts: dict[str, dict[str, str]] = {}
         validation = _mapping(result.get("final_validation"))
+        final_policy = str(
+            config.get("final_validation_policy", "full_internal_audit")
+        )
+        if final_policy not in {"task_contract", "full_internal_audit"}:
+            raise BenchmarkExecutionError(
+                "V3 run config has an unsupported final validation policy"
+            )
+        task_requires_cosim = task_spec.get("requires_cosim")
+        if not isinstance(task_requires_cosim, bool):
+            raise BenchmarkExecutionError(
+                "V3 task spec lacks a boolean requires_cosim contract"
+            )
+        required_final_stages = {"csim", "synth"}
+        if final_policy == "full_internal_audit" or task_requires_cosim:
+            required_final_stages.add("cosim")
         for stage in ("csim", "synth", "cosim"):
             record = _mapping(validation.get(stage))
-            if status == "DONE" and (
+            stage_required = stage in required_final_stages
+            if status == "DONE" and stage_required and (
                 str(record.get("status", "")).upper() not in _PASS_STATUSES
                 or record.get("cached") is not False
                 or record.get("validation_scope") != "final"
@@ -1737,9 +2197,26 @@ class V3PrototypeCLIExecutor:
                 raise BenchmarkExecutionError(
                     f"successful REAL model row lacks fresh final {stage}"
                 )
+            if status == "DONE" and not stage_required:
+                if (
+                    str(record.get("status", "")).upper()
+                    not in {"NOT_RUN", "SKIPPED"}
+                    or any(
+                        record.get(name) not in (None, "")
+                        for name in (
+                            "action_id",
+                            "result_ref",
+                            "validation_scope",
+                        )
+                    )
+                ):
+                    raise BenchmarkExecutionError(
+                        "task_contract REAL row has unexpected final cosim"
+                    )
+                continue
             reference = record.get("result_ref")
             if reference is None or reference == "":
-                if status == "DONE":
+                if status == "DONE" and stage_required:
                     raise BenchmarkExecutionError(
                         f"successful REAL model row lacks final {stage} result_ref"
                     )
@@ -1814,8 +2291,17 @@ def default_executor(
     backend: str,
     *,
     validation_profile: str = "strict",
+    final_validation_policy: str = "task_contract",
+    max_planner_rounds: int | None = None,
+    max_no_improvement_rounds: int = 2,
+    enable_final_fallback: bool = False,
+    continuation_policy_mode: str = "shadow",
+    continuation_policy_version: str = "v1",
+    continuation_admission_manifest: Path | str | None = None,
     experience_mode: str = "shadow",
     experience_store: Path | str | None = None,
+    experience_ranker_version: str = "v1",
+    experience_admission_manifest: Path | str | None = None,
     experience_task_split: str | None = None,
 ) -> BenchmarkExecutor:
     if backend == "demo":
@@ -1825,8 +2311,17 @@ def default_executor(
     if backend == "vitis":
         return V3PrototypeCLIExecutor(
             validation_profile=validation_profile,
+            final_validation_policy=final_validation_policy,
+            max_planner_rounds=max_planner_rounds,
+            max_no_improvement_rounds=max_no_improvement_rounds,
+            enable_final_fallback=enable_final_fallback,
+            continuation_policy_mode=continuation_policy_mode,
+            continuation_policy_version=continuation_policy_version,
+            continuation_admission_manifest=continuation_admission_manifest,
             experience_mode=experience_mode,
             experience_store=experience_store,
+            experience_ranker_version=experience_ranker_version,
+            experience_admission_manifest=experience_admission_manifest,
             experience_task_split=experience_task_split,
         )
     raise ValueError(f"unsupported backend: {backend}")
@@ -1875,13 +2370,34 @@ def _execution_policy_fingerprint(config: BenchmarkConfig) -> str:
             "python_version": sys.version.split()[0],
             "max_runtime_seconds": config.max_runtime_seconds,
             "validation_profile": config.validation_profile,
+            "final_validation_policy": config.final_validation_policy,
+            "max_planner_rounds": config.max_planner_rounds,
+            "max_no_improvement_rounds": (
+                config.max_no_improvement_rounds
+            ),
+            "enable_final_fallback": config.enable_final_fallback,
+            "continuation_policy_mode": config.continuation_policy_mode,
+            "continuation_policy_version": config.continuation_policy_version,
+            "continuation_admission_snapshot": {
+                "role": "CONTINUATION_ENFORCE_ADMISSION",
+                "present": config.continuation_admission_manifest is not None,
+                "size_bytes": config.continuation_admission_size_bytes,
+                "sha256": config.continuation_admission_sha256,
+            },
             "experience_mode": config.experience_mode,
+            "experience_ranker_version": config.experience_ranker_version,
             "experience_task_split": config.experience_task_split,
             "experience_store_snapshot": {
                 "role": "READ_ONLY_SEED",
                 "present": config.experience_store is not None,
                 "size_bytes": config.experience_store_size_bytes,
                 "sha256": config.experience_store_sha256,
+            },
+            "experience_admission_snapshot": {
+                "role": "EXPERIENCE_GUIDED_ADMISSION",
+                "present": config.experience_admission_manifest is not None,
+                "size_bytes": config.experience_admission_size_bytes,
+                "sha256": config.experience_admission_sha256,
             },
             "per_run_timeout_policy": "remaining_batch_runtime",
             "max_parallel_runs": 1,
@@ -1942,9 +2458,24 @@ def _routed_mode(result: Mapping[str, object]) -> str | None:
     return _normalise_mode(_mapping(result.get("phase_decision")).get("mode"))
 
 
-def _fresh_final(result: Mapping[str, object]) -> tuple[bool, bool]:
+def _fresh_final(
+    result: Mapping[str, object],
+    *,
+    requires_cosim: bool,
+) -> tuple[bool, bool]:
     validation = _mapping(result.get("final_validation"))
-    records = [_mapping(validation.get(stage)) for stage in ("csim", "synth", "cosim")]
+    cosim = _mapping(validation.get("cosim"))
+    cosim_ran = str(cosim.get("status", "")).upper() not in {
+        "",
+        "NOT_RUN",
+        "SKIPPED",
+    }
+    stages = (
+        ("csim", "synth", "cosim")
+        if requires_cosim or cosim_ran
+        else ("csim", "synth")
+    )
+    records = [_mapping(validation.get(stage)) for stage in stages]
     complete = all(
         str(record.get("status", "")).upper() in _PASS_STATUSES for record in records
     )
@@ -2117,7 +2648,10 @@ def _normalise_result(
     elif status not in _TERMINAL_STATUSES:
         status = "FAILED"
     routed_mode = _routed_mode(result)
-    final_complete, fresh_final = _fresh_final(result)
+    final_complete, fresh_final = _fresh_final(
+        result,
+        requires_cosim=spec.task.requires_cosim,
+    )
     level = _evidence_level(result)
     policy_valid = _evidence_policy_valid(evidence_class, level, raw_status) and (
         evidence_class is not EvidenceClass.REAL or real_evidence_authorized
@@ -3074,19 +3608,44 @@ class BatchBenchmarkRunner:
         self.executor = executor or default_executor(
             config.backend,
             validation_profile=config.validation_profile,
+            final_validation_policy=config.final_validation_policy,
+            max_planner_rounds=config.max_planner_rounds,
+            max_no_improvement_rounds=config.max_no_improvement_rounds,
+            enable_final_fallback=config.enable_final_fallback,
+            continuation_policy_mode=config.continuation_policy_mode,
+            continuation_policy_version=config.continuation_policy_version,
+            continuation_admission_manifest=(
+                config.continuation_admission_manifest
+            ),
             experience_mode=config.experience_mode,
             experience_store=config.experience_store,
+            experience_ranker_version=config.experience_ranker_version,
+            experience_admission_manifest=config.experience_admission_manifest,
             experience_task_split=config.experience_task_split,
         )
         if type(self.executor) is V3PrototypeCLIExecutor:
             executor_policy = (
                 self.executor.validation_profile,
+                self.executor.final_validation_policy,
+                self.executor.max_planner_rounds,
+                self.executor.max_no_improvement_rounds,
+                self.executor.enable_final_fallback,
+                self.executor.continuation_policy_mode,
+                self.executor.continuation_policy_version,
                 self.executor.experience_mode,
+                self.executor.experience_ranker_version,
                 self.executor.experience_task_split,
             )
             config_policy = (
                 config.validation_profile,
+                config.final_validation_policy,
+                config.max_planner_rounds,
+                config.max_no_improvement_rounds,
+                config.enable_final_fallback,
+                config.continuation_policy_mode,
+                config.continuation_policy_version,
                 config.experience_mode,
+                config.experience_ranker_version,
                 config.experience_task_split,
             )
             if executor_policy != config_policy:
@@ -3107,6 +3666,34 @@ class BatchBenchmarkRunner:
                 raise BenchmarkError(
                     "experience_store changed after the BenchmarkConfig "
                     "snapshot was frozen"
+                )
+            configured_continuation_admission_snapshot = {
+                "role": "CONTINUATION_ENFORCE_ADMISSION",
+                "present": config.continuation_admission_manifest is not None,
+                "size_bytes": config.continuation_admission_size_bytes,
+                "sha256": config.continuation_admission_sha256,
+            }
+            if (
+                self.executor.continuation_admission_snapshot
+                != configured_continuation_admission_snapshot
+            ):
+                raise BenchmarkError(
+                    "continuation_admission_manifest changed after the "
+                    "BenchmarkConfig snapshot was frozen"
+                )
+            configured_experience_admission_snapshot = {
+                "role": "EXPERIENCE_GUIDED_ADMISSION",
+                "present": config.experience_admission_manifest is not None,
+                "size_bytes": config.experience_admission_size_bytes,
+                "sha256": config.experience_admission_sha256,
+            }
+            if (
+                self.executor.experience_admission_snapshot
+                != configured_experience_admission_snapshot
+            ):
+                raise BenchmarkError(
+                    "experience_admission_manifest changed after the "
+                    "BenchmarkConfig snapshot was frozen"
                 )
         self.monotonic = monotonic
         self.utc_now = utc_now
@@ -3588,6 +4175,50 @@ def _parser() -> argparse.ArgumentParser:
         help="Validation policy forwarded to each V3 single-task run.",
     )
     parser.add_argument(
+        "--final-validation-policy",
+        choices=("task_contract", "full_internal_audit"),
+        default="task_contract",
+        help="Fresh final policy forwarded to each V3 single-task run.",
+    )
+    parser.add_argument(
+        "--max-planner-rounds",
+        type=int,
+        help=(
+            "Explicit live Planner call limit. Omit to preserve the single-task "
+            "CLI profile default."
+        ),
+    )
+    parser.add_argument(
+        "--max-no-improvement-rounds",
+        type=int,
+        default=2,
+        help="Stop after this many consecutive non-improving rounds.",
+    )
+    parser.add_argument(
+        "--enable-final-fallback",
+        action="store_true",
+        help="Allow the existing bounded fresh-final fallback.",
+    )
+    parser.add_argument(
+        "--continuation-policy",
+        choices=("off", "shadow", "enforce"),
+        default="shadow",
+        help="Continuation control mode forwarded to each V3 single-task run.",
+    )
+    parser.add_argument(
+        "--continuation-policy-version",
+        choices=("v1", "v2"),
+        default="v1",
+        help="Continuation implementation forwarded to each run.",
+    )
+    parser.add_argument(
+        "--continuation-admission-manifest",
+        help=(
+            "Passing, immutable Continuation V2 admission manifest. Required "
+            "for enforce and content-bound into batch/run identity."
+        ),
+    )
+    parser.add_argument(
         "--experience-mode",
         choices=("off", "shadow", "guided"),
         default="shadow",
@@ -3598,6 +4229,19 @@ def _parser() -> argparse.ArgumentParser:
         help=(
             "Existing frozen experience-store file; its content digest is "
             "bound into batch and run identities."
+        ),
+    )
+    parser.add_argument(
+        "--experience-ranker-version",
+        choices=("v1", "v3"),
+        default="v1",
+        help="Experience ranker implementation forwarded to each run.",
+    )
+    parser.add_argument(
+        "--experience-admission-manifest",
+        help=(
+            "Passing, immutable Ranker V3 admission manifest. Required for "
+            "guided and content-bound into batch/run identity."
         ),
     )
     parser.add_argument(
@@ -3655,8 +4299,19 @@ def main(argv: list[str] | None = None, *, stdout: TextIO | None = None) -> int:
             max_tasks=args.max_tasks,
             max_runtime_seconds=args.max_runtime_seconds,
             validation_profile=args.validation_profile,
+            final_validation_policy=args.final_validation_policy,
+            max_planner_rounds=args.max_planner_rounds,
+            max_no_improvement_rounds=args.max_no_improvement_rounds,
+            enable_final_fallback=args.enable_final_fallback,
+            continuation_policy_mode=args.continuation_policy,
+            continuation_policy_version=args.continuation_policy_version,
+            continuation_admission_manifest=(
+                args.continuation_admission_manifest
+            ),
             experience_mode=args.experience_mode,
             experience_store=args.experience_store,
+            experience_ranker_version=args.experience_ranker_version,
+            experience_admission_manifest=args.experience_admission_manifest,
             experience_task_split=args.experience_task_split,
         )
         outcome = BatchBenchmarkRunner(config).run()

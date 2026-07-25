@@ -1,0 +1,31 @@
+{
+  "checks": {
+    "api_key_set": true,
+    "base_url_expected": true,
+    "base_url_set": true,
+    "key_rotation_attested_after_disclosure": false,
+    "model_expected": true,
+    "model_set": true,
+    "vitis_root_expected": true,
+    "vitis_root_set": true,
+    "vitis_run_available": true,
+    "vitis_version_2025_2": true
+  },
+  "environment": {
+    "LLM4HLS_MODEL": "SET",
+    "LLM4HLS_VITIS_HLS_ROOT": "SET",
+    "OPENAI_API_KEY": "SET",
+    "OPENAI_BASE_URL": "SET",
+    "Vitis version": "2025.2",
+    "vitis-run": "AVAILABLE"
+  },
+  "key_policy": {
+    "previously_disclosed_key_must_not_be_used": true,
+    "required_attestation_value": "1",
+    "rotation_attestation_variable": "LLM4HLS_KEY_ROTATED_AFTER_DISCLOSURE"
+  },
+  "model_calls_started": false,
+  "schema_version": "phase-d3.environment-gate.v1",
+  "secret_value_recorded": false,
+  "status": "BLOCKED_KEY_ROTATION_REQUIRED"
+}

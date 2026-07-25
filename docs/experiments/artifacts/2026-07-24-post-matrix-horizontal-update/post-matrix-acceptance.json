@@ -1,0 +1,53 @@
+{
+  "schema_version": "post-matrix.acceptance.v1",
+  "frozen_head": "4a05763b593a527878a0056f64763126c58ee63b",
+  "formal_matrix": {
+    "status": "COMPLETE_WITH_MEASURED_FAILURES",
+    "expected_slots": 28,
+    "terminal_slots": 28,
+    "e2e_success": 23,
+    "e2e_failure": 5,
+    "status_counts": {
+      "DONE": 23,
+      "FAILED": 1,
+      "ERROR": 4
+    },
+    "primary_retry": false
+  },
+  "experience": {
+    "status": "PASS_PROMOTABLE",
+    "record_count": 134,
+    "ranking_eligible_count": 102,
+    "guided": "NOT_ADMITTED",
+    "planner_ingestion": false
+  },
+  "continuation": {
+    "status": "INSUFFICIENT_EVIDENCE",
+    "combined_bindable_decisions": 27,
+    "v2": "OFFLINE_ONLY",
+    "enforce": "DISABLED"
+  },
+  "strategy_ranker": {
+    "status": "NEGATIVE_RESULT",
+    "ranking_eligible_count": 102,
+    "learned_ranker": "TRAINING_NOT_READY",
+    "runtime": "off",
+    "threshold_tuning": false
+  },
+  "post_matrix_real_budget": {
+    "llm_calls": 0,
+    "tokens": 0,
+    "csim": 0,
+    "synth": 0,
+    "cosim": 0,
+    "tool_credits": 0
+  },
+  "scope_guards": {
+    "main_graph_modified": false,
+    "same_data_threshold_adjustment": false,
+    "hidden_accessed": false,
+    "reference_accessed": false,
+    "golden_accessed": false,
+    "secret_value_recorded": false
+  }
+}

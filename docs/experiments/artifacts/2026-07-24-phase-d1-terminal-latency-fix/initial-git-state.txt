@@ -1,0 +1,38 @@
+captured_at=2026-07-24T20:27:06+08:00
+branch=feat/track-a-empty-stub-generation-smoke
+head=4a05763b593a527878a0056f64763126c58ee63b
+git_diff_check=PASS
+
+recent_commits:
+4a05763 docs(audit): finalize phase A acceptance and run plan
+e5ba32a fix(router): restore baseline-fact phase routing
+65ab82c docs: record empty-stub generation smoke
+
+tracked_product_changes_present_before_phase_d1:
+M llm4hls_harness/llm4hls_agent/v3_batch_benchmark.py
+M llm4hls_harness/llm4hls_agent/v3_experience_kb.py
+
+tracked_test_changes_present_before_phase_d1:
+M llm4hls_harness/tests/test_v3_batch_benchmark.py
+
+other_tracked_changes_present_before_phase_d1:
+M README.md
+M doc/README.md
+M doc/docs/README.md
+M docs/status/2026-07-23-track-a-completion-board.md
+
+untracked_phase_work_present_before_phase_d1:
+- Phase B/C/D0 documentation and experiment artifacts
+- formal_matrix_20260724_4a05763_deepseek_28x1 and two archived preflight directories
+- v3_continuation_v2.py, v3_shadow_boundary.py, v3_strategy_ranker_v2.py
+- their C0/C1/C2 tests
+
+provenance_note:
+The tracked v3_batch_benchmark.py and test_v3_batch_benchmark.py changes predate
+Phase D1 and implement the task_contract Batch provenance compatibility patch.
+The tracked v3_experience_kb.py change predates Phase D1 and belongs to C1.1.
+Phase D1 must not overwrite or absorb those changes.
+
+commit_policy:
+No automatic commit, push, or PR is authorized. Real regression must preserve
+HEAD and use a separately hashed uncommitted fix snapshot.

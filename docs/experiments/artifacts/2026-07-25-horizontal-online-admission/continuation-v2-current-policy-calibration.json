@@ -1,0 +1,70 @@
+{
+  "audited_samples": [
+    {
+      "mode": "REPAIR",
+      "outcome": "ESSENTIAL_FOR_CORRECTNESS",
+      "sample_id": "ef6ec90a26dca6d97e393d0a9c9282fb43aadcbd25ea7ceadc29b55bc7f7cfee",
+      "v1": "BLOCK",
+      "v2": "ALLOW"
+    },
+    {
+      "mode": "SYNTH_FIX",
+      "outcome": "HARMFUL",
+      "sample_id": "e700ad44201585d083491d4bc71e09e9bea77f343e61bde1f5d2e391e1325c67",
+      "v1": "BLOCK",
+      "v2": "ALLOW"
+    },
+    {
+      "mode": "SYNTH_FIX",
+      "outcome": "ESSENTIAL_FOR_CORRECTNESS",
+      "sample_id": "2e61a56306c71f1fcc138b0818e2b6217555804a92df5f20b9b61a4e4e5db2df",
+      "v1": "BLOCK",
+      "v2": "ALLOW"
+    },
+    {
+      "mode": "STRUCTURAL_FIX",
+      "outcome": "ESSENTIAL_FOR_CORRECTNESS",
+      "sample_id": "7ae6604d601ead85f2aeadcd545ccc40bb07013b813edd1a48c206cf3e891a85",
+      "v1": "BLOCK",
+      "v2": "ALLOW"
+    }
+  ],
+  "decision": "FAIL",
+  "evidence_sha256": "364cdd43157fbf8c7c9b5cc9657e356e04f5ff52aafc858983ed110e1f67fb3a",
+  "excluded": {
+    "V2_RECOMPUTE_MISMATCH": 1
+  },
+  "gate_failures": [
+    "PER_MODE_SAMPLE_GATE",
+    "WASTE_BLOCK_RATE_REGRESSION"
+  ],
+  "metrics": {
+    "beneficial_retention": 0.0,
+    "false_blocks": 0,
+    "leakage_violations": 0,
+    "mode_counts": {
+      "OPTIMIZE": 0,
+      "REPAIR": 1,
+      "STRUCTURAL_FIX": 1,
+      "SYNTH_FIX": 2
+    },
+    "structural_essential_retention": 1.0,
+    "structural_essential_samples": 1,
+    "v1_beneficial_retention": 0.0,
+    "v1_waste_block_rate": 1.0,
+    "waste_block_rate": 0.0
+  },
+  "protocol": "MODE_SPECIFIC_PRE_STATE_ONLINE_SHADOW",
+  "sample_count": 4,
+  "samples_sha256": "ec49dacc4d0f41896669eab8996e5ea1b3428d4d62130d932118c7ff4dc68d28",
+  "schema_version": "v3.continuation-shadow-evaluation.v1",
+  "thresholds": {
+    "beneficial_retention_not_below_v1": true,
+    "maximum_false_blocks": 0,
+    "maximum_leakage_violations": 0,
+    "minimum_samples_per_mode": 1,
+    "minimum_structural_essential_retention": 1.0,
+    "minimum_structural_essential_samples": 1,
+    "waste_block_rate_not_below_v1": true
+  }
+}

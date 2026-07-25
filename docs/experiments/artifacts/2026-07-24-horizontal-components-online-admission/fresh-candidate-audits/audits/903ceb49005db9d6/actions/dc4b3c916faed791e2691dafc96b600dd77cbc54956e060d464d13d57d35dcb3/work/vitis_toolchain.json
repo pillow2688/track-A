@@ -1,0 +1,11 @@
+{
+  "invocation_mode": "vitis-run",
+  "preflight_result": "READY",
+  "schema_version": "v3.vitis-toolchain-receipt.v1",
+  "selected_executable": "/home/ying/CompetitionTrackA/vitis/AMD/2025.2/Vitis/bin/vitis-run",
+  "selected_executable_sha256": "4d1bf95564e127673e3fde65bdaa7f93dc35220d15af85c794d148517fd91fb3",
+  "selection_source": "root_bin_vitis_run",
+  "version": "2025.2",
+  "version_summary": "****** vitis-run v2025.2 (64-bit) | **** SW Build 6295257 on 2025-11-13-01:29:13",
+  "vitis_root": "/home/ying/CompetitionTrackA/vitis/AMD/2025.2/Vitis"
+}

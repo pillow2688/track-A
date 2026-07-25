@@ -1,0 +1,7 @@
+{"best_candidate_id": "candidate_001", "credits_used": 35, "evidence": "REAL_VITIS_VALIDATED", "experience_ingest": {"attribution_duplicates": 0, "attribution_inserted": 1, "attribution_records": 1, "attribution_status": "COMPLETE", "duplicates": 0, "inserted": 1, "planner_status": "ACTIVE", "postprocess_status": "COMPLETE", "records": 1}, "experience_mode": "shadow", "exploration_stop_reason": "SYNTH_FIX_VALIDATION_PASS", "final_candidate_id": "candidate_001", "report_ref": "v3_team_report.md", "result_ref": "v3_prototype_result.json", "rounds_completed": 1, "run_dir": "/home/ying/CompetitionTrackA/track-A/llm4hls_harness/runs/phase-b11-4a05763-v3d_fast_010-20260723T120331Z", "status": "DONE", "stop_reason": "SYNTH_FIX_FINALIZED", "task_id": "v3d_fast_010", "tokens_used": 1743, "tool_calls": {"cosim": 1, "csim": 3, "llm": 1, "synth": 3}, "validation_profile": "fast-experiment", "workflow": "V3A0_LANGGRAPH_PROTOTYPE"}
+
+EXIT_CODE=0
+START_TIME=2026-07-23T20:09:25+08:00
+END_TIME=2026-07-23T20:10:38+08:00
+RERUN=false
+RERUN_REASON=FROZEN_BUDGET_PLAN_CORRECTED

@@ -1,0 +1,166 @@
+usage: llm4hls-v3-prototype [-h] --task-dir TASK_DIR
+                            (--patch-file PATCH_FILE | --live-openai | --planner {openai-compatible})
+                            --run-dir RUN_DIR [--thread-id THREAD_ID]
+                            [--backend {demo,vitis}] [--vitis-root VITIS_ROOT]
+                            [--toolchain-id TOOLCHAIN_ID]
+                            [--credit-limit CREDIT_LIMIT]
+                            [--cost-csim COST_CSIM] [--cost-synth COST_SYNTH]
+                            [--cost-cosim COST_COSIM]
+                            [--runtime-limit RUNTIME_LIMIT]
+                            [--csim-timeout CSIM_TIMEOUT]
+                            [--synth-timeout SYNTH_TIMEOUT]
+                            [--cosim-timeout COSIM_TIMEOUT]
+                            [--minimum-frequency-mhz MINIMUM_FREQUENCY_MHZ]
+                            [--model MODEL] [--token-budget TOKEN_BUDGET]
+                            [--run-token-limit RUN_TOKEN_LIMIT]
+                            [--token-budget-policy {fixed,dynamic,hybrid}]
+                            [--token-policy-config TOKEN_POLICY_CONFIG]
+                            [--token-budget-visibility {hidden,visible}]
+                            [--llm-timeout LLM_TIMEOUT]
+                            [--llm-max-output-tokens LLM_MAX_OUTPUT_TOKENS]
+                            [--max-output-tokens MAX_OUTPUT_TOKENS]
+                            [--repair-max-output-tokens REPAIR_MAX_OUTPUT_TOKENS]
+                            [--synth-fix-max-output-tokens SYNTH_FIX_MAX_OUTPUT_TOKENS]
+                            [--structural-fix-max-output-tokens STRUCTURAL_FIX_MAX_OUTPUT_TOKENS]
+                            [--optimize-max-output-tokens OPTIMIZE_MAX_OUTPUT_TOKENS]
+                            [--minimum-viable-output-tokens MINIMUM_VIABLE_OUTPUT_TOKENS]
+                            [--context-window-tokens CONTEXT_WINDOW_TOKENS]
+                            [--context-safety-margin-tokens CONTEXT_SAFETY_MARGIN_TOKENS]
+                            [--token-safety-margin TOKEN_SAFETY_MARGIN]
+                            [--future-round-token-reserve FUTURE_ROUND_TOKEN_RESERVE]
+                            [--final-token-reserve FINAL_TOKEN_RESERVE]
+                            [--guidance-ratio GUIDANCE_RATIO]
+                            [--llm-temperature LLM_TEMPERATURE]
+                            [--llm-top-p LLM_TOP_P]
+                            [--max-planner-rounds MAX_PLANNER_ROUNDS]
+                            [--final-reserve-credits FINAL_RESERVE_CREDITS]
+                            [--max-no-improvement-rounds MAX_NO_IMPROVEMENT_ROUNDS]
+                            [--continuation-policy {off,shadow,enforce}]
+                            [--enable-final-fallback]
+                            [--validation-profile {strict,fast-experiment}]
+                            [--final-validation-policy {task_contract,full_internal_audit}]
+                            [--experience-mode {off,shadow,guided}]
+                            [--experience-store EXPERIENCE_STORE]
+                            [--experience-task-split {train,dev,hidden_like,unknown}]
+                            [--experience-max-guidance-tokens EXPERIENCE_MAX_GUIDANCE_TOKENS]
+
+Run the isolated multi-round V3-B0 LangGraph in scripted or live OpenAI-
+compatible Planner mode. The default demo backend proves orchestration only;
+use --backend vitis for real HLS evidence.
+
+options:
+  -h, --help            show this help message and exit
+  --task-dir TASK_DIR   Path to the public task package.
+  --patch-file PATCH_FILE
+                        Path to a scripted unified diff. Repeat this option to
+                        exercise multiple optimization rounds in order.
+  --live-openai         Use the non-replayable OpenAI-compatible V3 Planner
+                        adapter. OPENAI_BASE_URL and OPENAI_API_KEY must be
+                        set.
+  --planner {openai-compatible}
+                        Select the real Planner backend. This is the explicit
+                        alias for --live-openai used by V3-B experiments.
+  --run-dir RUN_DIR
+  --thread-id THREAD_ID
+  --backend {demo,vitis}
+  --vitis-root VITIS_ROOT
+  --toolchain-id TOOLCHAIN_ID
+  --credit-limit CREDIT_LIMIT
+  --cost-csim COST_CSIM
+                        Configured CSim Credit cost (default:
+                        LLM4HLS_COST_CSIM or 1).
+  --cost-synth COST_SYNTH
+                        Configured Synth Credit cost (default:
+                        LLM4HLS_COST_SYNTH or 4).
+  --cost-cosim COST_COSIM
+                        Configured CoSim Credit cost (default:
+                        LLM4HLS_COST_COSIM or 20).
+  --runtime-limit RUNTIME_LIMIT
+  --csim-timeout CSIM_TIMEOUT
+  --synth-timeout SYNTH_TIMEOUT
+  --cosim-timeout COSIM_TIMEOUT
+  --minimum-frequency-mhz MINIMUM_FREQUENCY_MHZ
+  --model MODEL         OpenAI-compatible model name used by --live-openai.
+  --token-budget TOKEN_BUDGET
+                        Total LLM token budget. The legacy scripted default
+                        remains 4096; the live default is 32768.
+  --run-token-limit RUN_TOKEN_LIMIT
+                        Unambiguous alias for the total run Token limit;
+                        overrides --token-budget.
+  --token-budget-policy {fixed,dynamic,hybrid}
+                        fixed preserves V3-D; dynamic enables v3.token-
+                        policy.v1; hybrid enables empirical stable caps and
+                        the Planner-call gate.
+  --token-policy-config TOKEN_POLICY_CONFIG
+                        Hybrid policy JSON override. By default the versioned
+                        package configuration generated from the 72-run
+                        historical analysis is used.
+  --token-budget-visibility {hidden,visible}
+                        For dynamic policy, hidden enforces the Provider cap
+                        without adding TokenEnvelope text; visible also shows
+                        the matching envelope and pressure guidance to the
+                        Planner.
+  --llm-timeout LLM_TIMEOUT
+                        OpenAI-compatible request timeout in seconds.
+  --llm-max-output-tokens LLM_MAX_OUTPUT_TOKENS
+                        Maximum output tokens reserved for each live Planner
+                        call.
+  --max-output-tokens MAX_OUTPUT_TOKENS
+                        Optional global configured output cap below
+                        mode/provider limits.
+  --repair-max-output-tokens REPAIR_MAX_OUTPUT_TOKENS
+  --synth-fix-max-output-tokens SYNTH_FIX_MAX_OUTPUT_TOKENS
+  --structural-fix-max-output-tokens STRUCTURAL_FIX_MAX_OUTPUT_TOKENS
+  --optimize-max-output-tokens OPTIMIZE_MAX_OUTPUT_TOKENS
+  --minimum-viable-output-tokens MINIMUM_VIABLE_OUTPUT_TOKENS
+  --context-window-tokens CONTEXT_WINDOW_TOKENS
+  --context-safety-margin-tokens CONTEXT_SAFETY_MARGIN_TOKENS
+  --token-safety-margin TOKEN_SAFETY_MARGIN
+  --future-round-token-reserve FUTURE_ROUND_TOKEN_RESERVE
+  --final-token-reserve FINAL_TOKEN_RESERVE
+  --guidance-ratio GUIDANCE_RATIO
+  --llm-temperature LLM_TEMPERATURE
+                        OpenAI-compatible sampling temperature.
+  --llm-top-p LLM_TOP_P
+                        Optional explicit OpenAI-compatible top_p. Omitted
+                        preserves the Provider default; controlled matrices
+                        should set it explicitly.
+  --max-planner-rounds MAX_PLANNER_ROUNDS
+                        Maximum number of live Planner calls. Defaults to 4
+                        for fast-experiment and 1 for strict compatibility.
+  --final-reserve-credits FINAL_RESERVE_CREDITS
+                        Credits the live Planner must leave for final
+                        CSim/Synth/CoSim.
+  --max-no-improvement-rounds MAX_NO_IMPROVEMENT_ROUNDS
+                        Stop after this many consecutive rejected/non-
+                        improving rounds.
+  --continuation-policy {off,shadow,enforce}
+                        Value-gated follow-up policy. shadow persists a
+                        decision without changing routing; enforce uses the
+                        existing stop/final edges.
+  --enable-final-fallback
+                        Allow one additional fresh final CSim/Synth/CoSim
+                        attempt when credits remain. Disabled by default to
+                        preserve legacy run identity.
+  --validation-profile {strict,fast-experiment}
+                        strict preserves V3-A1 validation; fast-experiment
+                        skips ordinary baseline/exploration CoSim while
+                        retaining a fresh final closure.
+  --final-validation-policy {task_contract,full_internal_audit}
+                        Fresh final contract: task_contract runs CoSim only
+                        when required; full_internal_audit always runs
+                        CSim/Synth/CoSim.
+  --experience-mode {off,shadow,guided}
+                        off preserves V3-D exactly; shadow records bounded
+                        advice without changing the model request; guided adds
+                        that advice to Planner context.
+  --experience-store EXPERIENCE_STORE
+                        Read-only JSONL seed store used for retrieval. New
+                        Candidate experience is written under the run
+                        directory, never back here.
+  --experience-task-split {train,dev,hidden_like,unknown}
+                        Public split label used by experience leakage
+                        controls.
+  --experience-max-guidance-tokens EXPERIENCE_MAX_GUIDANCE_TOKENS, --guidance-token-cap EXPERIENCE_MAX_GUIDANCE_TOKENS
+                        Conservative upper bound for the serialized advisory
+                        summary.

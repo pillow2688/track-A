@@ -1,0 +1,65 @@
+{
+  "exclusion_reason_counts": {
+    "DUPLICATE_DECISION": 1,
+    "MISSING_DECISION_TIME_EVIDENCE": 1,
+    "NOT_REAL_VITIS": 4,
+    "NO_FOLLOW_UP": 74,
+    "OUTCOME_NOT_BINDABLE": 1
+  },
+  "funnel": {
+    "all_screening_exclusions": 81,
+    "bindable_decisions": 20,
+    "candidate_decision_points": 21,
+    "followup_excluded": 1,
+    "future_fields_separated": true,
+    "leakage_violations": [],
+    "mode_counts": {
+      "OPTIMIZE": 17,
+      "STRUCTURAL_FIX": 3
+    },
+    "outcome_counts": {
+      "BENEFICIAL_PERFORMANCE": 8,
+      "HARMFUL": 12
+    },
+    "source_screening_records": 101
+  },
+  "hidden_reference_golden_accessed": false,
+  "mode_counts": {
+    "OPTIMIZE": 17,
+    "STRUCTURAL_FIX": 3
+  },
+  "outcome_counts": {
+    "BENEFICIAL_PERFORMANCE": 8,
+    "HARMFUL": 12
+  },
+  "schema_version": "phase-c0.dataset-inventory.v1",
+  "scope": "PUBLIC_TRAIN_DEV_REAL_LLM_VITIS_ARTIFACTS_ONLY",
+  "sources": [
+    {
+      "bound_decisions": 11,
+      "legacy_screening_exclusions": 6,
+      "name": "V3F_R02",
+      "terminal_budget_removed": true
+    },
+    {
+      "bound_decisions": 9,
+      "followup_excluded": 1,
+      "followup_points": 10,
+      "name": "TOKEN_POLICY_ABC_72",
+      "no_followup": 62,
+      "source_runs": 72
+    },
+    {
+      "bound_decisions": 0,
+      "name": "PHASE_B1_B11_B12_ANCHORS",
+      "no_followup": 12,
+      "source_runs": 12
+    },
+    {
+      "name": "EXPERIENCE_CANDIDATE_RECORDS",
+      "records": 81,
+      "role": "OVERLAP_SUPPORT_ONLY_NOT_ADDITIONAL_DECISION_POINTS"
+    }
+  ],
+  "split_digest": "a86232bb46d3c28286af0505c99d07fe1a2c268a2af82a5f1302ecdaad5cb6f4"
+}

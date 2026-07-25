@@ -1,0 +1,115 @@
+{
+  "action_id": "07717455ca029d9f6832dc2e5856664a3ac5ac8ec72bb6eb126c0fb61f9cf8df",
+  "artifact_hashes": {
+    "csynth_xml": "c7a433884783d20177d27c8d1fe26f69e9d0ec6665226a5a736a2c666f21536f",
+    "tcl": "be0b1cc80076422d342729e32347ee30a9498a80e238e65aa3a10f59a5c9ce59",
+    "vitis_stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "vitis_stdout": "8034af431c31de752591442a61fc0c7e031229365830c266800c53a085947632",
+    "vitis_toolchain": "692cf063d533be15c49bf71a2fa4186d76823484289880af86196e400c1c6bad"
+  },
+  "artifacts": {
+    "csynth_xml": "work/synth_proj/sol/syn/report/csynth.xml",
+    "tcl": "work/run_hls.tcl",
+    "vitis_stderr": "work/vitis.stderr.log",
+    "vitis_stdout": "work/vitis.stdout.log",
+    "vitis_toolchain": "work/vitis_toolchain.json"
+  },
+  "backend_fingerprint": "llm4hls_agent.vitis.VitisBackend:v0.8",
+  "cached": false,
+  "candidate_id": "candidate_001",
+  "code_hash": "f667936f19dcbc570ecc48c0d879ccbde929b88ca6fd35a0c489bdbfb1bfb4dc",
+  "cosim": null,
+  "effective_timeout_seconds": 900.0,
+  "elapsed_s": 9.63656138209626,
+  "evidence": [
+    "return_code=0",
+    "INFO: [HLS 200-111] Finished Creating RTL model: CPU user time: 0.01 seconds. CPU system time: 0.01 seconds. Elapsed time: 0.01 seconds; current allocated memory: 508.168 MB.",
+    "INFO: [HLS 200-111] Finished Generating all RTL models: CPU user time: 0.1 seconds. CPU system time: 0.01 seconds. Elapsed time: 0.11 seconds; current allocated memory: 510.207 MB.",
+    "INFO: [HLS 200-2225] Wrote inferred directives to file /home/ying/CompetitionTrackA/track-A/docs/experiments/artifacts/2026-07-24-horizontal-components-online-admission/fresh-candidate-audits-rerun01/audits/237efd16866d4191/actions/07717455ca029d9f6832dc2e5856664a3ac5ac8ec72bb6eb126c0fb61f9cf8df/work/synth_proj/sol/syn/inferred_directives.ini",
+    "INFO: [HLS 200-111] Finished Updating report files: CPU user time: 0.13 seconds. CPU system time: 0.02 seconds. Elapsed time: 0.15 seconds; current allocated memory: 512.320 MB.",
+    "INFO: [VHDL 208-304] Generating VHDL RTL for kernel.",
+    "INFO: [VLOG 209-307] Generating Verilog RTL for kernel.",
+    "INFO: [HLS 200-790] **** Loop Constraint Status: All loop constraints were satisfied.",
+    "INFO: [HLS 200-789] **** Estimated Fmax: 633.31 MHz",
+    "INFO: [HLS 200-2161] Finished Command csynth_design Elapsed time: 00:00:07; Allocated memory: 46.699 MB.",
+    "INFO: [HLS 200-112] Total CPU user time: 2.54 seconds. Total CPU system time: 0.8 seconds. Total elapsed time: 8.07 seconds; peak allocated memory: 512.320 MB.",
+    "INFO: [vitis-run 60-791] Total elapsed time: 0h 0m 8s",
+    "INFO: [vitis-run 60-1662] Stopping dispatch session having empty uuid."
+  ],
+  "kind": "synth",
+  "ok": true,
+  "phase": "pass",
+  "report": {
+    "available_resources": {
+      "BRAM_18K": 4032,
+      "DSP": 9024,
+      "FF": 2607360,
+      "LUT": 1303680,
+      "URAM": 960
+    },
+    "estimated_clock_period_ns": 1.579,
+    "interval": {
+      "max": 32,
+      "min": 32
+    },
+    "latency": {
+      "average": 69,
+      "best": 69,
+      "worst": 69
+    },
+    "loop_evidence": {
+      "loops": [
+        {
+          "issue_type": null,
+          "latency_cycles": 32,
+          "loop_id": "v3d_dataflow_bias/VITIS_LOOP_17_1",
+          "module": "v3d_dataflow_bias",
+          "name": "VITIS_LOOP_17_1",
+          "perfect_nested": false,
+          "performance_pragma": null,
+          "pipeline_depth": 2,
+          "pipeline_ii": 1,
+          "slack_ns": 3.65,
+          "source_location": "kernel.cpp:17",
+          "trip_count": 32,
+          "violation_type": null
+        },
+        {
+          "issue_type": null,
+          "latency_cycles": 32,
+          "loop_id": "v3d_dataflow_scale/VITIS_LOOP_7_1",
+          "module": "v3d_dataflow_scale",
+          "name": "VITIS_LOOP_7_1",
+          "perfect_nested": false,
+          "performance_pragma": null,
+          "pipeline_depth": 2,
+          "pipeline_ii": 1,
+          "slack_ns": 3.65,
+          "source_location": "kernel.cpp:7",
+          "trip_count": 32,
+          "violation_type": null
+        }
+      ],
+      "report_version": "2025.2"
+    },
+    "resources": {
+      "BRAM_18K": 0,
+      "DSP": 0,
+      "FF": 60,
+      "LUT": 245,
+      "URAM": 0
+    },
+    "utilization_percent": {
+      "BRAM_18K": 0.0,
+      "DSP": 0.0,
+      "FF": 0.002,
+      "LUT": 0.019,
+      "URAM": 0.0
+    }
+  },
+  "result_ref": "actions/07717455ca029d9f6832dc2e5856664a3ac5ac8ec72bb6eb126c0fb61f9cf8df/result.json",
+  "return_code": 0,
+  "task_fingerprint": "faa4cdedddda1df015e915089b4433ffe77371a19ef953bcbfef7c8fd572ff49",
+  "tool_config_hash": "c269efe245d3d3c234b8cb8f0f5cf41d40c9d9205ace93fab341f460a6fe91c3",
+  "validation_scope": "final"
+}

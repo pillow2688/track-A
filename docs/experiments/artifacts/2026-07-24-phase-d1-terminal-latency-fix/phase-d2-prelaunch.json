@@ -1,0 +1,40 @@
+{
+  "checks": {
+    "environment_ready": true,
+    "formal_preflight_hash_exact": true,
+    "four_task_preflight_pass": true,
+    "four_task_preflight_present": true,
+    "fresh_output_directory": true,
+    "frozen_files_exact": true,
+    "head_exact": true,
+    "runner_hash_exact": true,
+    "snapshot_frozen": true
+  },
+  "environment": {
+    "checks": {
+      "api_key_present_not_recorded": true,
+      "base_url_exact": true,
+      "model_exact": true,
+      "toolchain_exact": true,
+      "vitis_root_exact": true,
+      "vitis_run_present": true
+    },
+    "status": "PASS"
+  },
+  "frozen_files": {
+    "checked_file_count": 49,
+    "mismatches": [],
+    "status": "PASS"
+  },
+  "frozen_head": "4a05763b593a527878a0056f64763126c58ee63b",
+  "output_dir": "/home/ying/CompetitionTrackA/track-A/llm4hls_harness/runs/phase-d2-4a05763-d1cad2cd88-20260724T124625Z",
+  "schema_version": "phase-d2.prelaunch.v1",
+  "secret_value_recorded": false,
+  "status": "PASS",
+  "task_ids": [
+    "v3d_fast_016",
+    "v3d_fast_020",
+    "v3d_fast_021",
+    "v3d_fast_022"
+  ]
+}

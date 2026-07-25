@@ -1,0 +1,38 @@
+{
+  "action_id": "c7b37f8e1478ef33444e9d586fea846ad1da836c030eeba8ff3b9b2840ed68ed",
+  "artifact_hashes": {
+    "csim_stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "csim_stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "tcl": "61da5050135d5d6049cfe7f3162a6151557dd1b4fff448ab6ac7f127ecffba93",
+    "vitis_stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "vitis_stdout": "787f39a6b3e820b8e0b1b64583dcc01877f320fd713e18c9a23c45f453f6dd91",
+    "vitis_toolchain": "692cf063d533be15c49bf71a2fa4186d76823484289880af86196e400c1c6bad"
+  },
+  "artifacts": {
+    "csim_stderr": "work/csim.stderr.log",
+    "csim_stdout": "work/csim.stdout.log",
+    "tcl": "work/run_hls.tcl",
+    "vitis_stderr": "work/vitis.stderr.log",
+    "vitis_stdout": "work/vitis.stdout.log",
+    "vitis_toolchain": "work/vitis_toolchain.json"
+  },
+  "backend_fingerprint": "llm4hls_agent.vitis.VitisBackend:v0.8",
+  "cached": false,
+  "candidate_id": "candidate_001",
+  "code_hash": "5a67a86b265bf98212d3bcd83bb75f32aa391e1c551ba39ecbade2a14a5c5f00",
+  "cosim": null,
+  "effective_timeout_seconds": 300.0,
+  "elapsed_s": 2.9439728199504316,
+  "evidence": [
+    "return_code=0"
+  ],
+  "kind": "csim",
+  "ok": true,
+  "phase": "pass",
+  "report": null,
+  "result_ref": "actions/c7b37f8e1478ef33444e9d586fea846ad1da836c030eeba8ff3b9b2840ed68ed/result.json",
+  "return_code": 0,
+  "task_fingerprint": "9ad8c146e1309ac5cb359bb37bfb1ddba365f1e970e03ed240dc3d7db84169c3",
+  "tool_config_hash": "fe77e149a0e14c77851c007e416e7f4d7664035585d3c531295f74a3a27451b7",
+  "validation_scope": "final"
+}

@@ -1,0 +1,220 @@
+{
+  "action_id": "cf77492dde8729c3d757a5fa0a11718a1e7727a51ed6f7d505c85df99a28a2f8",
+  "artifact_hashes": {
+    "csynth_xml": "26684b1b8f280dacbd1f47b8ab8722aca05fb9be267a6c5f90e1666fec112b1b",
+    "tcl": "be0b1cc80076422d342729e32347ee30a9498a80e238e65aa3a10f59a5c9ce59",
+    "vitis_stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "vitis_stdout": "85e7b74a6e7f60bc0bf54d54dff8b5c708d04e8d78631a8450524a872539e676",
+    "vitis_toolchain": "692cf063d533be15c49bf71a2fa4186d76823484289880af86196e400c1c6bad"
+  },
+  "artifacts": {
+    "csynth_xml": "work/synth_proj/sol/syn/report/csynth.xml",
+    "tcl": "work/run_hls.tcl",
+    "vitis_stderr": "work/vitis.stderr.log",
+    "vitis_stdout": "work/vitis.stdout.log",
+    "vitis_toolchain": "work/vitis_toolchain.json"
+  },
+  "backend_fingerprint": "llm4hls_agent.vitis.VitisBackend:v0.8",
+  "cached": false,
+  "candidate_id": "candidate_001",
+  "code_hash": "5a67a86b265bf98212d3bcd83bb75f32aa391e1c551ba39ecbade2a14a5c5f00",
+  "cosim": null,
+  "effective_timeout_seconds": 900.0,
+  "elapsed_s": 10.317861516028643,
+  "evidence": [
+    "return_code=0",
+    "INFO: [HLS 200-111] Finished Creating RTL model: CPU user time: 0.03 seconds. CPU system time: 0.01 seconds. Elapsed time: 0.03 seconds; current allocated memory: 594.988 MB.",
+    "INFO: [HLS 200-111] Finished Generating all RTL models: CPU user time: 0.08 seconds. CPU system time: 0 seconds. Elapsed time: 0.09 seconds; current allocated memory: 598.684 MB.",
+    "INFO: [HLS 200-2225] Wrote inferred directives to file /home/ying/CompetitionTrackA/track-A/docs/experiments/artifacts/2026-07-24-horizontal-components-online-admission/fresh-candidate-audits-rerun01/audits/d18e8225a698e9d3/actions/cf77492dde8729c3d757a5fa0a11718a1e7727a51ed6f7d505c85df99a28a2f8/work/synth_proj/sol/syn/inferred_directives.ini",
+    "INFO: [HLS 200-111] Finished Updating report files: CPU user time: 0.16 seconds. CPU system time: 0.02 seconds. Elapsed time: 0.18 seconds; current allocated memory: 602.156 MB.",
+    "INFO: [VHDL 208-304] Generating VHDL RTL for kernel.",
+    "INFO: [VLOG 209-307] Generating Verilog RTL for kernel.",
+    "INFO: [HLS 200-790] **** Loop Constraint Status: All loop constraints were satisfied.",
+    "INFO: [HLS 200-789] **** Estimated Fmax: 315.46 MHz",
+    "INFO: [HLS 200-2161] Finished Command csynth_design Elapsed time: 00:00:07; Allocated memory: 136.535 MB.",
+    "INFO: [HLS 200-112] Total CPU user time: 3.26 seconds. Total CPU system time: 0.79 seconds. Total elapsed time: 8.74 seconds; peak allocated memory: 602.156 MB.",
+    "INFO: [vitis-run 60-791] Total elapsed time: 0h 0m 9s",
+    "INFO: [vitis-run 60-1662] Stopping dispatch session having empty uuid."
+  ],
+  "kind": "synth",
+  "ok": true,
+  "phase": "pass",
+  "report": {
+    "available_resources": {
+      "BRAM_18K": 4032,
+      "DSP": 9024,
+      "FF": 2607360,
+      "LUT": 1303680,
+      "URAM": 960
+    },
+    "estimated_clock_period_ns": 3.17,
+    "interval": {
+      "max": 117,
+      "min": 117
+    },
+    "latency": {
+      "average": 116,
+      "best": 116,
+      "worst": 116
+    },
+    "loop_evidence": {
+      "loops": [
+        {
+          "issue_type": null,
+          "latency_cycles": 9,
+          "loop_id": "kernel_Pipeline_VITIS_LOOP_10_2/VITIS_LOOP_10_2",
+          "module": "kernel_Pipeline_VITIS_LOOP_10_2",
+          "name": "VITIS_LOOP_10_2",
+          "perfect_nested": true,
+          "performance_pragma": null,
+          "pipeline_depth": 3,
+          "pipeline_ii": 1,
+          "slack_ns": 3.65,
+          "source_location": "kernel.cpp:10",
+          "trip_count": 8,
+          "violation_type": null
+        },
+        {
+          "issue_type": null,
+          "latency_cycles": 9,
+          "loop_id": "kernel_Pipeline_VITIS_LOOP_10_21/VITIS_LOOP_10_2",
+          "module": "kernel_Pipeline_VITIS_LOOP_10_21",
+          "name": "VITIS_LOOP_10_2",
+          "perfect_nested": true,
+          "performance_pragma": null,
+          "pipeline_depth": 3,
+          "pipeline_ii": 1,
+          "slack_ns": 3.65,
+          "source_location": "kernel.cpp:10",
+          "trip_count": 8,
+          "violation_type": null
+        },
+        {
+          "issue_type": null,
+          "latency_cycles": 9,
+          "loop_id": "kernel_Pipeline_VITIS_LOOP_10_22/VITIS_LOOP_10_2",
+          "module": "kernel_Pipeline_VITIS_LOOP_10_22",
+          "name": "VITIS_LOOP_10_2",
+          "perfect_nested": true,
+          "performance_pragma": null,
+          "pipeline_depth": 3,
+          "pipeline_ii": 1,
+          "slack_ns": 3.65,
+          "source_location": "kernel.cpp:10",
+          "trip_count": 8,
+          "violation_type": null
+        },
+        {
+          "issue_type": null,
+          "latency_cycles": 9,
+          "loop_id": "kernel_Pipeline_VITIS_LOOP_10_23/VITIS_LOOP_10_2",
+          "module": "kernel_Pipeline_VITIS_LOOP_10_23",
+          "name": "VITIS_LOOP_10_2",
+          "perfect_nested": true,
+          "performance_pragma": null,
+          "pipeline_depth": 3,
+          "pipeline_ii": 1,
+          "slack_ns": 3.65,
+          "source_location": "kernel.cpp:10",
+          "trip_count": 8,
+          "violation_type": null
+        },
+        {
+          "issue_type": null,
+          "latency_cycles": 9,
+          "loop_id": "kernel_Pipeline_VITIS_LOOP_10_24/VITIS_LOOP_10_2",
+          "module": "kernel_Pipeline_VITIS_LOOP_10_24",
+          "name": "VITIS_LOOP_10_2",
+          "perfect_nested": true,
+          "performance_pragma": null,
+          "pipeline_depth": 3,
+          "pipeline_ii": 1,
+          "slack_ns": 3.65,
+          "source_location": "kernel.cpp:10",
+          "trip_count": 8,
+          "violation_type": null
+        },
+        {
+          "issue_type": null,
+          "latency_cycles": 9,
+          "loop_id": "kernel_Pipeline_VITIS_LOOP_10_25/VITIS_LOOP_10_2",
+          "module": "kernel_Pipeline_VITIS_LOOP_10_25",
+          "name": "VITIS_LOOP_10_2",
+          "perfect_nested": true,
+          "performance_pragma": null,
+          "pipeline_depth": 3,
+          "pipeline_ii": 1,
+          "slack_ns": 3.65,
+          "source_location": "kernel.cpp:10",
+          "trip_count": 8,
+          "violation_type": null
+        },
+        {
+          "issue_type": null,
+          "latency_cycles": 9,
+          "loop_id": "kernel_Pipeline_VITIS_LOOP_10_26/VITIS_LOOP_10_2",
+          "module": "kernel_Pipeline_VITIS_LOOP_10_26",
+          "name": "VITIS_LOOP_10_2",
+          "perfect_nested": true,
+          "performance_pragma": null,
+          "pipeline_depth": 3,
+          "pipeline_ii": 1,
+          "slack_ns": 3.65,
+          "source_location": "kernel.cpp:10",
+          "trip_count": 8,
+          "violation_type": null
+        },
+        {
+          "issue_type": null,
+          "latency_cycles": 9,
+          "loop_id": "kernel_Pipeline_VITIS_LOOP_10_27/VITIS_LOOP_10_2",
+          "module": "kernel_Pipeline_VITIS_LOOP_10_27",
+          "name": "VITIS_LOOP_10_2",
+          "perfect_nested": true,
+          "performance_pragma": null,
+          "pipeline_depth": 3,
+          "pipeline_ii": 1,
+          "slack_ns": 3.65,
+          "source_location": "kernel.cpp:10",
+          "trip_count": 8,
+          "violation_type": null
+        },
+        {
+          "issue_type": null,
+          "latency_cycles": 8,
+          "loop_id": "kernel_Pipeline_1/Loop 1",
+          "module": "kernel_Pipeline_1",
+          "name": "Loop 1",
+          "perfect_nested": false,
+          "performance_pragma": null,
+          "pipeline_depth": 1,
+          "pipeline_ii": 1,
+          "slack_ns": 3.65,
+          "source_location": null,
+          "trip_count": 8,
+          "violation_type": null
+        }
+      ],
+      "report_version": "2025.2"
+    },
+    "resources": {
+      "BRAM_18K": 0,
+      "DSP": 24,
+      "FF": 666,
+      "LUT": 2882,
+      "URAM": 0
+    },
+    "utilization_percent": {
+      "BRAM_18K": 0.0,
+      "DSP": 0.266,
+      "FF": 0.026,
+      "LUT": 0.221,
+      "URAM": 0.0
+    }
+  },
+  "result_ref": "actions/cf77492dde8729c3d757a5fa0a11718a1e7727a51ed6f7d505c85df99a28a2f8/result.json",
+  "return_code": 0,
+  "task_fingerprint": "9ad8c146e1309ac5cb359bb37bfb1ddba365f1e970e03ed240dc3d7db84169c3",
+  "tool_config_hash": "c269efe245d3d3c234b8cb8f0f5cf41d40c9d9205ace93fab341f460a6fe91c3",
+  "validation_scope": "final"
+}

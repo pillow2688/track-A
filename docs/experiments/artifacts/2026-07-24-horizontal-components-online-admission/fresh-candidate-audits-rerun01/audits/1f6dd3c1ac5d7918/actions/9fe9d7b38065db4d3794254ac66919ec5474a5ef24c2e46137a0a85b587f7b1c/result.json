@@ -1,0 +1,100 @@
+{
+  "action_id": "9fe9d7b38065db4d3794254ac66919ec5474a5ef24c2e46137a0a85b587f7b1c",
+  "artifact_hashes": {
+    "csynth_xml": "15e3683468a329fde7d1b03523b1e1fbe8db5c61a6c139372e2f48dc1b9b5104",
+    "tcl": "be0b1cc80076422d342729e32347ee30a9498a80e238e65aa3a10f59a5c9ce59",
+    "vitis_stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "vitis_stdout": "be9ebcbbac1bbd7adbbcb077a9602b50dd5bbe3d92fe9721a1578850adf5f860",
+    "vitis_toolchain": "692cf063d533be15c49bf71a2fa4186d76823484289880af86196e400c1c6bad"
+  },
+  "artifacts": {
+    "csynth_xml": "work/synth_proj/sol/syn/report/csynth.xml",
+    "tcl": "work/run_hls.tcl",
+    "vitis_stderr": "work/vitis.stderr.log",
+    "vitis_stdout": "work/vitis.stdout.log",
+    "vitis_toolchain": "work/vitis_toolchain.json"
+  },
+  "backend_fingerprint": "llm4hls_agent.vitis.VitisBackend:v0.8",
+  "cached": false,
+  "candidate_id": "candidate_001",
+  "code_hash": "22f5aef8e002426476efe6f1ec0676a22c62628659351c68bbcb16ccf620440f",
+  "cosim": null,
+  "effective_timeout_seconds": 900.0,
+  "elapsed_s": 9.885582737158984,
+  "evidence": [
+    "return_code=0",
+    "INFO: [HLS 200-111] Finished Generating all RTL models: CPU user time: 0.16 seconds. CPU system time: 0.01 seconds. Elapsed time: 0.18 seconds; current allocated memory: 498.148 MB.",
+    "INFO: [HLS 200-1603] Design has inferred MAXI bursts and missed bursts, see Vitis HLS GUI synthesis summary report for detailed information.",
+    "INFO: [HLS 200-2225] Wrote inferred directives to file /home/ying/CompetitionTrackA/track-A/docs/experiments/artifacts/2026-07-24-horizontal-components-online-admission/fresh-candidate-audits-rerun01/audits/1f6dd3c1ac5d7918/actions/9fe9d7b38065db4d3794254ac66919ec5474a5ef24c2e46137a0a85b587f7b1c/work/synth_proj/sol/syn/inferred_directives.ini",
+    "INFO: [HLS 200-111] Finished Updating report files: CPU user time: 0.17 seconds. CPU system time: 0.02 seconds. Elapsed time: 0.19 seconds; current allocated memory: 499.602 MB.",
+    "INFO: [VHDL 208-304] Generating VHDL RTL for kernel.",
+    "INFO: [VLOG 209-307] Generating Verilog RTL for kernel.",
+    "INFO: [HLS 200-790] **** Loop Constraint Status: All loop constraints were NOT satisfied.",
+    "INFO: [HLS 200-789] **** Estimated Fmax: 273.97 MHz",
+    "INFO: [HLS 200-2161] Finished Command csynth_design Elapsed time: 00:00:07; Allocated memory: 33.980 MB.",
+    "INFO: [HLS 200-112] Total CPU user time: 2.7 seconds. Total CPU system time: 0.78 seconds. Total elapsed time: 8.26 seconds; peak allocated memory: 499.602 MB.",
+    "INFO: [vitis-run 60-791] Total elapsed time: 0h 0m 9s",
+    "INFO: [vitis-run 60-1662] Stopping dispatch session having empty uuid."
+  ],
+  "kind": "synth",
+  "ok": true,
+  "phase": "pass",
+  "report": {
+    "available_resources": {
+      "BRAM_18K": 4032,
+      "DSP": 9024,
+      "FF": 2607360,
+      "LUT": 1303680,
+      "URAM": 960
+    },
+    "estimated_clock_period_ns": 3.65,
+    "interval": {
+      "max": 64,
+      "min": 64
+    },
+    "latency": {
+      "average": 81,
+      "best": 81,
+      "worst": 81
+    },
+    "loop_evidence": {
+      "loops": [
+        {
+          "issue_type": null,
+          "latency_cycles": 79,
+          "loop_id": "kernel/v3d_transaction_loop_197_350e",
+          "module": "kernel",
+          "name": "v3d_transaction_loop_197_350e",
+          "perfect_nested": false,
+          "performance_pragma": null,
+          "pipeline_depth": 32,
+          "pipeline_ii": 16,
+          "slack_ns": 3.65,
+          "source_location": "kernel.cpp:9",
+          "trip_count": 4,
+          "violation_type": null
+        }
+      ],
+      "report_version": "2025.2"
+    },
+    "resources": {
+      "BRAM_18K": 0,
+      "DSP": 0,
+      "FF": 2082,
+      "LUT": 2936,
+      "URAM": 0
+    },
+    "utilization_percent": {
+      "BRAM_18K": 0.0,
+      "DSP": 0.0,
+      "FF": 0.08,
+      "LUT": 0.225,
+      "URAM": 0.0
+    }
+  },
+  "result_ref": "actions/9fe9d7b38065db4d3794254ac66919ec5474a5ef24c2e46137a0a85b587f7b1c/result.json",
+  "return_code": 0,
+  "task_fingerprint": "fa08d82ba25e388fb3b3e234a414b8bb48a99fb80b47e4462cdfc91264fa79ec",
+  "tool_config_hash": "c269efe245d3d3c234b8cb8f0f5cf41d40c9d9205ace93fab341f460a6fe91c3",
+  "validation_scope": "final"
+}

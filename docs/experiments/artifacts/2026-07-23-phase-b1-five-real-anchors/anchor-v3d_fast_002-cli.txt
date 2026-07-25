@@ -1,0 +1,5 @@
+{"best_candidate_id": "candidate_000", "credits_used": 1, "evidence": "REAL_VITIS_ATTEMPT_FAILED", "experience_ingest": {"attribution_duplicates": 0, "attribution_inserted": 1, "attribution_records": 1, "attribution_status": "COMPLETE", "duplicates": 0, "inserted": 0, "planner_status": "ACTIVE", "postprocess_status": "COMPLETE", "records": 0}, "experience_mode": "shadow", "exploration_stop_reason": "TASK_REPAIR_SKIPPED_FINAL_RESERVE", "final_candidate_id": null, "report_ref": "v3_team_report.md", "result_ref": "v3_prototype_result.json", "rounds_completed": 0, "run_dir": "/home/ying/CompetitionTrackA/track-A/llm4hls_harness/runs/phase-b1-4a05763-v3d_fast_002-20260723T050704Z", "status": "FAILED", "stop_reason": "TASK_REPAIR_SKIPPED_FINAL_RESERVE", "task_id": "v3d_fast_002", "tokens_used": 0, "tool_calls": {"cosim": 0, "csim": 1, "llm": 0, "synth": 0}, "validation_profile": "fast-experiment", "workflow": "V3A0_LANGGRAPH_PROTOTYPE"}
+
+EXIT_CODE=2
+START_TIME=2026-07-23T13:21:06+08:00
+END_TIME=2026-07-23T13:21:42+08:00

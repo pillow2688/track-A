@@ -452,6 +452,18 @@ def build_fast_experiment_prompt(context: Mapping[str, object]) -> str:
             ).encode("utf-8")
         ) > 4_800:
             raise ValueError("experience_guidance exceeds the bounded context limit")
+    recent_failures = context.get("recent_failures", [])
+    if not isinstance(recent_failures, list):
+        raise ValueError("recent_failures must be an array")
+    if len(
+        json.dumps(
+            recent_failures,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ) > 8_000:
+        raise ValueError("recent_failures exceeds the bounded context limit")
     objective = {
         "goal": context["objective"],
         "task": context["task"],
@@ -606,6 +618,7 @@ def build_task_aware_prompt(context: Mapping[str, object]) -> str:
     }
     optional = {
         "experience_guidance",
+        "recent_failures",
         "token_budget",
         "_effective_max_output_tokens",
     }
@@ -624,6 +637,18 @@ def build_task_aware_prompt(context: Mapping[str, object]) -> str:
             ).encode("utf-8")
         ) > 4_800:
             raise ValueError("experience_guidance exceeds the bounded context limit")
+    recent_failures = context.get("recent_failures", [])
+    if not isinstance(recent_failures, list):
+        raise ValueError("recent_failures must be an array")
+    if len(
+        json.dumps(
+            recent_failures,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ) > 8_000:
+        raise ValueError("recent_failures exceeds the bounded context limit")
     mode = str(context["mode"])
     if mode not in TASK_AWARE_CHANGE_CLASS:
         raise ValueError("task-aware Planner mode is unsupported")
@@ -670,6 +695,18 @@ def build_task_aware_prompt(context: Mapping[str, object]) -> str:
             + json.dumps(
                 context["failure_evidence"], ensure_ascii=False, sort_keys=True
             ),
+            *(
+                [
+                    "RECENT REJECTED CANDIDATE FAILURES\n"
+                    + json.dumps(
+                        recent_failures,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    )
+                ]
+                if recent_failures
+                else []
+            ),
             "BUDGET SUMMARY\n"
             + json.dumps(context["budget"], ensure_ascii=False, sort_keys=True),
             "CONSTRAINTS\n"
@@ -693,8 +730,15 @@ def build_task_aware_prompt(context: Mapping[str, object]) -> str:
             ),
             (
                 "PATCH VALIDITY\nThe unified diff must apply directly to the supplied "
-                "kernel and target only its filename. Keep the change minimal. Before "
-                "returning, recount every hunk old/new line count exactly."
+                "CURRENT KERNEL and target only its filename. Rejected Candidate "
+                "patches are not inherited. You MUST address every independent, "
+                "evidence-backed blocker from both BOUNDED FAILURE EVIDENCE and "
+                "RECENT REJECTED CANDIDATE FAILURES that is still present in CURRENT "
+                "KERNEL; do not fix only the newest blocker. If the blockers cannot "
+                "be repaired together without changing semantics, explain that risk "
+                "in the structured risk fields, but still return one coherent patch. "
+                "Keep the change minimal. Before returning, recount every hunk "
+                "old/new line count exactly."
             ),
             "OUTPUT SCHEMA\n"
             + json.dumps(response_contract, ensure_ascii=False, sort_keys=True)

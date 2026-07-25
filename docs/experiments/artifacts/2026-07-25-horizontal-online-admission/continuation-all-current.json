@@ -1,0 +1,76 @@
+{
+  "audited_samples": [
+    {
+      "mode": "OPTIMIZE",
+      "outcome": "HARMFUL",
+      "sample_id": "40f4a4ad1410e6ea16dc0b65e6a3e6bff19a505e064172522aea52aa4271b187",
+      "v1": "BLOCK",
+      "v2": "ALLOW"
+    },
+    {
+      "mode": "REPAIR",
+      "outcome": "ESSENTIAL_FOR_CORRECTNESS",
+      "sample_id": "ef6ec90a26dca6d97e393d0a9c9282fb43aadcbd25ea7ceadc29b55bc7f7cfee",
+      "v1": "BLOCK",
+      "v2": "ALLOW"
+    },
+    {
+      "mode": "SYNTH_FIX",
+      "outcome": "HARMFUL",
+      "sample_id": "579d9398deecdb8bc2f1e27896b75736a22dca6a839d85599a01e933f1275d08",
+      "v1": "BLOCK",
+      "v2": "ALLOW"
+    },
+    {
+      "mode": "SYNTH_FIX",
+      "outcome": "ESSENTIAL_FOR_CORRECTNESS",
+      "sample_id": "2c46301e7816d1e67485a18549efa020a9828b9dbcc0b934a8eb6438c887399c",
+      "v1": "BLOCK",
+      "v2": "ALLOW"
+    },
+    {
+      "mode": "STRUCTURAL_FIX",
+      "outcome": "ESSENTIAL_FOR_CORRECTNESS",
+      "sample_id": "7ae6604d601ead85f2aeadcd545ccc40bb07013b813edd1a48c206cf3e891a85",
+      "v1": "BLOCK",
+      "v2": "ALLOW"
+    }
+  ],
+  "decision": "FAIL",
+  "evidence_sha256": "f1ab59dd7890d4ca8c7542c1665cf8d26f30a8168e81e170242d2dc0746c880a",
+  "excluded": {
+    "V2_RECOMPUTE_MISMATCH": 1
+  },
+  "gate_failures": [
+    "WASTE_BLOCK_RATE_REGRESSION"
+  ],
+  "metrics": {
+    "beneficial_retention": 0.0,
+    "false_blocks": 0,
+    "leakage_violations": 0,
+    "mode_counts": {
+      "OPTIMIZE": 1,
+      "REPAIR": 1,
+      "STRUCTURAL_FIX": 1,
+      "SYNTH_FIX": 2
+    },
+    "structural_essential_retention": 1.0,
+    "structural_essential_samples": 1,
+    "v1_beneficial_retention": 0.0,
+    "v1_waste_block_rate": 1.0,
+    "waste_block_rate": 0.0
+  },
+  "protocol": "MODE_SPECIFIC_PRE_STATE_ONLINE_SHADOW",
+  "sample_count": 5,
+  "samples_sha256": "28134dfb0dfa7ae20a15e4d5dc7b14c7ade366ba89bac20ef167b04561b944a7",
+  "schema_version": "v3.continuation-shadow-evaluation.v1",
+  "thresholds": {
+    "beneficial_retention_not_below_v1": true,
+    "maximum_false_blocks": 0,
+    "maximum_leakage_violations": 0,
+    "minimum_samples_per_mode": 1,
+    "minimum_structural_essential_retention": 1.0,
+    "minimum_structural_essential_samples": 1,
+    "waste_block_rate_not_below_v1": true
+  }
+}

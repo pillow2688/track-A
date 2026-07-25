@@ -349,9 +349,19 @@ def _balanced_pairs(
     pairs: dict[int, int] = {}
     issues: list[_ParseIssue] = []
     for index, token in enumerate(tokens):
-        if token.value == opening:
+        opening_count = (
+            2
+            if token.value == opening * 2
+            else 1 if token.value == opening else 0
+        )
+        closing_count = (
+            2
+            if token.value == closing * 2
+            else 1 if token.value == closing else 0
+        )
+        for _ in range(opening_count):
             stack.append(index)
-        elif token.value == closing:
+        for _ in range(closing_count):
             if not stack:
                 issues.append(
                     _ParseIssue(

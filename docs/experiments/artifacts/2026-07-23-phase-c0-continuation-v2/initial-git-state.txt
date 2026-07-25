@@ -1,0 +1,30 @@
+CAPTURED_AT=2026-07-23
+BRANCH=feat/track-a-empty-stub-generation-smoke
+HEAD=4a05763b593a527878a0056f64763126c58ee63b
+LOG_1=4a05763 docs(audit): finalize phase A acceptance and run plan
+LOG_2=e5ba32a fix(router): restore baseline-fact phase routing
+LOG_3=65ab82c docs: record empty-stub generation smoke
+GIT_DIFF_CHECK=PASS
+PRODUCT_TEST_DIFF_AT_START=0
+
+PREEXISTING_WORKTREE:
+ M README.md
+ M doc/README.md
+ M doc/docs/README.md
+ M docs/status/2026-07-23-track-a-completion-board.md
+?? doc/docs/2026-07-22-new-member-complete-onboarding.md
+?? doc/docs/2026-07-23-one-week-project-completion-handbook.md
+?? docs/experiments/2026-07-23-phase-b1-five-real-anchors-acceptance.zh-CN.md
+?? docs/experiments/2026-07-23-phase-b1-five-real-anchors-report.zh-CN.md
+?? docs/experiments/2026-07-23-phase-b11-budget-fix-five-anchors-acceptance.zh-CN.md
+?? docs/experiments/2026-07-23-phase-b11-budget-fix-five-anchors-report.zh-CN.md
+?? docs/experiments/2026-07-23-phase-b12-single-structural-anchor-report.zh-CN.md
+?? docs/experiments/artifacts/2026-07-23-phase-a1-freeze/
+?? docs/experiments/artifacts/2026-07-23-phase-b1-five-real-anchors/
+?? docs/experiments/artifacts/2026-07-23-phase-b11-budget-fix-five-anchors/
+?? docs/experiments/artifacts/2026-07-23-phase-b12-single-structural-anchor/
+?? docs/status/2026-07-23-phase-b1-five-real-anchors.md
+?? docs/status/2026-07-23-phase-b11-budget-fix-five-anchors.md
+?? docs/status/2026-07-23-phase-b12-single-structural-anchor.md
+
+NOTE=All pre-existing user and prior-phase changes must be preserved. Phase C0 may add an isolated offline policy module, offline replay tooling/tests, documents, and evidence only.

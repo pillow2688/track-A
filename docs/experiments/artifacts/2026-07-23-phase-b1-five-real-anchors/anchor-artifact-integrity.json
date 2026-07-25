@@ -1,0 +1,48 @@
+{
+  "schema_version": "phase-b1.anchor-artifact-integrity.v1",
+  "manifest_type": "v3a.package-manifest.v1",
+  "verification_method": "Recompute canonical package-manifest SHA-256 and verify every listed artifact's SHA-256 and byte size.",
+  "runs": [
+    {
+      "task_name": "v3d_fast_018",
+      "run_dir": "llm4hls_harness/runs/phase-b1-4a05763-v3d_fast_018-20260723T050704Z",
+      "package_manifest_ref": "control/package_manifest.json",
+      "package_manifest_canonical_sha256": "48ad67a64f2f34acb1b08dbd4b27970ee299eca2ca741d0b909b966da8f5e633",
+      "terminal_recorded_manifest_sha256": "48ad67a64f2f34acb1b08dbd4b27970ee299eca2ca741d0b909b966da8f5e633",
+      "raw_manifest_file_sha256": "049e6f7993dcd5686b18367c62629c79c55afa80583139ba2ecd31e19c2034a1",
+      "listed_artifacts": 29,
+      "verified_artifacts": 29,
+      "baseline_source_sha256": "6f2db94db472c9ec24b6af69045d3b3be13def04967976285d9533de1c50702f",
+      "final_source_sha256": null,
+      "terminal_result_sha256": "f118587a5c5eb2f8030a21b9f85d55519fac63d4a36092c74f8d89699a446df6",
+      "ledger_sha256": "86c89cef3e42f44cae032de7e06b7873ad5636bafadf8c25d7f77dc650dbf686",
+      "registry_sha256": "eaf1424fca8a584ec9f7e941420895b1477b5088b2485864ae3b709f929991b0",
+      "verified": true
+    },
+    {
+      "task_name": "v3d_fast_002",
+      "run_dir": "llm4hls_harness/runs/phase-b1-4a05763-v3d_fast_002-20260723T050704Z",
+      "package_manifest_ref": "control/package_manifest.json",
+      "package_manifest_canonical_sha256": "1c8f6cdfa6fe2e9d52245fcf73eac97e6c6213cf0533ce91354f87fe9ddd6ce5",
+      "terminal_recorded_manifest_sha256": "1c8f6cdfa6fe2e9d52245fcf73eac97e6c6213cf0533ce91354f87fe9ddd6ce5",
+      "raw_manifest_file_sha256": "40c22d632d3da2ebbaa928e7d8760216cfc9f67d1b0f5a85d39381ba41f978e3",
+      "listed_artifacts": 17,
+      "verified_artifacts": 17,
+      "baseline_source_sha256": "94afd2fd4aba3d896ddd7d0478a14f1bdbe7b1a5624391ec17521ebd50dd7be7",
+      "final_source_sha256": null,
+      "terminal_result_sha256": "230b719f43aaf57f7170ad76908fadc28b6987d6ff245bc79b18f89b22a5fa4a",
+      "ledger_sha256": "48cebcab1a7590a18a5c538df0844ebaeb962401d84b17ad8ac67b5376868df7",
+      "registry_sha256": "59742b649310ae8dbfaaf3895da8e3a86f7619666f890aa3543e1abbccf8ec19",
+      "verified": true
+    }
+  ],
+  "totals": {
+    "terminal_runs": 2,
+    "verified_manifests": 2,
+    "listed_artifacts": 46,
+    "verified_artifacts": 46,
+    "manifest_mismatches": 0,
+    "artifact_mismatches": 0,
+    "final_source_digests_available": 0
+  }
+}

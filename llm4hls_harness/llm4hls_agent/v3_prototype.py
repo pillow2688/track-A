@@ -64,6 +64,8 @@ from .v3_continuation import (
     performance_area_delta,
     strategy_novelty,
 )
+from .v3_continuation_v2 import continuation_decision_v2
+from .v3_continuation_admission import load_continuation_admission
 from .v3_planner import (
     PLANNER_ACTION_SCHEMA,
     PLANNER_INPUT_SCHEMA,
@@ -294,6 +296,8 @@ class _Runtime:
     validation_profile: str = STRICT_VALIDATION_PROFILE
     final_validation_policy: str = FULL_INTERNAL_AUDIT_FINAL_POLICY
     continuation_policy_mode: str = "off"
+    continuation_policy_version: str = "v1"
+    continuation_admission: Mapping[str, object] | None = None
 
     @property
     def proposal(self) -> PatchProposal:
@@ -410,6 +414,7 @@ def _run_config_snapshot(runtime: _Runtime) -> dict[str, object]:
                 "planner_mode": runtime.planner_mode,
                 "max_planner_rounds": runtime.max_planner_rounds,
                 "continuation_policy_mode": runtime.continuation_policy_mode,
+                "continuation_policy_version": runtime.continuation_policy_version,
                 "live_planner_action_schema": LIVE_PLANNER_ACTION_SCHEMA,
                 "live_planner_outcome_schema": LIVE_PLANNER_OUTCOME_SCHEMA,
             }
@@ -427,6 +432,11 @@ def _run_config_snapshot(runtime: _Runtime) -> dict[str, object]:
         # A persisted shadow/enforce decision is part of the durable routing
         # identity even for scripted smoke runs.
         value["continuation_policy_mode"] = runtime.continuation_policy_mode
+        value["continuation_policy_version"] = runtime.continuation_policy_version
+        if runtime.continuation_admission is not None:
+            value["continuation_admission_sha256"] = canonical_sha256(
+                runtime.continuation_admission
+            )
     if runtime.max_final_attempts != 1:
         value["max_final_attempts"] = runtime.max_final_attempts
     if runtime.validation_profile != STRICT_VALIDATION_PROFILE:
@@ -819,10 +829,36 @@ def _build_round_planner_input(
     manager = CandidateManager(runtime.run_root, runtime.task)
     registry = manager.load_registry()
     round_index = int(state.get("round_index", 1))
+    mode = str(state.get("mode", PhaseMode.OPTIMIZE.value))
     baseline_id = str(state["baseline_candidate_id"])
     incumbent_id = str(state["best_candidate_id"])
     candidates = registry.get("candidates")
     history: list[dict[str, object]] = []
+    baseline_failure_stage = {
+        PhaseMode.REPAIR.value: "csim",
+        PhaseMode.SYNTH_FIX.value: "synth",
+        PhaseMode.STRUCTURAL_FIX.value: "cosim",
+    }.get(mode)
+    if baseline_failure_stage is not None:
+        baseline_failure = _artifact_binding(
+            runtime,
+            f"evidence/failures/baseline_{baseline_failure_stage}.json",
+        )
+        if baseline_failure.get("ref") is not None:
+            history.append(
+                {
+                    "kind": "baseline_failure",
+                    "candidate_id": baseline_id,
+                    "round_index": 0,
+                    "parent_id": None,
+                    "status": "BASELINE_FAILED",
+                    "change_class": None,
+                    "rejection_reason": (
+                        f"BASELINE_{baseline_failure_stage.upper()}_FAILED"
+                    ),
+                    "failure_evidence": baseline_failure,
+                }
+            )
     if isinstance(candidates, Mapping):
         ordered = sorted(
             (
@@ -837,6 +873,18 @@ def _build_round_planner_input(
             ),
         )
         for candidate_id, candidate in ordered:
+            failure_evidence = _artifact_binding(
+                runtime, candidate.get("failure_evidence_ref")
+            )
+            stored_failure_hash = candidate.get("failure_evidence_sha256")
+            if (
+                isinstance(stored_failure_hash, str)
+                and stored_failure_hash
+                and failure_evidence.get("sha256") != stored_failure_hash
+            ):
+                raise RuntimeError(
+                    "Candidate failure evidence binding mismatch"
+                )
             history.append(
                 {
                     "kind": "candidate",
@@ -861,6 +909,7 @@ def _build_round_planner_input(
                         or candidate.get("rejection_score_ref"),
                     ),
                     "rejection_reason": candidate.get("rejection_reason"),
+                    "failure_evidence": failure_evidence,
                 }
             )
     for rejection_path in sorted(
@@ -907,7 +956,7 @@ def _build_round_planner_input(
     return build_planner_input(
         task=_v3_task_spec(runtime.task),
         round_state={
-            "mode": str(state.get("mode", PhaseMode.OPTIMIZE.value)),
+            "mode": mode,
             "failure_evidence": dict(state.get("failure_evidence", {})),
             "round_index": round_index,
             "rounds_completed": int(state.get("rounds_completed", 0)),
@@ -1505,10 +1554,34 @@ def _validate_candidate_operation_request(
             )
         return
     if operation_type == "REJECT":
+        base_candidate_updates = {
+            "status",
+            "rejection_reason",
+            "rejection_score_ref",
+        }
+        extended_candidate_updates = base_candidate_updates | {
+            "failure_evidence_ref",
+            "failure_evidence_sha256",
+        }
+        update_fields = set(candidate_updates)
+        failure_ref = candidate_updates.get("failure_evidence_ref")
+        failure_sha256 = candidate_updates.get("failure_evidence_sha256")
+        valid_failure_binding = (
+            update_fields == base_candidate_updates
+            or (
+                update_fields == extended_candidate_updates
+                and isinstance(failure_ref, str)
+                and failure_ref.startswith("evidence/failures/candidate_")
+                and failure_ref.endswith(".json")
+                and not Path(failure_ref).is_absolute()
+                and ".." not in Path(failure_ref).parts
+                and isinstance(failure_sha256, str)
+                and re.fullmatch(r"[0-9a-f]{64}", failure_sha256) is not None
+            )
+        )
         if (
             dict(registry_updates) != {"active_candidate_id": None}
-            or set(candidate_updates)
-            != {"status", "rejection_reason", "rejection_score_ref"}
+            or not valid_failure_binding
             or candidate_updates.get("status") != "REJECTED"
             or candidate_updates.get("rejection_reason") != reason
             or (
@@ -3260,6 +3333,57 @@ def _continuation_evidence(
     previous_metrics: Mapping[str, object] = current_metrics
     previous_evidence: Mapping[str, object] = current_evidence
     if latest is not None:
+        if mode != PhaseMode.OPTIMIZE.value:
+            registry = CandidateManager(runtime.run_root, runtime.task).load_registry()
+            candidates = registry.get("candidates")
+            latest_round = latest.get("round_index")
+            prior: Mapping[str, object] | None = None
+            prior_round = -1
+            if isinstance(candidates, Mapping) and isinstance(latest_round, int):
+                for candidate in candidates.values():
+                    if (
+                        not isinstance(candidate, Mapping)
+                        or candidate.get("kind") == "baseline"
+                    ):
+                        continue
+                    candidate_round = candidate.get("round_index")
+                    if (
+                        isinstance(candidate_round, int)
+                        and not isinstance(candidate_round, bool)
+                        and prior_round < candidate_round < latest_round
+                    ):
+                        prior = candidate
+                        prior_round = candidate_round
+            prior_ref = (
+                prior.get("failure_evidence_ref")
+                if isinstance(prior, Mapping)
+                else None
+            )
+            if isinstance(prior_ref, str) and prior_ref:
+                previous_evidence = _read_json_object(
+                    _safe_run_ref(runtime, prior_ref)
+                )
+            else:
+                baseline_stage = {
+                    PhaseMode.REPAIR.value: "csim",
+                    PhaseMode.SYNTH_FIX.value: "synth",
+                    PhaseMode.STRUCTURAL_FIX.value: "cosim",
+                }.get(mode)
+                baseline_ref = (
+                    f"evidence/failures/baseline_{baseline_stage}.json"
+                    if baseline_stage is not None
+                    else ""
+                )
+                if baseline_ref and (runtime.run_root / baseline_ref).is_file():
+                    previous_evidence = _read_json_object(
+                        _safe_run_ref(runtime, baseline_ref)
+                    )
+            return (
+                previous_evidence,
+                current_evidence,
+                previous_metrics,
+                current_metrics,
+            )
         # When the latest materialized Candidate is also the current
         # incumbent, compare its already-known evidence against its parent.
         # Comparing it with itself would erase precisely the new bottleneck
@@ -3294,6 +3418,130 @@ def _continuation_evidence(
     return previous_evidence, current_evidence, previous_metrics, current_metrics
 
 
+def _continuation_v2_pre_state(
+    *,
+    state: V3PrototypeState,
+    mode: str,
+    delta: Mapping[str, object],
+    novelty: Mapping[str, object],
+    attempted: Sequence[Sequence[object]],
+    current_atoms: Sequence[object],
+    cost: Mapping[str, object],
+    performance_area: Mapping[str, object],
+    baseline_latency: float | None,
+    has_verified_incumbent: bool,
+    remaining_rounds: int,
+) -> dict[str, object]:
+    """Project current run facts into the V2 decision-time allow-list."""
+
+    before_fingerprint = delta.get("before_fingerprint")
+    after_fingerprint = delta.get("after_fingerprint")
+    before = before_fingerprint if isinstance(before_fingerprint, Mapping) else {}
+    after = after_fingerprint if isinstance(after_fingerprint, Mapping) else {}
+    pa_before = performance_area.get("before")
+    pa_after = performance_area.get("after")
+    pa_before = pa_before if isinstance(pa_before, Mapping) else {}
+    pa_after = pa_after if isinstance(pa_after, Mapping) else {}
+
+    previous_latency = pa_before.get("latency")
+    current_latency = pa_after.get("latency")
+    acceleration = None
+    if (
+        isinstance(baseline_latency, (int, float))
+        and not isinstance(baseline_latency, bool)
+        and isinstance(current_latency, (int, float))
+        and not isinstance(current_latency, bool)
+        and float(current_latency) > 0
+    ):
+        acceleration = float(baseline_latency) / float(current_latency)
+
+    previous_location = before.get("source_location")
+    current_location = after.get("source_location")
+    evidence_delta_v2 = {
+        "failure_subtype_changed": bool(delta.get("failure_subtype_changed")),
+        "failure_location_changed": bool(delta.get("source_location_changed")),
+        "new_actionable_evidence": bool(
+            delta.get("has_actionable_new_evidence")
+        ),
+        "bottleneck_changed": bool(delta.get("bottleneck_changed")),
+        "topology_understanding_improved": bool(
+            delta.get("critical_loop_changed")
+            or delta.get("bottleneck_changed")
+        ),
+        "structural_strategy_new": novelty.get("strategy_novelty") == "HIGH",
+        "latency_improved": bool(performance_area.get("latency_improved")),
+        "interval_improved": bool(
+            performance_area.get("transaction_interval_improved")
+        ),
+        "clock_improved": bool(performance_area.get("clock_improved")),
+        "resource_pressure_changed": bool(
+            performance_area.get("resource_pressure_changed")
+        ),
+        "same_failure_signature": bool(
+            before.get("fingerprint")
+            and before.get("fingerprint") == after.get("fingerprint")
+        ),
+        "same_failure_location": bool(
+            previous_location
+            and previous_location == current_location
+        ),
+        "same_observed_strategy": bool(
+            novelty.get("duplicate_strategy")
+            or novelty.get("duplicate_patch")
+        ),
+    }
+    has_decision_evidence = bool(
+        delta.get("has_new_evidence")
+        or current_atoms
+        or current_latency is not None
+    )
+    return {
+        "previous_failure_signature": before.get("fingerprint"),
+        "failure_signature": after.get("fingerprint"),
+        "previous_failure_location_signature": (
+            canonical_sha256({"source_location": previous_location})
+            if previous_location
+            else None
+        ),
+        "failure_location_signature": (
+            canonical_sha256({"source_location": current_location})
+            if current_location
+            else None
+        ),
+        "previous_evidence_fingerprint": before.get("fingerprint"),
+        "evidence_fingerprint": after.get("fingerprint"),
+        "evidence_delta": evidence_delta_v2,
+        "observed_strategy_history": [list(group) for group in attempted],
+        "current_observed_strategy": list(current_atoms),
+        "strategy_novelty": novelty.get("strategy_novelty", "UNKNOWN"),
+        "previous_latency": previous_latency,
+        "current_latency": current_latency,
+        "previous_interval": pa_before.get("transaction_interval"),
+        "current_interval": pa_after.get("transaction_interval"),
+        "previous_clock_ns": pa_before.get("estimated_clock_period_ns"),
+        "current_clock_ns": pa_after.get("estimated_clock_period_ns"),
+        "current_resource_utilization": pa_after.get("utilization"),
+        "remaining_tokens": cost.get("remaining_tokens"),
+        "remaining_credits": cost.get("remaining_credits"),
+        "estimated_next_tokens": cost.get("estimated_next_total_tokens"),
+        "estimated_next_credits": cost.get("estimated_next_credits"),
+        "remaining_rounds": max(0, int(remaining_rounds)),
+        "final_reserve_available": bool(cost.get("final_reserve_safe")),
+        "has_verified_incumbent": bool(has_verified_incumbent),
+        "has_better_verified_candidate_needing_final": bool(
+            has_verified_incumbent
+            and
+            state.get("best_candidate_id")
+            and state.get("best_candidate_id") != state.get("baseline_candidate_id")
+        ),
+        "evidence_complete": has_decision_evidence,
+        "evidence_conflict": False,
+        "consecutive_no_progress": int(state.get("no_improvement_rounds", 0)),
+        "acceleration_vs_baseline": acceleration,
+        "scoring_cap": 8.0,
+    }
+
+
 def _apply_continuation_policy(
     runtime: _Runtime,
     state: V3PrototypeState,
@@ -3318,7 +3566,13 @@ def _apply_continuation_policy(
     before_evidence, after_evidence, before_metrics, after_metrics = _continuation_evidence(runtime, state, latest)
     mode = str(state.get("mode", PhaseMode.OPTIMIZE.value))
     delta = evidence_delta(before_evidence, after_evidence, mode=mode, before_metrics=before_metrics, after_metrics=after_metrics)
-    novelty = strategy_novelty(attempted=attempted, failed=failed, patch_digests=patches)
+    current_atoms = attempted[-1] if attempted else ()
+    novelty = strategy_novelty(
+        declared=current_atoms,
+        attempted=attempted[:-1],
+        failed=failed,
+        patch_digests=patches[:-1],
+    )
     pa = performance_area_delta(before_metrics, after_metrics, policy=load_performance_area_policy(), reference="previous_incumbent")
     baseline_metrics = _completed_synth_report(runtime, state["baseline_metrics_ref"], candidate_id=state["baseline_candidate_id"], validation_scope="exploration") if state.get("baseline_metrics_ref") else {}
     best_latency = _worst_latency(after_metrics, name="incumbent") if after_metrics else None
@@ -3333,13 +3587,45 @@ def _apply_continuation_policy(
         estimated_wall_time_seconds=0.0,
         final_reserve_safe=bool(budget_gate.get("allowed")),
     )
-    decision = continuation_decision(
-        run_id=runtime.run_root.name, round_index=round_index, mode=mode,
-        policy_mode=policy_mode, has_correct_candidate=has_correct,
-        has_strict_latency_improvement=strict_improvement, performance_area=pa,
-        delta=delta, strategies=novelty, cost=cost,
-        remaining_rounds=max(0, planner_limit - round_index + 1),
-    )
+    if runtime.continuation_policy_version == "v2":
+        pre_state = _continuation_v2_pre_state(
+            state=state,
+            mode=mode,
+            delta=delta,
+            novelty=novelty,
+            attempted=attempted,
+            current_atoms=current_atoms,
+            cost=cost,
+            performance_area=pa,
+            baseline_latency=baseline_latency,
+            has_verified_incumbent=has_correct,
+            remaining_rounds=max(0, planner_limit - round_index + 1),
+        )
+        decision = continuation_decision_v2(mode=mode, pre_state=pre_state)
+        decision.update(
+            {
+                "run_id": runtime.run_root.name,
+                "round_index": round_index,
+                "policy_mode": policy_mode,
+                "policy_version": "v3.continuation-policy.v2",
+                "pre_state": pre_state,
+            }
+        )
+        decision["decision_hash"] = canonical_sha256(
+            {
+                key: value
+                for key, value in decision.items()
+                if key != "decision_hash"
+            }
+        )
+    else:
+        decision = continuation_decision(
+            run_id=runtime.run_root.name, round_index=round_index, mode=mode,
+            policy_mode=policy_mode, has_correct_candidate=has_correct,
+            has_strict_latency_improvement=strict_improvement, performance_area=pa,
+            delta=delta, strategies=novelty, cost=cost,
+            remaining_rounds=max(0, planner_limit - round_index + 1),
+        )
     # Initial calls have no follow-up to suppress, but are still recorded in
     # shadow/enforce for auditability.
     if round_index == 1:
@@ -4340,7 +4626,68 @@ def _candidate_csim(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeSt
             "eligible": False,
             "reason": "CANDIDATE_CSIM_FAILED",
         }
+        if result is not None:
+            update.update(
+                _candidate_failure_evidence_update(
+                    runtime,
+                    candidate_id=candidate_id,
+                    stage="csim",
+                    result=result,
+                    validation_evidence=record,
+                    event=event,
+                )
+            )
     return update
+
+
+def _candidate_failure_evidence_update(
+    runtime: _Runtime,
+    *,
+    candidate_id: str,
+    stage: str,
+    result: object,
+    validation_evidence: Mapping[str, object],
+    event: dict[str, object] | None = None,
+) -> V3PrototypeState:
+    """Bind a rejected Candidate's latest tool failure into the next round.
+
+    Baseline failure evidence is sufficient for the first Planner call only.
+    If a Candidate advances to a different CSim/Synth failure and the Graph
+    leaves the baseline evidence in state, every later Planner call is asked
+    to repair a stale symptom.  Persist the same bounded, path-sanitized
+    evidence schema used by the baseline router and make it the current
+    decision-time evidence.
+    """
+
+    extractor = {
+        "csim": extract_csim_failure_evidence,
+        "synth": extract_synth_failure_evidence,
+        "cosim": extract_cosim_failure_evidence,
+    }.get(stage)
+    if extractor is None:
+        raise ValueError(f"unsupported Candidate failure stage: {stage}")
+    evidence = extractor(
+        result,
+        validation_evidence=validation_evidence,
+    ).to_dict()
+    if evidence.get("candidate_id") != candidate_id:
+        raise RuntimeError("Candidate failure evidence identity mismatch")
+    evidence_ref = f"evidence/failures/{candidate_id}_{stage}.json"
+    evidence_path = runtime.run_root / evidence_ref
+    _write_once_or_verify(evidence_path, evidence)
+    evidence_sha256 = _sha256_file(evidence_path)
+    if event is not None:
+        details = event.get("details")
+        event["details"] = {
+            **(dict(details) if isinstance(details, Mapping) else {}),
+            "failure_evidence_ref": evidence_ref,
+            "failure_evidence_sha256": evidence_sha256,
+        }
+    return {
+        "failure_evidence": evidence,
+        "failure_evidence_ref": evidence_ref,
+        "failure_evidence_sha256": evidence_sha256,
+    }
 
 
 def _candidate_synth(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeState:
@@ -4409,6 +4756,41 @@ def _candidate_synth(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeS
             "eligible": False,
             "reason": "CANDIDATE_SYNTH_CLOCK_OR_RESOURCE_FAILED",
         }
+        if result is not None:
+            failure_result: object = result
+            validation_evidence: dict[str, object] = dict(record)
+            if result.ok and (
+                clock.get("passed") is False
+                or resource.get("passed") is False
+            ):
+                failure_result = {
+                    **result.to_dict(),
+                    "ok": False,
+                    "phase": "constraint_violation",
+                }
+            if clock.get("passed") is False:
+                validation_evidence["clock_violation"] = dict(clock)
+                validation_evidence["target_clock_period_ns"] = (
+                    1000.0 / runtime.config.minimum_frequency_mhz
+                )
+            if resource.get("passed") is False:
+                raw_violations = resource.get("violations", [])
+                validation_evidence["resource_violations"] = [
+                    "resource violation: "
+                    + json.dumps(item, ensure_ascii=False, sort_keys=True)
+                    for item in raw_violations
+                    if isinstance(item, Mapping)
+                ]
+            update.update(
+                _candidate_failure_evidence_update(
+                    runtime,
+                    candidate_id=candidate_id,
+                    stage="synth",
+                    result=failure_result,
+                    validation_evidence=validation_evidence,
+                    event=event,
+                )
+            )
     return update
 
 
@@ -4971,6 +5353,25 @@ def _reject_candidate(runtime: _Runtime, state: V3PrototypeState) -> V3Prototype
     incumbent_id = state["best_candidate_id"]
     candidate_id = state["active_candidate_id"]
     reason = str(state.get("cosim_gate", {}).get("reason", "CANDIDATE_VALIDATION_FAILED"))
+    candidate_updates: dict[str, object] = {
+        "status": "REJECTED",
+        "rejection_reason": reason,
+        "rejection_score_ref": state.get("candidate_score_ref"),
+    }
+    failure_ref = state.get("failure_evidence_ref")
+    failure_sha256 = state.get("failure_evidence_sha256")
+    if (
+        isinstance(failure_ref, str)
+        and failure_ref.startswith("evidence/failures/candidate_")
+        and isinstance(failure_sha256, str)
+        and failure_sha256
+    ):
+        candidate_updates.update(
+            {
+                "failure_evidence_ref": failure_ref,
+                "failure_evidence_sha256": failure_sha256,
+            }
+        )
     decision_ref = _commit_registry_operation(
         runtime,
         operation_type="REJECT",
@@ -4980,11 +5381,7 @@ def _reject_candidate(runtime: _Runtime, state: V3PrototypeState) -> V3Prototype
         round_index=int(state.get("round_index", 1)),
         reason=reason,
         registry_updates={"active_candidate_id": None},
-        candidate_updates={
-            "status": "REJECTED",
-            "rejection_reason": reason,
-            "rejection_score_ref": state.get("candidate_score_ref"),
-        },
+        candidate_updates=candidate_updates,
     )
     event = _event(
         runtime,
@@ -6194,6 +6591,8 @@ def _render_team_report(
             "- Continuation policy / last decision: `"
             + str(result.get("continuation_policy_mode", "off"))
             + " / "
+            + str(result.get("continuation_policy_version", "v1"))
+            + " / "
             + str(result.get("continuation_decision_ref") or "-")
             + "`",
             "- Performance-Area advisory: `"
@@ -6425,6 +6824,12 @@ def _write_report(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeStat
         "failure_evidence_sha256": state.get("failure_evidence_sha256"),
         "validation_profile": runtime.validation_profile,
         "continuation_policy_mode": runtime.continuation_policy_mode,
+        "continuation_policy_version": runtime.continuation_policy_version,
+        "continuation_admission_sha256": (
+            canonical_sha256(runtime.continuation_admission)
+            if runtime.continuation_admission is not None
+            else None
+        ),
         "continuation_decision_ref": state.get("continuation_decision_ref"),
         "continuation_decision_hash": state.get("continuation_decision_hash"),
         "performance_area_ref": state.get("performance_area_ref"),
@@ -6913,6 +7318,8 @@ def run_v3_prototype(
     validation_profile: str = STRICT_VALIDATION_PROFILE,
     final_validation_policy: str = FULL_INTERNAL_AUDIT_FINAL_POLICY,
     continuation_policy_mode: str = "off",
+    continuation_policy_version: str = "v1",
+    continuation_admission_manifest: str | Path | None = None,
 ) -> dict[str, object]:
     """Run the checkpointed V3-A1 graph and return its durable result.
 
@@ -6936,6 +7343,25 @@ def run_v3_prototype(
         raise ValueError("unsupported final validation policy")
     if continuation_policy_mode not in CONTINUATION_POLICY_MODES:
         raise ValueError("unsupported continuation policy mode")
+    if continuation_policy_version not in {"v1", "v2"}:
+        raise ValueError("unsupported continuation policy version")
+    continuation_admission = None
+    if continuation_policy_mode == "enforce":
+        if continuation_policy_version != "v2":
+            raise ValueError(
+                "Continuation enforce requires the mode-specific v2 policy"
+            )
+        if continuation_admission_manifest is None:
+            raise ValueError(
+                "Continuation enforce requires a passing admission manifest"
+            )
+        continuation_admission = load_continuation_admission(
+            continuation_admission_manifest
+        )
+    elif continuation_admission_manifest is not None:
+        raise ValueError(
+            "Continuation admission manifest is valid only in enforce mode"
+        )
     if planner is not None and proposal is not None:
         raise ValueError("live planner and scripted proposals are mutually exclusive")
     if planner is None:
@@ -6978,6 +7404,8 @@ def run_v3_prototype(
         validation_profile=validation_profile,
         final_validation_policy=final_validation_policy,
         continuation_policy_mode=continuation_policy_mode,
+        continuation_policy_version=continuation_policy_version,
+        continuation_admission=continuation_admission,
     )
     checkpoint_path = root / "graph_checkpoints.sqlite"
     graph_schema_path = root / "v3_graph_schema.json"

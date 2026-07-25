@@ -27,6 +27,8 @@ from llm4hls_agent.v3_openai_planner import (
     V3OpenAIPlannerError,
     _history_state,
     _metrics_with_evidence,
+    _task_aware_failure_evidence,
+    _task_aware_recent_failures,
 )
 from llm4hls_agent.v3_planner import build_planner_input
 import llm4hls_agent.v3_openai_planner as openai_planner_module
@@ -100,6 +102,161 @@ def _task_aware_response(mode: str) -> str:
 
 
 class V3OpenAIPlannerTests(unittest.TestCase):
+    def test_task_aware_mode_accepts_compatible_candidate_stage_failure(self) -> None:
+        evidence = {
+            "schema_version": "v3c.csim-failure-evidence.v1",
+            "candidate_id": "candidate_002",
+            "failure_kind": "COMPILE_ERROR",
+            "error_summary": "candidate no longer compiles",
+        }
+
+        accepted = _task_aware_failure_evidence(
+            {"failure_evidence": evidence},
+            mode="SYNTH_FIX",
+        )
+
+        self.assertEqual(accepted, evidence)
+
+    def test_task_aware_mode_still_rejects_mismatched_baseline_schema(self) -> None:
+        with self.assertRaisesRegex(
+            V3OpenAIPlannerError, "does not match the routed mode"
+        ):
+            _task_aware_failure_evidence(
+                {
+                    "failure_evidence": {
+                        "schema_version": "v3c.csim-failure-evidence.v1",
+                        "candidate_id": "candidate_000",
+                        "failure_kind": "COMPILE_ERROR",
+                    }
+                },
+                mode="SYNTH_FIX",
+            )
+
+    def test_task_aware_mode_rejects_incompatible_candidate_stage(self) -> None:
+        with self.assertRaisesRegex(
+            V3OpenAIPlannerError, "does not match the routed mode"
+        ):
+            _task_aware_failure_evidence(
+                {
+                    "failure_evidence": {
+                        "schema_version": "v3c.synth-failure-evidence.v1",
+                        "candidate_id": "candidate_002",
+                        "failure_kind": "SYNTH_ERROR",
+                    }
+                },
+                mode="STRUCTURAL_FIX",
+            )
+
+    def test_task_aware_history_resolves_bounded_prior_failure(self) -> None:
+        evidence = {
+            "schema_version": "v3c.csim-failure-evidence.v1",
+            "candidate_id": "candidate_001",
+            "failure_kind": "COMPILE_ERROR",
+            "phase": "compile_error",
+            "error_summary": "missing declaration at /tmp/private/kernel.cpp:9",
+            "relevant_log_lines": [
+                "error at /tmp/private/kernel.cpp:9",
+            ],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "evidence" / "failures" / "candidate_001_csim.json"
+            path.parent.mkdir(parents=True)
+            encoded = json.dumps(evidence).encode("utf-8")
+            path.write_bytes(encoded)
+            rows = _task_aware_recent_failures(
+                root,
+                [
+                    {
+                        "status": "REJECTED",
+                        "round_index": 1,
+                        "candidate_id": "candidate_001",
+                        "change_class": "SYNTHESIS_REPAIR",
+                        "rejection_reason": "CANDIDATE_CSIM_FAILED",
+                        "failure_evidence": {
+                            "ref": str(path.relative_to(root)),
+                            "sha256": hashlib.sha256(encoded).hexdigest(),
+                        },
+                    }
+                ],
+                mode="SYNTH_FIX",
+                current_candidate_id="candidate_002",
+            )
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["candidate_id"], "candidate_001")
+        self.assertNotIn("/tmp/private", json.dumps(rows))
+
+    def test_task_aware_history_keeps_baseline_and_latest_rejected_failure(
+        self,
+    ) -> None:
+        baseline = {
+            "schema_version": "v3c.synth-failure-evidence.v1",
+            "candidate_id": "candidate_000",
+            "failure_kind": "SYNTH_ERROR",
+            "phase": "synth_error",
+            "synthesis_error": "recursive call is unsupported",
+        }
+        rejected = {
+            "schema_version": "v3c.csim-failure-evidence.v1",
+            "candidate_id": "candidate_001",
+            "failure_kind": "COMPILE_ERROR",
+            "phase": "compile_error",
+            "error_summary": "missing declaration",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            history = []
+            for name, evidence, metadata in (
+                (
+                    "baseline_synth.json",
+                    baseline,
+                    {
+                        "kind": "baseline_failure",
+                        "status": "BASELINE_FAILED",
+                        "round_index": 0,
+                        "candidate_id": "candidate_000",
+                    },
+                ),
+                (
+                    "candidate_001_csim.json",
+                    rejected,
+                    {
+                        "kind": "candidate",
+                        "status": "REJECTED",
+                        "round_index": 1,
+                        "candidate_id": "candidate_001",
+                    },
+                ),
+            ):
+                path = root / "evidence" / "failures" / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                encoded = json.dumps(evidence).encode("utf-8")
+                path.write_bytes(encoded)
+                history.append(
+                    {
+                        **metadata,
+                        "change_class": "SYNTHESIS_REPAIR",
+                        "rejection_reason": "FAILED",
+                        "failure_evidence": {
+                            "ref": str(path.relative_to(root)),
+                            "sha256": hashlib.sha256(encoded).hexdigest(),
+                        },
+                    }
+                )
+
+            rows = _task_aware_recent_failures(
+                root,
+                history,
+                mode="SYNTH_FIX",
+                current_candidate_id="candidate_002",
+            )
+
+        self.assertEqual(
+            [row["candidate_id"] for row in rows],
+            ["candidate_000", "candidate_001"],
+        )
+
     def test_dynamic_policy_two_stage_prompt_matches_provider_max(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             run_root = Path(directory).resolve()
@@ -426,6 +583,10 @@ class V3OpenAIPlannerTests(unittest.TestCase):
                 self.assertEqual(proposal.change_class, expected_class)
                 prompt = captured["messages"][1]["content"]  # type: ignore[index]
                 self.assertIn("MODE\n" + mode, prompt)
+                self.assertIn(
+                    "MUST address every independent, evidence-backed blocker",
+                    prompt,
+                )
                 self.assertNotIn("/tmp/private", prompt)
                 self.assertNotIn("private-token", prompt)
                 self.assertNotIn("task-aware-secret", json.dumps(prepared.request))

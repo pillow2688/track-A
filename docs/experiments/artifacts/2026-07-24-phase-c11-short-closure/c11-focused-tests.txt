@@ -1,0 +1,11 @@
+test_dynamic_policy_shadow_changes_request_envelope_and_fails_gate (llm4hls_harness.tests.test_c11_shadow_boundary.C11ShadowBoundaryTests.test_dynamic_policy_shadow_changes_request_envelope_and_fails_gate) ... ok
+test_nested_query_features_are_fail_closed (llm4hls_harness.tests.test_c11_shadow_boundary.C11ShadowBoundaryTests.test_nested_query_features_are_fail_closed) ... ok
+test_off_shadow_fixed_request_equal_but_identity_differs (llm4hls_harness.tests.test_c11_shadow_boundary.C11ShadowBoundaryTests.test_off_shadow_fixed_request_equal_but_identity_differs) ... ok
+test_provenance_pools_are_disjoint_and_matrix_is_delayed (llm4hls_harness.tests.test_c11_shadow_boundary.C11ShadowBoundaryTests.test_provenance_pools_are_disjoint_and_matrix_is_delayed) ... ok
+test_query_uses_exact_public_whitelists (llm4hls_harness.tests.test_c11_shadow_boundary.C11ShadowBoundaryTests.test_query_uses_exact_public_whitelists) ... ok
+test_ranker_v2_is_not_imported_by_runtime_entrypoints (llm4hls_harness.tests.test_c11_shadow_boundary.C11ShadowBoundaryTests.test_ranker_v2_is_not_imported_by_runtime_entrypoints) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.077s
+
+OK

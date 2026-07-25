@@ -1,0 +1,148 @@
+{
+  "branch": "feat/track-a-empty-stub-generation-smoke",
+  "c11_gate": {
+    "decision_sha256": "99047e0360752dc495b9c2612a9105fbdbff966398aa694c4f1dfc45c5e660c0",
+    "fallback_applied": true,
+    "runtime_shadow_admitted": false,
+    "status": "PASS_FAIL_CLOSED"
+  },
+  "core_runtime_files_match_head": true,
+  "frozen_head": "4a05763b593a527878a0056f64763126c58ee63b",
+  "head_matches": true,
+  "matrix": {
+    "all_slots_require_terminal_record": true,
+    "backend": "vitis",
+    "continuation_policy": "off",
+    "corpus": "llm4hls_harness/task_corpus/v3d-fast/tasks",
+    "costs": {
+      "cosim": 20,
+      "csim": 1,
+      "synth": 4
+    },
+    "experience_mode": "off",
+    "experience_post_matrix": "offline_replay",
+    "failure_isolating": true,
+    "final_reserve_credits": 25,
+    "final_validation_policy": "task_contract",
+    "llm_max_output_tokens": 4096,
+    "max_no_improvement_rounds": 2,
+    "max_planner_rounds": 2,
+    "models": [
+      "deepseek-v4-pro"
+    ],
+    "ranker_post_matrix": "fixed_protocol_offline_reevaluation",
+    "ranker_runtime_mode": "off",
+    "repeats": 1,
+    "resumable": true,
+    "retry_failures_during_primary_matrix": false,
+    "run_token_limit": 32768,
+    "sampling": {
+      "temperature": 0.0,
+      "top_p": 1.0
+    },
+    "task_count": 28,
+    "task_credit_limit_source": "task.toml budget",
+    "task_ids": [
+      "v3d_fast_001",
+      "v3d_fast_002",
+      "v3d_fast_003",
+      "v3d_fast_004",
+      "v3d_fast_005",
+      "v3d_fast_006",
+      "v3d_fast_007",
+      "v3d_fast_008",
+      "v3d_fast_009",
+      "v3d_fast_010",
+      "v3d_fast_011",
+      "v3d_fast_012",
+      "v3d_fast_013",
+      "v3d_fast_014",
+      "v3d_fast_015",
+      "v3d_fast_016",
+      "v3d_fast_017",
+      "v3d_fast_018",
+      "v3d_fast_019",
+      "v3d_fast_020",
+      "v3d_fast_021",
+      "v3d_fast_022",
+      "v3d_fast_023",
+      "v3d_fast_024",
+      "v3d_fast_025",
+      "v3d_fast_026",
+      "v3d_fast_027",
+      "v3d_fast_028"
+    ],
+    "timeouts_seconds": {
+      "batch_runtime": null,
+      "cosim": 600,
+      "csim": 300,
+      "llm": 180,
+      "run_runtime": 3600,
+      "synth": 900
+    },
+    "token_budget_policy": "fixed",
+    "validation_profile": "fast-experiment"
+  },
+  "orchestration_compatibility_patch": {
+    "expected_sha256": "22bd25029ba7a7d3e15b511685234fe32717873a5b746c9108e24154da75c4e9",
+    "file": "llm4hls_harness/llm4hls_agent/v3_batch_benchmark.py",
+    "focused_regression": {
+      "command": "PYTHONPATH=.:.. ../.venv/bin/python -m unittest -q tests.test_v3_batch_benchmark",
+      "tests_failed": 0,
+      "tests_passed": 23
+    },
+    "purpose": "Align successful REAL-row provenance validation with the frozen task_contract final policy: require fresh CSim and Synth, and require CoSim only when the public task contract requires it. The Graph, Planner, BudgetLedger, Router, Vitis execution, model settings, and task corpus are unchanged.",
+    "scope": "BATCH_TERMINAL_PROVENANCE_VALIDATION_ONLY",
+    "sha256": "22bd25029ba7a7d3e15b511685234fe32717873a5b746c9108e24154da75c4e9",
+    "status": "ACCEPTED_EXACT"
+  },
+  "output_dir": "llm4hls_harness/experiments/formal_matrix_20260724_4a05763_deepseek_28x1",
+  "phase": "28 tasks x 1 current frozen HEAD",
+  "required_environment": {
+    "LLM4HLS_MODEL": "deepseek-v4-pro",
+    "LLM4HLS_TOOLCHAIN_ID": "Vitis 2025.2",
+    "LLM4HLS_VITIS_HLS_ROOT": "/home/ying/CompetitionTrackA/vitis/AMD/2025.2/Vitis",
+    "OPENAI_API_KEY": "REQUIRED_NONEMPTY_NOT_RECORDED",
+    "OPENAI_BASE_URL": "https://api.deepseek.com"
+  },
+  "runner": {
+    "ref": "run_formal_matrix.py",
+    "sha256": "182e6e851b42533a201350526888ecf8c24188a71a22ae1753b10514f9963a9b"
+  },
+  "runtime_changed_files": [
+    "llm4hls_harness/llm4hls_agent/v3_batch_benchmark.py"
+  ],
+  "runtime_files": [
+    "llm4hls_harness/llm4hls_agent/v3_prototype.py",
+    "llm4hls_harness/llm4hls_agent/v3_prototype_cli.py",
+    "llm4hls_harness/llm4hls_agent/v3_openai_planner.py",
+    "llm4hls_harness/llm4hls_agent/v3_phase_router.py",
+    "llm4hls_harness/llm4hls_agent/v3_batch_benchmark.py",
+    "llm4hls_harness/llm4hls_agent/v3_planner.py",
+    "llm4hls_harness/llm4hls_agent/v3_planner_action.py",
+    "llm4hls_harness/llm4hls_agent/budget.py",
+    "llm4hls_harness/llm4hls_agent/vitis.py"
+  ],
+  "runtime_files_match_head": false,
+  "schema_version": "formal-matrix.freeze.v1",
+  "scope_guards": {
+    "c2_threshold_changed": false,
+    "golden_accessed": false,
+    "hidden_accessed": false,
+    "reference_accessed": false,
+    "secret_value_recorded": false
+  },
+  "status": "FROZEN_READY_FOR_ENV",
+  "structural_anchor": {
+    "rerun_required": false,
+    "result_ref": "docs/experiments/artifacts/2026-07-23-phase-b12-single-structural-anchor/single-anchor-result.json",
+    "status": "REUSED_CURRENT_HEAD_ACCEPTED",
+    "task_id": "residual_stream_deadlock"
+  },
+  "token_preflight": {
+    "record_count": 28,
+    "ref": "per-task-token-preflight.json",
+    "sha256": "e0640a379e9630d7065c203c0d1068f438cb166dca3131a3aa2e562a952a3d16",
+    "status": "PASS"
+  }
+}

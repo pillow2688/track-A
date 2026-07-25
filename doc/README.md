@@ -4,13 +4,15 @@
 
 ## Start Here
 
-新队友先读这五份：
+新队友先读这七份：
 
-1. [当前系统说明与团队月度进展（首次发布 2026-07-20，更新至 2026-07-21）](docs/2026-07-20-current-system-and-team-progress.md)
-2. [Track A 比赛总览](docs/track-a-competition-overview.md)
-3. [Track A 0 基础入门手册](docs/track-a-zero-foundation-guide.md)
-4. [文档入口](docs/README.md)
-5. [资料库目录规则](materials/README.md)
+1. [新成员完整接手指南（复核至 2026-07-23 当前 HEAD）](docs/2026-07-22-new-member-complete-onboarding.md)
+2. [接手后 7 天完成项目执行手册](docs/2026-07-23-one-week-project-completion-handbook.md)
+3. [V3-E 经验知识库与 Strategy Ranker](docs/2026-07-21-v3e-experience-kb-hardening.md)
+4. [当前系统说明与团队月度进展（首次发布 2026-07-20，更新至 2026-07-21）](docs/2026-07-20-current-system-and-team-progress.md)
+5. [Track A 比赛总览](docs/track-a-competition-overview.md)
+6. [文档入口](docs/README.md)
+7. [资料库目录规则](materials/README.md)
 
 然后按主题继续读：
 
@@ -38,6 +40,9 @@ runs/       HLS/agent 运行输出
 
 ## Current Key Materials
 
+- [新成员完整接手指南（复核至 2026-07-23 当前 HEAD）](docs/2026-07-22-new-member-complete-onboarding.md)
+- [接手后 7 天完成项目执行手册](docs/2026-07-23-one-week-project-completion-handbook.md)
+- [V3-E 经验知识库与 Strategy Ranker](docs/2026-07-21-v3e-experience-kb-hardening.md)
 - [当前系统说明与团队月度进展（更新至 2026-07-21）](docs/2026-07-20-current-system-and-team-progress.md)
 - [V3-D 昨夜至今日执行总结](../llm4hls_harness/releases/v3d-overnight-daytime-summary-2026-07-21.md)
 - [Track A 比赛总览](docs/track-a-competition-overview.md)

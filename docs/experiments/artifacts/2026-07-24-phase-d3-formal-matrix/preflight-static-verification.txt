@@ -1,0 +1,8 @@
+head=76698b02942369a937a9d6baf77c862cb06f49f2
+branch=feat/track-a-empty-stub-generation-smoke
+compileall_command=.venv/bin/python -m compileall -q llm4hls_harness
+compileall_exit_code=0
+git_diff_check_command=git diff --check
+git_diff_check_exit_code=0
+committed_product_test_clean_exit_code=0
+cached_paths=0

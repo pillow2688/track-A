@@ -1,0 +1,85 @@
+{
+  "schema_version": "phase-b1.acceptance-metadata.v1",
+  "phase": "Phase B1",
+  "recorded_at": "2026-07-23T13:32:17+08:00",
+  "branch": "feat/track-a-empty-stub-generation-smoke",
+  "initial_commit_sha": "4a05763b593a527878a0056f64763126c58ee63b",
+  "final_commit_sha": "4a05763b593a527878a0056f64763126c58ee63b",
+  "head_unchanged": true,
+  "router_fix_is_ancestor": true,
+  "product_or_test_changes_during_phase": false,
+  "config_digest": "c5dd5c6c99805b54ebb129b67d06c60248be4184da10bc77c24be3ed2ab594f2",
+  "stage_status": "BLOCKED",
+  "acceptance": "BLOCKED",
+  "matrix_readiness": "NOT_READY_FOR_28_TASK_MATRIX",
+  "reason": "The frozen 8000-token per-task plan is deterministically below the candidate-plus-fresh-final reserve required in two independently routed modes. Protocol requires global stop without changing Budget inside the phase.",
+  "planned_anchors": 5,
+  "started_anchors": 2,
+  "terminal_anchors": 2,
+  "passed_anchors": 0,
+  "failed_anchors": 2,
+  "not_run_anchors": 3,
+  "final_csim_pass": 0,
+  "final_synth_pass": 0,
+  "final_cosim_pass": 0,
+  "planner_calls": 0,
+  "provider_requests": 0,
+  "tokens": 0,
+  "csim_calls": 2,
+  "synth_calls": 1,
+  "cosim_calls": 1,
+  "tool_credits": 26,
+  "ledger_runtime_seconds": 618.966063261,
+  "external_retries": 0,
+  "ledger_reconciliation": {
+    "applicable_runs": 2,
+    "passed": 2,
+    "mismatches": 0
+  },
+  "artifact_integrity": {
+    "terminal_manifests": 2,
+    "verified_manifests": 2,
+    "listed_artifacts": 46,
+    "verified_artifacts": 46,
+    "mismatches": 0,
+    "baseline_source_digests": 2,
+    "final_source_digests": 0
+  },
+  "interface_safety": {
+    "planner_or_patch_path_reached": false,
+    "interface_mutation_detected": false,
+    "top_interface_guard_status": "NOT_REACHED"
+  },
+  "information_isolation": {
+    "hidden_accessed": false,
+    "reference_accessed": false,
+    "golden_accessed": false,
+    "secret_values_recorded": false
+  },
+  "preflight": {
+    "tests_run": 556,
+    "tests_passed": 556,
+    "failures": 0,
+    "errors": 0,
+    "compileall": "PASS",
+    "git_diff_check": "PASS",
+    "environment": "AVAILABLE"
+  },
+  "postflight": {
+    "tests_run": 556,
+    "tests_passed": 556,
+    "failures": 0,
+    "errors": 0,
+    "compileall": "PASS",
+    "git_diff_check": "PASS"
+  },
+  "forbidden_actions": {
+    "matrix_28_started": false,
+    "product_fix_applied": false,
+    "budget_changed_after_start": false,
+    "external_rerun_used": false,
+    "git_commit_created": false,
+    "git_push": false,
+    "pull_request_created": false
+  }
+}

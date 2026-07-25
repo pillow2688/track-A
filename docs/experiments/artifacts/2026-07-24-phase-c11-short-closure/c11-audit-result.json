@@ -1,0 +1,154 @@
+{
+  "branch": "feat/track-a-empty-stub-generation-smoke",
+  "c1_frozen_input": {
+    "ranking_eligible_count": 76,
+    "record_count": 103,
+    "store_sha256": "ba452e1f57e433fae2727e614cb6ab2986ff4ae301762f852559bb909e004cb7",
+    "summary_record_count": 103,
+    "summary_sha256": "37628bb828846454c7ae27e964fc1f682b01e9d51969438a0ce31c8e2747e687"
+  },
+  "c2_threshold_control": {
+    "c2_result_sha256": "cbc7a29a40a5c6255a8e649ff5dda2dc03f71e683008d8bf1d1e3bd771263dab",
+    "fixed_candidate_thresholds": {
+      "each_mode_records_at_least": 10,
+      "harmful_duplicate_recommendation_rate_at_most": 0.05,
+      "harmful_rate_applies_per_mode": true,
+      "leave_one_task_coverage_at_least": 0.4,
+      "leave_one_task_family_coverage_at_least": 0.4
+    },
+    "status": "UNCHANGED",
+    "thresholds_sha256": "7e9c2ea39ceb82ed74ed7b7b7aa339a0a6ebe6b2229e4b2e8854d3689814ee46"
+  },
+  "checks": {
+    "c2_thresholds_untouched": true,
+    "cost_scope_frozen": true,
+    "fail_closed_matrix_modes": true,
+    "hidden_reference_golden_accessed": false,
+    "label_layers_frozen": true,
+    "off_shadow_full_equivalence": false,
+    "provenance_pools_disjoint": true,
+    "safe_whitelist": true,
+    "secret_values_recorded": false
+  },
+  "cost_scope": {
+    "CURRENT_RUN_AUTHORITY": [
+      "BudgetLedger",
+      "TokenBudgetPolicy",
+      "tool_limits"
+    ],
+    "HELD_OUT_EVALUATION_ONLY": [
+      "held_out_cost",
+      "held_out_utility"
+    ],
+    "HISTORICAL_SUPPORT_ONLY": [
+      "input_tokens",
+      "output_tokens",
+      "total_tokens",
+      "credits",
+      "csim_calls",
+      "synth_calls",
+      "cosim_calls",
+      "wall_time_seconds"
+    ],
+    "QUERY_ALLOWED": []
+  },
+  "formal_matrix_decision": {
+    "experience_full_equivalence": false,
+    "formal_matrix": {
+      "continuation": "off",
+      "experience": "off",
+      "ranker": "off"
+    },
+    "post_matrix": {
+      "experience": "offline_replay",
+      "ranker": "fixed_protocol_offline_reevaluation"
+    },
+    "ranker_v2_non_interference_by_non_integration": true,
+    "reason": "FAIL_CLOSED_SHADOW_NOT_FULLY_EQUIVALENT",
+    "runtime_shadow_admitted": false,
+    "schema_version": "v3e.shadow-boundary.c1.1.v1"
+  },
+  "frozen_head": "4a05763b593a527878a0056f64763126c58ee63b",
+  "label_layers": {
+    "L0_PRE_DECISION_PUBLIC_FEATURES": [
+      "mode",
+      "failure_subtype",
+      "bottleneck_subtype",
+      "algorithm_family",
+      "structure_features",
+      "strategy_context",
+      "frozen_runtime_identity"
+    ],
+    "L1_HISTORICAL_SUPPORT_LABELS": [
+      "validation",
+      "performance",
+      "cost",
+      "token_policy"
+    ],
+    "L2_HELD_OUT_EVALUATION_LABELS": [
+      "fresh_final_status",
+      "strict_improvement",
+      "harmful_recommendation",
+      "cost"
+    ],
+    "L3_POST_TERMINAL_ATTRIBUTION": [
+      "candidate_outcome",
+      "terminal_budget",
+      "artifact_provenance"
+    ]
+  },
+  "off_shadow_equivalence": {
+    "dynamic_token_policy": {
+      "dispatch_context_equal": false,
+      "full_equivalence": false,
+      "provider_request_equal": false,
+      "token_envelope_equal": false
+    },
+    "fixed_token_policy": {
+      "dispatch_context_equal": true,
+      "full_equivalence": false,
+      "planner_fingerprint_equal": false,
+      "provider_request_equal": true,
+      "shadow_audit_side_effect_equal": false
+    },
+    "focused_behavioral_tests": {
+      "log_ref": "c11-focused-tests.txt",
+      "log_sha256": "5825485346d4782aaff2d7de1c7aa827348d04d5aed9079fa3a79ec2f9a11abf",
+      "returncode": 0,
+      "test_count": 6
+    },
+    "graph_route_equal": true
+  },
+  "phase": "C1.1",
+  "provenance_pools": {
+    "TRAIN_OBSERVATION_ONLY": 27,
+    "TRAIN_SUPPORT": 76
+  },
+  "query_boundary": {
+    "forbidden_labels_present": [],
+    "safe": true,
+    "schema_version": "v3e.shadow-boundary.c1.1.v1",
+    "structure_extra": [],
+    "structure_whitelist_exact": true,
+    "top_level_extra": [],
+    "top_level_whitelist_exact": true
+  },
+  "ranker_v2_runtime_boundary": {
+    "import_hits": [],
+    "matrix_authority": "OFF",
+    "post_matrix_authority": "OFFLINE_REPLAY_ONLY",
+    "prompt_injection_authorized": false,
+    "runtime_imported": false
+  },
+  "real_budget": {
+    "cosim": 0,
+    "csim": 0,
+    "llm_calls": 0,
+    "synth": 0,
+    "tokens": 0,
+    "tool_credits": 0
+  },
+  "schema_version": "phase-c11.short-closure-audit.v1",
+  "scope": "PUBLIC_OFFLINE_ONLY",
+  "status": "PASS_FAIL_CLOSED"
+}

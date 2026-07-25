@@ -1,0 +1,92 @@
+{
+  "schema_version": "phase-b12.baseline-stability.v1",
+  "phase": "Phase B1.2",
+  "candidate_task": "residual_stream_deadlock",
+  "task_source": "official/fpt26-harness-public",
+  "task_dir": "llm4hls_harness/task_corpus/official/fpt26-harness-public/residual_stream_deadlock",
+  "requires_cosim": true,
+  "baseline_source_sha256": "a0f40b47dea175d761e22f26edb42ac72f2ba5e25e21fdc460887fe2c639457b",
+  "vitis_root": "/home/ying/CompetitionTrackA/vitis/AMD/2025.2/Vitis",
+  "vitis_version": "2025.2",
+  "tool_costs": {
+    "csim": 1,
+    "synth": 4,
+    "cosim": 20
+  },
+  "timeouts_seconds": {
+    "csim": 300,
+    "synth": 900,
+    "cosim": 300
+  },
+  "fresh_repeats": [
+    {
+      "repeat": 1,
+      "run_dir": "llm4hls_harness/runs/phase-b12-4a05763-residual-baseline-stability1-20260723T124154Z",
+      "cached": false,
+      "csim": "PASS",
+      "synth": "PASS",
+      "cosim": "FAIL",
+      "cosim_phase": "cosim_fail",
+      "cosim_elapsed_seconds": 25.332573753083125,
+      "credits": 25,
+      "runtime_seconds": 40.283451080322266,
+      "baseline_unchanged": true
+    },
+    {
+      "repeat": 2,
+      "run_dir": "llm4hls_harness/runs/phase-b12-4a05763-residual-baseline-stability2-20260723T124154Z",
+      "cached": false,
+      "csim": "PASS",
+      "synth": "PASS",
+      "cosim": "FAIL",
+      "cosim_phase": "cosim_fail",
+      "cosim_elapsed_seconds": 26.188471380854025,
+      "credits": 25,
+      "runtime_seconds": 41.24951195716858,
+      "baseline_unchanged": true
+    },
+    {
+      "repeat": 3,
+      "scope": "formal_deepseek_vitis_run_baseline",
+      "run_dir": "llm4hls_harness/runs/phase-b12-4a05763-residual-structural-20260723T124154Z",
+      "cached": false,
+      "csim": "PASS",
+      "synth": "PASS",
+      "cosim": "FAIL",
+      "cosim_phase": "cosim_fail",
+      "cosim_elapsed_seconds": 27.34716031397693,
+      "baseline_unchanged": true
+    }
+  ],
+  "historical_same_task_evidence": {
+    "run_dir": "llm4hls_harness/runs/track_a_real_smoke_20260722_A01/residual_structural",
+    "csim": "PASS",
+    "synth": "PASS",
+    "cosim": "FAIL",
+    "mode": "STRUCTURAL_FIX",
+    "final_result": "PASS"
+  },
+  "stability_gate": {
+    "fresh_repeat_count": 3,
+    "fresh_repeat_matches": 3,
+    "historical_match": true,
+    "result": "PASS"
+  },
+  "router": {
+    "input": {
+      "csim": "PASS",
+      "synth": "PASS",
+      "cosim": "FAIL",
+      "requires_cosim": true
+    },
+    "mode": "STRUCTURAL_FIX",
+    "reason": "REQUIRED_BASELINE_COSIM_FAILED",
+    "result": "PASS"
+  },
+  "excluded_preflight_attempt": {
+    "run_dir": "llm4hls_harness/runs/phase-b12-4a05763-residual-baseline-repeat1-20260723T124154Z",
+    "reason": "TOOLCHAIN_UNAVAILABLE due to parent install root instead of the resolved Vitis root",
+    "real_hls_actions_completed": 0,
+    "counted_as_stability_sample": false
+  }
+}

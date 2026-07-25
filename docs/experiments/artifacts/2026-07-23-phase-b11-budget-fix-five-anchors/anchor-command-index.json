@@ -1,0 +1,51 @@
+{
+  "schema_version": "phase-b11.anchor-command-index.v1",
+  "secrets_expanded": false,
+  "rerun_reason": "FROZEN_BUDGET_PLAN_CORRECTED",
+  "provider_environment": [
+    "OPENAI_BASE_URL",
+    "OPENAI_API_KEY",
+    "LLM4HLS_MODEL"
+  ],
+  "vitis_environment": [
+    "LLM4HLS_VITIS_HLS_ROOT"
+  ],
+  "commands": [
+    {
+      "order": 1,
+      "task_name": "v3d_fast_002",
+      "token_cap": 8639,
+      "credit_limit": 36,
+      "run_dir": "llm4hls_harness/runs/phase-b11-4a05763-v3d_fast_002-20260723T120331Z"
+    },
+    {
+      "order": 2,
+      "task_name": "v3d_fast_010",
+      "token_cap": 9201,
+      "credit_limit": 40,
+      "run_dir": "llm4hls_harness/runs/phase-b11-4a05763-v3d_fast_010-20260723T120331Z"
+    },
+    {
+      "order": 3,
+      "task_name": "v3d_fast_022",
+      "token_cap": 10802,
+      "credit_limit": 40,
+      "run_dir": "llm4hls_harness/runs/phase-b11-4a05763-v3d_fast_022-20260723T120331Z"
+    },
+    {
+      "order": 4,
+      "task_name": "track_a_empty_stub_generation",
+      "token_cap": 9782,
+      "credit_limit": 36,
+      "run_dir": "llm4hls_harness/runs/phase-b11-4a05763-track_a_empty_stub_generation-20260723T120331Z"
+    },
+    {
+      "order": 5,
+      "task_name": "v3d_fast_018",
+      "token_cap": 10691,
+      "credit_limit": 92,
+      "run_dir": "llm4hls_harness/runs/phase-b11-4a05763-v3d_fast_018-20260723T120331Z"
+    }
+  ],
+  "template_ref": "revised-frozen-run-plan.json#command_template"
+}

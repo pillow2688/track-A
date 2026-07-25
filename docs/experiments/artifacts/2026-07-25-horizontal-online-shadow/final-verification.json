@@ -1,0 +1,27 @@
+{
+  "admission_files": {
+    "continuation_v2": false,
+    "ranker_v3": false
+  },
+  "checks": {
+    "compileall": "PASS",
+    "continuation_gate": "FAIL",
+    "git_diff_check": "PASS",
+    "ranker_gate": "FAIL",
+    "secret_scan": "PASS_NO_MATCH",
+    "unit_tests": "PASS"
+  },
+  "commands": {
+    "compileall": ".venv/bin/python -m compileall -q llm4hls_harness/llm4hls_agent docs/experiments/artifacts/2026-07-25-horizontal-online-shadow/combine_anchor_experience.py",
+    "unit_tests": "PYTHONPATH=.:.. ../.venv/bin/python -m unittest discover -s tests -t . -q"
+  },
+  "online_scope": {
+    "anchor_count": 4,
+    "anchor_e2e_pass": 4,
+    "hidden_accessed": false,
+    "reference_or_golden_accessed": false,
+    "started_28_task_matrix": false
+  },
+  "schema_version": "horizontal-components-online-shadow.final-verification.v1",
+  "tests_run": 626
+}

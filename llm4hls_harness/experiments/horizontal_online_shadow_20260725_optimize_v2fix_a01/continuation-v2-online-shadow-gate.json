@@ -1,0 +1,49 @@
+{
+  "audited_samples": [
+    {
+      "mode": "OPTIMIZE",
+      "outcome": "BENEFICIAL_PERFORMANCE",
+      "sample_id": "8b82d42eab506e3b6d377655f4b714a9fb35bc47aed6469e9232a0fe890ae437",
+      "v1": "BLOCK",
+      "v2": "DEFER_TO_FINAL"
+    }
+  ],
+  "decision": "FAIL",
+  "evidence_sha256": "39c66dcc9d8503a1194fa65ac0f4c95e3a1c13a9662215b2c15d1b55fcfe5bba",
+  "excluded": {},
+  "gate_failures": [
+    "PER_MODE_SAMPLE_GATE",
+    "FALSE_BLOCK_GATE",
+    "STRUCTURAL_ESSENTIAL_SAMPLE_GATE",
+    "STRUCTURAL_ESSENTIAL_RETENTION_GATE"
+  ],
+  "metrics": {
+    "beneficial_retention": 0.0,
+    "false_blocks": 1,
+    "leakage_violations": 0,
+    "mode_counts": {
+      "OPTIMIZE": 1,
+      "REPAIR": 0,
+      "STRUCTURAL_FIX": 0,
+      "SYNTH_FIX": 0
+    },
+    "structural_essential_retention": 0.0,
+    "structural_essential_samples": 0,
+    "v1_beneficial_retention": 0.0,
+    "v1_waste_block_rate": 0.0,
+    "waste_block_rate": 0.0
+  },
+  "protocol": "MODE_SPECIFIC_PRE_STATE_ONLINE_SHADOW",
+  "sample_count": 1,
+  "samples_sha256": "3a55f13f9d1d4d9524d5cd7f4283c2b9ed0d60ebe85aebd1f87ebf59d9a43e9c",
+  "schema_version": "v3.continuation-shadow-evaluation.v1",
+  "thresholds": {
+    "beneficial_retention_not_below_v1": true,
+    "maximum_false_blocks": 0,
+    "maximum_leakage_violations": 0,
+    "minimum_samples_per_mode": 1,
+    "minimum_structural_essential_retention": 1.0,
+    "minimum_structural_essential_samples": 1,
+    "waste_block_rate_not_below_v1": true
+  }
+}

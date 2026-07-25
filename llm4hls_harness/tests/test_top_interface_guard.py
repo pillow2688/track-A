@@ -159,6 +159,37 @@ class TopInterfaceGuardTests(unittest.TestCase):
         self.assertIsInstance(reason.actual, dict)
         self.assertEqual(reason.actual["side"], "candidate")
 
+    def test_nested_array_subscripts_do_not_look_like_attributes(self) -> None:
+        baseline = '''#include "kernel.h"
+void kernel(
+    const unsigned char input[16],
+    unsigned short bins[8]) {
+    for (int i = 0; i < 16; ++i) {
+        ++bins[input[i]];
+    }
+}
+'''
+        nested_guard = TopInterfaceGuard(
+            top="kernel",
+            kernel_name="kernel.cpp",
+            baseline_source=baseline,
+            headers={
+                "kernel.h": (
+                    "void kernel(const unsigned char input[16], "
+                    "unsigned short bins[8]);\n"
+                )
+            },
+            public_tb_name="kernel_tb.cpp",
+        )
+
+        result = nested_guard.check(
+            baseline.replace("++bins[input[i]]", "bins[input[i]] += 1")
+        )
+
+        self.assertTrue(result.allowed)
+        self.assertTrue(result.parse_reliable)
+        self.assertNotIn("PARSE_UNCERTAIN", reason_codes(result))
+
     def test_shared_patch_path_blocks_top_change_before_materialization(self) -> None:
         task = load_public_task(
             Path(__file__).parents[1] / "examples" / "u55c_repair_task"

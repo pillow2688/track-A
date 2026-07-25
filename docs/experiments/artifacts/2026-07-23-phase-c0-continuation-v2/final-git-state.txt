@@ -1,0 +1,43 @@
+CAPTURED_AT=2026-07-23
+BRANCH=feat/track-a-empty-stub-generation-smoke
+HEAD=4a05763b593a527878a0056f64763126c58ee63b
+HEAD_CHANGED_DURING_PHASE_C0=false
+COMMIT_CREATED=false
+PUSH_OR_PR_CREATED=false
+GIT_DIFF_CHECK=PASS
+
+PROTECTED_FILES:
+llm4hls_harness/llm4hls_agent/v3_prototype.py diff=<empty>
+llm4hls_harness/llm4hls_agent/v3_prototype.py git_object=4328637d90b3a5615272e85d3c670bc202937ba2
+llm4hls_harness/llm4hls_agent/v3_continuation.py diff=<empty>
+llm4hls_harness/llm4hls_agent/v3_continuation.py git_object=8fea3326c0aba7bf08f084efda9d35667684a962
+
+PHASE_C0_PRODUCT_AND_TEST_SCOPE:
+?? llm4hls_harness/llm4hls_agent/v3_continuation_v2.py
+?? llm4hls_harness/tests/test_v3_continuation_v2.py
+
+PHASE_C0_DOCUMENT_SCOPE:
+ M docs/status/2026-07-23-track-a-completion-board.md
+?? docs/status/2026-07-23-phase-c0-continuation-v2.md
+?? docs/experiments/2026-07-23-phase-c0-continuation-v2-report.zh-CN.md
+?? docs/experiments/2026-07-23-phase-c0-continuation-v2-acceptance.zh-CN.md
+?? docs/experiments/artifacts/2026-07-23-phase-c0-continuation-v2/
+
+PREEXISTING_CHANGES_PRESERVED:
+ M README.md
+ M doc/README.md
+ M doc/docs/README.md
+?? doc/docs/2026-07-22-new-member-complete-onboarding.md
+?? doc/docs/2026-07-23-one-week-project-completion-handbook.md
+?? docs/experiments/2026-07-23-phase-b1-five-real-anchors-acceptance.zh-CN.md
+?? docs/experiments/2026-07-23-phase-b1-five-real-anchors-report.zh-CN.md
+?? docs/experiments/2026-07-23-phase-b11-budget-fix-five-anchors-acceptance.zh-CN.md
+?? docs/experiments/2026-07-23-phase-b11-budget-fix-five-anchors-report.zh-CN.md
+?? docs/experiments/2026-07-23-phase-b12-single-structural-anchor-report.zh-CN.md
+?? docs/experiments/artifacts/2026-07-23-phase-a1-freeze/
+?? docs/experiments/artifacts/2026-07-23-phase-b1-five-real-anchors/
+?? docs/experiments/artifacts/2026-07-23-phase-b11-budget-fix-five-anchors/
+?? docs/experiments/artifacts/2026-07-23-phase-b12-single-structural-anchor/
+?? docs/status/2026-07-23-phase-b1-five-real-anchors.md
+?? docs/status/2026-07-23-phase-b11-budget-fix-five-anchors.md
+?? docs/status/2026-07-23-phase-b12-single-structural-anchor.md

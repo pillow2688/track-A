@@ -342,7 +342,8 @@ class ExperienceKnowledgeBase:
         }
 
 
-_QUERY_FIELDS = {
+QUERY_SAFE_FIELDS = frozenset(
+    {
     "schema_version",
     "query_id",
     "mode",
@@ -360,7 +361,112 @@ _QUERY_FIELDS = {
     "backend_fingerprint",
     "prompt_version",
     "exclude_same_task_family",
-}
+    }
+)
+
+# This is an allow-list, not a deny-list.  A query may carry only structural
+# facts available before a strategy is selected.  In particular validation,
+# performance, cost and terminal outcome labels are record-only data.
+QUERY_STRUCTURE_SAFE_FIELDS = frozenset(
+    {
+        "top_signature_hash",
+        "loop_count_bucket",
+        "critical_loop_ii",
+        "critical_loop_trip_count_bucket",
+        "transaction_interval_bucket",
+        "latency_bucket",
+        "has_pipeline",
+        "has_dataflow",
+        "has_stream",
+        "has_fifo",
+        "has_reduction",
+        "has_dynamic_allocation",
+        "has_recursion",
+        "has_unsupported_stl",
+        "memory_access_pattern",
+        "resource_pressure",
+        "requires_cosim",
+        "patch_complexity",
+        "memory_bottleneck",
+        "failure_stage",
+        "primary_bottleneck",
+    }
+)
+_UNSAFE_QUERY_TEXT = (
+    "api_key",
+    "authorization",
+    "golden",
+    "hidden answer",
+    "reference answer",
+    "/home/",
+    "sk-",
+)
+
+
+def _validate_query_structure_features(value: object) -> dict[str, object]:
+    if not isinstance(value, Mapping):
+        raise ValueError("query structure features must be an object")
+    extra = set(value).difference(QUERY_STRUCTURE_SAFE_FIELDS)
+    if extra:
+        raise ValueError(
+            "query structure features contain non-whitelisted fields: "
+            + ", ".join(sorted(str(item) for item in extra))
+        )
+
+    def bounded_public(item: object, name: str, *, depth: int = 0) -> object:
+        if depth > 2:
+            raise ValueError(f"query structure feature {name} is too deeply nested")
+        if item is None or isinstance(item, bool):
+            return item
+        if isinstance(item, int) and not isinstance(item, bool):
+            if item < 0:
+                raise ValueError(
+                    f"query structure feature {name} must be non-negative"
+                )
+            return item
+        if isinstance(item, float):
+            if not math.isfinite(item) or item < 0:
+                raise ValueError(
+                    f"query structure feature {name} must be finite and non-negative"
+                )
+            return item
+        if isinstance(item, str):
+            folded = item.casefold()
+            if (
+                not item
+                or len(item) > 160
+                or any(marker in folded for marker in _UNSAFE_QUERY_TEXT)
+            ):
+                raise ValueError(
+                    f"query structure feature {name} contains unsafe text"
+                )
+            return item
+        if isinstance(item, Mapping):
+            if len(item) > 8:
+                raise ValueError(
+                    f"query structure feature {name} is not bounded"
+                )
+            return {
+                str(key): bounded_public(child, f"{name}.{key}", depth=depth + 1)
+                for key, child in item.items()
+                if isinstance(key, str)
+                and key
+                and len(key) <= 64
+                and not any(
+                    marker in key.casefold() for marker in _UNSAFE_QUERY_TEXT
+                )
+            }
+        raise ValueError(
+            f"query structure feature {name} has an unsupported value type"
+        )
+
+    result = {
+        str(name): bounded_public(item, str(name))
+        for name, item in value.items()
+    }
+    if len(result) != len(value):
+        raise ValueError("query structure features contain unsafe keys")
+    return result
 
 
 def build_kb_query(
@@ -405,7 +511,10 @@ def build_kb_query(
 
 
 def validate_kb_query(value: Mapping[str, object]) -> dict[str, object]:
-    if set(value) != _QUERY_FIELDS or value.get("schema_version") != KB_QUERY_SCHEMA:
+    if (
+        set(value) != QUERY_SAFE_FIELDS
+        or value.get("schema_version") != KB_QUERY_SCHEMA
+    ):
         raise ValueError("knowledge-base query fields mismatch")
     mode = value.get("mode")
     if mode not in MODES:
@@ -422,8 +531,9 @@ def validate_kb_query(value: Mapping[str, object]) -> dict[str, object]:
         item = value.get(name)
         if not isinstance(item, str) or len(item) != 64 or any(c not in "0123456789abcdef" for c in item):
             raise ValueError(f"query {name} is invalid")
-    if not isinstance(value.get("structure_features"), Mapping):
-        raise ValueError("query structure features must be an object")
+    structure_features = _validate_query_structure_features(
+        value.get("structure_features")
+    )
     if not isinstance(value.get("strategy_context"), list):
         raise ValueError("query strategy context must be a list")
     allowed_strategies = STRATEGIES_BY_MODE[str(mode)]
@@ -452,7 +562,9 @@ def validate_kb_query(value: Mapping[str, object]) -> dict[str, object]:
     expected = canonical_sha256({**dict(value), "query_id": ""})
     if value.get("query_id") != expected:
         raise ValueError("query_id does not bind query content")
-    return json.loads(canonical_json(value).decode("utf-8"))
+    copied = dict(value)
+    copied["structure_features"] = structure_features
+    return json.loads(canonical_json(copied).decode("utf-8"))
 
 
 def _is_success(record: Mapping[str, object]) -> bool:
@@ -639,6 +751,8 @@ __all__ = [
     "ExplainableRetrievalResult",
     "ExplainableSimilarCaseRetriever",
     "KBSnapshot",
+    "QUERY_SAFE_FIELDS",
+    "QUERY_STRUCTURE_SAFE_FIELDS",
     "build_kb_query",
     "build_secondary_index",
     "validate_kb_query",
