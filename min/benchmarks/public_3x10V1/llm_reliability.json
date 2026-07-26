@@ -1,0 +1,52 @@
+{
+  "EMPTY_RESPONSE": 0,
+  "INVALID_JSON": 0,
+  "INVALID_SCHEMA": 0,
+  "TRUNCATED_JSON": 2,
+  "known_call_token_mean": 3030.6333,
+  "known_tokens_total": 90919,
+  "ordering_evidence": "Internal filesystem mtimes, Ledger timestamps/SHA binding, and append-only trace order; these are not third-party timestamps.",
+  "parse_successes": 28,
+  "per_task": {
+    "dotProduct_optimize": {
+      "cached_input_tokens": 3840,
+      "calls": 10,
+      "input_tokens": 4420,
+      "known_call_token_mean": 3215.5,
+      "known_tokens": 32155,
+      "output_tokens": 27735,
+      "usage_known": 10,
+      "usage_unknown": 0
+    },
+    "projection_bugfix": {
+      "cached_input_tokens": 10240,
+      "calls": 10,
+      "input_tokens": 10580,
+      "known_call_token_mean": 2801.0,
+      "known_tokens": 28010,
+      "output_tokens": 17430,
+      "usage_known": 10,
+      "usage_unknown": 0
+    },
+    "residual_stream_deadlock": {
+      "cached_input_tokens": 0,
+      "calls": 10,
+      "input_tokens": 9920,
+      "known_call_token_mean": 3075.4,
+      "known_tokens": 30754,
+      "output_tokens": 20834,
+      "usage_known": 10,
+      "usage_unknown": 0
+    }
+  },
+  "recorded_token_lower_bound": 90919,
+  "request_ids_unique": true,
+  "request_successes": 30,
+  "requests_total": 30,
+  "response_before_ledger_before_parse_failures": [],
+  "response_before_ledger_before_parse_passes": 30,
+  "response_receipts": 30,
+  "schema_version": "track-a.public-3x10-v1-llm-audit.v1",
+  "usage_known_calls": 30,
+  "usage_unknown_calls": 0
+}

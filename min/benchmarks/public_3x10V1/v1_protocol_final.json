@@ -1,0 +1,56 @@
+{
+  "baseline_budget_snapshot_correction": {
+    "audited_stable_mismatches": 7,
+    "reported": 4
+  },
+  "benchmark_summary": {
+    "bytes": 100030,
+    "path": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/benchmark_summary.json",
+    "sha256": "101dea5c4f56f82525bc7a3cf6f07beae88ae5cc8f0275b113db6376928b8352"
+  },
+  "final_checks": {
+    "bytes": 2483,
+    "path": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/final_checks.json",
+    "sha256": "9fe08011ef7dc8e081043f9114c5ccf479f8ef21f8687f57c6c60db531980059"
+  },
+  "formal_gate": {
+    "bytes": 3039,
+    "path": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/formal/formal_gate.json",
+    "sha256": "f111661764a2a331f391e22eac31c9e6602ccfb8310ab79a34bc6476df558e7f"
+  },
+  "phase": "V1_PLANNER_PATCH_BUDGET_RELIABILITY",
+  "preflight_gate": {
+    "bytes": 3064,
+    "path": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/preflight/preflight_gate.json",
+    "sha256": "2c1e47dc1358965255e37a99d1de63796ba7c35926e2272570c3db2e57b002ad"
+  },
+  "protocol_ref": "v1_protocol_manifest.json",
+  "protocol_sha256": "f3ede408c31aa6bd8ea58baa81c458f4d516559b5443bb1f6fb14940b89828fc",
+  "schema_version": "track-a.public-3x10-v1-protocol-final.v1",
+  "secret_scan": {
+    "bytes": 276,
+    "path": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/secret_scan_final.json",
+    "sha256": "aa43f4fdda6f044a3d951266cd3da40e4fa1af58e6789db8815f9fcb61ae8682"
+  },
+  "status": "ACCEPTED",
+  "task_hashes": {
+    "dotProduct_optimize": {
+      "dotProduct.cpp": "1bca40f5d5cffe6db31aac1e84ed18ee756059ce67de8ef6d33dec578e1ca05c",
+      "dotProduct.h": "ddb3f29dccd09d73c8f2a8df41707839597c168b832dd8cb7051793a38e77205",
+      "dotProduct_tb.cpp": "afea831358b1760028958e52f50e1ee294f07cecac5f4d894e0ead1e2ad57f93",
+      "task.toml": "ed87fbfa2e995a479e500db78b2c387874f77f04fcc5541ff420f4fe2612f102"
+    },
+    "projection_bugfix": {
+      "projection.cpp": "eed237714637529c534e6e0ed2a2086611ce73999bcb64b20a949f9bb5e88eaf",
+      "projection.h": "6749ac7755a998295c94c4c2782e4b45a9f0a0ace449482699adab31b434412e",
+      "projection_tb.cpp": "897587836c90af8c689f153ea5de200790dd7c8f73edd1c314df14a02de41967",
+      "task.toml": "06800aa26fcd56ee1b7e35c740d31a3c56a853cefa9d3a0a6b1158371adeb7b2"
+    },
+    "residual_stream_deadlock": {
+      "residual.cpp": "a0f40b47dea175d761e22f26edb42ac72f2ba5e25e21fdc460887fe2c639457b",
+      "residual.h": "0a6cdb9de0b0172dd05abcc6614cb4f470ee3e119579b65b66c48477c36654ee",
+      "residual_tb.cpp": "bb9f48528823f6e428f2d3ddaa65730df80af1aa2b47da890db9ea4e4e047a7a",
+      "task.toml": "f215020b154574924f4930a50b28ef6f80c337c8809a7017428feed863e8f453"
+    }
+  }
+}

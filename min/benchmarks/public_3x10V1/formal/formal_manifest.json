@@ -1,0 +1,196 @@
+{
+  "automatic_retry": false,
+  "created_unix_seconds": 1785065583.60446,
+  "endpoint_host": "api.deepseek.com",
+  "execution_order": "repetition-major interleaved, strictly serial",
+  "failed_sample_replacement": false,
+  "horizontal_components": [],
+  "max_output_tokens": 4096,
+  "minimal_flow_sha256": "3ba37694ded57e9ffd9299ddd14550ccb598911c75c2112250c1346981e23a66",
+  "model": "deepseek-v4-pro",
+  "phase": "formal",
+  "schedule": [
+    {
+      "repetition": 1,
+      "slot": 1,
+      "task_id": "projection_bugfix"
+    },
+    {
+      "repetition": 1,
+      "slot": 2,
+      "task_id": "dotProduct_optimize"
+    },
+    {
+      "repetition": 1,
+      "slot": 3,
+      "task_id": "residual_stream_deadlock"
+    },
+    {
+      "repetition": 2,
+      "slot": 4,
+      "task_id": "projection_bugfix"
+    },
+    {
+      "repetition": 2,
+      "slot": 5,
+      "task_id": "dotProduct_optimize"
+    },
+    {
+      "repetition": 2,
+      "slot": 6,
+      "task_id": "residual_stream_deadlock"
+    },
+    {
+      "repetition": 3,
+      "slot": 7,
+      "task_id": "projection_bugfix"
+    },
+    {
+      "repetition": 3,
+      "slot": 8,
+      "task_id": "dotProduct_optimize"
+    },
+    {
+      "repetition": 3,
+      "slot": 9,
+      "task_id": "residual_stream_deadlock"
+    },
+    {
+      "repetition": 4,
+      "slot": 10,
+      "task_id": "projection_bugfix"
+    },
+    {
+      "repetition": 4,
+      "slot": 11,
+      "task_id": "dotProduct_optimize"
+    },
+    {
+      "repetition": 4,
+      "slot": 12,
+      "task_id": "residual_stream_deadlock"
+    },
+    {
+      "repetition": 5,
+      "slot": 13,
+      "task_id": "projection_bugfix"
+    },
+    {
+      "repetition": 5,
+      "slot": 14,
+      "task_id": "dotProduct_optimize"
+    },
+    {
+      "repetition": 5,
+      "slot": 15,
+      "task_id": "residual_stream_deadlock"
+    },
+    {
+      "repetition": 6,
+      "slot": 16,
+      "task_id": "projection_bugfix"
+    },
+    {
+      "repetition": 6,
+      "slot": 17,
+      "task_id": "dotProduct_optimize"
+    },
+    {
+      "repetition": 6,
+      "slot": 18,
+      "task_id": "residual_stream_deadlock"
+    },
+    {
+      "repetition": 7,
+      "slot": 19,
+      "task_id": "projection_bugfix"
+    },
+    {
+      "repetition": 7,
+      "slot": 20,
+      "task_id": "dotProduct_optimize"
+    },
+    {
+      "repetition": 7,
+      "slot": 21,
+      "task_id": "residual_stream_deadlock"
+    },
+    {
+      "repetition": 8,
+      "slot": 22,
+      "task_id": "projection_bugfix"
+    },
+    {
+      "repetition": 8,
+      "slot": 23,
+      "task_id": "dotProduct_optimize"
+    },
+    {
+      "repetition": 8,
+      "slot": 24,
+      "task_id": "residual_stream_deadlock"
+    },
+    {
+      "repetition": 9,
+      "slot": 25,
+      "task_id": "projection_bugfix"
+    },
+    {
+      "repetition": 9,
+      "slot": 26,
+      "task_id": "dotProduct_optimize"
+    },
+    {
+      "repetition": 9,
+      "slot": 27,
+      "task_id": "residual_stream_deadlock"
+    },
+    {
+      "repetition": 10,
+      "slot": 28,
+      "task_id": "projection_bugfix"
+    },
+    {
+      "repetition": 10,
+      "slot": 29,
+      "task_id": "dotProduct_optimize"
+    },
+    {
+      "repetition": 10,
+      "slot": 30,
+      "task_id": "residual_stream_deadlock"
+    }
+  ],
+  "schema_version": "track-a.public-3x10-v1-benchmark.v1",
+  "target": "U55C",
+  "target_clock_ns": 5.0,
+  "task_file_sha256": {
+    "dotProduct_optimize": {
+      "dotProduct.cpp": "1bca40f5d5cffe6db31aac1e84ed18ee756059ce67de8ef6d33dec578e1ca05c",
+      "dotProduct.h": "ddb3f29dccd09d73c8f2a8df41707839597c168b832dd8cb7051793a38e77205",
+      "dotProduct_tb.cpp": "afea831358b1760028958e52f50e1ee294f07cecac5f4d894e0ead1e2ad57f93",
+      "task.toml": "ed87fbfa2e995a479e500db78b2c387874f77f04fcc5541ff420f4fe2612f102"
+    },
+    "projection_bugfix": {
+      "projection.cpp": "eed237714637529c534e6e0ed2a2086611ce73999bcb64b20a949f9bb5e88eaf",
+      "projection.h": "6749ac7755a998295c94c4c2782e4b45a9f0a0ace449482699adab31b434412e",
+      "projection_tb.cpp": "897587836c90af8c689f153ea5de200790dd7c8f73edd1c314df14a02de41967",
+      "task.toml": "06800aa26fcd56ee1b7e35c740d31a3c56a853cefa9d3a0a6b1158371adeb7b2"
+    },
+    "residual_stream_deadlock": {
+      "residual.cpp": "a0f40b47dea175d761e22f26edb42ac72f2ba5e25e21fdc460887fe2c639457b",
+      "residual.h": "0a6cdb9de0b0172dd05abcc6614cb4f470ee3e119579b65b66c48477c36654ee",
+      "residual_tb.cpp": "bb9f48528823f6e428f2d3ddaa65730df80af1aa2b47da890db9ea4e4e047a7a",
+      "task.toml": "f215020b154574924f4930a50b28ef6f80c337c8809a7017428feed863e8f453"
+    }
+  },
+  "timeouts": {
+    "cosim": 180.0,
+    "csim": 180.0,
+    "planner": 180.0,
+    "synth": 900.0
+  },
+  "token_budget": 32768,
+  "vitis_root": "/home/ying/CompetitionTrackA/vitis/AMD/2025.2/Vitis",
+  "vitis_version": "2025.2"
+}

@@ -820,6 +820,10 @@ class BudgetLedger:
         output_tokens_used = 0
         cached_input_tokens_used = 0
         token_usage_complete = True
+        cached_input_usage_complete = True
+        usage_known_count = 0
+        usage_unknown_count = 0
+        recorded_token_lower_bound = 0
         for action_events in actions.values():
             started = next(
                 (event for event in action_events if event.get("state") == "STARTED"),
@@ -854,14 +858,46 @@ class BudgetLedger:
                     )
                 credits_used += expected_cost
                 tool_used[kind] += 1
-                tokens_used += int(terminal.get("tokens_used", 0))
-                input_tokens_used += int(terminal.get("input_tokens", 0))
-                output_tokens_used += int(terminal.get("output_tokens", 0))
-                cached_input_tokens_used += int(terminal.get("cached_input_tokens", 0))
-                if kind == "llm" and (
-                    "input_tokens" not in terminal or "output_tokens" not in terminal
+                terminal_tokens = terminal.get("tokens_used")
+                terminal_input = terminal.get("input_tokens")
+                terminal_output = terminal.get("output_tokens")
+                terminal_cached = terminal.get("cached_input_tokens")
+                if isinstance(terminal_tokens, int) and not isinstance(
+                    terminal_tokens, bool
                 ):
-                    token_usage_complete = False
+                    tokens_used += terminal_tokens
+                if isinstance(terminal_input, int) and not isinstance(
+                    terminal_input, bool
+                ):
+                    input_tokens_used += terminal_input
+                if isinstance(terminal_output, int) and not isinstance(
+                    terminal_output, bool
+                ):
+                    output_tokens_used += terminal_output
+                if isinstance(terminal_cached, int) and not isinstance(
+                    terminal_cached, bool
+                ):
+                    cached_input_tokens_used += terminal_cached
+                if kind == "llm":
+                    usage_known = bool(
+                        isinstance(terminal_tokens, int)
+                        and not isinstance(terminal_tokens, bool)
+                        and isinstance(terminal_input, int)
+                        and not isinstance(terminal_input, bool)
+                        and isinstance(terminal_output, int)
+                        and not isinstance(terminal_output, bool)
+                        and terminal_input + terminal_output == terminal_tokens
+                    )
+                    if usage_known:
+                        usage_known_count += 1
+                        recorded_token_lower_bound += terminal_tokens
+                    else:
+                        usage_unknown_count += 1
+                        token_usage_complete = False
+                    if not isinstance(terminal_cached, int) or isinstance(
+                        terminal_cached, bool
+                    ):
+                        cached_input_usage_complete = False
         start_epoch = float(initialized.get("epoch_seconds", time.time()))
         runtime_used = max(0.0, time.time() - start_epoch)
         return {
@@ -885,6 +921,10 @@ class BudgetLedger:
             "output_tokens_used": output_tokens_used,
             "cached_input_tokens_used": cached_input_tokens_used,
             "token_usage_complete": token_usage_complete,
+            "cached_input_usage_complete": cached_input_usage_complete,
+            "usage_known_count": usage_known_count,
+            "usage_unknown_count": usage_unknown_count,
+            "recorded_token_lower_bound": recorded_token_lower_bound,
             "tokens_remaining": self.config.token_limit - tokens_used - pending_tokens,
             "runtime_limit_seconds": self.config.runtime_limit_seconds,
             "runtime_used_seconds": runtime_used,
@@ -923,6 +963,13 @@ class BudgetLedger:
                 raise BudgetLedgerError(f"action already exists in ledger: {action_id}")
             cost = self.cost(kind)
             snapshot = self._snapshot_from(events)
+            if (
+                token_reservation > 0
+                and int(snapshot.get("usage_unknown_count", 0)) > 0
+            ):
+                raise BudgetExceeded(
+                    "exact token headroom is unknown after an incomplete LLM usage record"
+                )
             remaining = snapshot["credits_remaining"]
             if remaining is not None and int(remaining) < cost:
                 raise BudgetExceeded(
@@ -965,14 +1012,21 @@ class BudgetLedger:
         tokens_used: int = 0,
         input_tokens: int = 0,
         output_tokens: int = 0,
-        cached_input_tokens: int = 0,
+        cached_input_tokens: int | None = 0,
     ) -> None:
         token_count = int(tokens_used)
         input_count = int(input_tokens)
         output_count = int(output_tokens)
-        cached_input_count = int(cached_input_tokens)
+        cached_input_count = (
+            None if cached_input_tokens is None else int(cached_input_tokens)
+        )
         elapsed = float(elapsed_s)
-        if token_count < 0 or input_count < 0 or output_count < 0 or cached_input_count < 0:
+        if (
+            token_count < 0
+            or input_count < 0
+            or output_count < 0
+            or (cached_input_count is not None and cached_input_count < 0)
+        ):
             raise BudgetExceeded("token counts cannot be negative")
         if input_count + output_count not in {0, token_count}:
             raise BudgetLedgerError("input_tokens + output_tokens must equal tokens_used")
@@ -1022,6 +1076,63 @@ class BudgetLedger:
                     "actual provider token usage exceeded the durable reservation"
                 )
 
+    def complete_unknown_usage(
+        self,
+        *,
+        action_id: str,
+        result_ref: str,
+        result_sha256: str,
+        elapsed_s: float,
+        reason: str = "provider response did not contain complete token usage",
+    ) -> None:
+        """Complete a durable LLM response whose exact usage is unavailable.
+
+        Nullable fields distinguish unknown usage from a genuine zero-token
+        response.  The call and its configured credit cost are still counted,
+        and the durable receipt remains bound into the append-only ledger.
+        """
+
+        elapsed = float(elapsed_s)
+        if not math.isfinite(elapsed) or elapsed < 0:
+            raise BudgetLedgerError("elapsed_s must be finite and non-negative")
+        if (
+            len(result_sha256) != 64
+            or any(character not in "0123456789abcdef" for character in result_sha256)
+        ):
+            raise BudgetLedgerError("result_sha256 must be a lowercase SHA-256 digest")
+        if not isinstance(reason, str) or not reason.strip():
+            raise BudgetLedgerError("unknown usage reason must not be empty")
+        with self._exclusive():
+            self._repair_torn_tail_unlocked()
+            events = self._read_events_unlocked()
+            action_events = self._actions_from(events).get(action_id, [])
+            if not action_events or action_events[-1].get("state") != "STARTED":
+                raise BudgetLedgerError(f"action is not pending: {action_id}")
+            started = action_events[-1]
+            if started.get("kind") != "llm":
+                raise BudgetLedgerError(
+                    "nullable token usage completion is restricted to LLM actions"
+                )
+            self._append_unlocked(
+                {
+                    "state": "COMPLETED",
+                    "timestamp": _utc_now(),
+                    "action_id": action_id,
+                    "kind": started["kind"],
+                    "actual_cost": int(started["estimated_cost"]),
+                    "tokens_used": None,
+                    "input_tokens": None,
+                    "output_tokens": None,
+                    "cached_input_tokens": None,
+                    "token_usage_complete": False,
+                    "token_accounting": "UNKNOWN",
+                    "usage_unknown_reason": reason.strip(),
+                    "elapsed_s": elapsed,
+                    "result_ref": result_ref,
+                    "result_sha256": result_sha256,
+                }
+            )
+
     def mark_ambiguous(self, action_id: str) -> None:
         with self._exclusive():
             self._repair_torn_tail_unlocked()
@@ -1030,6 +1141,7 @@ class BudgetLedger:
             if not action_events or action_events[-1].get("state") != "STARTED":
                 raise BudgetLedgerError(f"action is not pending: {action_id}")
             started = action_events[-1]
+            unknown_llm_usage = started.get("kind") == "llm"
             self._append_unlocked(
                 {
                     "state": "AMBIGUOUS",
@@ -1037,10 +1149,14 @@ class BudgetLedger:
                     "action_id": action_id,
                     "kind": started["kind"],
                     "actual_cost": int(started["estimated_cost"]),
-                    "tokens_used": 0,
-                    "input_tokens": 0,
-                    "output_tokens": 0,
-                    "cached_input_tokens": 0,
+                    "tokens_used": None if unknown_llm_usage else 0,
+                    "input_tokens": None if unknown_llm_usage else 0,
+                    "output_tokens": None if unknown_llm_usage else 0,
+                    "cached_input_tokens": None if unknown_llm_usage else 0,
+                    "token_usage_complete": not unknown_llm_usage,
+                    "token_accounting": (
+                        "UNKNOWN" if unknown_llm_usage else "NOT_APPLICABLE"
+                    ),
                     "reason": "STARTED action had no durable result",
                 }
             )
@@ -1083,15 +1199,17 @@ class BudgetLedger:
                 }
             )
 
-    def write_snapshot(self, path: str | Path) -> None:
+    def write_snapshot(self, path: str | Path) -> dict[str, object]:
         destination = Path(path)
         destination.parent.mkdir(parents=True, exist_ok=True)
         temporary = destination.with_suffix(destination.suffix + ".tmp")
+        snapshot = self.snapshot()
         try:
             with temporary.open("w", encoding="utf-8", newline="\n") as stream:
-                stream.write(json.dumps(self.snapshot(), indent=2, sort_keys=True) + "\n")
+                stream.write(json.dumps(snapshot, indent=2, sort_keys=True) + "\n")
                 stream.flush()
                 os.fsync(stream.fileno())
             os.replace(temporary, destination)
         except OSError as exc:
             raise BudgetLedgerError(f"cannot write budget snapshot: {exc}") from exc
+        return snapshot

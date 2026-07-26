@@ -934,15 +934,28 @@ def _interface_pragmas(source: str) -> tuple[tuple[str, ...], _ParseIssue | None
         )
     pragmas: list[str] = []
     pattern = re.compile(r"^\s*#\s*pragma\s+hls\s+interface\b(.*)$", re.IGNORECASE)
+    pragma_operator_pattern = re.compile(
+        r'\b_Pragma\s*\(\s*"HLS\s+INTERFACE\b(?P<arguments>[^"]*)"\s*\)',
+        re.IGNORECASE,
+    )
     for line in logical:
         match = pattern.match(line)
-        if match is None:
-            continue
-        arguments = re.sub(r"\s*=\s*", "=", match.group(1).strip())
-        arguments = re.sub(r"\s+", " ", arguments)
-        pragmas.append(
-            "#pragma HLS INTERFACE" + (f" {arguments}" if arguments else "")
-        )
+        if match is not None:
+            arguments = re.sub(r"\s*=\s*", "=", match.group(1).strip())
+            arguments = re.sub(r"\s+", " ", arguments)
+            pragmas.append(
+                "#pragma HLS INTERFACE" + (f" {arguments}" if arguments else "")
+            )
+        for operator_match in pragma_operator_pattern.finditer(line):
+            arguments = re.sub(
+                r"\s*=\s*",
+                "=",
+                operator_match.group("arguments").strip(),
+            )
+            arguments = re.sub(r"\s+", " ", arguments)
+            pragmas.append(
+                "#pragma HLS INTERFACE" + (f" {arguments}" if arguments else "")
+            )
     return tuple(sorted(pragmas)), None
 
 

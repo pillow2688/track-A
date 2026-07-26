@@ -404,6 +404,10 @@ def _canonical_json(value: object) -> str:
 
 
 def _patch_path(raw: str, *, prefix: str, expected: str) -> str:
+    if not raw.startswith(prefix):
+        raise PatchValidationError(
+            f"patch header must start with {prefix.strip()!r}"
+        )
     value = raw[len(prefix) :].split("\t", 1)[0].split(" ", 1)[0]
     if value.startswith("a/") or value.startswith("b/"):
         value = value[2:]
@@ -625,15 +629,26 @@ def apply_unified_diff(
     lines = patch.splitlines()
     if not lines:
         raise PatchValidationError("patch is empty")
-    header_index = next((i for i, line in enumerate(lines) if line.startswith("--- ")), None)
-    if header_index is None or header_index + 1 >= len(lines):
-        raise PatchValidationError("unified diff must contain --- and +++ headers")
+    old_headers = [
+        index for index, line in enumerate(lines) if line.startswith("--- ")
+    ]
+    new_headers = [
+        index for index, line in enumerate(lines) if line.startswith("+++ ")
+    ]
+    if len(old_headers) != 1 or len(new_headers) != 1:
+        raise PatchValidationError(
+            "unified diff must contain exactly one ---/+++ header pair"
+        )
+    header_index = old_headers[0]
+    if new_headers[0] != header_index + 1:
+        raise PatchValidationError("unified diff headers must be adjacent and ordered")
     if header_index > 0 and any(line.strip() for line in lines[:header_index]):
         raise PatchValidationError("unexpected text before unified diff headers")
     _patch_path(lines[header_index], prefix="--- ", expected=kernel_name)
     _patch_path(lines[header_index + 1], prefix="+++ ", expected=kernel_name)
     cursor = header_index + 2
     hunks: list[tuple[int, int, int, int, list[tuple[str, str]]]] = []
+    cumulative_delta = 0
     while cursor < len(lines):
         match = _HUNK.match(lines[cursor])
         if match is None:
@@ -642,8 +657,14 @@ def apply_unified_diff(
         old_count = int(match.group(2) or "1")
         new_start = int(match.group(3))
         new_count = int(match.group(4) or "1")
-        if old_start <= 0 or new_start <= 0:
-            raise PatchValidationError("new-file and zero-line hunks are not allowed")
+        if old_start < 0 or new_start < 0:
+            raise PatchValidationError("negative unified-diff locations are not allowed")
+        if (old_count > 0 and old_start == 0) or (
+            new_count > 0 and new_start == 0
+        ):
+            raise PatchValidationError(
+                "non-empty unified-diff ranges must start at line one or later"
+            )
         cursor += 1
         hunk_lines: list[tuple[str, str]] = []
         old_seen = new_seen = 0
@@ -662,7 +683,18 @@ def apply_unified_diff(
             cursor += 1
         if old_seen != old_count or new_seen != new_count:
             raise PatchValidationError("hunk line counts do not match its header")
+        if old_count == 0:
+            expected_new_start = old_start + cumulative_delta + 1
+        elif new_count == 0:
+            expected_new_start = old_start + cumulative_delta - 1
+        else:
+            expected_new_start = old_start + cumulative_delta
+        if new_start != expected_new_start:
+            raise PatchValidationError(
+                "hunk new-source location does not match prior line delta"
+            )
         hunks.append((old_start, old_count, new_start, new_count, hunk_lines))
+        cumulative_delta += new_count - old_count
     if not hunks:
         raise PatchValidationError("patch contains no hunks")
     if len(hunks) > limits.max_hunks:
@@ -683,7 +715,7 @@ def apply_unified_diff(
     output: list[str] = []
     source_cursor = 0
     for old_start, _old_count, _new_start, _new_count, hunk_lines in hunks:
-        start = old_start - 1
+        start = old_start if _old_count == 0 else old_start - 1
         if start < source_cursor or start > len(source_lines):
             raise PatchValidationError("hunk source range is out of bounds")
         output.extend(source_lines[source_cursor:start])

@@ -1,0 +1,47 @@
+$ /usr/bin/python -m unittest discover -s min -p test_*.py -v
+
+[stdout]
+{"mode": "REPAIR", "run_dir": "/home/ying/.local/state/codex-desktop/tmp/tmp3bzmlc08/run", "selected_candidate_id": "candidate_001", "selected_public_score_proxy": 0.7, "status": "DONE", "task_id": "u55c_vector_add_repair"}
+{"mode": "REPAIR", "run_dir": "/home/ying/.local/state/codex-desktop/tmp/tmpur73qa4l/run", "selected_candidate_id": "candidate_001", "selected_public_score_proxy": 0.7, "status": "DONE", "task_id": "u55c_vector_add_repair"}
+{"mode": "REPAIR", "run_dir": "/home/ying/.local/state/codex-desktop/tmp/tmpyaoavo0n/run", "selected_candidate_id": "candidate_001", "selected_public_score_proxy": 0.7, "status": "DONE", "task_id": "u55c_vector_add_repair"}
+
+[stderr]
+test_optimize_baseline_fallback_is_not_objective_success (test_benchmark_public_tasks.BenchmarkPublicTasksTests.test_optimize_baseline_fallback_is_not_objective_success) ... ok
+test_strict_optimization_and_verified_repair_are_successes (test_benchmark_public_tasks.BenchmarkPublicTasksTests.test_strict_optimization_and_verified_repair_are_successes) ... ok
+test_summary_averages_include_failures (test_benchmark_public_tasks.BenchmarkPublicTasksTests.test_summary_averages_include_failures) ... ok
+test_preflight_and_formal_schedules_are_interleaved_without_duplicates (test_benchmark_public_tasks_v1.BenchmarkPublicTasksV1Tests.test_preflight_and_formal_schedules_are_interleaved_without_duplicates) ... ok
+test_unknown_tokens_are_excluded_not_converted_to_zero (test_benchmark_public_tasks_v1.BenchmarkPublicTasksV1Tests.test_unknown_tokens_are_excluded_not_converted_to_zero) ... ok
+test_all_four_routes_are_derived_from_current_validation (test_minimal_flow.MinimalFlowTests.test_all_four_routes_are_derived_from_current_validation) ... ok
+test_demo_repair_selects_candidate_without_horizontal_artifacts (test_minimal_flow.MinimalFlowTests.test_demo_repair_selects_candidate_without_horizontal_artifacts) ... ok
+test_minimal_synth_parser_has_no_loop_evidence_dependency (test_minimal_flow.MinimalFlowTests.test_minimal_synth_parser_has_no_loop_evidence_dependency) ... ok
+test_official_proxy_boundaries (test_minimal_flow.MinimalFlowTests.test_official_proxy_boundaries) ... ok
+test_optimize_selects_only_a_safe_strict_latency_improvement (test_minimal_flow.MinimalFlowTests.test_optimize_selects_only_a_safe_strict_latency_improvement) ... ok
+test_action_audit_rejects_orphan_terminal_and_token_overrun (test_v1_budget_consistency.V1BudgetConsistencyTests.test_action_audit_rejects_orphan_terminal_and_token_overrun) ... ok
+test_ambiguous_llm_usage_is_null_and_blocks_later_token_reservation (test_v1_budget_consistency.V1BudgetConsistencyTests.test_ambiguous_llm_usage_is_null_and_blocks_later_token_reservation) ... ok
+test_read_only_ledger_audit_refuses_torn_tail_without_repair (test_v1_budget_consistency.V1BudgetConsistencyTests.test_read_only_ledger_audit_refuses_torn_tail_without_repair) ... ok
+test_unknown_usage_final_budget_matches_state_and_ledger_is_nullable (test_v1_budget_consistency.V1BudgetConsistencyTests.test_unknown_usage_final_budget_matches_state_and_ledger_is_nullable) ... ok
+test_bare_empty_hunk_line_and_bad_counts_are_normalized (test_v1_patch_pipeline.V1PatchPipelineTests.test_bare_empty_hunk_line_and_bad_counts_are_normalized) ... ok
+test_extra_file_header_pair_and_unanchored_addition_are_rejected (test_v1_patch_pipeline.V1PatchPipelineTests.test_extra_file_header_pair_and_unanchored_addition_are_rejected) ... ok
+test_literal_and_operator_interface_directives_are_hard_rejected (test_v1_patch_pipeline.V1PatchPipelineTests.test_literal_and_operator_interface_directives_are_hard_rejected) ... ok
+test_malformed_second_header_is_rejected_by_strict_validator (test_v1_patch_pipeline.V1PatchPipelineTests.test_malformed_second_header_is_rejected_by_strict_validator) ... ok
+test_no_public_task_identifier_is_hardcoded_in_v1_implementation (test_v1_patch_pipeline.V1PatchPipelineTests.test_no_public_task_identifier_is_hardcoded_in_v1_implementation) ... ok
+test_recovered_candidate_still_runs_csim (test_v1_patch_pipeline.V1PatchPipelineTests.test_recovered_candidate_still_runs_csim) ... ok
+test_recovery_cannot_bypass_top_interface_guard (test_v1_patch_pipeline.V1PatchPipelineTests.test_recovery_cannot_bypass_top_interface_guard) ... ok
+test_unique_delete_block_rebuilds_only_after_context_zero_match (test_v1_patch_pipeline.V1PatchPipelineTests.test_unique_delete_block_rebuilds_only_after_context_zero_match) ... ok
+test_valid_raw_patch_is_not_rewritten (test_v1_patch_pipeline.V1PatchPipelineTests.test_valid_raw_patch_is_not_rewritten) ... ok
+test_wrong_header_location_uses_unique_complete_old_side (test_v1_patch_pipeline.V1PatchPipelineTests.test_wrong_header_location_uses_unique_complete_old_side) ... ok
+test_zero_ambiguous_and_fuzzy_matches_are_distinct_and_rejected (test_v1_patch_pipeline.V1PatchPipelineTests.test_zero_ambiguous_and_fuzzy_matches_are_distinct_and_rejected) ... ok
+test_echoed_api_key_is_redacted_from_all_response_artifacts (test_v1_planner_io.V1PlannerIoTests.test_echoed_api_key_is_redacted_from_all_response_artifacts) ... ok
+test_error_categories_are_stable (test_v1_planner_io.V1PlannerIoTests.test_error_categories_are_stable) ... ok
+test_http_transport_and_invalid_envelope_are_rejected_before_payload (test_v1_planner_io.V1PlannerIoTests.test_http_transport_and_invalid_envelope_are_rejected_before_payload) ... ok
+test_missing_cached_usage_is_null_while_total_usage_remains_known (test_v1_planner_io.V1PlannerIoTests.test_missing_cached_usage_is_null_while_total_usage_remains_known) ... ok
+test_non_text_array_item_is_invalid_schema (test_v1_planner_io.V1PlannerIoTests.test_non_text_array_item_is_invalid_schema) ... ok
+test_response_and_usage_are_durable_and_accounted_before_parse (test_v1_planner_io.V1PlannerIoTests.test_response_and_usage_are_durable_and_accounted_before_parse) ... ok
+test_string_text_array_and_single_markdown_fence (test_v1_planner_io.V1PlannerIoTests.test_string_text_array_and_single_markdown_fence) ... ok
+test_trailing_comma_is_invalid_not_truncated (test_v1_planner_io.V1PlannerIoTests.test_trailing_comma_is_invalid_not_truncated) ... ok
+test_unknown_usage_is_null_not_zero_and_still_counts_call (test_v1_planner_io.V1PlannerIoTests.test_unknown_usage_is_null_not_zero_and_still_counts_call) ... ok
+
+----------------------------------------------------------------------
+Ran 34 tests in 0.648s
+
+OK

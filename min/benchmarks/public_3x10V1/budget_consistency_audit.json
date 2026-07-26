@@ -1,0 +1,49 @@
+{
+  "all_actions_have_one_started_and_one_terminal": true,
+  "all_llm_receipts_bound_to_terminal_ledger_events": true,
+  "credits_total": 650,
+  "ledger_vs_budget_state_passes": 30,
+  "ledger_vs_final_result_passes": 30,
+  "pending_credit_total": 0,
+  "pending_token_total": 0,
+  "per_task": {
+    "dotProduct_optimize": {
+      "credits": 90,
+      "ledger_vs_budget_state_passes": 10,
+      "ledger_vs_final_result_passes": 10,
+      "pending_credits": 0,
+      "pending_tokens": 0,
+      "receipt_usage_matches_ledger": 10,
+      "slots": 10,
+      "state_equals_result_exactly": 10
+    },
+    "projection_bugfix": {
+      "credits": 60,
+      "ledger_vs_budget_state_passes": 10,
+      "ledger_vs_final_result_passes": 10,
+      "pending_credits": 0,
+      "pending_tokens": 0,
+      "receipt_usage_matches_ledger": 10,
+      "slots": 10,
+      "state_equals_result_exactly": 10
+    },
+    "residual_stream_deadlock": {
+      "credits": 500,
+      "ledger_vs_budget_state_passes": 10,
+      "ledger_vs_final_result_passes": 10,
+      "pending_credits": 0,
+      "pending_tokens": 0,
+      "receipt_usage_matches_ledger": 10,
+      "slots": 10,
+      "state_equals_result_exactly": 10
+    }
+  },
+  "schema_version": "track-a.public-3x10-v1-budget-audit.v1",
+  "state_equals_result_exactly": 30,
+  "tool_totals": {
+    "cosim": 20,
+    "csim": 58,
+    "llm": 30,
+    "synth": 48
+  }
+}

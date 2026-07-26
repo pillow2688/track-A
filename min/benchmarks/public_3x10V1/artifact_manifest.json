@@ -1,0 +1,186 @@
+{
+  "acceptance_root": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1",
+  "artifacts": {
+    "ACCEPTED": {
+      "bytes": 63,
+      "path": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/ACCEPTED",
+      "sha256": "f07acbc476a450ed2b35d2c077344b931c2cefa5efe2b8953a30605275bdfd58"
+    },
+    "benchmark_report.md": {
+      "bytes": 4758,
+      "path": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/benchmark_report.md",
+      "sha256": "ba90a87fc4f5f200c7f6fec9e68602f5009725a99079c1ce0ff27559a5ed1986"
+    },
+    "benchmark_summary.json": {
+      "bytes": 100030,
+      "path": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/benchmark_summary.json",
+      "sha256": "101dea5c4f56f82525bc7a3cf6f07beae88ae5cc8f0275b113db6376928b8352"
+    },
+    "budget_consistency_audit.json": {
+      "bytes": 1387,
+      "path": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/budget_consistency_audit.json",
+      "sha256": "0111e066f58561494716ce3c5e2a20a04773f894bc3bb2b17d2225401be1c855"
+    },
+    "final_checks.json": {
+      "bytes": 2483,
+      "path": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/final_checks.json",
+      "sha256": "9fe08011ef7dc8e081043f9114c5ccf479f8ef21f8687f57c6c60db531980059"
+    },
+    "formal/formal_gate.json": {
+      "bytes": 3039,
+      "path": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/formal/formal_gate.json",
+      "sha256": "f111661764a2a331f391e22eac31c9e6602ccfb8310ab79a34bc6476df558e7f"
+    },
+    "formal/formal_manifest.json": {
+      "bytes": 4813,
+      "path": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/formal/formal_manifest.json",
+      "sha256": "73f4cfc5126a47aea7f8a797aced5e0708dbcd048a61c89cb9620af0bec58f65"
+    },
+    "formal/formal_records.json": {
+      "bytes": 90534,
+      "path": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/formal/formal_records.json",
+      "sha256": "6b25f6885100367d50001cfbf15a18e19fd1269f7245e45680ad0e173b7df367"
+    },
+    "formal/formal_summary.json": {
+      "bytes": 99724,
+      "path": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/formal/formal_summary.json",
+      "sha256": "278465aaccb3d942b7c2f10df99578f9e255d702222fce9a60b6b336a7cdf317"
+    },
+    "formal/task_diff_check.json": {
+      "bytes": 2447,
+      "path": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/formal/task_diff_check.json",
+      "sha256": "bd7d4f224218728f19cf57e8ec577c6660b0d4209f5f02330c29970dc5dda9b7"
+    },
+    "implementation_fingerprints.json": {
+      "bytes": 2343,
+      "path": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/implementation_fingerprints.json",
+      "sha256": "f84eb392c1af42459cb04ac7276e31bf5a15d242197a47f9c254e17e1b6c96d4"
+    },
+    "llm_reliability.json": {
+      "bytes": 1526,
+      "path": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/llm_reliability.json",
+      "sha256": "7e8943b2718f54412d256f2531c15e57eaaf05658e343cc242a9866f417cd9c7"
+    },
+    "patch_reliability.json": {
+      "bytes": 1608,
+      "path": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/patch_reliability.json",
+      "sha256": "0c09969d5c2afe0295ce97065f32bf3f96eda27226200bc27339ada649d3605b"
+    },
+    "preflight/preflight_gate.json": {
+      "bytes": 3064,
+      "path": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/preflight/preflight_gate.json",
+      "sha256": "2c1e47dc1358965255e37a99d1de63796ba7c35926e2272570c3db2e57b002ad"
+    },
+    "preflight/preflight_manifest.json": {
+      "bytes": 2647,
+      "path": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/preflight/preflight_manifest.json",
+      "sha256": "a8215c422d47c73bd7cc29aaeac9006b2ae7262a2022b1d094af9b16ba614445"
+    },
+    "preflight/preflight_records.json": {
+      "bytes": 21121,
+      "path": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/preflight/preflight_records.json",
+      "sha256": "43c9b3fa14b76ab0e9e83d582d42916a5ed1a737110f7b749847b8af916f56ed"
+    },
+    "preflight/preflight_summary.json": {
+      "bytes": 26032,
+      "path": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/preflight/preflight_summary.json",
+      "sha256": "be03f12c556c98df80b0bb1fd2ab4baf4d4d9591cbb5f8d684bb84b918db6490"
+    },
+    "preflight/task_diff_check.json": {
+      "bytes": 2447,
+      "path": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/preflight/task_diff_check.json",
+      "sha256": "bd7d4f224218728f19cf57e8ec577c6660b0d4209f5f02330c29970dc5dda9b7"
+    },
+    "preflight_report.md": {
+      "bytes": 714,
+      "path": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/preflight_report.md",
+      "sha256": "28d9503b5efcd196d50e13c1445bd5967b585fda71ae41ffd11c13c7c724fbc5"
+    },
+    "run_artifact_index.json": {
+      "bytes": 535364,
+      "path": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/run_artifact_index.json",
+      "sha256": "83fd9e48ce71bb698325bd29e0ca1109288901979e49e7c8f01c6546a43fc3fa"
+    },
+    "secret_scan_final.json": {
+      "bytes": 276,
+      "path": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/secret_scan_final.json",
+      "sha256": "aa43f4fdda6f044a3d951266cd3da40e4fa1af58e6789db8815f9fcb61ae8682"
+    },
+    "secret_scan_reports.json": {
+      "bytes": 207,
+      "path": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/secret_scan_reports.json",
+      "sha256": "1cfeee871df4352dac36a85ac69ec9dd39c8020b7d5774e315c1c681b4853979"
+    },
+    "v1_comparison.json": {
+      "bytes": 2608,
+      "path": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/v1_comparison.json",
+      "sha256": "32b9f18ef1b1ca886234042f7e2d2b51395192da4c24829bb548c5078ef3d9af"
+    },
+    "v1_final_acceptance.json": {
+      "bytes": 3147,
+      "path": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/v1_final_acceptance.json",
+      "sha256": "e6c23d5a910a91cf580677448736834945bd0293d789ea9273c619d41c574233"
+    },
+    "v1_protocol_final.json": {
+      "bytes": 2750,
+      "path": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/v1_protocol_final.json",
+      "sha256": "3d522d1fc04c021d3ed74f1f7e0263d9ffc58b009c6323f9474d0aef5fe772fb"
+    },
+    "v1_protocol_manifest.json": {
+      "bytes": 3846,
+      "path": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/v1_protocol_manifest.json",
+      "sha256": "f3ede408c31aa6bd8ea58baa81c458f4d516559b5443bb1f6fb14940b89828fc"
+    }
+  },
+  "implementation": {
+    "llm4hls_harness/llm4hls_agent/budget.py": {
+      "bytes": 51429,
+      "path": "/home/ying/CompetitionTrackA/track-A/llm4hls_harness/llm4hls_agent/budget.py",
+      "sha256": "ed4375d2f64730787bd8e3593f531ce414013c88820d230e1ba41216f063f324"
+    },
+    "llm4hls_harness/llm4hls_agent/repair.py": {
+      "bytes": 53329,
+      "path": "/home/ying/CompetitionTrackA/track-A/llm4hls_harness/llm4hls_agent/repair.py",
+      "sha256": "054a6432e1d51482895a513c0a9e48af913467507ffa32bf8565f293ba011afd"
+    },
+    "llm4hls_harness/llm4hls_agent/top_interface_guard.py": {
+      "bytes": 50935,
+      "path": "/home/ying/CompetitionTrackA/track-A/llm4hls_harness/llm4hls_agent/top_interface_guard.py",
+      "sha256": "0dc423ee4bfd860329a6c057bb7b3867b846c8ef3c46409e6c9baac6c049ced1"
+    },
+    "min/benchmark_public_tasks_v1.py": {
+      "bytes": 42325,
+      "path": "/home/ying/CompetitionTrackA/track-A/min/benchmark_public_tasks_v1.py",
+      "sha256": "787f829aaf871ca4ee422b096b8aff3c0a3a4fe40106f835aa84c003dea19c19"
+    },
+    "min/finalize_public_3x10_v1.py": {
+      "bytes": 45464,
+      "path": "/home/ying/CompetitionTrackA/track-A/min/finalize_public_3x10_v1.py",
+      "sha256": "c6373e62d5cbac1d48db25f926e6922e4cf80dba1f64a460fe0126ebda7e0e6e"
+    },
+    "min/minimal_flow.py": {
+      "bytes": 39887,
+      "path": "/home/ying/CompetitionTrackA/track-A/min/minimal_flow.py",
+      "sha256": "3ba37694ded57e9ffd9299ddd14550ccb598911c75c2112250c1346981e23a66"
+    },
+    "min/v1_acceptance_checks.py": {
+      "bytes": 7777,
+      "path": "/home/ying/CompetitionTrackA/track-A/min/v1_acceptance_checks.py",
+      "sha256": "3f331069dbfcb1210569b1973f6160a2249f1ec50a1957b5f8c81cb0f32f69ab"
+    },
+    "min/v1_patch_pipeline.py": {
+      "bytes": 27460,
+      "path": "/home/ying/CompetitionTrackA/track-A/min/v1_patch_pipeline.py",
+      "sha256": "7c893cd1d90d307c4dfa0271482104ae6c2e6b86038cddec6a6e1a470b549971"
+    },
+    "min/v1_planner_io.py": {
+      "bytes": 21494,
+      "path": "/home/ying/CompetitionTrackA/track-A/min/v1_planner_io.py",
+      "sha256": "6e71e3610c396fdcaaf334241a1934617d6232cb874c9c91a72c21f117de34a0"
+    }
+  },
+  "large_vitis_directories_copied": false,
+  "large_vitis_evidence_index": "run_artifact_index.json",
+  "schema_version": "track-a.public-3x10-v1-artifact-manifest.v1",
+  "status": "ACCEPTED"
+}

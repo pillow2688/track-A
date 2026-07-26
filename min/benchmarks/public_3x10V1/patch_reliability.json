@@ -1,0 +1,53 @@
+{
+  "ambiguous_match_count": 0,
+  "exact_context_recovery_successes": 13,
+  "final_patch_failed": 0,
+  "fuzzy_recovery_count": 0,
+  "independent_replay_summary": {
+    "applied_patch_replays": "28/28",
+    "candidate_kernel_patch_bindings": "56/56",
+    "final_selection_bindings": "30/30",
+    "raw_normalized_applied_sha_bindings": "84/84",
+    "receipt_and_result_sha_bindings": "112/112",
+    "receipts_applied": 28
+  },
+  "normalized_apply_successes": 7,
+  "patch_receipts": 28,
+  "per_task": {
+    "dotProduct_optimize": {
+      "EXACT_CONTEXT_RECOVERY": 2,
+      "NORMALIZED_STRICT": 3,
+      "RAW_STRICT": 3,
+      "UNIQUE_DELETE_BLOCK_RECOVERY": 0,
+      "ambiguous_match": 0,
+      "final_patch_failed": 0,
+      "no_patch": 2,
+      "zero_match": 0
+    },
+    "projection_bugfix": {
+      "EXACT_CONTEXT_RECOVERY": 4,
+      "NORMALIZED_STRICT": 2,
+      "RAW_STRICT": 2,
+      "UNIQUE_DELETE_BLOCK_RECOVERY": 2,
+      "ambiguous_match": 0,
+      "final_patch_failed": 0,
+      "no_patch": 0,
+      "zero_match": 2
+    },
+    "residual_stream_deadlock": {
+      "EXACT_CONTEXT_RECOVERY": 7,
+      "NORMALIZED_STRICT": 2,
+      "RAW_STRICT": 0,
+      "UNIQUE_DELETE_BLOCK_RECOVERY": 1,
+      "ambiguous_match": 0,
+      "final_patch_failed": 0,
+      "no_patch": 0,
+      "zero_match": 1
+    }
+  },
+  "recovery_policy": "raw strict -> normalized strict -> exact unique old-side context -> exact unique deletion line/block -> reject",
+  "schema_version": "track-a.public-3x10-v1-patch-audit.v1",
+  "strict_apply_successes": 5,
+  "unique_delete_block_recovery_successes": 3,
+  "zero_match_count": 3
+}

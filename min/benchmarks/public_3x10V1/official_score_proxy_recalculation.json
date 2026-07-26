@@ -1,0 +1,1731 @@
+{
+  "official_scoring": {
+    "acceleration_cap": 8.0,
+    "clock_or_resource_terms": false,
+    "path": "/home/ying/下载/scoring.py",
+    "score_formula": "difficulty * (0.5*correct + 0.2*synth_pass + 0.3*min(acceleration,8)/8)",
+    "sha256": "5f65aaa27bfc3cd488ae2294aa4cf463b6be4399306ffb847c44cdd3861d33fe"
+  },
+  "proxy_scope": {
+    "actual_official_score_is_zero_if_hidden_correctness_fails": true,
+    "hidden_correctness_was_not_run": true,
+    "uses_public_functional_and_cosim_evidence": true
+  },
+  "records": [
+    {
+      "acceleration": null,
+      "baseline_fallback": false,
+      "baseline_latency_cycles": null,
+      "candidate_latency_cycles": 0,
+      "capped_acceleration": null,
+      "components": {
+        "correctness": 1.0,
+        "ppa": 0.0,
+        "synthesizable": 0.4
+      },
+      "difficulty": 2,
+      "engineering_metrics": {
+        "available_resources": {
+          "BRAM_18K": 4032,
+          "DSP": 9024,
+          "FF": 2607360,
+          "LUT": 1303680,
+          "URAM": 960
+        },
+        "estimated_clock_period_ns": 2.538,
+        "excluded_from_official_score": true,
+        "meets_target_clock": true,
+        "resource_utilization_percent": {
+          "BRAM_18K": 0.0,
+          "DSP": 0.0,
+          "FF": 0.0,
+          "LUT": 0.05308051,
+          "URAM": 0.0
+        },
+        "resources": {
+          "BRAM_18K": 0,
+          "DSP": 0,
+          "FF": 0,
+          "LUT": 692,
+          "URAM": 0
+        },
+        "target_clock_ns": 5.0
+      },
+      "hidden_correctness_caveat": "If official hidden correctness fails, the actual official score is zero regardless of this public-evidence proxy.",
+      "is_opt": false,
+      "official_score_proxy": 1.4,
+      "ppa_norm": 0.0,
+      "public_functional_proxy_pass": true,
+      "repetition": 1,
+      "run_dir": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/formal/runs/projection_bugfix/run_01",
+      "selected_candidate_id": "candidate_001",
+      "selected_cosim_pass": null,
+      "selected_synth_pass": true,
+      "slot_index": 1,
+      "stored_proxy_matches_official_formula": true,
+      "stored_selected_public_score_proxy": 1.4,
+      "task_id": "projection_bugfix"
+    },
+    {
+      "acceleration": 1.0,
+      "baseline_fallback": true,
+      "baseline_latency_cycles": 1027,
+      "candidate_latency_cycles": 1027,
+      "capped_acceleration": 1.0,
+      "components": {
+        "correctness": 1.5,
+        "ppa": 0.1125,
+        "synthesizable": 0.6
+      },
+      "difficulty": 3,
+      "engineering_metrics": {
+        "available_resources": {
+          "BRAM_18K": 4032,
+          "DSP": 9024,
+          "FF": 2607360,
+          "LUT": 1303680,
+          "URAM": 960
+        },
+        "estimated_clock_period_ns": 3.17,
+        "excluded_from_official_score": true,
+        "meets_target_clock": true,
+        "resource_utilization_percent": {
+          "BRAM_18K": 0.0,
+          "DSP": 0.02216312,
+          "FF": 0.00356683,
+          "LUT": 0.01196613,
+          "URAM": 0.0
+        },
+        "resources": {
+          "BRAM_18K": 0,
+          "DSP": 2,
+          "FF": 93,
+          "LUT": 156,
+          "URAM": 0
+        },
+        "target_clock_ns": 5.0
+      },
+      "hidden_correctness_caveat": "If official hidden correctness fails, the actual official score is zero regardless of this public-evidence proxy.",
+      "is_opt": false,
+      "official_score_proxy": 2.2125,
+      "ppa_norm": 0.125,
+      "public_functional_proxy_pass": true,
+      "repetition": 1,
+      "run_dir": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/formal/runs/dotProduct_optimize/run_01",
+      "selected_candidate_id": "candidate_000",
+      "selected_cosim_pass": null,
+      "selected_synth_pass": true,
+      "slot_index": 2,
+      "stored_proxy_matches_official_formula": true,
+      "stored_selected_public_score_proxy": 2.2125,
+      "task_id": "dotProduct_optimize"
+    },
+    {
+      "acceleration": 1.9852941176470589,
+      "baseline_fallback": false,
+      "baseline_latency_cycles": 135,
+      "candidate_latency_cycles": 68,
+      "capped_acceleration": 1.9852941176470589,
+      "components": {
+        "correctness": 2.0,
+        "ppa": 0.2977941176,
+        "synthesizable": 0.8
+      },
+      "difficulty": 4,
+      "engineering_metrics": {
+        "available_resources": {
+          "BRAM_18K": 4032,
+          "DSP": 9024,
+          "FF": 2607360,
+          "LUT": 1303680,
+          "URAM": 960
+        },
+        "estimated_clock_period_ns": 2.796,
+        "excluded_from_official_score": true,
+        "meets_target_clock": true,
+        "resource_utilization_percent": {
+          "BRAM_18K": 0.0,
+          "DSP": 0.0,
+          "FF": 0.00885954,
+          "LUT": 0.03114261,
+          "URAM": 0.0
+        },
+        "resources": {
+          "BRAM_18K": 0,
+          "DSP": 0,
+          "FF": 231,
+          "LUT": 406,
+          "URAM": 0
+        },
+        "target_clock_ns": 5.0
+      },
+      "hidden_correctness_caveat": "If official hidden correctness fails, the actual official score is zero regardless of this public-evidence proxy.",
+      "is_opt": true,
+      "official_score_proxy": 3.0978,
+      "ppa_norm": 0.24816176470588236,
+      "public_functional_proxy_pass": true,
+      "repetition": 1,
+      "run_dir": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/formal/runs/residual_stream_deadlock/run_01",
+      "selected_candidate_id": "candidate_001",
+      "selected_cosim_pass": true,
+      "selected_synth_pass": true,
+      "slot_index": 3,
+      "stored_proxy_matches_official_formula": true,
+      "stored_selected_public_score_proxy": 3.0978,
+      "task_id": "residual_stream_deadlock"
+    },
+    {
+      "acceleration": null,
+      "baseline_fallback": false,
+      "baseline_latency_cycles": null,
+      "candidate_latency_cycles": 0,
+      "capped_acceleration": null,
+      "components": {
+        "correctness": 1.0,
+        "ppa": 0.0,
+        "synthesizable": 0.4
+      },
+      "difficulty": 2,
+      "engineering_metrics": {
+        "available_resources": {
+          "BRAM_18K": 4032,
+          "DSP": 9024,
+          "FF": 2607360,
+          "LUT": 1303680,
+          "URAM": 960
+        },
+        "estimated_clock_period_ns": 2.538,
+        "excluded_from_official_score": true,
+        "meets_target_clock": true,
+        "resource_utilization_percent": {
+          "BRAM_18K": 0.0,
+          "DSP": 0.0,
+          "FF": 0.0,
+          "LUT": 0.05308051,
+          "URAM": 0.0
+        },
+        "resources": {
+          "BRAM_18K": 0,
+          "DSP": 0,
+          "FF": 0,
+          "LUT": 692,
+          "URAM": 0
+        },
+        "target_clock_ns": 5.0
+      },
+      "hidden_correctness_caveat": "If official hidden correctness fails, the actual official score is zero regardless of this public-evidence proxy.",
+      "is_opt": false,
+      "official_score_proxy": 1.4,
+      "ppa_norm": 0.0,
+      "public_functional_proxy_pass": true,
+      "repetition": 2,
+      "run_dir": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/formal/runs/projection_bugfix/run_02",
+      "selected_candidate_id": "candidate_001",
+      "selected_cosim_pass": null,
+      "selected_synth_pass": true,
+      "slot_index": 4,
+      "stored_proxy_matches_official_formula": true,
+      "stored_selected_public_score_proxy": 1.4,
+      "task_id": "projection_bugfix"
+    },
+    {
+      "acceleration": 1.0,
+      "baseline_fallback": true,
+      "baseline_latency_cycles": 1027,
+      "candidate_latency_cycles": 1027,
+      "capped_acceleration": 1.0,
+      "components": {
+        "correctness": 1.5,
+        "ppa": 0.1125,
+        "synthesizable": 0.6
+      },
+      "difficulty": 3,
+      "engineering_metrics": {
+        "available_resources": {
+          "BRAM_18K": 4032,
+          "DSP": 9024,
+          "FF": 2607360,
+          "LUT": 1303680,
+          "URAM": 960
+        },
+        "estimated_clock_period_ns": 3.17,
+        "excluded_from_official_score": true,
+        "meets_target_clock": true,
+        "resource_utilization_percent": {
+          "BRAM_18K": 0.0,
+          "DSP": 0.02216312,
+          "FF": 0.00356683,
+          "LUT": 0.01196613,
+          "URAM": 0.0
+        },
+        "resources": {
+          "BRAM_18K": 0,
+          "DSP": 2,
+          "FF": 93,
+          "LUT": 156,
+          "URAM": 0
+        },
+        "target_clock_ns": 5.0
+      },
+      "hidden_correctness_caveat": "If official hidden correctness fails, the actual official score is zero regardless of this public-evidence proxy.",
+      "is_opt": false,
+      "official_score_proxy": 2.2125,
+      "ppa_norm": 0.125,
+      "public_functional_proxy_pass": true,
+      "repetition": 2,
+      "run_dir": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/formal/runs/dotProduct_optimize/run_02",
+      "selected_candidate_id": "candidate_000",
+      "selected_cosim_pass": null,
+      "selected_synth_pass": true,
+      "slot_index": 5,
+      "stored_proxy_matches_official_formula": true,
+      "stored_selected_public_score_proxy": 2.2125,
+      "task_id": "dotProduct_optimize"
+    },
+    {
+      "acceleration": 1.9852941176470589,
+      "baseline_fallback": false,
+      "baseline_latency_cycles": 135,
+      "candidate_latency_cycles": 68,
+      "capped_acceleration": 1.9852941176470589,
+      "components": {
+        "correctness": 2.0,
+        "ppa": 0.2977941176,
+        "synthesizable": 0.8
+      },
+      "difficulty": 4,
+      "engineering_metrics": {
+        "available_resources": {
+          "BRAM_18K": 4032,
+          "DSP": 9024,
+          "FF": 2607360,
+          "LUT": 1303680,
+          "URAM": 960
+        },
+        "estimated_clock_period_ns": 2.796,
+        "excluded_from_official_score": true,
+        "meets_target_clock": true,
+        "resource_utilization_percent": {
+          "BRAM_18K": 0.0,
+          "DSP": 0.0,
+          "FF": 0.00885954,
+          "LUT": 0.03114261,
+          "URAM": 0.0
+        },
+        "resources": {
+          "BRAM_18K": 0,
+          "DSP": 0,
+          "FF": 231,
+          "LUT": 406,
+          "URAM": 0
+        },
+        "target_clock_ns": 5.0
+      },
+      "hidden_correctness_caveat": "If official hidden correctness fails, the actual official score is zero regardless of this public-evidence proxy.",
+      "is_opt": true,
+      "official_score_proxy": 3.0978,
+      "ppa_norm": 0.24816176470588236,
+      "public_functional_proxy_pass": true,
+      "repetition": 2,
+      "run_dir": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/formal/runs/residual_stream_deadlock/run_02",
+      "selected_candidate_id": "candidate_001",
+      "selected_cosim_pass": true,
+      "selected_synth_pass": true,
+      "slot_index": 6,
+      "stored_proxy_matches_official_formula": true,
+      "stored_selected_public_score_proxy": 3.0978,
+      "task_id": "residual_stream_deadlock"
+    },
+    {
+      "acceleration": null,
+      "baseline_fallback": false,
+      "baseline_latency_cycles": null,
+      "candidate_latency_cycles": 0,
+      "capped_acceleration": null,
+      "components": {
+        "correctness": 1.0,
+        "ppa": 0.0,
+        "synthesizable": 0.4
+      },
+      "difficulty": 2,
+      "engineering_metrics": {
+        "available_resources": {
+          "BRAM_18K": 4032,
+          "DSP": 9024,
+          "FF": 2607360,
+          "LUT": 1303680,
+          "URAM": 960
+        },
+        "estimated_clock_period_ns": 2.538,
+        "excluded_from_official_score": true,
+        "meets_target_clock": true,
+        "resource_utilization_percent": {
+          "BRAM_18K": 0.0,
+          "DSP": 0.0,
+          "FF": 0.0,
+          "LUT": 0.05308051,
+          "URAM": 0.0
+        },
+        "resources": {
+          "BRAM_18K": 0,
+          "DSP": 0,
+          "FF": 0,
+          "LUT": 692,
+          "URAM": 0
+        },
+        "target_clock_ns": 5.0
+      },
+      "hidden_correctness_caveat": "If official hidden correctness fails, the actual official score is zero regardless of this public-evidence proxy.",
+      "is_opt": false,
+      "official_score_proxy": 1.4,
+      "ppa_norm": 0.0,
+      "public_functional_proxy_pass": true,
+      "repetition": 3,
+      "run_dir": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/formal/runs/projection_bugfix/run_03",
+      "selected_candidate_id": "candidate_001",
+      "selected_cosim_pass": null,
+      "selected_synth_pass": true,
+      "slot_index": 7,
+      "stored_proxy_matches_official_formula": true,
+      "stored_selected_public_score_proxy": 1.4,
+      "task_id": "projection_bugfix"
+    },
+    {
+      "acceleration": 2.0019493177387915,
+      "baseline_fallback": false,
+      "baseline_latency_cycles": 1027,
+      "candidate_latency_cycles": 513,
+      "capped_acceleration": 2.0019493177387915,
+      "components": {
+        "correctness": 1.5,
+        "ppa": 0.2252192982,
+        "synthesizable": 0.6
+      },
+      "difficulty": 3,
+      "engineering_metrics": {
+        "available_resources": {
+          "BRAM_18K": 4032,
+          "DSP": 9024,
+          "FF": 2607360,
+          "LUT": 1303680,
+          "URAM": 960
+        },
+        "estimated_clock_period_ns": 3.17,
+        "excluded_from_official_score": true,
+        "meets_target_clock": true,
+        "resource_utilization_percent": {
+          "BRAM_18K": 0.0,
+          "DSP": 0.04432624,
+          "FF": 0.65146355,
+          "LUT": 5.86416912,
+          "URAM": 0.0
+        },
+        "resources": {
+          "BRAM_18K": 0,
+          "DSP": 4,
+          "FF": 16986,
+          "LUT": 76450,
+          "URAM": 0
+        },
+        "target_clock_ns": 5.0
+      },
+      "hidden_correctness_caveat": "If official hidden correctness fails, the actual official score is zero regardless of this public-evidence proxy.",
+      "is_opt": true,
+      "official_score_proxy": 2.3252,
+      "ppa_norm": 0.25024366471734893,
+      "public_functional_proxy_pass": true,
+      "repetition": 3,
+      "run_dir": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/formal/runs/dotProduct_optimize/run_03",
+      "selected_candidate_id": "candidate_001",
+      "selected_cosim_pass": null,
+      "selected_synth_pass": true,
+      "slot_index": 8,
+      "stored_proxy_matches_official_formula": true,
+      "stored_selected_public_score_proxy": 2.3252,
+      "task_id": "dotProduct_optimize"
+    },
+    {
+      "acceleration": 1.9852941176470589,
+      "baseline_fallback": false,
+      "baseline_latency_cycles": 135,
+      "candidate_latency_cycles": 68,
+      "capped_acceleration": 1.9852941176470589,
+      "components": {
+        "correctness": 2.0,
+        "ppa": 0.2977941176,
+        "synthesizable": 0.8
+      },
+      "difficulty": 4,
+      "engineering_metrics": {
+        "available_resources": {
+          "BRAM_18K": 4032,
+          "DSP": 9024,
+          "FF": 2607360,
+          "LUT": 1303680,
+          "URAM": 960
+        },
+        "estimated_clock_period_ns": 2.796,
+        "excluded_from_official_score": true,
+        "meets_target_clock": true,
+        "resource_utilization_percent": {
+          "BRAM_18K": 0.0,
+          "DSP": 0.0,
+          "FF": 0.00885954,
+          "LUT": 0.03114261,
+          "URAM": 0.0
+        },
+        "resources": {
+          "BRAM_18K": 0,
+          "DSP": 0,
+          "FF": 231,
+          "LUT": 406,
+          "URAM": 0
+        },
+        "target_clock_ns": 5.0
+      },
+      "hidden_correctness_caveat": "If official hidden correctness fails, the actual official score is zero regardless of this public-evidence proxy.",
+      "is_opt": true,
+      "official_score_proxy": 3.0978,
+      "ppa_norm": 0.24816176470588236,
+      "public_functional_proxy_pass": true,
+      "repetition": 3,
+      "run_dir": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/formal/runs/residual_stream_deadlock/run_03",
+      "selected_candidate_id": "candidate_001",
+      "selected_cosim_pass": true,
+      "selected_synth_pass": true,
+      "slot_index": 9,
+      "stored_proxy_matches_official_formula": true,
+      "stored_selected_public_score_proxy": 3.0978,
+      "task_id": "residual_stream_deadlock"
+    },
+    {
+      "acceleration": null,
+      "baseline_fallback": false,
+      "baseline_latency_cycles": null,
+      "candidate_latency_cycles": 0,
+      "capped_acceleration": null,
+      "components": {
+        "correctness": 1.0,
+        "ppa": 0.0,
+        "synthesizable": 0.4
+      },
+      "difficulty": 2,
+      "engineering_metrics": {
+        "available_resources": {
+          "BRAM_18K": 4032,
+          "DSP": 9024,
+          "FF": 2607360,
+          "LUT": 1303680,
+          "URAM": 960
+        },
+        "estimated_clock_period_ns": 2.538,
+        "excluded_from_official_score": true,
+        "meets_target_clock": true,
+        "resource_utilization_percent": {
+          "BRAM_18K": 0.0,
+          "DSP": 0.0,
+          "FF": 0.0,
+          "LUT": 0.05308051,
+          "URAM": 0.0
+        },
+        "resources": {
+          "BRAM_18K": 0,
+          "DSP": 0,
+          "FF": 0,
+          "LUT": 692,
+          "URAM": 0
+        },
+        "target_clock_ns": 5.0
+      },
+      "hidden_correctness_caveat": "If official hidden correctness fails, the actual official score is zero regardless of this public-evidence proxy.",
+      "is_opt": false,
+      "official_score_proxy": 1.4,
+      "ppa_norm": 0.0,
+      "public_functional_proxy_pass": true,
+      "repetition": 4,
+      "run_dir": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/formal/runs/projection_bugfix/run_04",
+      "selected_candidate_id": "candidate_001",
+      "selected_cosim_pass": null,
+      "selected_synth_pass": true,
+      "slot_index": 10,
+      "stored_proxy_matches_official_formula": true,
+      "stored_selected_public_score_proxy": 1.4,
+      "task_id": "projection_bugfix"
+    },
+    {
+      "acceleration": 1.0,
+      "baseline_fallback": true,
+      "baseline_latency_cycles": 1027,
+      "candidate_latency_cycles": 1027,
+      "capped_acceleration": 1.0,
+      "components": {
+        "correctness": 1.5,
+        "ppa": 0.1125,
+        "synthesizable": 0.6
+      },
+      "difficulty": 3,
+      "engineering_metrics": {
+        "available_resources": {
+          "BRAM_18K": 4032,
+          "DSP": 9024,
+          "FF": 2607360,
+          "LUT": 1303680,
+          "URAM": 960
+        },
+        "estimated_clock_period_ns": 3.17,
+        "excluded_from_official_score": true,
+        "meets_target_clock": true,
+        "resource_utilization_percent": {
+          "BRAM_18K": 0.0,
+          "DSP": 0.02216312,
+          "FF": 0.00356683,
+          "LUT": 0.01196613,
+          "URAM": 0.0
+        },
+        "resources": {
+          "BRAM_18K": 0,
+          "DSP": 2,
+          "FF": 93,
+          "LUT": 156,
+          "URAM": 0
+        },
+        "target_clock_ns": 5.0
+      },
+      "hidden_correctness_caveat": "If official hidden correctness fails, the actual official score is zero regardless of this public-evidence proxy.",
+      "is_opt": false,
+      "official_score_proxy": 2.2125,
+      "ppa_norm": 0.125,
+      "public_functional_proxy_pass": true,
+      "repetition": 4,
+      "run_dir": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/formal/runs/dotProduct_optimize/run_04",
+      "selected_candidate_id": "candidate_000",
+      "selected_cosim_pass": null,
+      "selected_synth_pass": true,
+      "slot_index": 11,
+      "stored_proxy_matches_official_formula": true,
+      "stored_selected_public_score_proxy": 2.2125,
+      "task_id": "dotProduct_optimize"
+    },
+    {
+      "acceleration": 1.9852941176470589,
+      "baseline_fallback": false,
+      "baseline_latency_cycles": 135,
+      "candidate_latency_cycles": 68,
+      "capped_acceleration": 1.9852941176470589,
+      "components": {
+        "correctness": 2.0,
+        "ppa": 0.2977941176,
+        "synthesizable": 0.8
+      },
+      "difficulty": 4,
+      "engineering_metrics": {
+        "available_resources": {
+          "BRAM_18K": 4032,
+          "DSP": 9024,
+          "FF": 2607360,
+          "LUT": 1303680,
+          "URAM": 960
+        },
+        "estimated_clock_period_ns": 2.796,
+        "excluded_from_official_score": true,
+        "meets_target_clock": true,
+        "resource_utilization_percent": {
+          "BRAM_18K": 0.0,
+          "DSP": 0.0,
+          "FF": 0.00885954,
+          "LUT": 0.03114261,
+          "URAM": 0.0
+        },
+        "resources": {
+          "BRAM_18K": 0,
+          "DSP": 0,
+          "FF": 231,
+          "LUT": 406,
+          "URAM": 0
+        },
+        "target_clock_ns": 5.0
+      },
+      "hidden_correctness_caveat": "If official hidden correctness fails, the actual official score is zero regardless of this public-evidence proxy.",
+      "is_opt": true,
+      "official_score_proxy": 3.0978,
+      "ppa_norm": 0.24816176470588236,
+      "public_functional_proxy_pass": true,
+      "repetition": 4,
+      "run_dir": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/formal/runs/residual_stream_deadlock/run_04",
+      "selected_candidate_id": "candidate_001",
+      "selected_cosim_pass": true,
+      "selected_synth_pass": true,
+      "slot_index": 12,
+      "stored_proxy_matches_official_formula": true,
+      "stored_selected_public_score_proxy": 3.0978,
+      "task_id": "residual_stream_deadlock"
+    },
+    {
+      "acceleration": null,
+      "baseline_fallback": false,
+      "baseline_latency_cycles": null,
+      "candidate_latency_cycles": 0,
+      "capped_acceleration": null,
+      "components": {
+        "correctness": 1.0,
+        "ppa": 0.0,
+        "synthesizable": 0.4
+      },
+      "difficulty": 2,
+      "engineering_metrics": {
+        "available_resources": {
+          "BRAM_18K": 4032,
+          "DSP": 9024,
+          "FF": 2607360,
+          "LUT": 1303680,
+          "URAM": 960
+        },
+        "estimated_clock_period_ns": 2.538,
+        "excluded_from_official_score": true,
+        "meets_target_clock": true,
+        "resource_utilization_percent": {
+          "BRAM_18K": 0.0,
+          "DSP": 0.0,
+          "FF": 0.0,
+          "LUT": 0.05308051,
+          "URAM": 0.0
+        },
+        "resources": {
+          "BRAM_18K": 0,
+          "DSP": 0,
+          "FF": 0,
+          "LUT": 692,
+          "URAM": 0
+        },
+        "target_clock_ns": 5.0
+      },
+      "hidden_correctness_caveat": "If official hidden correctness fails, the actual official score is zero regardless of this public-evidence proxy.",
+      "is_opt": false,
+      "official_score_proxy": 1.4,
+      "ppa_norm": 0.0,
+      "public_functional_proxy_pass": true,
+      "repetition": 5,
+      "run_dir": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/formal/runs/projection_bugfix/run_05",
+      "selected_candidate_id": "candidate_001",
+      "selected_cosim_pass": null,
+      "selected_synth_pass": true,
+      "slot_index": 13,
+      "stored_proxy_matches_official_formula": true,
+      "stored_selected_public_score_proxy": 1.4,
+      "task_id": "projection_bugfix"
+    },
+    {
+      "acceleration": 1.0,
+      "baseline_fallback": true,
+      "baseline_latency_cycles": 1027,
+      "candidate_latency_cycles": 1027,
+      "capped_acceleration": 1.0,
+      "components": {
+        "correctness": 1.5,
+        "ppa": 0.1125,
+        "synthesizable": 0.6
+      },
+      "difficulty": 3,
+      "engineering_metrics": {
+        "available_resources": {
+          "BRAM_18K": 4032,
+          "DSP": 9024,
+          "FF": 2607360,
+          "LUT": 1303680,
+          "URAM": 960
+        },
+        "estimated_clock_period_ns": 3.17,
+        "excluded_from_official_score": true,
+        "meets_target_clock": true,
+        "resource_utilization_percent": {
+          "BRAM_18K": 0.0,
+          "DSP": 0.02216312,
+          "FF": 0.00356683,
+          "LUT": 0.01196613,
+          "URAM": 0.0
+        },
+        "resources": {
+          "BRAM_18K": 0,
+          "DSP": 2,
+          "FF": 93,
+          "LUT": 156,
+          "URAM": 0
+        },
+        "target_clock_ns": 5.0
+      },
+      "hidden_correctness_caveat": "If official hidden correctness fails, the actual official score is zero regardless of this public-evidence proxy.",
+      "is_opt": false,
+      "official_score_proxy": 2.2125,
+      "ppa_norm": 0.125,
+      "public_functional_proxy_pass": true,
+      "repetition": 5,
+      "run_dir": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/formal/runs/dotProduct_optimize/run_05",
+      "selected_candidate_id": "candidate_000",
+      "selected_cosim_pass": null,
+      "selected_synth_pass": true,
+      "slot_index": 14,
+      "stored_proxy_matches_official_formula": true,
+      "stored_selected_public_score_proxy": 2.2125,
+      "task_id": "dotProduct_optimize"
+    },
+    {
+      "acceleration": 1.9852941176470589,
+      "baseline_fallback": false,
+      "baseline_latency_cycles": 135,
+      "candidate_latency_cycles": 68,
+      "capped_acceleration": 1.9852941176470589,
+      "components": {
+        "correctness": 2.0,
+        "ppa": 0.2977941176,
+        "synthesizable": 0.8
+      },
+      "difficulty": 4,
+      "engineering_metrics": {
+        "available_resources": {
+          "BRAM_18K": 4032,
+          "DSP": 9024,
+          "FF": 2607360,
+          "LUT": 1303680,
+          "URAM": 960
+        },
+        "estimated_clock_period_ns": 2.796,
+        "excluded_from_official_score": true,
+        "meets_target_clock": true,
+        "resource_utilization_percent": {
+          "BRAM_18K": 0.0,
+          "DSP": 0.0,
+          "FF": 0.00885954,
+          "LUT": 0.03114261,
+          "URAM": 0.0
+        },
+        "resources": {
+          "BRAM_18K": 0,
+          "DSP": 0,
+          "FF": 231,
+          "LUT": 406,
+          "URAM": 0
+        },
+        "target_clock_ns": 5.0
+      },
+      "hidden_correctness_caveat": "If official hidden correctness fails, the actual official score is zero regardless of this public-evidence proxy.",
+      "is_opt": true,
+      "official_score_proxy": 3.0978,
+      "ppa_norm": 0.24816176470588236,
+      "public_functional_proxy_pass": true,
+      "repetition": 5,
+      "run_dir": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/formal/runs/residual_stream_deadlock/run_05",
+      "selected_candidate_id": "candidate_001",
+      "selected_cosim_pass": true,
+      "selected_synth_pass": true,
+      "slot_index": 15,
+      "stored_proxy_matches_official_formula": true,
+      "stored_selected_public_score_proxy": 3.0978,
+      "task_id": "residual_stream_deadlock"
+    },
+    {
+      "acceleration": null,
+      "baseline_fallback": false,
+      "baseline_latency_cycles": null,
+      "candidate_latency_cycles": 0,
+      "capped_acceleration": null,
+      "components": {
+        "correctness": 1.0,
+        "ppa": 0.0,
+        "synthesizable": 0.4
+      },
+      "difficulty": 2,
+      "engineering_metrics": {
+        "available_resources": {
+          "BRAM_18K": 4032,
+          "DSP": 9024,
+          "FF": 2607360,
+          "LUT": 1303680,
+          "URAM": 960
+        },
+        "estimated_clock_period_ns": 2.538,
+        "excluded_from_official_score": true,
+        "meets_target_clock": true,
+        "resource_utilization_percent": {
+          "BRAM_18K": 0.0,
+          "DSP": 0.0,
+          "FF": 0.0,
+          "LUT": 0.05308051,
+          "URAM": 0.0
+        },
+        "resources": {
+          "BRAM_18K": 0,
+          "DSP": 0,
+          "FF": 0,
+          "LUT": 692,
+          "URAM": 0
+        },
+        "target_clock_ns": 5.0
+      },
+      "hidden_correctness_caveat": "If official hidden correctness fails, the actual official score is zero regardless of this public-evidence proxy.",
+      "is_opt": false,
+      "official_score_proxy": 1.4,
+      "ppa_norm": 0.0,
+      "public_functional_proxy_pass": true,
+      "repetition": 6,
+      "run_dir": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/formal/runs/projection_bugfix/run_06",
+      "selected_candidate_id": "candidate_001",
+      "selected_cosim_pass": null,
+      "selected_synth_pass": true,
+      "slot_index": 16,
+      "stored_proxy_matches_official_formula": true,
+      "stored_selected_public_score_proxy": 1.4,
+      "task_id": "projection_bugfix"
+    },
+    {
+      "acceleration": 3.002923976608187,
+      "baseline_fallback": false,
+      "baseline_latency_cycles": 1027,
+      "candidate_latency_cycles": 342,
+      "capped_acceleration": 3.002923976608187,
+      "components": {
+        "correctness": 1.5,
+        "ppa": 0.3378289474,
+        "synthesizable": 0.6
+      },
+      "difficulty": 3,
+      "engineering_metrics": {
+        "available_resources": {
+          "BRAM_18K": 4032,
+          "DSP": 9024,
+          "FF": 2607360,
+          "LUT": 1303680,
+          "URAM": 960
+        },
+        "estimated_clock_period_ns": 3.17,
+        "excluded_from_official_score": true,
+        "meets_target_clock": true,
+        "resource_utilization_percent": {
+          "BRAM_18K": 0.0,
+          "DSP": 1.41843972,
+          "FF": 4.50041421,
+          "LUT": 7.96652553,
+          "URAM": 0.0
+        },
+        "resources": {
+          "BRAM_18K": 0,
+          "DSP": 128,
+          "FF": 117342,
+          "LUT": 103858,
+          "URAM": 0
+        },
+        "target_clock_ns": 5.0
+      },
+      "hidden_correctness_caveat": "If official hidden correctness fails, the actual official score is zero regardless of this public-evidence proxy.",
+      "is_opt": true,
+      "official_score_proxy": 2.4378,
+      "ppa_norm": 0.3753654970760234,
+      "public_functional_proxy_pass": true,
+      "repetition": 6,
+      "run_dir": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/formal/runs/dotProduct_optimize/run_06",
+      "selected_candidate_id": "candidate_001",
+      "selected_cosim_pass": null,
+      "selected_synth_pass": true,
+      "slot_index": 17,
+      "stored_proxy_matches_official_formula": true,
+      "stored_selected_public_score_proxy": 2.4378,
+      "task_id": "dotProduct_optimize"
+    },
+    {
+      "acceleration": 1.9852941176470589,
+      "baseline_fallback": false,
+      "baseline_latency_cycles": 135,
+      "candidate_latency_cycles": 68,
+      "capped_acceleration": 1.9852941176470589,
+      "components": {
+        "correctness": 2.0,
+        "ppa": 0.2977941176,
+        "synthesizable": 0.8
+      },
+      "difficulty": 4,
+      "engineering_metrics": {
+        "available_resources": {
+          "BRAM_18K": 4032,
+          "DSP": 9024,
+          "FF": 2607360,
+          "LUT": 1303680,
+          "URAM": 960
+        },
+        "estimated_clock_period_ns": 2.796,
+        "excluded_from_official_score": true,
+        "meets_target_clock": true,
+        "resource_utilization_percent": {
+          "BRAM_18K": 0.0,
+          "DSP": 0.0,
+          "FF": 0.00885954,
+          "LUT": 0.03114261,
+          "URAM": 0.0
+        },
+        "resources": {
+          "BRAM_18K": 0,
+          "DSP": 0,
+          "FF": 231,
+          "LUT": 406,
+          "URAM": 0
+        },
+        "target_clock_ns": 5.0
+      },
+      "hidden_correctness_caveat": "If official hidden correctness fails, the actual official score is zero regardless of this public-evidence proxy.",
+      "is_opt": true,
+      "official_score_proxy": 3.0978,
+      "ppa_norm": 0.24816176470588236,
+      "public_functional_proxy_pass": true,
+      "repetition": 6,
+      "run_dir": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/formal/runs/residual_stream_deadlock/run_06",
+      "selected_candidate_id": "candidate_001",
+      "selected_cosim_pass": true,
+      "selected_synth_pass": true,
+      "slot_index": 18,
+      "stored_proxy_matches_official_formula": true,
+      "stored_selected_public_score_proxy": 3.0978,
+      "task_id": "residual_stream_deadlock"
+    },
+    {
+      "acceleration": null,
+      "baseline_fallback": false,
+      "baseline_latency_cycles": null,
+      "candidate_latency_cycles": 0,
+      "capped_acceleration": null,
+      "components": {
+        "correctness": 1.0,
+        "ppa": 0.0,
+        "synthesizable": 0.4
+      },
+      "difficulty": 2,
+      "engineering_metrics": {
+        "available_resources": {
+          "BRAM_18K": 4032,
+          "DSP": 9024,
+          "FF": 2607360,
+          "LUT": 1303680,
+          "URAM": 960
+        },
+        "estimated_clock_period_ns": 2.538,
+        "excluded_from_official_score": true,
+        "meets_target_clock": true,
+        "resource_utilization_percent": {
+          "BRAM_18K": 0.0,
+          "DSP": 0.0,
+          "FF": 0.0,
+          "LUT": 0.05308051,
+          "URAM": 0.0
+        },
+        "resources": {
+          "BRAM_18K": 0,
+          "DSP": 0,
+          "FF": 0,
+          "LUT": 692,
+          "URAM": 0
+        },
+        "target_clock_ns": 5.0
+      },
+      "hidden_correctness_caveat": "If official hidden correctness fails, the actual official score is zero regardless of this public-evidence proxy.",
+      "is_opt": false,
+      "official_score_proxy": 1.4,
+      "ppa_norm": 0.0,
+      "public_functional_proxy_pass": true,
+      "repetition": 7,
+      "run_dir": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/formal/runs/projection_bugfix/run_07",
+      "selected_candidate_id": "candidate_001",
+      "selected_cosim_pass": null,
+      "selected_synth_pass": true,
+      "slot_index": 19,
+      "stored_proxy_matches_official_formula": true,
+      "stored_selected_public_score_proxy": 1.4,
+      "task_id": "projection_bugfix"
+    },
+    {
+      "acceleration": 29.34285714285714,
+      "baseline_fallback": false,
+      "baseline_latency_cycles": 1027,
+      "candidate_latency_cycles": 35,
+      "capped_acceleration": 8.0,
+      "components": {
+        "correctness": 1.5,
+        "ppa": 0.9,
+        "synthesizable": 0.6
+      },
+      "difficulty": 3,
+      "engineering_metrics": {
+        "available_resources": {
+          "BRAM_18K": 4032,
+          "DSP": 9024,
+          "FF": 2607360,
+          "LUT": 1303680,
+          "URAM": 960
+        },
+        "estimated_clock_period_ns": 31.133,
+        "excluded_from_official_score": true,
+        "meets_target_clock": false,
+        "resource_utilization_percent": {
+          "BRAM_18K": 0.0,
+          "DSP": 0.70921986,
+          "FF": 0.05591863,
+          "LUT": 0.17956861,
+          "URAM": 0.0
+        },
+        "resources": {
+          "BRAM_18K": 0,
+          "DSP": 64,
+          "FF": 1458,
+          "LUT": 2341,
+          "URAM": 0
+        },
+        "target_clock_ns": 5.0
+      },
+      "hidden_correctness_caveat": "If official hidden correctness fails, the actual official score is zero regardless of this public-evidence proxy.",
+      "is_opt": true,
+      "official_score_proxy": 3.0,
+      "ppa_norm": 1.0,
+      "public_functional_proxy_pass": true,
+      "repetition": 7,
+      "run_dir": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/formal/runs/dotProduct_optimize/run_07",
+      "selected_candidate_id": "candidate_001",
+      "selected_cosim_pass": null,
+      "selected_synth_pass": true,
+      "slot_index": 20,
+      "stored_proxy_matches_official_formula": true,
+      "stored_selected_public_score_proxy": 3.0,
+      "task_id": "dotProduct_optimize"
+    },
+    {
+      "acceleration": 1.9852941176470589,
+      "baseline_fallback": false,
+      "baseline_latency_cycles": 135,
+      "candidate_latency_cycles": 68,
+      "capped_acceleration": 1.9852941176470589,
+      "components": {
+        "correctness": 2.0,
+        "ppa": 0.2977941176,
+        "synthesizable": 0.8
+      },
+      "difficulty": 4,
+      "engineering_metrics": {
+        "available_resources": {
+          "BRAM_18K": 4032,
+          "DSP": 9024,
+          "FF": 2607360,
+          "LUT": 1303680,
+          "URAM": 960
+        },
+        "estimated_clock_period_ns": 2.796,
+        "excluded_from_official_score": true,
+        "meets_target_clock": true,
+        "resource_utilization_percent": {
+          "BRAM_18K": 0.0,
+          "DSP": 0.0,
+          "FF": 0.00885954,
+          "LUT": 0.03114261,
+          "URAM": 0.0
+        },
+        "resources": {
+          "BRAM_18K": 0,
+          "DSP": 0,
+          "FF": 231,
+          "LUT": 406,
+          "URAM": 0
+        },
+        "target_clock_ns": 5.0
+      },
+      "hidden_correctness_caveat": "If official hidden correctness fails, the actual official score is zero regardless of this public-evidence proxy.",
+      "is_opt": true,
+      "official_score_proxy": 3.0978,
+      "ppa_norm": 0.24816176470588236,
+      "public_functional_proxy_pass": true,
+      "repetition": 7,
+      "run_dir": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/formal/runs/residual_stream_deadlock/run_07",
+      "selected_candidate_id": "candidate_001",
+      "selected_cosim_pass": true,
+      "selected_synth_pass": true,
+      "slot_index": 21,
+      "stored_proxy_matches_official_formula": true,
+      "stored_selected_public_score_proxy": 3.0978,
+      "task_id": "residual_stream_deadlock"
+    },
+    {
+      "acceleration": null,
+      "baseline_fallback": false,
+      "baseline_latency_cycles": null,
+      "candidate_latency_cycles": 0,
+      "capped_acceleration": null,
+      "components": {
+        "correctness": 1.0,
+        "ppa": 0.0,
+        "synthesizable": 0.4
+      },
+      "difficulty": 2,
+      "engineering_metrics": {
+        "available_resources": {
+          "BRAM_18K": 4032,
+          "DSP": 9024,
+          "FF": 2607360,
+          "LUT": 1303680,
+          "URAM": 960
+        },
+        "estimated_clock_period_ns": 2.538,
+        "excluded_from_official_score": true,
+        "meets_target_clock": true,
+        "resource_utilization_percent": {
+          "BRAM_18K": 0.0,
+          "DSP": 0.0,
+          "FF": 0.0,
+          "LUT": 0.05308051,
+          "URAM": 0.0
+        },
+        "resources": {
+          "BRAM_18K": 0,
+          "DSP": 0,
+          "FF": 0,
+          "LUT": 692,
+          "URAM": 0
+        },
+        "target_clock_ns": 5.0
+      },
+      "hidden_correctness_caveat": "If official hidden correctness fails, the actual official score is zero regardless of this public-evidence proxy.",
+      "is_opt": false,
+      "official_score_proxy": 1.4,
+      "ppa_norm": 0.0,
+      "public_functional_proxy_pass": true,
+      "repetition": 8,
+      "run_dir": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/formal/runs/projection_bugfix/run_08",
+      "selected_candidate_id": "candidate_001",
+      "selected_cosim_pass": null,
+      "selected_synth_pass": true,
+      "slot_index": 22,
+      "stored_proxy_matches_official_formula": true,
+      "stored_selected_public_score_proxy": 1.4,
+      "task_id": "projection_bugfix"
+    },
+    {
+      "acceleration": 1.0,
+      "baseline_fallback": true,
+      "baseline_latency_cycles": 1027,
+      "candidate_latency_cycles": 1027,
+      "capped_acceleration": 1.0,
+      "components": {
+        "correctness": 1.5,
+        "ppa": 0.1125,
+        "synthesizable": 0.6
+      },
+      "difficulty": 3,
+      "engineering_metrics": {
+        "available_resources": {
+          "BRAM_18K": 4032,
+          "DSP": 9024,
+          "FF": 2607360,
+          "LUT": 1303680,
+          "URAM": 960
+        },
+        "estimated_clock_period_ns": 3.17,
+        "excluded_from_official_score": true,
+        "meets_target_clock": true,
+        "resource_utilization_percent": {
+          "BRAM_18K": 0.0,
+          "DSP": 0.02216312,
+          "FF": 0.00356683,
+          "LUT": 0.01196613,
+          "URAM": 0.0
+        },
+        "resources": {
+          "BRAM_18K": 0,
+          "DSP": 2,
+          "FF": 93,
+          "LUT": 156,
+          "URAM": 0
+        },
+        "target_clock_ns": 5.0
+      },
+      "hidden_correctness_caveat": "If official hidden correctness fails, the actual official score is zero regardless of this public-evidence proxy.",
+      "is_opt": false,
+      "official_score_proxy": 2.2125,
+      "ppa_norm": 0.125,
+      "public_functional_proxy_pass": true,
+      "repetition": 8,
+      "run_dir": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/formal/runs/dotProduct_optimize/run_08",
+      "selected_candidate_id": "candidate_000",
+      "selected_cosim_pass": null,
+      "selected_synth_pass": true,
+      "slot_index": 23,
+      "stored_proxy_matches_official_formula": true,
+      "stored_selected_public_score_proxy": 2.2125,
+      "task_id": "dotProduct_optimize"
+    },
+    {
+      "acceleration": 1.9852941176470589,
+      "baseline_fallback": false,
+      "baseline_latency_cycles": 135,
+      "candidate_latency_cycles": 68,
+      "capped_acceleration": 1.9852941176470589,
+      "components": {
+        "correctness": 2.0,
+        "ppa": 0.2977941176,
+        "synthesizable": 0.8
+      },
+      "difficulty": 4,
+      "engineering_metrics": {
+        "available_resources": {
+          "BRAM_18K": 4032,
+          "DSP": 9024,
+          "FF": 2607360,
+          "LUT": 1303680,
+          "URAM": 960
+        },
+        "estimated_clock_period_ns": 2.796,
+        "excluded_from_official_score": true,
+        "meets_target_clock": true,
+        "resource_utilization_percent": {
+          "BRAM_18K": 0.0,
+          "DSP": 0.0,
+          "FF": 0.00885954,
+          "LUT": 0.03114261,
+          "URAM": 0.0
+        },
+        "resources": {
+          "BRAM_18K": 0,
+          "DSP": 0,
+          "FF": 231,
+          "LUT": 406,
+          "URAM": 0
+        },
+        "target_clock_ns": 5.0
+      },
+      "hidden_correctness_caveat": "If official hidden correctness fails, the actual official score is zero regardless of this public-evidence proxy.",
+      "is_opt": true,
+      "official_score_proxy": 3.0978,
+      "ppa_norm": 0.24816176470588236,
+      "public_functional_proxy_pass": true,
+      "repetition": 8,
+      "run_dir": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/formal/runs/residual_stream_deadlock/run_08",
+      "selected_candidate_id": "candidate_001",
+      "selected_cosim_pass": true,
+      "selected_synth_pass": true,
+      "slot_index": 24,
+      "stored_proxy_matches_official_formula": true,
+      "stored_selected_public_score_proxy": 3.0978,
+      "task_id": "residual_stream_deadlock"
+    },
+    {
+      "acceleration": null,
+      "baseline_fallback": false,
+      "baseline_latency_cycles": null,
+      "candidate_latency_cycles": 0,
+      "capped_acceleration": null,
+      "components": {
+        "correctness": 1.0,
+        "ppa": 0.0,
+        "synthesizable": 0.4
+      },
+      "difficulty": 2,
+      "engineering_metrics": {
+        "available_resources": {
+          "BRAM_18K": 4032,
+          "DSP": 9024,
+          "FF": 2607360,
+          "LUT": 1303680,
+          "URAM": 960
+        },
+        "estimated_clock_period_ns": 2.538,
+        "excluded_from_official_score": true,
+        "meets_target_clock": true,
+        "resource_utilization_percent": {
+          "BRAM_18K": 0.0,
+          "DSP": 0.0,
+          "FF": 0.0,
+          "LUT": 0.05308051,
+          "URAM": 0.0
+        },
+        "resources": {
+          "BRAM_18K": 0,
+          "DSP": 0,
+          "FF": 0,
+          "LUT": 692,
+          "URAM": 0
+        },
+        "target_clock_ns": 5.0
+      },
+      "hidden_correctness_caveat": "If official hidden correctness fails, the actual official score is zero regardless of this public-evidence proxy.",
+      "is_opt": false,
+      "official_score_proxy": 1.4,
+      "ppa_norm": 0.0,
+      "public_functional_proxy_pass": true,
+      "repetition": 9,
+      "run_dir": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/formal/runs/projection_bugfix/run_09",
+      "selected_candidate_id": "candidate_001",
+      "selected_cosim_pass": null,
+      "selected_synth_pass": true,
+      "slot_index": 25,
+      "stored_proxy_matches_official_formula": true,
+      "stored_selected_public_score_proxy": 1.4,
+      "task_id": "projection_bugfix"
+    },
+    {
+      "acceleration": 29.34285714285714,
+      "baseline_fallback": false,
+      "baseline_latency_cycles": 1027,
+      "candidate_latency_cycles": 35,
+      "capped_acceleration": 8.0,
+      "components": {
+        "correctness": 1.5,
+        "ppa": 0.9,
+        "synthesizable": 0.6
+      },
+      "difficulty": 3,
+      "engineering_metrics": {
+        "available_resources": {
+          "BRAM_18K": 4032,
+          "DSP": 9024,
+          "FF": 2607360,
+          "LUT": 1303680,
+          "URAM": 960
+        },
+        "estimated_clock_period_ns": 31.133,
+        "excluded_from_official_score": true,
+        "meets_target_clock": false,
+        "resource_utilization_percent": {
+          "BRAM_18K": 0.0,
+          "DSP": 0.70921986,
+          "FF": 0.05591863,
+          "LUT": 0.17956861,
+          "URAM": 0.0
+        },
+        "resources": {
+          "BRAM_18K": 0,
+          "DSP": 64,
+          "FF": 1458,
+          "LUT": 2341,
+          "URAM": 0
+        },
+        "target_clock_ns": 5.0
+      },
+      "hidden_correctness_caveat": "If official hidden correctness fails, the actual official score is zero regardless of this public-evidence proxy.",
+      "is_opt": true,
+      "official_score_proxy": 3.0,
+      "ppa_norm": 1.0,
+      "public_functional_proxy_pass": true,
+      "repetition": 9,
+      "run_dir": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/formal/runs/dotProduct_optimize/run_09",
+      "selected_candidate_id": "candidate_001",
+      "selected_cosim_pass": null,
+      "selected_synth_pass": true,
+      "slot_index": 26,
+      "stored_proxy_matches_official_formula": true,
+      "stored_selected_public_score_proxy": 3.0,
+      "task_id": "dotProduct_optimize"
+    },
+    {
+      "acceleration": 1.9852941176470589,
+      "baseline_fallback": false,
+      "baseline_latency_cycles": 135,
+      "candidate_latency_cycles": 68,
+      "capped_acceleration": 1.9852941176470589,
+      "components": {
+        "correctness": 2.0,
+        "ppa": 0.2977941176,
+        "synthesizable": 0.8
+      },
+      "difficulty": 4,
+      "engineering_metrics": {
+        "available_resources": {
+          "BRAM_18K": 4032,
+          "DSP": 9024,
+          "FF": 2607360,
+          "LUT": 1303680,
+          "URAM": 960
+        },
+        "estimated_clock_period_ns": 2.796,
+        "excluded_from_official_score": true,
+        "meets_target_clock": true,
+        "resource_utilization_percent": {
+          "BRAM_18K": 0.0,
+          "DSP": 0.0,
+          "FF": 0.00885954,
+          "LUT": 0.03114261,
+          "URAM": 0.0
+        },
+        "resources": {
+          "BRAM_18K": 0,
+          "DSP": 0,
+          "FF": 231,
+          "LUT": 406,
+          "URAM": 0
+        },
+        "target_clock_ns": 5.0
+      },
+      "hidden_correctness_caveat": "If official hidden correctness fails, the actual official score is zero regardless of this public-evidence proxy.",
+      "is_opt": true,
+      "official_score_proxy": 3.0978,
+      "ppa_norm": 0.24816176470588236,
+      "public_functional_proxy_pass": true,
+      "repetition": 9,
+      "run_dir": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/formal/runs/residual_stream_deadlock/run_09",
+      "selected_candidate_id": "candidate_001",
+      "selected_cosim_pass": true,
+      "selected_synth_pass": true,
+      "slot_index": 27,
+      "stored_proxy_matches_official_formula": true,
+      "stored_selected_public_score_proxy": 3.0978,
+      "task_id": "residual_stream_deadlock"
+    },
+    {
+      "acceleration": null,
+      "baseline_fallback": false,
+      "baseline_latency_cycles": null,
+      "candidate_latency_cycles": 0,
+      "capped_acceleration": null,
+      "components": {
+        "correctness": 1.0,
+        "ppa": 0.0,
+        "synthesizable": 0.4
+      },
+      "difficulty": 2,
+      "engineering_metrics": {
+        "available_resources": {
+          "BRAM_18K": 4032,
+          "DSP": 9024,
+          "FF": 2607360,
+          "LUT": 1303680,
+          "URAM": 960
+        },
+        "estimated_clock_period_ns": 2.538,
+        "excluded_from_official_score": true,
+        "meets_target_clock": true,
+        "resource_utilization_percent": {
+          "BRAM_18K": 0.0,
+          "DSP": 0.0,
+          "FF": 0.0,
+          "LUT": 0.05308051,
+          "URAM": 0.0
+        },
+        "resources": {
+          "BRAM_18K": 0,
+          "DSP": 0,
+          "FF": 0,
+          "LUT": 692,
+          "URAM": 0
+        },
+        "target_clock_ns": 5.0
+      },
+      "hidden_correctness_caveat": "If official hidden correctness fails, the actual official score is zero regardless of this public-evidence proxy.",
+      "is_opt": false,
+      "official_score_proxy": 1.4,
+      "ppa_norm": 0.0,
+      "public_functional_proxy_pass": true,
+      "repetition": 10,
+      "run_dir": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/formal/runs/projection_bugfix/run_10",
+      "selected_candidate_id": "candidate_001",
+      "selected_cosim_pass": null,
+      "selected_synth_pass": true,
+      "slot_index": 28,
+      "stored_proxy_matches_official_formula": true,
+      "stored_selected_public_score_proxy": 1.4,
+      "task_id": "projection_bugfix"
+    },
+    {
+      "acceleration": 1.0,
+      "baseline_fallback": true,
+      "baseline_latency_cycles": 1027,
+      "candidate_latency_cycles": 1027,
+      "capped_acceleration": 1.0,
+      "components": {
+        "correctness": 1.5,
+        "ppa": 0.1125,
+        "synthesizable": 0.6
+      },
+      "difficulty": 3,
+      "engineering_metrics": {
+        "available_resources": {
+          "BRAM_18K": 4032,
+          "DSP": 9024,
+          "FF": 2607360,
+          "LUT": 1303680,
+          "URAM": 960
+        },
+        "estimated_clock_period_ns": 3.17,
+        "excluded_from_official_score": true,
+        "meets_target_clock": true,
+        "resource_utilization_percent": {
+          "BRAM_18K": 0.0,
+          "DSP": 0.02216312,
+          "FF": 0.00356683,
+          "LUT": 0.01196613,
+          "URAM": 0.0
+        },
+        "resources": {
+          "BRAM_18K": 0,
+          "DSP": 2,
+          "FF": 93,
+          "LUT": 156,
+          "URAM": 0
+        },
+        "target_clock_ns": 5.0
+      },
+      "hidden_correctness_caveat": "If official hidden correctness fails, the actual official score is zero regardless of this public-evidence proxy.",
+      "is_opt": false,
+      "official_score_proxy": 2.2125,
+      "ppa_norm": 0.125,
+      "public_functional_proxy_pass": true,
+      "repetition": 10,
+      "run_dir": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/formal/runs/dotProduct_optimize/run_10",
+      "selected_candidate_id": "candidate_000",
+      "selected_cosim_pass": null,
+      "selected_synth_pass": true,
+      "slot_index": 29,
+      "stored_proxy_matches_official_formula": true,
+      "stored_selected_public_score_proxy": 2.2125,
+      "task_id": "dotProduct_optimize"
+    },
+    {
+      "acceleration": 1.9852941176470589,
+      "baseline_fallback": false,
+      "baseline_latency_cycles": 135,
+      "candidate_latency_cycles": 68,
+      "capped_acceleration": 1.9852941176470589,
+      "components": {
+        "correctness": 2.0,
+        "ppa": 0.2977941176,
+        "synthesizable": 0.8
+      },
+      "difficulty": 4,
+      "engineering_metrics": {
+        "available_resources": {
+          "BRAM_18K": 4032,
+          "DSP": 9024,
+          "FF": 2607360,
+          "LUT": 1303680,
+          "URAM": 960
+        },
+        "estimated_clock_period_ns": 2.796,
+        "excluded_from_official_score": true,
+        "meets_target_clock": true,
+        "resource_utilization_percent": {
+          "BRAM_18K": 0.0,
+          "DSP": 0.0,
+          "FF": 0.00885954,
+          "LUT": 0.03114261,
+          "URAM": 0.0
+        },
+        "resources": {
+          "BRAM_18K": 0,
+          "DSP": 0,
+          "FF": 231,
+          "LUT": 406,
+          "URAM": 0
+        },
+        "target_clock_ns": 5.0
+      },
+      "hidden_correctness_caveat": "If official hidden correctness fails, the actual official score is zero regardless of this public-evidence proxy.",
+      "is_opt": true,
+      "official_score_proxy": 3.0978,
+      "ppa_norm": 0.24816176470588236,
+      "public_functional_proxy_pass": true,
+      "repetition": 10,
+      "run_dir": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/formal/runs/residual_stream_deadlock/run_10",
+      "selected_candidate_id": "candidate_001",
+      "selected_cosim_pass": true,
+      "selected_synth_pass": true,
+      "slot_index": 30,
+      "stored_proxy_matches_official_formula": true,
+      "stored_selected_public_score_proxy": 3.0978,
+      "task_id": "residual_stream_deadlock"
+    }
+  ],
+  "schema_version": "track-a.v1-official-score-proxy-recalculation.v1",
+  "source_evidence": {
+    "formal_records": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/formal/formal_records.json",
+    "formal_records_sha256": "6b25f6885100367d50001cfbf15a18e19fd1269f7245e45680ad0e173b7df367",
+    "task_metadata": {
+      "dotProduct_optimize": {
+        "clock_ns": 5.0,
+        "difficulty": 3,
+        "requires_cosim": false,
+        "task_toml": "/home/ying/CompetitionTrackA/track-A/llm4hls_harness/task_corpus/official/fpt26-harness-public/dotProduct_optimize/task.toml",
+        "task_toml_sha256": "ed87fbfa2e995a479e500db78b2c387874f77f04fcc5541ff420f4fe2612f102"
+      },
+      "projection_bugfix": {
+        "clock_ns": 5.0,
+        "difficulty": 2,
+        "requires_cosim": false,
+        "task_toml": "/home/ying/CompetitionTrackA/track-A/llm4hls_harness/task_corpus/official/fpt26-harness-public/projection_bugfix/task.toml",
+        "task_toml_sha256": "06800aa26fcd56ee1b7e35c740d31a3c56a853cefa9d3a0a6b1158371adeb7b2"
+      },
+      "residual_stream_deadlock": {
+        "clock_ns": 5.0,
+        "difficulty": 4,
+        "requires_cosim": true,
+        "task_toml": "/home/ying/CompetitionTrackA/track-A/llm4hls_harness/task_corpus/official/fpt26-harness-public/residual_stream_deadlock/task.toml",
+        "task_toml_sha256": "f215020b154574924f4930a50b28ef6f80c337c8809a7017428feed863e8f453"
+      }
+    }
+  },
+  "summary": {
+    "baseline_fallback_score_sum": 13.275,
+    "clock_and_resources_excluded_from_score": true,
+    "engineering_target_clock_passes": 28,
+    "maximum_three_task_score": 9,
+    "mean_score_per_slot": 2.3005,
+    "mean_three_task_score_per_repetition": 6.9016,
+    "per_task": {
+      "dotProduct_optimize": {
+        "acceleration_mean_when_known": 6.96905876,
+        "baseline_fallback_runs": 6,
+        "clock_or_resources_used_in_score": false,
+        "full_ppa_runs": 2,
+        "is_opt_runs": 4,
+        "known_acceleration_runs": 10,
+        "runs": 10,
+        "score_max": 3.0,
+        "score_mean": 2.4038,
+        "score_min": 2.2125,
+        "score_sum_over_repeats": 24.038,
+        "target_clock_met_runs": 8
+      },
+      "projection_bugfix": {
+        "acceleration_mean_when_known": null,
+        "baseline_fallback_runs": 0,
+        "clock_or_resources_used_in_score": false,
+        "full_ppa_runs": 0,
+        "is_opt_runs": 0,
+        "known_acceleration_runs": 0,
+        "runs": 10,
+        "score_max": 1.4,
+        "score_mean": 1.4,
+        "score_min": 1.4,
+        "score_sum_over_repeats": 14.0,
+        "target_clock_met_runs": 10
+      },
+      "residual_stream_deadlock": {
+        "acceleration_mean_when_known": 1.98529412,
+        "baseline_fallback_runs": 0,
+        "clock_or_resources_used_in_score": false,
+        "full_ppa_runs": 0,
+        "is_opt_runs": 10,
+        "known_acceleration_runs": 10,
+        "runs": 10,
+        "score_max": 3.0978,
+        "score_mean": 3.0978,
+        "score_min": 3.0978,
+        "score_sum_over_repeats": 30.978,
+        "target_clock_met_runs": 10
+      }
+    },
+    "score_sum_over_30_slots": 69.016,
+    "selected_synth_passes": 30,
+    "stored_proxy_matches": 30,
+    "three_task_score_by_repetition": {
+      "1": 6.7103,
+      "10": 6.7103,
+      "2": 6.7103,
+      "3": 6.823,
+      "4": 6.7103,
+      "5": 6.7103,
+      "6": 6.9356,
+      "7": 7.4978,
+      "8": 6.7103,
+      "9": 7.4978
+    }
+  }
+}

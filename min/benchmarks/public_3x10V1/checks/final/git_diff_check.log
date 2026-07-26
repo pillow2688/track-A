@@ -1,0 +1,5 @@
+$ git diff --check -- min llm4hls_harness/llm4hls_agent/budget.py llm4hls_harness/llm4hls_agent/repair.py llm4hls_harness/llm4hls_agent/top_interface_guard.py
+
+[stdout]
+
+[stderr]

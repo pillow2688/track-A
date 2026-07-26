@@ -1,0 +1,96 @@
+{
+  "schema_version": "track-a.public-3x10-v1-protocol.v1",
+  "phase": "V1_PLANNER_PATCH_BUDGET_RELIABILITY",
+  "status": "IMPLEMENTING",
+  "created_at": "2026-07-26T18:44:46+08:00",
+  "repository": {
+    "commit": "c76f6e114fb71cf6eb4d7e3f26d8f602a341af97",
+    "branch": "feat/track-a-empty-stub-generation-smoke",
+    "pre_v1_minimal_flow_sha256": "db36ee91a6e0648ebed7a05e141205e1d76b78a1324a720f1698933739ee6f8b",
+    "pre_v1_benchmark_driver_sha256": "8a46a5cef9d70e1a76ec8544ada9ff6d478333a1eed7efa30c2029b3e4ff412a"
+  },
+  "prior_baseline_evidence": {
+    "root": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10",
+    "manifest_sha256": "e13aba13df19ef42e76d67d09001a3555f3f96a3674136068c4d43b3b4865667",
+    "summary_sha256": "b149d31773bcf3250a31ac636a6becf1ba92d28c409fc154ed60b044c808e063",
+    "report_sha256": "fbfd2a80cced1a3d349f8713d602e8752050f75e8c1647bfb4d3c8f2176fe69c",
+    "metrics": {
+      "projection_objective_successes": "7/10",
+      "dot_product_objective_successes": "4/10",
+      "residual_objective_successes": "10/10",
+      "overall_objective_successes": "21/30",
+      "flow_successes": "27/30",
+      "planner_json_failures": 3,
+      "patch_format_or_location_failures": 4,
+      "token_usage_unknown": 3,
+      "budget_snapshot_mismatches": 4,
+      "credits": 625
+    }
+  },
+  "task_file_sha256_before_v1": {
+    "projection_bugfix": {
+      "projection.cpp": "eed237714637529c534e6e0ed2a2086611ce73999bcb64b20a949f9bb5e88eaf",
+      "projection.h": "6749ac7755a998295c94c4c2782e4b45a9f0a0ace449482699adab31b434412e",
+      "projection_tb.cpp": "897587836c90af8c689f153ea5de200790dd7c8f73edd1c314df14a02de41967",
+      "task.toml": "06800aa26fcd56ee1b7e35c740d31a3c56a853cefa9d3a0a6b1158371adeb7b2"
+    },
+    "dotProduct_optimize": {
+      "dotProduct.cpp": "1bca40f5d5cffe6db31aac1e84ed18ee756059ce67de8ef6d33dec578e1ca05c",
+      "dotProduct.h": "ddb3f29dccd09d73c8f2a8df41707839597c168b832dd8cb7051793a38e77205",
+      "dotProduct_tb.cpp": "afea831358b1760028958e52f50e1ee294f07cecac5f4d894e0ead1e2ad57f93",
+      "task.toml": "ed87fbfa2e995a479e500db78b2c387874f77f04fcc5541ff420f4fe2612f102"
+    },
+    "residual_stream_deadlock": {
+      "residual.cpp": "a0f40b47dea175d761e22f26edb42ac72f2ba5e25e21fdc460887fe2c639457b",
+      "residual.h": "0a6cdb9de0b0172dd05abcc6614cb4f470ee3e119579b65b66c48477c36654ee",
+      "residual_tb.cpp": "bb9f48528823f6e428f2d3ddaa65730df80af1aa2b47da890db9ea4e4e047a7a",
+      "task.toml": "f215020b154574924f4930a50b28ef6f80c337c8809a7017428feed863e8f453"
+    }
+  },
+  "fixed_protocol": {
+    "model": "deepseek-v4-pro",
+    "vitis_version": "2025.2",
+    "target": "U55C",
+    "target_clock_ns": 5.0,
+    "execution": "strictly serial, repetition-major interleaved",
+    "fresh_run_directory": true,
+    "automatic_retry": false,
+    "failed_sample_replacement": false,
+    "horizontal_components": [],
+    "planner_calls_per_slot": 1,
+    "planner_prompt_change": false,
+    "planner_round_change": false,
+    "token_budget": 32768,
+    "max_output_tokens": 4096,
+    "planner_timeout_seconds": 180,
+    "csim_timeout_seconds": 180,
+    "synth_timeout_seconds": 900,
+    "cosim_timeout_seconds": 180,
+    "costs": {
+      "csim": 1,
+      "synth": 4,
+      "cosim": 20,
+      "llm": 0
+    }
+  },
+  "preflight": {
+    "projection_bugfix": 3,
+    "dotProduct_optimize": 3,
+    "residual_stream_deadlock": 1,
+    "continue_to_formal_only_if_gate_passes": true
+  },
+  "formal": {
+    "projection_bugfix": 10,
+    "dotProduct_optimize": 10,
+    "residual_stream_deadlock": 10,
+    "slots": 30
+  },
+  "scope_guards": {
+    "hidden_reference_golden_access": false,
+    "task_specific_hardcoding": false,
+    "task_source_changes": false,
+    "success_definition_changes": false,
+    "credit_price_changes": false,
+    "push_or_pull_request": false
+  }
+}

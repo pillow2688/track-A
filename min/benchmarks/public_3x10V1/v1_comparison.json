@@ -1,0 +1,62 @@
+{
+  "attribution": {
+    "json_reliability_fix": "Two V1 truncations remain formal failures by design, but both retain envelope/raw content/request ID/finish reason/usage and count as LLM calls. The 3->2 count change is not itself proof of parser intelligence.",
+    "model_randomness": "The V1 run is a fresh stochastic sample, so run-number counterfactual causality is unavailable. DotProduct objective remained 4/10; Projection rose 7/10->10/10 consistently with the Patch fix, but sampling variation cannot be separated exactly.",
+    "patch_landing_fix": "Final Patch landing failures fell 4->0. Of 28 V1 patches, 23 required normalization or exact deterministic recovery; all were independently replayable.",
+    "strategy_change": "None: prompt template, model, one-call Planner, tool policy, success definition, costs, and horizontal-off configuration were frozen."
+  },
+  "baseline_budget_correction": {
+    "audited_stable_field_mismatches": 7,
+    "exact_object_mismatches": 30,
+    "exact_object_note": "All old snapshots differ in runtime fields; 7 differ in stable accounting fields. The V1 exact check is 30/30.",
+    "reported": 4
+  },
+  "baseline_reported": {
+    "budget_snapshot_mismatches_audited": 7,
+    "budget_snapshot_mismatches_reported": 4,
+    "credits": 625,
+    "dot_product_objective": 4,
+    "flow_successes": 27,
+    "known_call_token_mean": 2563.963,
+    "known_token_calls": 27,
+    "known_token_lower_bound": 69227,
+    "overall_objective": 21,
+    "patch_format_or_location_failures": 4,
+    "planner_json_failures": 3,
+    "projection_objective": 7,
+    "qualified_successes": 21,
+    "residual_objective": 10,
+    "token_usage_unknown": 3
+  },
+  "delta_v1_minus_baseline": {
+    "budget_mismatches_vs_audited": -7,
+    "budget_mismatches_vs_reported": -4,
+    "credits": 25,
+    "dot_product_objective": 0,
+    "flow_successes": 3,
+    "overall_objective": 3,
+    "patch_failures": -4,
+    "planner_json_failures": -1,
+    "projection_objective": 3,
+    "qualified_successes": 1,
+    "residual_objective": 0,
+    "token_usage_unknown": -3
+  },
+  "schema_version": "track-a.public-3x10-v1-comparison.v1",
+  "v1": {
+    "budget_snapshot_mismatches": 0,
+    "credits": 650,
+    "dot_product_objective": 4,
+    "flow_successes": 30,
+    "known_call_token_mean": 3030.6333,
+    "known_token_calls": 30,
+    "known_token_lower_bound": 90919,
+    "overall_objective": 24,
+    "patch_format_or_location_failures": 0,
+    "planner_json_failures": 2,
+    "projection_objective": 10,
+    "qualified_successes": 22,
+    "residual_objective": 10,
+    "token_usage_unknown": 0
+  }
+}

@@ -1,0 +1,95 @@
+{
+  "checks": [
+    {
+      "command": [
+        "/usr/bin/python",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "min",
+        "-p",
+        "test_*.py",
+        "-v"
+      ],
+      "cwd": "/home/ying/CompetitionTrackA/track-A",
+      "exit_code": 0,
+      "log_ref": "final/min_tests.log",
+      "log_sha256": "20e284a95dc9cc3adc13f4ea1706699229cebe29d4577ca1d2d1c8ae4b19853a",
+      "name": "min_tests",
+      "pass": true,
+      "wall_seconds": 0.748391015920788
+    },
+    {
+      "command": [
+        "/tmp/fpt-v1-tests.nqzP5j/venv/bin/python",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        ".",
+        "-t",
+        ".",
+        "-p",
+        "test_*.py"
+      ],
+      "cwd": "/home/ying/CompetitionTrackA/track-A/llm4hls_harness",
+      "exit_code": 0,
+      "log_ref": "final/full_harness_tests.log",
+      "log_sha256": "6d2c97e7cb7aa089e3332230326d7ecea3b60dae01914ca71456a15e5d277ef5",
+      "name": "full_harness_tests",
+      "pass": true,
+      "wall_seconds": 125.18688322301023
+    },
+    {
+      "command": [
+        "/usr/bin/python",
+        "-m",
+        "compileall",
+        "-q",
+        "min",
+        "llm4hls_harness/llm4hls_agent"
+      ],
+      "cwd": "/home/ying/CompetitionTrackA/track-A",
+      "exit_code": 0,
+      "log_ref": "final/compileall.log",
+      "log_sha256": "b0086fa96b161d9eb372b7a48c881d6943142aa90a8bca0e85fa9a4ce1f606f1",
+      "name": "compileall",
+      "pass": true,
+      "wall_seconds": 0.31892023514956236
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--check",
+        "--",
+        "min",
+        "llm4hls_harness/llm4hls_agent/budget.py",
+        "llm4hls_harness/llm4hls_agent/repair.py",
+        "llm4hls_harness/llm4hls_agent/top_interface_guard.py"
+      ],
+      "cwd": "/home/ying/CompetitionTrackA/track-A",
+      "exit_code": 0,
+      "log_ref": "final/git_diff_check.log",
+      "log_sha256": "9c8360285629a5047f003f97b1b3d7ba5d2f47f81224fc1daf59ae6be9683eab",
+      "name": "git_diff_check",
+      "pass": true,
+      "wall_seconds": 0.007085103075951338
+    },
+    {
+      "forbidden_hidden_reference_golden_tokens": [],
+      "name": "implementation_scope",
+      "pass": true,
+      "task_ids_hardcoded": []
+    },
+    {
+      "name": "secret_scan",
+      "pass": true,
+      "result_ref": "secret_scan_final.json"
+    }
+  ],
+  "schema_version": "track-a.v1-acceptance-checks.v1",
+  "stage": "final",
+  "status": "PASS"
+}

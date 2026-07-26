@@ -1,0 +1,27 @@
+{
+  "calculation_script": {
+    "path": "/home/ying/CompetitionTrackA/track-A/min/recalculate_v1_official_score.py",
+    "sha256": "c491679db4871bac17147e804a5ceee49e6d9de596079df84ea6d18854a68c49"
+  },
+  "no_existing_v1_evidence_overwritten": true,
+  "official_scoring": {
+    "path": "/home/ying/下载/scoring.py",
+    "sha256": "5f65aaa27bfc3cd488ae2294aa4cf463b6be4399306ffb847c44cdd3861d33fe"
+  },
+  "outputs": {
+    "json": {
+      "path": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/official_score_proxy_recalculation.json",
+      "sha256": "df626f82f6daca8a51099c20592f9f2e1676bdc2d068136808df1f1c8e8b915a"
+    },
+    "report": {
+      "path": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/official_score_proxy_recalculation.md",
+      "sha256": "af5c0a071e4988eb689889f651f10ecff8513a8fee95661fbc92d366b80f01f8"
+    }
+  },
+  "schema_version": "track-a.v1-official-score-proxy-recalculation-manifest.v1",
+  "source_evidence": {
+    "path": "/home/ying/CompetitionTrackA/track-A/min/benchmarks/public_3x10V1/formal/formal_records.json",
+    "sha256": "6b25f6885100367d50001cfbf15a18e19fd1269f7245e45680ad0e173b7df367"
+  },
+  "status": "PASS"
+}

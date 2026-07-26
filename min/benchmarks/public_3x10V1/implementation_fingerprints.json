@@ -1,0 +1,51 @@
+{
+  "files": {
+    "llm4hls_harness/llm4hls_agent/budget.py": {
+      "bytes": 51429,
+      "path": "/home/ying/CompetitionTrackA/track-A/llm4hls_harness/llm4hls_agent/budget.py",
+      "sha256": "ed4375d2f64730787bd8e3593f531ce414013c88820d230e1ba41216f063f324"
+    },
+    "llm4hls_harness/llm4hls_agent/repair.py": {
+      "bytes": 53329,
+      "path": "/home/ying/CompetitionTrackA/track-A/llm4hls_harness/llm4hls_agent/repair.py",
+      "sha256": "054a6432e1d51482895a513c0a9e48af913467507ffa32bf8565f293ba011afd"
+    },
+    "llm4hls_harness/llm4hls_agent/top_interface_guard.py": {
+      "bytes": 50935,
+      "path": "/home/ying/CompetitionTrackA/track-A/llm4hls_harness/llm4hls_agent/top_interface_guard.py",
+      "sha256": "0dc423ee4bfd860329a6c057bb7b3867b846c8ef3c46409e6c9baac6c049ced1"
+    },
+    "min/benchmark_public_tasks_v1.py": {
+      "bytes": 42325,
+      "path": "/home/ying/CompetitionTrackA/track-A/min/benchmark_public_tasks_v1.py",
+      "sha256": "787f829aaf871ca4ee422b096b8aff3c0a3a4fe40106f835aa84c003dea19c19"
+    },
+    "min/finalize_public_3x10_v1.py": {
+      "bytes": 45464,
+      "path": "/home/ying/CompetitionTrackA/track-A/min/finalize_public_3x10_v1.py",
+      "sha256": "c6373e62d5cbac1d48db25f926e6922e4cf80dba1f64a460fe0126ebda7e0e6e"
+    },
+    "min/minimal_flow.py": {
+      "bytes": 39887,
+      "path": "/home/ying/CompetitionTrackA/track-A/min/minimal_flow.py",
+      "sha256": "3ba37694ded57e9ffd9299ddd14550ccb598911c75c2112250c1346981e23a66"
+    },
+    "min/v1_acceptance_checks.py": {
+      "bytes": 7777,
+      "path": "/home/ying/CompetitionTrackA/track-A/min/v1_acceptance_checks.py",
+      "sha256": "3f331069dbfcb1210569b1973f6160a2249f1ec50a1957b5f8c81cb0f32f69ab"
+    },
+    "min/v1_patch_pipeline.py": {
+      "bytes": 27460,
+      "path": "/home/ying/CompetitionTrackA/track-A/min/v1_patch_pipeline.py",
+      "sha256": "7c893cd1d90d307c4dfa0271482104ae6c2e6b86038cddec6a6e1a470b549971"
+    },
+    "min/v1_planner_io.py": {
+      "bytes": 21494,
+      "path": "/home/ying/CompetitionTrackA/track-A/min/v1_planner_io.py",
+      "sha256": "6e71e3610c396fdcaaf334241a1934617d6232cb874c9c91a72c21f117de34a0"
+    }
+  },
+  "formal_minimal_flow_sha256": "3ba37694ded57e9ffd9299ddd14550ccb598911c75c2112250c1346981e23a66",
+  "schema_version": "track-a.public-3x10-v1-code-fingerprints.v1"
+}
