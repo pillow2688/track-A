@@ -1,5 +1,10 @@
 # 2026-07-25 横向组件真实在线 Shadow 状态
 
+> 历史冻结快照：本文记录的是 admission 生成前的 Shadow 状态。当前 Gate、
+> admission 和 E2E 修复状态请以
+> [2026-07-26 E2E correctness 收口状态](2026-07-26-e2e-correctness-recovery.md)
+> 为准。
+
 ## 结论
 
 四类公开 Anchor 已完成真实 DeepSeek + Vitis 2025.2 闭环，修正 REPAIR

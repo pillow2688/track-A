@@ -5176,6 +5176,17 @@ def _candidate_cosim(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeS
             "eligible": False,
             "reason": "CANDIDATE_COSIM_FAILED",
         }
+        if result is not None:
+            update.update(
+                _candidate_failure_evidence_update(
+                    runtime,
+                    candidate_id=candidate_id,
+                    stage="cosim",
+                    result=result,
+                    validation_evidence=record,
+                    event=event,
+                )
+            )
     return update
 
 

@@ -18,30 +18,26 @@ from llm4hls_agent.v3_strategy_ranker_v3 import (
 
 ARTIFACT_DIR = Path(__file__).resolve().parent
 RECORDS = ARTIFACT_DIR / "gate-combined-experience-v2.jsonl"
+AUDIT_GROUPS = (
+    ARTIFACT_DIR / "gate-combined-experience-v2-audit-groups.json"
+)
 OUTPUT = ARTIFACT_DIR / "ranker-v3-abstain-audit.json"
 
 
-def main() -> int:
-    records = [
-        validate_experience_v2(json.loads(line))
-        for line in RECORDS.read_text(encoding="utf-8").splitlines()
-        if line.strip()
-    ]
-    verified = [
-        record
-        for record in records
-        if record["source"]["evidence_level"] == "REAL_LLM_VITIS"
-        and record["provenance"]["eligible_for_ranking"] is True
-        and verified_success(record) is not None
-    ]
+def _audit(
+    verified: list[dict[str, object]],
+    *,
+    protocol: str,
+    group_for,
+) -> list[dict[str, object]]:
     ranker = BayesianStrategyRankerV3()
     rows = []
     for held in verified:
-        held_group = str(held["source"]["task_family_hash"])
+        held_group = group_for(held)
         support = [
             record
             for record in verified
-            if record["source"]["task_family_hash"] != held_group
+            if group_for(record) != held_group
         ]
         decision = ranker.rank(_query(held), support)
         if decision["decision"] != "ABSTAIN":
@@ -63,6 +59,7 @@ def main() -> int:
         ]
         rows.append(
             {
+                "protocol": protocol,
                 "record_id": held["record_id"],
                 "mode": held["problem"]["mode"],
                 "subtype": (
@@ -78,9 +75,43 @@ def main() -> int:
                 "actual_atoms": held["strategy"]["observed_strategy_atoms"],
             }
         )
+    return rows
+
+
+def main() -> int:
+    records = [
+        validate_experience_v2(json.loads(line))
+        for line in RECORDS.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    verified = [
+        record
+        for record in records
+        if record["source"]["evidence_level"] == "REAL_LLM_VITIS"
+        and record["provenance"]["eligible_for_ranking"] is True
+        and verified_success(record) is not None
+    ]
+    audit_value = json.loads(AUDIT_GROUPS.read_text(encoding="utf-8"))
+    audit_groups = audit_value["groups"]
+    rows = [
+        *_audit(
+            verified,
+            protocol="LEAVE_ONE_TASK_OUT",
+            group_for=lambda record: str(
+                audit_groups[str(record["record_id"])]["task_audit_hash"]
+            ),
+        ),
+        *_audit(
+            verified,
+            protocol="LEAVE_ONE_TASK_FAMILY_OUT",
+            group_for=lambda record: str(
+                record["source"]["task_family_hash"]
+            ),
+        ),
+    ]
     output = {
         "schema_version": "v3e.strategy-ranker-v3-abstain-audit.v1",
-        "protocol": "LEAVE_ONE_TASK_FAMILY_OUT",
+        "protocol": "LOTO_AND_LEAVE_ONE_TASK_FAMILY_OUT",
         "thresholds_changed": False,
         "abstain_count": len(rows),
         "abstain_reasons": dict(

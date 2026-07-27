@@ -272,6 +272,120 @@ class BayesianStrategyRankerV3Tests(unittest.TestCase):
         )
         self.assertIsNone(result["tie_resolution"])
 
+    def test_sparse_correctness_cell_allows_two_zero_failure_families(
+        self,
+    ) -> None:
+        query = self.query(
+            mode="STRUCTURAL_FIX",
+            failure_subtype="STREAM_ORDER_MISMATCH",
+            bottleneck_subtype="UNKNOWN",
+        )
+        records = [
+            self.record(
+                index,
+                mode="STRUCTURAL_FIX",
+                failure_subtype="STREAM_ORDER_MISMATCH",
+                bottleneck_subtype="UNKNOWN",
+                atom="FIX_STREAM_ORDER",
+            )
+            for index in (1, 2)
+        ]
+
+        result = BayesianStrategyRankerV3().rank(query, records)
+
+        self.assertEqual(result["decision"], "RECOMMEND")
+        self.assertTrue(
+            result["recommended"][
+                "sparse_correctness_zero_failure_backoff"
+            ]
+        )
+        self.assertEqual(
+            result["recommended"]["conditioning"],
+            "MODE_SUBTYPE_SPARSE_CORRECTNESS_BACKOFF",
+        )
+
+    def test_sparse_correctness_backoff_rejects_any_failed_family(self) -> None:
+        query = self.query(
+            mode="STRUCTURAL_FIX",
+            failure_subtype="STREAM_ORDER_MISMATCH",
+            bottleneck_subtype="UNKNOWN",
+        )
+        records = [
+            self.record(
+                1,
+                mode="STRUCTURAL_FIX",
+                failure_subtype="STREAM_ORDER_MISMATCH",
+                bottleneck_subtype="UNKNOWN",
+                atom="FIX_STREAM_ORDER",
+            ),
+            self.record(
+                2,
+                mode="STRUCTURAL_FIX",
+                failure_subtype="STREAM_ORDER_MISMATCH",
+                bottleneck_subtype="UNKNOWN",
+                atom="FIX_STREAM_ORDER",
+                final_status="FAIL",
+            ),
+        ]
+
+        result = BayesianStrategyRankerV3().rank(query, records)
+
+        self.assertEqual(result["decision"], "ABSTAIN")
+
+    def test_sparse_two_family_backoff_never_applies_to_optimize(self) -> None:
+        records = [
+            self.record(index, atom="LOOP_UNROLL")
+            for index in (1, 2)
+        ]
+
+        result = BayesianStrategyRankerV3().rank(self.query(), records)
+
+        self.assertEqual(result["decision"], "ABSTAIN")
+        self.assertFalse(
+            result["all_atoms"][0][
+                "sparse_correctness_zero_failure_backoff"
+            ]
+        )
+        self.assertFalse(
+            result["all_atoms"][0][
+                "sparse_optimize_zero_failure_backoff"
+            ]
+        )
+
+    def test_sparse_optimize_requires_two_families_and_three_patches(
+        self,
+    ) -> None:
+        records = [
+            self.record(1, family="a" * 64, atom="LOOP_UNROLL"),
+            self.record(2, family="a" * 64, atom="LOOP_UNROLL"),
+            self.record(3, family="b" * 64, atom="LOOP_UNROLL"),
+        ]
+
+        result = BayesianStrategyRankerV3().rank(self.query(), records)
+
+        self.assertEqual(result["decision"], "RECOMMEND")
+        self.assertTrue(
+            result["recommended"][
+                "sparse_optimize_zero_failure_backoff"
+            ]
+        )
+
+    def test_sparse_optimize_rejects_a_failed_family(self) -> None:
+        records = [
+            self.record(1, family="a" * 64, atom="LOOP_UNROLL"),
+            self.record(
+                2,
+                family="a" * 64,
+                atom="LOOP_UNROLL",
+                final_status="FAIL",
+            ),
+            self.record(3, family="b" * 64, atom="LOOP_UNROLL"),
+        ]
+
+        result = BayesianStrategyRankerV3().rank(self.query(), records)
+
+        self.assertEqual(result["decision"], "ABSTAIN")
+
 
 if __name__ == "__main__":
     unittest.main()

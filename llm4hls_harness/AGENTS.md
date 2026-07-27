@@ -66,7 +66,7 @@ Implement one runnable vertical slice at a time. Work on the lowest incomplete m
 ### V3: Budget-Aware LangGraph
 
 - Use the specified State, nodes, conditional edges, reducers, and checkpointer.
-- Enforce final verification reserves and stopping rules.
+- Enforce search-closeout reserves and stopping rules; mandatory final certification is outside Agent Token/Credit metering.
 - Track Token, tool, credit, and wall-time budgets.
 - Resume without duplicate side effects or charges.
 
@@ -100,7 +100,7 @@ Required compatibility rules:
 1. The runtime agent may modify only the kernel source supplied to the tool interface.
 2. It must not modify headers, testbenches, task metadata, assertions, build scripts, hidden tests, or reference solutions.
 3. It must preserve the top function name, signature, argument order, types, interfaces, and specified numerical semantics.
-4. It must call csim, synth, and cosim through a metered, audited interface equivalent to `ToolServer`.
+4. Agent-search csim, synth, and cosim must use a metered, audited interface equivalent to `ToolServer`. Final certification must use a separate audited scorer-style path outside the Agent Budget Ledger.
 5. It must not call Vitis directly from an LLM tool path to bypass the BudgetManager.
 6. Hidden grading is outside the agent loop. Hidden tests and golden answers must never enter prompts or runtime context.
 7. `requires_cosim = true` makes cosim part of correctness, not an optional PPA check.
@@ -115,10 +115,31 @@ csim cost: 1 credit
 synth cost: 4 credits
 cosim cost: 20 credits
 token budget: 32768
-acceleration score cap: 8x
 ```
 
 All of them must be overridable by config or environment.
+
+## Official Scoring Contract
+
+The team-provided official `scoring.py` is the executable scoring authority for current development. If a newer organizer-issued scorer or written rule conflicts with this section, update the implementation, tests, and this file together.
+
+Current scoring behavior:
+
+```text
+functional_pass = hidden_csim_pass and (hidden_cosim_pass if requires_cosim else true)
+acceleration = baseline_latency / candidate_latency
+ppa_norm = min(acceleration, 8.0) / 8.0
+score = difficulty * (0.5 * correct + 0.2 * synthesizable + 0.3 * ppa_norm)
+```
+
+- Hidden functional failure is an absolute gate: `score = 0`, regardless of synthesis or PPA.
+- For `requires_cosim = true`, hidden CoSim is part of `functional_pass`; otherwise the scorer does not run CoSim.
+- Acceleration and PPA credit exist only when functional correctness passes, candidate synthesis passes, and both baseline and candidate latency are available.
+- The latency baseline is the task's original starting kernel synthesized under the same task part and clock, not the best public candidate or a hand-tuned reference.
+- `is_opt` means strictly `acceleration > 1.0`; acceleration above `8x` earns no additional PPA credit.
+- LUT, FF, DSP, and BRAM are recorded by the supplied scorer but do not directly enter its current numeric formula. Never trade correctness for an unscored resource reduction.
+- Token consumption is identified by the submission guideline as an important final-evaluation factor, but its numeric weight is not defined in the supplied scorer. Report it faithfully and do not invent a combined score.
+- The project-wide final-certification rule remains deliberately stricter than the scorer: every reported final candidate must pass public CSim, Synth, CoSim, and the 100 MHz gate, even when hidden CoSim is conditional.
 
 ## Toolchain Contract
 
@@ -157,8 +178,8 @@ These are hard invariants:
 4. Source changes reset downstream validation states to `NOT_RUN`.
 5. Failed candidates never overwrite `best_candidate_id`.
 6. A PPA gain never outranks a higher correctness tier.
-7. Final output must come from a candidate that passes final csim, synth, cosim, and clock constraints.
-8. Final validation failure must try an affordable ranked fallback or terminate explicitly.
+7. Final output must come from a frozen candidate that passes final csim, synth, cosim, and the 100 MHz clock gate.
+8. Final certification failure must be reported explicitly. Any repair or alternate-candidate search requires a new metered Agent run with fresh budgets.
 
 Normal validation order:
 
@@ -169,7 +190,7 @@ static -> csim -> synth -> optional exploration cosim
 Final validation order:
 
 ```text
-final csim -> final synth -> final cosim
+final csim -> final synth -> final cosim -> final 100 MHz gate
 ```
 
 Run exploration cosim for structural, DATAFLOW, stream, interface, numerical, or explicit `requires_cosim` risk. Do not run it blindly after every low-risk PPA attempt.
@@ -210,9 +231,31 @@ Enforce all configured dimensions independently:
 - wall time;
 - repair, optimization, Patch retry, and fallback limits.
 
-Exploration is allowed only when the action remains affordable after preserving final verification reserves. Budget denial routes to finalization when an eligible candidate exists, otherwise to `FAILED(NO_VALID_CANDIDATE)`.
+Exploration is allowed only when the action remains affordable after preserving configured search-closeout reserves. Mandatory final certification does not consume Agent Token/Credit reserves. Budget denial routes to finalization when an eligible candidate exists, otherwise to `FAILED(NO_VALID_CANDIDATE)`.
 
 Recovery must reuse a completed `action_id` without repeating the call or charge. An ambiguous started action must be recorded and handled conservatively.
+
+## Agent 搜索与最终认证预算边界
+
+以下两项为已确认的项目级硬约束。Agent 搜索与最终认证属于两个独立预算域，不得混合计量、核销或复用为同一轮反馈。
+
+### Agent 搜索阶段
+
+- 受题目级 `max_tokens` 与 `max_credits` 硬约束。
+- `max_tokens` 统计 Agent 搜索中全部模型调用的输入与输出 Token，不得与单次请求的 `max_output_tokens` 混淆。
+- `max_credits` 统计 Agent 搜索中的计量型工具开销；所有收费动作必须进入唯一的 Agent Budget Ledger。
+- 仅当任务声明 `requires_cosim = true`，或候选存在可审计的结构风险时，才在搜索阶段执行昂贵 CoSim。
+- 结构风险包括 DATAFLOW、stream/FIFO、死锁、接口/协议、并发调度以及 RTL/C 模型不一致风险；触发原因必须写入 trace 和 evidence。
+- 不满足 CoSim 触发条件时，不得仅为形式完整性对每个搜索候选无条件运行 CoSim。
+
+### 最终认证与实验报告
+
+- Agent 选定并冻结 final kernel 后，使用独立的 scorer-style 认证路径统一执行 CSim、CoSim、Synth 和 100 MHz Gate。
+- 最终认证不受 Agent 的 `max_tokens` 或 `max_credits` 计量；其开销不得写入或扣减 Agent Budget Ledger。
+- 100 MHz Gate 要求最终时钟周期不大于 10 ns。缺失、不可解析或不满足阈值的时序证据均不得判定为通过。
+- 最终认证必须独立保存 receipt、日志、报告、工具配置和 `code_hash`，并明确标注 certification budget domain。
+- 最终认证只验证已经冻结的 final kernel，不得调用 LLM、生成 Patch、切换候选或向同一轮 Agent 搜索回灌免费反馈。
+- 认证失败必须如实进入实验报告；若需要修复或重新选择候选，必须开启新的 Agent 搜索轮次并重新应用 `max_tokens`/`max_credits`。
 
 ## LLM and Patch Contract
 
@@ -236,6 +279,22 @@ Model output must be structured data or a unified diff. Validate every Patch bef
 - no full-file replacement unless explicitly allowed by config.
 
 Use open-weight/open-source models allowed by the competition. Record provider, exact model ID, revision when known, quantization, reasoning mode, Token usage, and date.
+
+## Model Matrix and Current Provider Status
+
+The organizer guideline recommends, but does not state as a hard eligibility requirement, experiments with these three models:
+
+1. `deepseek-ai/DeepSeek-V4-Pro`
+2. `cyankiwi/Qwen3.5-122B-A10B-AWQ-4bit`
+3. `Qwen/Qwen3.6-27B-FP8`
+
+Current project status is DeepSeek-only. Treat that as an incomplete experiment matrix, not as permission to hardcode DeepSeek-specific behavior into planning, parsing, budgets, or persistence.
+
+- Keep the model client behind the existing provider/model configuration boundary.
+- A run counts as evidence for a recommended model only when the actual provider/backend, exact model ID, revision, quantization, context limit, and generation/reasoning settings are recorded. A generic DeepSeek API model must not be labeled `DeepSeek-V4-Pro` unless that exact backend is verified.
+- Before claiming multi-model readiness, run the same task set, prompt/policy version, Token/Credit budgets, toolchain configuration, seeds or repeat policy, and acceptance gates for every model.
+- Preserve failed and incomplete runs. The technical report must distinguish unavailable model access, infrastructure failure, budget exhaustion, invalid output, correctness failure, and PPA outcome.
+- Provider-specific response formats and Token accounting must be normalized at the adapter boundary and covered by focused tests.
 
 ## Secrets and Data
 
@@ -273,6 +332,18 @@ After coding:
 6. Report exact commands, outcomes, remaining risks, and the next milestone.
 
 Do not claim csim, synth, cosim, Docker, or recovery success without fresh command output proving it.
+
+## Submission Evidence Contract
+
+The submission guideline expects an experimental report and reproducible materials in addition to source code.
+
+- Run and report final evidence on Alveo U55C (`xcu55c-fsvh2892-2L-e`) with Vitis 2025.2.
+- For every reported final candidate, retain CSim, Synth, CoSim, target clock, achieved/estimated clock, latency/II, resource, Token, tool-call, wall-time, stop-reason, and candidate-hash evidence.
+- The report must separate official scorer results, stricter project certification results, and Agent-search budget consumption.
+- Build and run the submission in Docker from a clean checkout. Include a Dockerfile, pinned dependencies, exact build/run commands, and documented Vitis/license mounting or provisioning.
+- Produce a secret-free reproduction archive containing source, permitted testbenches, configuration templates, tests, scripts, report inputs, and one clear entry-point README. Do not package hidden tests, reference solutions, credentials, model caches, Vitis build trees, or unrelated run artifacts.
+- The demonstration video must be no longer than five minutes and show the project actually running on the target platform with a clear explanation; slides alone are insufficient evidence.
+- Do not claim the submission package, three-model matrix, report, or video complete until each corresponding artifact has been freshly checked.
 
 ## V0 Acceptance Evidence
 

@@ -6,9 +6,11 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from llm4hls_agent.tools import ToolResult
 from llm4hls_agent.v3_prototype import (
+    _candidate_cosim,
     _candidate_failure_evidence_update,
     _continuation_evidence,
 )
@@ -39,6 +41,55 @@ def failed_result(kind: str, phase: str, diagnostic: str) -> ToolResult:
 
 
 class CandidateFailureEvidenceTests(unittest.TestCase):
+    def test_candidate_cosim_failure_is_persisted_for_next_round(self) -> None:
+        result = failed_result(
+            "cosim",
+            "timeout",
+            "subprocess timeout expired",
+        )
+        record = {
+            **result.to_dict(),
+            "status": "TIMEOUT",
+            "ok": False,
+        }
+        event: dict[str, object] = {"details": {"validation_scope": "exploration"}}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runtime = SimpleNamespace(run_root=root)
+            state = {
+                "active_candidate_id": "candidate_002",
+                "mode": "STRUCTURAL_FIX",
+                "round_index": 2,
+                "cosim_gate": {"eligible": True, "reason": "READY"},
+            }
+            with (
+                patch(
+                    "llm4hls_agent.v3_prototype._run_tool",
+                    return_value=(result, record, event),
+                ),
+                patch("llm4hls_agent.v3_prototype._save_validation"),
+            ):
+                update = _candidate_cosim(runtime, state)
+
+            evidence_path = root / str(update["failure_evidence_ref"])
+            stored = json.loads(evidence_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(update["last_tool_ok"], False)
+        self.assertEqual(
+            update["cosim_gate"]["reason"],
+            "CANDIDATE_COSIM_FAILED",
+        )
+        self.assertEqual(
+            update["failure_evidence_ref"],
+            "evidence/failures/candidate_002_cosim.json",
+        )
+        self.assertEqual(stored["candidate_id"], "candidate_002")
+        self.assertEqual(stored["failure_kind"], "TIMEOUT")
+        self.assertEqual(
+            event["details"]["failure_evidence_ref"],
+            update["failure_evidence_ref"],
+        )
+
     def test_latest_synth_failure_is_persisted_and_bound_for_next_round(self) -> None:
         result = failed_result(
             "synth",

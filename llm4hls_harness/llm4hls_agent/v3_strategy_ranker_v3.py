@@ -320,6 +320,30 @@ class BayesianStrategyRankerV3:
         }
         if len(exact_families) >= self.config.minimum_task_families:
             return exact, "MODE_SUBTYPE_ALGORITHM_PROFILE"
+        subtype_safe = [
+            record
+            for record in records
+            if atom in record["strategy"]["observed_strategy_atoms"]
+            and _normalization_is_safe(record, atom)
+        ]
+        subtype_families = {
+            str(record["source"]["task_family_hash"])
+            for record in subtype_safe
+        }
+        if (
+            str(query["mode"])
+            in {"REPAIR", "SYNTH_FIX", "STRUCTURAL_FIX"}
+            and len(subtype_families) >= 2
+        ):
+            # Correctness repairs are conditioned on the exact failure subtype.
+            # Post-Patch structural flags may differ precisely because the
+            # repair succeeded, so a sparse exact-subtype cell may back off
+            # from those flags while _entry still enforces two independent
+            # families, two Patch digests, and zero failed families.
+            return (
+                subtype_safe,
+                "MODE_SUBTYPE_SPARSE_CORRECTNESS_BACKOFF",
+            )
         return safe, "MODE_SUBTYPE_PROFILE_BACKOFF"
 
     def _entry(
@@ -366,6 +390,18 @@ class BayesianStrategyRankerV3:
             for record in samples
             if record["strategy"]["patch_digest"] is not None
         }
+        sparse_correctness_support = bool(
+            str(query["mode"]) in {"REPAIR", "SYNTH_FIX", "STRUCTURAL_FIX"}
+            and attempts >= 2
+            and successes == attempts
+            and len(patches) >= self.config.minimum_patch_digests
+        )
+        sparse_optimize_support = bool(
+            str(query["mode"]) == "OPTIMIZE"
+            and attempts >= 2
+            and successes == attempts
+            and len(patches) >= 3
+        )
         accelerations = [
             number
             for record in samples
@@ -373,7 +409,11 @@ class BayesianStrategyRankerV3:
             is not None
         ]
         reasons: list[str] = []
-        if attempts < self.config.minimum_task_families:
+        if (
+            attempts < self.config.minimum_task_families
+            and not sparse_correctness_support
+            and not sparse_optimize_support
+        ):
             reasons.append("INSUFFICIENT_INDEPENDENT_FAMILY_SUPPORT")
         if successes < self.config.minimum_success_families:
             reasons.append("INSUFFICIENT_SUCCESS_FAMILY_SUPPORT")
@@ -394,6 +434,12 @@ class BayesianStrategyRankerV3:
                 atom,
             ],
             "conditioning": conditioning,
+            "sparse_correctness_zero_failure_backoff": (
+                sparse_correctness_support
+            ),
+            "sparse_optimize_zero_failure_backoff": (
+                sparse_optimize_support
+            ),
             "attempts": attempts,
             "successes": successes,
             "failures": failures,

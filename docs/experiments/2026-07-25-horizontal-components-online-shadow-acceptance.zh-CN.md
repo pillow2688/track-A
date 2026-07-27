@@ -1,5 +1,9 @@
 # 2026-07-25 横向组件真实在线 Shadow 验收报告
 
+> 历史冻结快照：本文记录的是 admission 生成前的 Shadow 验收。当前结论请
+> 查看
+> [2026-07-26 E2E correctness 收口验收报告](2026-07-26-e2e-correctness-recovery-acceptance.zh-CN.md)。
+
 ## 验收结论
 
 本阶段验收分成两个层次：
@@ -82,4 +86,3 @@ DeepSeek。随后只运行定向的小任务集合，不启动 28 题：
 - `artifacts/2026-07-25-horizontal-online-shadow/ranker-v3-fixed-protocol.json`
 - `artifacts/2026-07-25-horizontal-online-shadow/combined-experience-manifest.json`
 - `artifacts/2026-07-25-horizontal-online-shadow/final-verification.json`
-
