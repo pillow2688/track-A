@@ -114,10 +114,10 @@ The reference defaults are development configuration, not confirmed final rules:
 csim cost: 1 credit
 synth cost: 4 credits
 cosim cost: 20 credits
-token budget: 32768
+example development token fallback: 32768
 ```
 
-All of them must be overridable by config or environment.
+These are reference-harness development defaults, not organizer-confirmed limits. A task-level or run-level `max_tokens` takes precedence over the `32768` fallback. If no explicit limit is supplied, the run may use the configurable development fallback but must record that assumption in its trace and experimental report. All costs and fallback values must be overridable by config or environment.
 
 ## Official Scoring Contract
 
