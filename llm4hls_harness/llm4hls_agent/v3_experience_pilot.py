@@ -215,7 +215,7 @@ def _status_from_actions(
         for action in actions
         if action.get("candidate_id") == candidate_id
         and str(action.get("kind", "")).casefold() == kind
-        and action.get("validation_scope") != "final"
+        and action.get("validation_scope") != "search_closeout"
     ]
     if not matching:
         return "NOT_RUN"

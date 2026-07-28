@@ -117,7 +117,7 @@ cosim cost: 20 credits
 example development token fallback: 32768
 ```
 
-These are reference-harness development defaults, not organizer-confirmed limits. A task-level or run-level `max_tokens` takes precedence over the `32768` fallback. If no explicit limit is supplied, the run may use the configurable development fallback but must record that assumption in its trace and experimental report. All costs and fallback values must be overridable by config or environment.
+These are reference-harness development defaults, not organizer-confirmed limits. Task-level limits take precedence: `max_tokens` overrides the Token fallback and `max_credits` overrides any development Credit fallback. A run-level override may only narrow a task-level limit unless the task format explicitly authorizes otherwise. If a task omits either limit, the run may use a configurable development fallback, but it must record the selected value, source, and fallback assumption in its trace and experimental report. Missing limits must never silently become unlimited. All per-tool costs and fallback values must be overridable by config or environment.
 
 ## Official Scoring Contract
 
@@ -244,14 +244,19 @@ Recovery must reuse a completed `action_id` without repeating the call or charge
 - 受题目级 `max_tokens` 与 `max_credits` 硬约束。
 - `max_tokens` 统计 Agent 搜索中全部模型调用的输入与输出 Token，不得与单次请求的 `max_output_tokens` 混淆。
 - `max_credits` 统计 Agent 搜索中的计量型工具开销；所有收费动作必须进入唯一的 Agent Budget Ledger。
+- 题目提供 `max_credits` 时必须优先采用；运行参数只能收紧该额度，不能静默放宽。题目未提供时才允许使用明确配置的开发回退值，并在 trace、Ledger 配置和实验报告中记录其来源。
+- CSim/Synth/CoSim 的 `1/4/20` 只是不确定规则下的可配置开发参考成本，不能写成官方固定收费标准。
 - 仅当任务声明 `requires_cosim = true`，或候选存在可审计的结构风险时，才在搜索阶段执行昂贵 CoSim。
 - 结构风险包括 DATAFLOW、stream/FIFO、死锁、接口/协议、并发调度以及 RTL/C 模型不一致风险；触发原因必须写入 trace 和 evidence。
 - 不满足 CoSim 触发条件时，不得仅为形式完整性对每个搜索候选无条件运行 CoSim。
+- 任何名为 `final_reserve_credits` 的旧字段都不得表示最终认证预算。迁移时必须删除它，或将仍有必要的搜索期语义重命名为 `search_closeout_reserve_credits`。
+- `search_closeout_reserve_credits` 只能保留 Agent 搜索阶段用于候选确认、失败收口或安全停止的计量型动作预算；它不得包含或估算独立最终认证的成本。
 
 ### 最终认证与实验报告
 
-- Agent 选定并冻结 final kernel 后，使用独立的 scorer-style 认证路径统一执行 CSim、CoSim、Synth 和 100 MHz Gate。
+- Agent 选定并冻结 final kernel 后，使用独立的 scorer-style 认证路径统一执行 CSim、Synth、CoSim 和 100 MHz Gate。
 - 最终认证不受 Agent 的 `max_tokens` 或 `max_credits` 计量；其开销不得写入或扣减 Agent Budget Ledger。
+- Agent 搜索终态必须先冻结并持久化 final `candidate_id`、`code_hash` 和工具配置，认证入口只接受该不可变绑定。
 - 100 MHz Gate 要求最终时钟周期不大于 10 ns。缺失、不可解析或不满足阈值的时序证据均不得判定为通过。
 - 最终认证必须独立保存 receipt、日志、报告、工具配置和 `code_hash`，并明确标注 certification budget domain。
 - 最终认证只验证已经冻结的 final kernel，不得调用 LLM、生成 Patch、切换候选或向同一轮 Agent 搜索回灌免费反馈。

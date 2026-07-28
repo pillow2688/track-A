@@ -1075,7 +1075,9 @@ def _candidate_record(
         "difficulty": difficulty,
         "algorithm_family": family,
         "execution_class": execution_class,
-        "eligible_for_ranking": execution_class == "REAL_LLM_VITIS",
+        "eligible_for_ranking": (
+            execution_class == "REAL_LLM_VITIS" and task_split == "train"
+        ),
         "evidence_features": evidence,
         "proposal_features": {
             "strategy_bundle": _strategy_bundle(proposal, round_value),

@@ -343,7 +343,7 @@ def _assert_fresh_final_closure(test: unittest.TestCase, result: dict[str, objec
     for stage in ("csim", "synth", "cosim"):
         record = final_validation[stage]  # type: ignore[index]
         test.assertEqual(record["status"], "PASS")
-        test.assertEqual(record["validation_scope"], "final")
+        test.assertEqual(record["validation_scope"], "search_closeout")
 
 
 @unittest.skipIf(run_v3_prototype is None, "V3 optional dependencies are not installed")

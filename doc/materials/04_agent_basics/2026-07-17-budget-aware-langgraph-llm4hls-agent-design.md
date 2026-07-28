@@ -5,6 +5,16 @@ Owner: team
 Checked: 2026-07-17
 Scope: FPT 2026 Track A Agent Harness
 
+> **2026-07-27 当前实现覆盖说明：**本文后续使用的
+> `final_credit_reserve`、`final_token_reserve` 和“最终验证预留”是早期单预算域
+> 设计术语，不再代表当前产品的 Independent Final Certification。当前实现以题目
+> `max_credits`/`max_tokens` 约束 Agent 搜索，搜索期只使用
+> `search_closeout_reserve_credits`/`search_closeout_token_reserve`；final kernel
+> 冻结后的 CSim、Synth、CoSim 与 100 MHz Gate 属于独立认证预算域，不修改
+> Agent Ledger，也不得反馈给同一轮 Agent 继续搜索。本文旧字段仅作为历史设计
+> 上下文；当前契约以根目录 `AGENTS.md`、代码和
+> `横向组件验证与有效性总表.md` 为准。
+
 ## 0. 文档定位
 
 本文合并并修订以下两份组内材料：

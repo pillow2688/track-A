@@ -1,19 +1,203 @@
 {
   "schema_version": "track-a-safe-baseline.v1",
   "profile": "competition-safe-v1",
-  "purpose": "Stable public Track A baseline; unvalidated learning controls remain advisory only.",
+  "artifact_kind": "auditable_freeze_default_manifest",
+  "runtime_loader": false,
+  "runtime_authority": "CLI parser defaults plus contract tests",
+  "purpose": "Freeze-ready public Track A default manifest with exactly three ablatable runtime innovations; safety, certification, offline processing, and evaluation are excluded from the ablation count. This file is not a direct CLI input.",
   "tool_costs": {
     "csim": 1,
     "synth": 4,
     "cosim": 20
   },
+  "tool_cost_basis": "configurable_development_reference_not_official",
   "planner": {
+    "token_policy": "fixed",
+    "dynamic_token_policy": {
+      "formal_runtime_status": "EVALUATION_HARNESS_ONLY_NOT_PRODUCT_CLI",
+      "default": false,
+      "experiment_entry": "python -m llm4hls_agent.token_policy_experiment_cli",
+      "evidence": "72-run real A/B/C completed; engineering admission NOT_PASSED"
+    },
+    "evidence_memory": "on",
     "continuation_policy": "shadow",
+    "continuation_external_version": "v2",
+    "continuation_implementation_version": "v3.continuation-policy.v3",
+    "continuation_enforce_default": false,
     "experience_mode": "shadow",
-    "strategy_ranker": "bayesian_shadow",
+    "strategy_ranker": "legacy_v1_bayesian_advisory_shadow",
+    "strategy_ranker_v3": {
+      "formal_runtime_status": "EXPLICIT_SHADOW_RESEARCH_ONLY",
+      "requires_frozen_store": true,
+      "guided_default": false,
+      "current_admission_status": "INVALIDATED_PENDING_TRAIN_ONLY_REEVALUATION"
+    },
     "comparator": "latency_first"
   },
+  "runtime_controls": {
+    "ablatable_innovations": {
+      "A1 Structured Evidence Memory": {
+        "cli": "--evidence-memory",
+        "choices": ["off", "on"],
+        "safe_default": "on",
+        "off_semantics": "retain basic tool PASS/FAIL, validation artifacts, B1 evidence ref/hash binding, and the idempotent Candidate materialization guard; disable enhanced cross-candidate memory, evidence delta, Planner/Continuation duplicate-failure and repeated-patch feedback, and refined performance bottleneck feedback"
+      },
+      "A2 Budget-Aware Continuation": {
+        "cli": "--continuation-policy",
+        "choices": ["off", "shadow", "enforce"],
+        "safe_default": "shadow",
+        "enforce_default": false,
+        "shadow_semantics": "do not enforce V3 learned continuation decisions; keep the fixed score-aligned 8x stop enabled",
+        "off_semantics": "disable V3 continuation decisions and the fixed 8x stop",
+        "admission": "fail_closed_no_current_v3_admission"
+      },
+      "A3 Experience Strategy Advisor": {
+        "cli": "--experience-mode",
+        "choices": ["off", "shadow", "guided"],
+        "safe_default": "shadow",
+        "guided_default": false,
+        "admission": "fail_closed_no_current_train_only_admission",
+        "runtime_default_ranker": "legacy_v1",
+        "v3_status": "explicit_shadow_research_only"
+      }
+    },
+    "constraints": [
+      "evidence_memory=off requires continuation_policy=off"
+    ],
+    "always_on_foundations": {
+      "B1 Candidate and Safety Baseline": {
+        "enabled": true,
+        "ablatable": false,
+        "includes": [
+          "immutable baseline and candidates",
+          "candidate registry and best-candidate protection",
+          "candidate evidence ref/hash storage and validation",
+          "unified diff and interface guard",
+          "budget ledger and search reserves",
+          "fixed token policy",
+          "invalid latency guard and verified-incumbent fallback",
+          "admission and provenance fail-closed boundaries",
+          "batch identity and resume binding"
+        ]
+      },
+      "B2 Independent Final Certification": {
+        "enabled": true,
+        "ablatable": false,
+        "budget_domain": "FINAL_CERTIFICATION_OUTSIDE_AGENT_BUDGET",
+        "feedback_policy": "NO_SAME_RUN_AGENT_FEEDBACK"
+      }
+    }
+  },
+  "ablation_profiles": {
+    "B0": {
+      "description": "safety baseline only",
+      "command_arguments": [
+        "--token-budget-policy",
+        "fixed",
+        "--evidence-memory",
+        "off",
+        "--continuation-policy",
+        "off",
+        "--experience-mode",
+        "off"
+      ]
+    },
+    "B1": {
+      "description": "B0 plus Structured Evidence Memory",
+      "command_arguments": [
+        "--token-budget-policy",
+        "fixed",
+        "--evidence-memory",
+        "on",
+        "--continuation-policy",
+        "off",
+        "--experience-mode",
+        "off"
+      ]
+    },
+    "B2": {
+      "description": "B1 plus Budget-Aware Continuation in shadow mode",
+      "command_arguments": [
+        "--token-budget-policy",
+        "fixed",
+        "--evidence-memory",
+        "on",
+        "--continuation-policy",
+        "shadow",
+        "--experience-mode",
+        "off"
+      ]
+    },
+    "B3": {
+      "description": "three-innovation safe full profile",
+      "command_arguments": [
+        "--token-budget-policy",
+        "fixed",
+        "--evidence-memory",
+        "on",
+        "--continuation-policy",
+        "shadow",
+        "--experience-mode",
+        "shadow"
+      ]
+    }
+  },
+  "component_profile": {
+    "ablatable_innovations": [
+      "Structured Evidence Memory",
+      "Budget-Aware Continuation",
+      "Experience Strategy Advisor"
+    ],
+    "always_on_foundations": [
+      "Candidate and Safety Baseline",
+      "Independent Final Certification"
+    ],
+    "non_runtime_support": [
+      "Offline Experience Pipeline",
+      "Evaluation Harness"
+    ],
+    "runtime_internal_modules": [
+      "A1: enhanced performance and failure projections, candidate failure memory, evidence delta, failure signatures, and cross-candidate consumption of B1-bound evidence",
+      "A2: current Continuation V3 decisions, new-evidence and repeated-failure checks, search closeout, and 8x stop",
+      "A3: frozen-store Top-1 retrieval, strategy normalization/ranking, strategy card, ABSTAIN, Shadow, and controlled Guided entry"
+    ],
+    "offline_experience_pipeline": [
+      "experience importer",
+      "record normalizer and schema migration",
+      "final reconcile",
+      "frozen store builder and historical pool merge",
+      "data quality audit and offline strategy normalization"
+    ],
+    "evaluation_harness": [
+      "dynamic token policy A/B/C",
+      "strategy ranker v3 fixed evaluation, gate, and shadow reports",
+      "continuation fixed evaluator",
+      "ranker fixed evaluator",
+      "online pilot",
+      "gate and admission generation",
+      "provider-request non-interference checks",
+      "deterministic oracle, batch benchmark, metric recomputation, and reports"
+    ],
+    "retired_product_capabilities": [
+      "Continuation V1 decision and replay",
+      "Bayesian Strategy Ranker V2",
+      "Hybrid Token Policy V2",
+      "SATURATED_PARALLEL_REDUCTION_BUNDLE_PENDING_FINAL",
+      "final_reserve_credits product semantics"
+    ]
+  },
+  "runtime_boundaries": {
+    "automatic_experience_postprocessing": false,
+    "experience_postprocess_entry": "llm4hls-experience postprocess-run",
+    "offline_postprocessing_can_delay_certification": false,
+    "planner_or_graph_changes_from_offline_tools": false,
+    "evaluation_harness_in_main_graph": false,
+    "dynamic_token_policy_in_product_cli": false
+  },
   "final_validation": {
+    "budget_domain": "agent_search",
+    "scope": "search_closeout_candidate_confirmation",
+    "does_not_cover": "independent_final_certification",
     "fresh_final": "required",
     "policy": "task_contract",
     "task_contract": {
@@ -21,6 +205,13 @@
       "requires_cosim_false": ["csim", "synth"]
     },
     "full_internal_audit": ["csim", "synth", "cosim"]
+  },
+  "final_certification": {
+    "budget_domain": "FINAL_CERTIFICATION_OUTSIDE_AGENT_BUDGET",
+    "agent_credits_charged": 0,
+    "stages": ["csim", "synth", "cosim"],
+    "maximum_clock_period_ns": 10.0,
+    "feedback_policy": "NO_SAME_RUN_AGENT_FEEDBACK"
   },
   "access_control": {
     "hidden_access": false,

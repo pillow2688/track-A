@@ -3,6 +3,7 @@
 V3 fixes two unsafe properties of the offline V2 prototype:
 
 * only records with a real final PASS/FAIL label are evidence;
+* only records from the training split may provide support;
 * repeated Candidates from one task family contribute one Bernoulli sample.
 
 The ranker remains a pure advisory function.  Prompt injection is authorized
@@ -13,6 +14,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import statistics
 from dataclasses import dataclass
 from typing import Mapping, Sequence
@@ -21,7 +23,9 @@ from .v3_experience_kb import validate_kb_query
 from .v3_experience_v2 import STRATEGIES_BY_MODE, validate_experience_v2
 
 
-STRATEGY_RANKER_V3_SCHEMA = "v3e.bayesian-strategy-ranker.v3"
+STRATEGY_RANKER_V3_SCHEMA = (
+    "v3e.bayesian-strategy-ranker.v3.train-only-support.v1"
+)
 
 _LOW_CONFIDENCE_REASONS = frozenset(
     {
@@ -35,6 +39,64 @@ _GENERIC_OTHER_BY_CELL = {
     ("SYNTH_FIX", "SYNTHESIS_ERROR_OTHER"): "OTHER_SYNTHESIS_REPAIR",
     ("STRUCTURAL_FIX", "STRUCTURAL_ERROR_OTHER"): "OTHER_STRUCTURAL_REPAIR",
 }
+_FORBIDDEN_SUPPORT_LABELS = frozenset(
+    {
+        "answer",
+        "debug",
+        "demo",
+        "golden",
+        "hidden",
+        "oracle",
+        "reference",
+        "scripted",
+    }
+)
+
+
+def _label_tokens(value: object) -> set[str]:
+    return {
+        token
+        for token in re.split(r"[^a-z0-9]+", str(value).casefold())
+        if token
+    }
+
+
+def runtime_support_eligible(record: Mapping[str, object]) -> bool:
+    """Return whether one validated record may influence online ranking.
+
+    Final FAIL labels remain eligible negative evidence: they can lower or
+    veto a strategy, but can never create positive support.  Non-train,
+    fixture/debug, non-public, unverified, or non-ranking records are excluded.
+    """
+
+    source = record["source"]
+    validation = record["validation"]
+    provenance = record["provenance"]
+    assert isinstance(source, Mapping)
+    assert isinstance(validation, Mapping)
+    assert isinstance(provenance, Mapping)
+    if (
+        source["evidence_level"] != "REAL_LLM_VITIS"
+        or source["task_split"] != "train"
+        or provenance["eligible_for_ranking"] is not True
+        or validation["fresh_final_status"] not in {"PASS", "FAIL"}
+    ):
+        return False
+    labels: list[object] = [
+        source.get("run_id"),
+        source.get("provider"),
+        source.get("model"),
+        source.get("prompt_version"),
+        source.get("backend_fingerprint"),
+        *provenance.get("exclusion_reasons", []),
+    ]
+    for artifact in provenance.get("artifact_refs", []):
+        if isinstance(artifact, Mapping):
+            labels.extend((artifact.get("role"), artifact.get("ref")))
+    return not any(
+        _label_tokens(label).intersection(_FORBIDDEN_SUPPORT_LABELS)
+        for label in labels
+    )
 
 
 def _subtype_from_query(query: Mapping[str, object]) -> str:
@@ -239,18 +301,25 @@ class BayesianStrategyRankerV3:
         output: list[dict[str, object]] = []
         unverified = 0
         for raw in records:
+            source_hint = raw.get("source")
+            if not isinstance(source_hint, Mapping) or (
+                source_hint.get("evidence_level") != "REAL_LLM_VITIS"
+                or source_hint.get("task_split") != "train"
+            ):
+                continue
             record = validate_experience_v2(raw)
             source = record["source"]
             problem = record["problem"]
             strategy = record["strategy"]
-            provenance = record["provenance"]
             if (
-                source["evidence_level"] != "REAL_LLM_VITIS"
-                or source["task_split"] not in {"train", "dev"}
-                or provenance["eligible_for_ranking"] is not True
-                or problem["mode"] != mode
+                problem["mode"] != mode
                 or _subtype_from_record(record) != subtype
             ):
+                continue
+            if verified_success(record) is None:
+                unverified += 1
+                continue
+            if not runtime_support_eligible(record):
                 continue
             if source["run_id"] == query["current_run_id"]:
                 continue
@@ -268,9 +337,6 @@ class BayesianStrategyRankerV3:
                 query["exclude_same_task_family"] is True
                 and source["task_family_hash"] == query["task_family_hash"]
             ):
-                continue
-            if verified_success(record) is None:
-                unverified += 1
                 continue
             output.append(record)
         output.sort(key=lambda item: str(item["record_id"]))
@@ -575,5 +641,6 @@ __all__ = [
     "BayesianStrategyRankerV3",
     "BayesianStrategyRankerV3Config",
     "STRATEGY_RANKER_V3_SCHEMA",
+    "runtime_support_eligible",
     "verified_success",
 ]

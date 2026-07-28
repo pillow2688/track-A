@@ -47,9 +47,13 @@ class PatchValidationError(V1Error, ValueError):
         message: str,
         *,
         interface_guard: TopInterfaceGuardResult | None = None,
+        failure_evidence: Mapping[str, object] | None = None,
     ) -> None:
         super().__init__(message)
         self.interface_guard = interface_guard
+        self.failure_evidence = (
+            dict(failure_evidence) if failure_evidence is not None else None
+        )
 
 
 class RepairProviderError(V1Error):
@@ -87,6 +91,69 @@ _HUNK = re.compile(
     r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(?: .*)?$"
 )
 _LINE_REFERENCE = re.compile(r"(?:^|[/\\])([^/\\:]+\.cpp):(\d+)")
+
+
+def _hunk_validation_error(
+    *,
+    error_type: str,
+    kernel_name: str,
+    hunk_index: int,
+    hunk_header: str,
+    declared_old_count: int,
+    actual_old_count: int,
+    declared_new_count: int,
+    actual_new_count: int,
+    declared_old_start: int,
+    declared_new_start: int,
+    expected_new_start: int | None = None,
+) -> PatchValidationError:
+    """Build one bounded, actionable unified-diff hunk diagnostic."""
+
+    coordinate_header, separator, _suffix = hunk_header.partition(" @@")
+    bounded_header = (
+        f"{coordinate_header}{separator}" if separator else hunk_header[:512]
+    )
+    evidence: dict[str, object] = {
+        "schema_version": "v3.patch-hunk-failure-evidence.v1",
+        "error_type": error_type,
+        "file": kernel_name,
+        "hunk_index": hunk_index,
+        "hunk_header": bounded_header,
+        "declared_old_start": declared_old_start,
+        "declared_new_start": declared_new_start,
+        "declared_old_count": declared_old_count,
+        "actual_old_count": actual_old_count,
+        "declared_new_count": declared_new_count,
+        "actual_new_count": actual_new_count,
+        "guidance": (
+            "regenerate the unified diff with corrected hunk coordinates"
+        ),
+    }
+    if expected_new_start is not None:
+        evidence["expected_new_start"] = expected_new_start
+    fields = [
+        f"file={kernel_name}",
+        f"hunk={hunk_index}",
+        f"header={bounded_header}",
+        f"declared_old_count={declared_old_count}",
+        f"actual_old_count={actual_old_count}",
+        f"declared_new_count={declared_new_count}",
+        f"actual_new_count={actual_new_count}",
+    ]
+    if expected_new_start is not None:
+        fields.extend(
+            [
+                f"declared_new_start={declared_new_start}",
+                f"expected_new_start={expected_new_start}",
+            ]
+        )
+    message = (
+        f"{error_type}: "
+        + " ".join(fields)
+        + "; regenerate the unified diff with corrected hunk coordinates"
+    )
+    evidence["message"] = message
+    return PatchValidationError(message, failure_evidence=evidence)
 
 
 @dataclass(frozen=True)
@@ -650,6 +717,8 @@ def apply_unified_diff(
     hunks: list[tuple[int, int, int, int, list[tuple[str, str]]]] = []
     cumulative_delta = 0
     while cursor < len(lines):
+        hunk_index = len(hunks) + 1
+        hunk_header = lines[cursor]
         match = _HUNK.match(lines[cursor])
         if match is None:
             raise PatchValidationError(f"unexpected patch line: {lines[cursor]!r}")
@@ -681,8 +750,32 @@ def apply_unified_diff(
             if kind in " +":
                 new_seen += 1
             cursor += 1
-        if old_seen != old_count or new_seen != new_count:
-            raise PatchValidationError("hunk line counts do not match its header")
+        if old_seen != old_count:
+            raise _hunk_validation_error(
+                error_type="PATCH_HUNK_OLD_COUNT_MISMATCH",
+                kernel_name=kernel_name,
+                hunk_index=hunk_index,
+                hunk_header=hunk_header,
+                declared_old_count=old_count,
+                actual_old_count=old_seen,
+                declared_new_count=new_count,
+                actual_new_count=new_seen,
+                declared_old_start=old_start,
+                declared_new_start=new_start,
+            )
+        if new_seen != new_count:
+            raise _hunk_validation_error(
+                error_type="PATCH_HUNK_NEW_COUNT_MISMATCH",
+                kernel_name=kernel_name,
+                hunk_index=hunk_index,
+                hunk_header=hunk_header,
+                declared_old_count=old_count,
+                actual_old_count=old_seen,
+                declared_new_count=new_count,
+                actual_new_count=new_seen,
+                declared_old_start=old_start,
+                declared_new_start=new_start,
+            )
         if old_count == 0:
             expected_new_start = old_start + cumulative_delta + 1
         elif new_count == 0:
@@ -690,8 +783,18 @@ def apply_unified_diff(
         else:
             expected_new_start = old_start + cumulative_delta
         if new_start != expected_new_start:
-            raise PatchValidationError(
-                "hunk new-source location does not match prior line delta"
+            raise _hunk_validation_error(
+                error_type="PATCH_HUNK_NEW_START_MISMATCH",
+                kernel_name=kernel_name,
+                hunk_index=hunk_index,
+                hunk_header=hunk_header,
+                declared_old_count=old_count,
+                actual_old_count=old_seen,
+                declared_new_count=new_count,
+                actual_new_count=new_seen,
+                declared_old_start=old_start,
+                declared_new_start=new_start,
+                expected_new_start=expected_new_start,
             )
         hunks.append((old_start, old_count, new_start, new_count, hunk_lines))
         cumulative_delta += new_count - old_count

@@ -39,6 +39,10 @@ csim_proj/
 synth_proj/
 cosim_proj/
 
+# RC evidence overlay (HEAD-bound, generated after the immutable RC commit)
+/llm4hls_harness/llm4hls_agent/config/track_a_full_agent_v1.json
+/docs/experiments/artifacts/2026-07-28-track-a-rc1-head-bound/
+
 # OS noise
 .DS_Store
 Thumbs.db

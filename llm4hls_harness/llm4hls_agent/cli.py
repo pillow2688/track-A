@@ -15,7 +15,14 @@ from .artifacts import (
     build_artifact_manifest,
     manifest_digest,
 )
-from .budget import BudgetConfig, BudgetError
+from .budget import (
+    REFERENCE_DEVELOPMENT_MAX_CREDITS,
+    REFERENCE_DEVELOPMENT_MAX_TOKENS,
+    BudgetConfig,
+    BudgetError,
+    resolve_agent_budget_limit,
+    resolve_reference_tool_cost,
+)
 from .openai_provider import (
     DEFAULT_MODEL,
     OpenAICompatibleConfig,
@@ -26,7 +33,7 @@ from .optimization import OptimizationConfig, run_v2, run_v2_rejection
 from .repair import PatchLimits, PatchProposal, StaticPatchProvider, V1Error, run_v1
 from .review import ReviewError, generate_review_reports
 from .scoring import load_scoring_config
-from .task import TaskPackageError, load_public_task
+from .task import PublicTask, TaskPackageError, load_public_task
 from .tools import ToolBackend, ToolConfig
 from .v2_acceptance import V2AcceptanceError, evaluate_v2_acceptance
 from .v2_review import V2ReviewError, generate_v2_review_reports
@@ -45,6 +52,60 @@ def _env_float(name: str, default: float) -> float:
 def _env_optional_float(name: str) -> float | None:
     value = os.environ.get(name)
     return float(value) if value is not None else None
+
+
+def _resolved_budget_inputs(
+    task: PublicTask,
+    *,
+    credit_override: int | None,
+    token_override: int | None,
+    token_override_source: str = "cli:--token-budget",
+    tool_cost_overrides: dict[str, int | None],
+) -> tuple[int, int, dict[str, int], dict[str, str], tuple[str, ...], str, str]:
+    credit = resolve_agent_budget_limit(
+        name="max_credits",
+        task_limit=task.max_credits,
+        task_source=task.max_credits_source,
+        run_override=credit_override,
+        run_override_source="cli:--credit-limit",
+        environment_variable="LLM4HLS_CREDIT_BUDGET",
+        development_fallback=REFERENCE_DEVELOPMENT_MAX_CREDITS,
+    )
+    token = resolve_agent_budget_limit(
+        name="max_tokens",
+        task_limit=task.max_tokens,
+        task_source=task.max_tokens_source,
+        run_override=token_override,
+        run_override_source=token_override_source,
+        environment_variable="LLM4HLS_TOKEN_BUDGET",
+        development_fallback=REFERENCE_DEVELOPMENT_MAX_TOKENS,
+    )
+    reference_costs = {"csim": 1, "synth": 4, "cosim": 20, "llm": 0}
+    costs: dict[str, int] = {}
+    cost_sources: dict[str, str] = {}
+    for tool, override in tool_cost_overrides.items():
+        resolved = resolve_reference_tool_cost(
+            tool=tool,
+            run_override=override,
+            environment_variable=f"LLM4HLS_COST_{tool.upper()}",
+            reference_fallback=reference_costs[tool],
+        )
+        costs[tool] = resolved.value
+        cost_sources[tool] = resolved.source
+    assumptions = tuple(
+        item
+        for item in (credit.fallback_assumption, token.fallback_assumption)
+        if item is not None
+    )
+    return (
+        credit.value,
+        token.value,
+        costs,
+        cost_sources,
+        assumptions,
+        credit.source,
+        token.source,
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -68,9 +129,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="declared toolchain identity included in action cache keys",
     )
     run.add_argument("--credit-limit", type=int, default=None)
-    run.add_argument("--cost-csim", type=int, default=_env_int("LLM4HLS_COST_CSIM", 1))
-    run.add_argument("--cost-synth", type=int, default=_env_int("LLM4HLS_COST_SYNTH", 4))
-    run.add_argument("--cost-cosim", type=int, default=_env_int("LLM4HLS_COST_COSIM", 20))
+    run.add_argument("--cost-csim", type=int)
+    run.add_argument("--cost-synth", type=int)
+    run.add_argument("--cost-cosim", type=int)
     run.add_argument("--max-csim-calls", type=int, default=None)
     run.add_argument("--max-synth-calls", type=int, default=None)
     run.add_argument("--max-cosim-calls", type=int, default=None)
@@ -92,7 +153,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--token-budget",
         type=int,
-        default=_env_int("LLM4HLS_TOKEN_BUDGET", 32768),
+        default=None,
     )
     run.add_argument(
         "--runtime-limit",
@@ -142,15 +203,15 @@ def build_parser() -> argparse.ArgumentParser:
     repair.add_argument("--clock-ns", type=float, default=None)
     repair.add_argument("--toolchain-id", default=os.environ.get("LLM4HLS_TOOLCHAIN_ID", "Vitis 2025.2"))
     repair.add_argument("--credit-limit", type=int, default=None)
-    repair.add_argument("--cost-csim", type=int, default=_env_int("LLM4HLS_COST_CSIM", 1))
-    repair.add_argument("--cost-synth", type=int, default=_env_int("LLM4HLS_COST_SYNTH", 4))
-    repair.add_argument("--cost-cosim", type=int, default=_env_int("LLM4HLS_COST_COSIM", 20))
-    repair.add_argument("--cost-llm", type=int, default=_env_int("LLM4HLS_COST_LLM", 0))
+    repair.add_argument("--cost-csim", type=int)
+    repair.add_argument("--cost-synth", type=int)
+    repair.add_argument("--cost-cosim", type=int)
+    repair.add_argument("--cost-llm", type=int)
     repair.add_argument("--max-llm-calls", type=int, default=1)
     repair.add_argument("--csim-timeout", type=float, default=_env_float("LLM4HLS_CSIM_TIMEOUT_S", 180.0))
     repair.add_argument("--synth-timeout", type=float, default=_env_float("LLM4HLS_SYNTH_TIMEOUT_S", 600.0))
     repair.add_argument("--cosim-timeout", type=float, default=_env_float("LLM4HLS_COSIM_TIMEOUT_S", 900.0))
-    repair.add_argument("--token-budget", type=int, default=_env_int("LLM4HLS_TOKEN_BUDGET", 32768))
+    repair.add_argument("--token-budget", type=int)
     repair.add_argument("--runtime-limit", type=float, default=_env_float("LLM4HLS_RUNTIME_LIMIT_S", 3600.0))
     repair.add_argument("--minimum-frequency-mhz", type=float, default=_env_float("LLM4HLS_MIN_FREQUENCY_MHZ", 100.0))
     repair.add_argument("--max-changed-lines", type=int, default=80)
@@ -175,10 +236,10 @@ def build_parser() -> argparse.ArgumentParser:
     optimize.add_argument("--clock-ns", type=float, default=None)
     optimize.add_argument("--toolchain-id", default=os.environ.get("LLM4HLS_TOOLCHAIN_ID", "Vitis 2025.2"))
     optimize.add_argument("--credit-limit", type=int, default=None)
-    optimize.add_argument("--cost-csim", type=int, default=_env_int("LLM4HLS_COST_CSIM", 1))
-    optimize.add_argument("--cost-synth", type=int, default=_env_int("LLM4HLS_COST_SYNTH", 4))
-    optimize.add_argument("--cost-cosim", type=int, default=_env_int("LLM4HLS_COST_COSIM", 20))
-    optimize.add_argument("--cost-llm", type=int, default=_env_int("LLM4HLS_COST_LLM", 0))
+    optimize.add_argument("--cost-csim", type=int)
+    optimize.add_argument("--cost-synth", type=int)
+    optimize.add_argument("--cost-cosim", type=int)
+    optimize.add_argument("--cost-llm", type=int)
     optimize.add_argument("--max-csim-calls", type=int, default=8)
     optimize.add_argument("--max-synth-calls", type=int, default=8)
     optimize.add_argument("--max-cosim-calls", type=int, default=8)
@@ -186,7 +247,7 @@ def build_parser() -> argparse.ArgumentParser:
     optimize.add_argument("--csim-timeout", type=float, default=_env_float("LLM4HLS_CSIM_TIMEOUT_S", 180.0))
     optimize.add_argument("--synth-timeout", type=float, default=_env_float("LLM4HLS_SYNTH_TIMEOUT_S", 900.0))
     optimize.add_argument("--cosim-timeout", type=float, default=_env_float("LLM4HLS_COSIM_TIMEOUT_S", 900.0))
-    optimize.add_argument("--token-budget", type=int, default=_env_int("LLM4HLS_TOKEN_BUDGET", 32768))
+    optimize.add_argument("--token-budget", type=int)
     optimize.add_argument("--runtime-limit", type=float, default=_env_float("LLM4HLS_RUNTIME_LIMIT_S", 7200.0))
     optimize.add_argument(
         "--minimum-frequency-mhz",
@@ -202,7 +263,7 @@ def build_parser() -> argparse.ArgumentParser:
     optimize.add_argument("--max-optimization-rounds", type=int, default=6)
     optimize.add_argument("--max-no-improvement-rounds", type=int, default=2)
     optimize.add_argument("--max-final-attempts", type=int, default=2)
-    optimize.add_argument("--final-reserve-credits", type=int, default=25)
+    optimize.add_argument("--search-closeout-reserve-credits", type=int, default=25)
     optimize.add_argument("--max-changed-lines", type=int, default=30)
     reject_v2 = subparsers.add_parser(
         "reject-v2", help="run the deterministic V2 semantic-regression safety case"
@@ -221,9 +282,9 @@ def build_parser() -> argparse.ArgumentParser:
         default=os.environ.get("LLM4HLS_TOOLCHAIN_ID", "Vitis 2025.2"),
     )
     reject_v2.add_argument("--credit-limit", type=int, default=None)
-    reject_v2.add_argument("--cost-csim", type=int, default=_env_int("LLM4HLS_COST_CSIM", 1))
-    reject_v2.add_argument("--cost-synth", type=int, default=_env_int("LLM4HLS_COST_SYNTH", 4))
-    reject_v2.add_argument("--cost-cosim", type=int, default=_env_int("LLM4HLS_COST_COSIM", 20))
+    reject_v2.add_argument("--cost-csim", type=int)
+    reject_v2.add_argument("--cost-synth", type=int)
+    reject_v2.add_argument("--cost-cosim", type=int)
     reject_v2.add_argument(
         "--csim-timeout", type=float, default=_env_float("LLM4HLS_CSIM_TIMEOUT_S", 180.0)
     )
@@ -514,9 +575,24 @@ def main(
         raise AssertionError(f"unsupported command: {args.command}")
     try:
         task = load_public_task(args.task_dir)
-        credit_limit = args.credit_limit
-        if credit_limit is None:
-            credit_limit = int(os.environ.get("LLM4HLS_CREDIT_BUDGET", task.budget))
+        (
+            credit_limit,
+            token_limit,
+            costs,
+            cost_sources,
+            fallback_assumptions,
+            credit_source,
+            token_source,
+        ) = _resolved_budget_inputs(
+            task,
+            credit_override=args.credit_limit,
+            token_override=args.token_budget,
+            tool_cost_overrides={
+                "csim": args.cost_csim,
+                "synth": args.cost_synth,
+                "cosim": args.cost_cosim,
+            },
+        )
         tool = ToolConfig(
             vitis_root=str(args.vitis_root),
             part=str(args.part or task.part),
@@ -530,18 +606,18 @@ def main(
         )
         budget = BudgetConfig(
             credit_limit=credit_limit,
-            costs={
-                "csim": args.cost_csim,
-                "synth": args.cost_synth,
-                "cosim": args.cost_cosim,
-            },
+            costs=costs,
             tool_limits={
                 "csim": args.max_csim_calls,
                 "synth": args.max_synth_calls,
                 "cosim": args.max_cosim_calls,
             },
-            token_limit=args.token_budget,
+            token_limit=token_limit,
             runtime_limit_seconds=args.runtime_limit,
+            credit_limit_source=credit_source,
+            token_limit_source=token_source,
+            tool_cost_sources=cost_sources,
+            fallback_assumptions=fallback_assumptions,
         )
         result = run_v0(
             task,
@@ -584,9 +660,25 @@ def main(
 def _main_repair(args: argparse.Namespace, *, backend: ToolBackend | None) -> int:
     try:
         task = load_public_task(args.task_dir)
-        credit_limit = args.credit_limit
-        if credit_limit is None:
-            credit_limit = int(os.environ.get("LLM4HLS_CREDIT_BUDGET", task.budget))
+        (
+            credit_limit,
+            token_limit,
+            costs,
+            cost_sources,
+            fallback_assumptions,
+            credit_source,
+            token_source,
+        ) = _resolved_budget_inputs(
+            task,
+            credit_override=args.credit_limit,
+            token_override=args.token_budget,
+            tool_cost_overrides={
+                "csim": args.cost_csim,
+                "synth": args.cost_synth,
+                "cosim": args.cost_cosim,
+                "llm": args.cost_llm,
+            },
+        )
         tool = ToolConfig(
             vitis_root=str(args.vitis_root),
             part=str(args.part or task.part),
@@ -600,20 +692,19 @@ def _main_repair(args: argparse.Namespace, *, backend: ToolBackend | None) -> in
         )
         budget = BudgetConfig(
             credit_limit=credit_limit,
-            costs={
-                "csim": args.cost_csim,
-                "synth": args.cost_synth,
-                "cosim": args.cost_cosim,
-                "llm": args.cost_llm,
-            },
+            costs=costs,
             tool_limits={
                 "csim": None,
                 "synth": None,
                 "cosim": None,
                 "llm": args.max_llm_calls,
             },
-            token_limit=args.token_budget,
+            token_limit=token_limit,
             runtime_limit_seconds=args.runtime_limit,
+            credit_limit_source=credit_source,
+            token_limit_source=token_source,
+            tool_cost_sources=cost_sources,
+            fallback_assumptions=fallback_assumptions,
         )
         if args.provider == "static":
             if args.patch_file is None:
@@ -685,9 +776,25 @@ def _main_repair(args: argparse.Namespace, *, backend: ToolBackend | None) -> in
 def _main_optimize(args: argparse.Namespace, *, backend: ToolBackend | None) -> int:
     try:
         task = load_public_task(args.task_dir)
-        credit_limit = args.credit_limit
-        if credit_limit is None:
-            credit_limit = int(os.environ.get("LLM4HLS_CREDIT_BUDGET", task.budget))
+        (
+            credit_limit,
+            token_limit,
+            costs,
+            cost_sources,
+            fallback_assumptions,
+            credit_source,
+            token_source,
+        ) = _resolved_budget_inputs(
+            task,
+            credit_override=args.credit_limit,
+            token_override=args.token_budget,
+            tool_cost_overrides={
+                "csim": args.cost_csim,
+                "synth": args.cost_synth,
+                "cosim": args.cost_cosim,
+                "llm": args.cost_llm,
+            },
+        )
         tool = ToolConfig(
             vitis_root=str(args.vitis_root),
             part=str(args.part or task.part),
@@ -701,20 +808,19 @@ def _main_optimize(args: argparse.Namespace, *, backend: ToolBackend | None) -> 
         )
         budget = BudgetConfig(
             credit_limit=credit_limit,
-            costs={
-                "csim": args.cost_csim,
-                "synth": args.cost_synth,
-                "cosim": args.cost_cosim,
-                "llm": args.cost_llm,
-            },
+            costs=costs,
             tool_limits={
                 "csim": args.max_csim_calls,
                 "synth": args.max_synth_calls,
                 "cosim": args.max_cosim_calls,
                 "llm": args.max_llm_calls,
             },
-            token_limit=args.token_budget,
+            token_limit=token_limit,
             runtime_limit_seconds=args.runtime_limit,
+            credit_limit_source=credit_source,
+            token_limit_source=token_source,
+            tool_cost_sources=cost_sources,
+            fallback_assumptions=fallback_assumptions,
         )
         if not args.base_url:
             raise ValueError("OPENAI_BASE_URL or --base-url is required")
@@ -746,7 +852,7 @@ def _main_optimize(args: argparse.Namespace, *, backend: ToolBackend | None) -> 
                 max_no_improvement_rounds=args.max_no_improvement_rounds,
                 max_llm_calls=args.max_llm_calls,
                 max_final_attempts=args.max_final_attempts,
-                final_reserve_credits=args.final_reserve_credits,
+                search_closeout_reserve_credits=args.search_closeout_reserve_credits,
                 patch_limits=PatchLimits(max_changed_lines=args.max_changed_lines),
             ),
             provider,
@@ -784,9 +890,26 @@ def _main_optimize(args: argparse.Namespace, *, backend: ToolBackend | None) -> 
 def _main_reject_v2(args: argparse.Namespace, *, backend: ToolBackend | None) -> int:
     try:
         task = load_public_task(args.task_dir)
-        credit_limit = args.credit_limit
-        if credit_limit is None:
-            credit_limit = int(os.environ.get("LLM4HLS_CREDIT_BUDGET", task.budget))
+        (
+            credit_limit,
+            _token_limit,
+            costs,
+            cost_sources,
+            fallback_assumptions,
+            credit_source,
+            _token_source,
+        ) = _resolved_budget_inputs(
+            task,
+            credit_override=args.credit_limit,
+            token_override=0,
+            token_override_source="command:reject-v2(no-llm)",
+            tool_cost_overrides={
+                "csim": args.cost_csim,
+                "synth": args.cost_synth,
+                "cosim": args.cost_cosim,
+                "llm": 0,
+            },
+        )
         run_config = RunConfig(
             tool=ToolConfig(
                 vitis_root=str(args.vitis_root),
@@ -803,15 +926,14 @@ def _main_reject_v2(args: argparse.Namespace, *, backend: ToolBackend | None) ->
             ),
             budget=BudgetConfig(
                 credit_limit=credit_limit,
-                costs={
-                    "csim": args.cost_csim,
-                    "synth": args.cost_synth,
-                    "cosim": args.cost_cosim,
-                    "llm": 0,
-                },
+                costs=costs,
                 tool_limits={"csim": 2, "synth": 1, "cosim": 1, "llm": 0},
                 token_limit=0,
                 runtime_limit_seconds=args.runtime_limit,
+                credit_limit_source=credit_source,
+                token_limit_source="command:reject-v2(no-llm)",
+                tool_cost_sources=cost_sources,
+                fallback_assumptions=fallback_assumptions,
             ),
             minimum_frequency_mhz=args.minimum_frequency_mhz,
         )

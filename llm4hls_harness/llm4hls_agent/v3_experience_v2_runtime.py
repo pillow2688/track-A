@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 from pathlib import Path
 from typing import Mapping, Sequence
 
@@ -39,12 +40,17 @@ from .v3_experience_v2 import (
 from .v3_strategy_ranker_v3 import (
     STRATEGY_RANKER_V3_SCHEMA,
     BayesianStrategyRankerV3,
+    runtime_support_eligible,
 )
 
 
-RANKER_ADMISSION_SCHEMA = "v3e.strategy-ranker-admission.v1"
+RANKER_ADMISSION_SCHEMA = "v3e.strategy-ranker-admission.v2"
 RUNTIME_COORDINATOR_SCHEMA = "v3e.experience-v2-runtime.v1"
+STRATEGY_CARD_SCHEMA = "v3e.top1-strategy-card.v1"
+RANKER_GATE_SCHEMA = "v3e.strategy-ranker-v3-evaluation.v1"
+RANKER_GATE_PROTOCOL = "LOTO_AND_LEAVE_ONE_TASK_FAMILY_OUT"
 _SHA256 = re.compile(r"\A[0-9a-f]{64}\Z")
+_GIT_COMMIT = re.compile(r"\A[0-9a-f]{40}\Z")
 _GATE_THRESHOLDS = {
     "minimum_coverage": 0.40,
     "maximum_harmful_rate": 0.05,
@@ -58,12 +64,6 @@ def _plain(value: object) -> object:
     return json.loads(canonical_json(value).decode("utf-8"))
 
 
-def _safe_digest(value: object, name: str) -> str:
-    if not isinstance(value, str) or _SHA256.fullmatch(value) is None:
-        raise ValueError(f"{name} must be a SHA-256 digest")
-    return value
-
-
 def _finite_rate(value: object, name: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError(f"{name} must be numeric")
@@ -73,18 +73,186 @@ def _finite_rate(value: object, name: str) -> float:
     return number
 
 
+def _nonnegative_int(value: object, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"{name} must be a non-negative integer")
+    return value
+
+
+def current_repository_commit() -> str:
+    """Return the checked-out commit bound by A3 Admission."""
+
+    completed = subprocess.run(
+        (
+            "git",
+            "-C",
+            str(Path(__file__).resolve().parents[1]),
+            "rev-parse",
+            "HEAD",
+        ),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    commit = completed.stdout.strip().casefold()
+    if _GIT_COMMIT.fullmatch(commit) is None:
+        raise ValueError("repository HEAD is not a full Git commit")
+    return commit
+
+
+def _bound_file(
+    manifest_path: Path,
+    reference: object,
+    *,
+    name: str,
+) -> Path:
+    if not isinstance(reference, str) or not reference.strip():
+        raise ValueError(f"{name} must be a non-empty relative path")
+    relative = Path(reference)
+    if relative.is_absolute() or ".." in relative.parts:
+        raise ValueError(f"{name} must stay beside the Admission manifest")
+    path = (manifest_path.parent / relative).resolve()
+    try:
+        path.relative_to(manifest_path.parent.resolve())
+    except ValueError as exc:
+        raise ValueError(f"{name} escapes the Admission directory") from exc
+    if not path.is_file():
+        raise ValueError(f"{name} does not exist")
+    return path
+
+
+def _validate_ranker_gate(
+    value: Mapping[str, object],
+    *,
+    store_sha256: str,
+) -> dict[str, object]:
+    if value.get("schema_version") != RANKER_GATE_SCHEMA:
+        raise ValueError("unsupported ranker Gate schema")
+    if value.get("decision") != "PASS":
+        raise ValueError("ranker Gate decision is not PASS")
+    if value.get("authority") != "ELIGIBLE_FOR_ADMISSION":
+        raise ValueError("ranker Gate is not eligible for Admission")
+    if value.get("ranker_version") != STRATEGY_RANKER_V3_SCHEMA:
+        raise ValueError("ranker Gate schema version mismatch")
+    if value.get("fixed_protocol") != RANKER_GATE_PROTOCOL:
+        raise ValueError("ranker Gate protocol mismatch")
+    if value.get("thresholds") != _GATE_THRESHOLDS:
+        raise ValueError("ranker Gate thresholds were changed")
+    gate_input = value.get("input")
+    if not isinstance(gate_input, Mapping):
+        raise ValueError("ranker Gate input must be an object")
+    if gate_input.get("store_sha256") != store_sha256:
+        raise ValueError("ranker Gate does not bind the frozen Store")
+    by_mode = gate_input.get("verified_by_mode")
+    if not isinstance(by_mode, Mapping) or set(by_mode) != set(
+        STRATEGIES_BY_MODE
+    ):
+        raise ValueError("ranker Gate must cover all four modes")
+    for mode, count in by_mode.items():
+        if (
+            isinstance(count, bool)
+            or not isinstance(count, int)
+            or count < _GATE_THRESHOLDS["minimum_records_per_mode"]
+        ):
+            raise ValueError(f"ranker Gate {mode} record count failed")
+    checks = value.get("checks")
+    required_checks = {
+        "coverage_gate_pass": True,
+        "harmful_rate_gate_pass": True,
+        "mode_count_gate_pass": True,
+        "positive_hit_gate_pass": True,
+        "leakage_gate_pass": True,
+        "unverified_labels_excluded": True,
+        "family_level_sampling": True,
+        "query_outcome_fields_present": False,
+        "heldout_labels_read_after_decision": True,
+        "train_only_support": True,
+        "public_only_support": True,
+    }
+    if not isinstance(checks, Mapping) or any(
+        checks.get(name) is not expected
+        for name, expected in required_checks.items()
+    ):
+        raise ValueError("ranker Gate checks are incomplete or failed")
+    policies = value.get("policies")
+    if not isinstance(policies, Mapping) or set(policies) != {
+        "leave_one_task_out",
+        "leave_one_task_family_out",
+    }:
+        raise ValueError("ranker Gate fixed policies are incomplete")
+    for name, policy in policies.items():
+        if not isinstance(policy, Mapping):
+            raise ValueError(f"ranker Gate {name} policy is invalid")
+        overall = policy.get("overall")
+        if not isinstance(overall, Mapping):
+            raise ValueError(f"ranker Gate {name} summary is invalid")
+        if (
+            _nonnegative_int(
+                overall.get("leakage_violations"),
+                f"{name}.leakage_violations",
+            )
+            > _GATE_THRESHOLDS["maximum_leakage_violations"]
+        ):
+            raise ValueError(f"ranker Gate {name} leaked held-out support")
+        coverage = _finite_rate(
+            overall.get("coverage"), f"{name}.coverage"
+        )
+        harmful = _finite_rate(
+            overall.get("harmful_recommendation_rate"),
+            f"{name}.harmful_recommendation_rate",
+        )
+        positive_hit = _finite_rate(
+            overall.get("positive_strategy_hit_rate"),
+            f"{name}.positive_strategy_hit_rate",
+        )
+        if coverage < _GATE_THRESHOLDS["minimum_coverage"]:
+            raise ValueError(f"ranker Gate {name} coverage failed")
+        if harmful > _GATE_THRESHOLDS["maximum_harmful_rate"]:
+            raise ValueError(f"ranker Gate {name} harmful rate failed")
+        if positive_hit < _GATE_THRESHOLDS["minimum_global_positive_hit_rate"]:
+            raise ValueError(f"ranker Gate {name} positive hit rate failed")
+        by_mode_metrics = policy.get("by_mode")
+        if not isinstance(by_mode_metrics, Mapping) or set(
+            by_mode_metrics
+        ) != set(STRATEGIES_BY_MODE):
+            raise ValueError(f"ranker Gate {name} mode metrics are incomplete")
+        for mode, metrics in by_mode_metrics.items():
+            if not isinstance(metrics, Mapping):
+                raise ValueError(
+                    f"ranker Gate {name}.{mode} metrics are invalid"
+                )
+            if (
+                _finite_rate(
+                    metrics.get("harmful_recommendation_rate"),
+                    f"{name}.{mode}.harmful_recommendation_rate",
+                )
+                > _GATE_THRESHOLDS["maximum_harmful_rate"]
+            ):
+                raise ValueError(
+                    f"ranker Gate {name}.{mode} harmful rate failed"
+                )
+    copied = _plain(value)
+    assert isinstance(copied, dict)
+    return copied
+
+
 def validate_ranker_admission_manifest(
-    value: Mapping[str, object], *, seed_sha256: str
+    value: Mapping[str, object],
+    *,
+    seed_path: str | Path,
+    manifest_path: str | Path,
+    expected_commit: str | None = None,
 ) -> dict[str, object]:
     expected = {
         "schema_version",
         "decision",
-        "ranker_version",
-        "seed_sha256",
-        "protocol",
+        "ranker_schema",
+        "store_path",
+        "store_sha256",
+        "gate_path",
+        "gate_sha256",
         "thresholds",
-        "metrics",
-        "evidence_sha256",
+        "current_commit",
     }
     if set(value) != expected:
         raise ValueError("ranker admission manifest fields mismatch")
@@ -92,74 +260,36 @@ def validate_ranker_admission_manifest(
         raise ValueError("unsupported ranker admission manifest")
     if value.get("decision") != "PASS":
         raise ValueError("ranker admission decision is not PASS")
-    if value.get("ranker_version") != STRATEGY_RANKER_V3_SCHEMA:
+    if value.get("ranker_schema") != STRATEGY_RANKER_V3_SCHEMA:
         raise ValueError("ranker admission version mismatch")
-    if value.get("seed_sha256") != seed_sha256:
-        raise ValueError("ranker admission seed hash mismatch")
-    if value.get("protocol") != "LOTO_AND_LEAVE_ONE_TASK_FAMILY_OUT":
-        raise ValueError("ranker admission protocol mismatch")
     if value.get("thresholds") != _GATE_THRESHOLDS:
         raise ValueError("ranker admission thresholds were changed")
-    _safe_digest(value.get("evidence_sha256"), "evidence_sha256")
-    metrics = value.get("metrics")
-    if not isinstance(metrics, Mapping):
-        raise ValueError("ranker admission metrics must be an object")
-    required_metrics = {
-        "coverage",
-        "harmful_rate",
-        "global_positive_hit_rate",
-        "leakage_violations",
-        "by_mode",
-    }
-    if set(metrics) != required_metrics:
-        raise ValueError("ranker admission metrics fields mismatch")
-    coverage = _finite_rate(metrics.get("coverage"), "coverage")
-    harmful = _finite_rate(metrics.get("harmful_rate"), "harmful_rate")
-    positive_hit = _finite_rate(
-        metrics.get("global_positive_hit_rate"),
-        "global_positive_hit_rate",
-    )
-    leakage = metrics.get("leakage_violations")
-    if isinstance(leakage, bool) or not isinstance(leakage, int) or leakage < 0:
-        raise ValueError("leakage_violations must be non-negative")
-    by_mode = metrics.get("by_mode")
-    if not isinstance(by_mode, Mapping) or set(by_mode) != set(
-        STRATEGIES_BY_MODE
-    ):
-        raise ValueError("ranker admission must cover all four modes")
-    if coverage < _GATE_THRESHOLDS["minimum_coverage"]:
-        raise ValueError("ranker admission coverage is below Gate")
-    if harmful > _GATE_THRESHOLDS["maximum_harmful_rate"]:
-        raise ValueError("ranker admission harmful rate exceeds Gate")
-    if positive_hit < _GATE_THRESHOLDS["minimum_global_positive_hit_rate"]:
-        raise ValueError("ranker admission positive-hit rate is below Gate")
-    if leakage > _GATE_THRESHOLDS["maximum_leakage_violations"]:
-        raise ValueError("ranker admission leakage Gate failed")
-    for mode in sorted(STRATEGIES_BY_MODE):
-        row = by_mode.get(mode)
-        if not isinstance(row, Mapping) or set(row) != {
-            "records",
-            "coverage",
-            "harmful_rate",
-            "positive_hit_rate",
-        }:
-            raise ValueError(f"ranker admission {mode} metrics mismatch")
-        records = row.get("records")
-        if (
-            isinstance(records, bool)
-            or not isinstance(records, int)
-            or records < _GATE_THRESHOLDS["minimum_records_per_mode"]
-        ):
-            raise ValueError(f"ranker admission {mode} record Gate failed")
-        _finite_rate(row.get("coverage"), f"{mode}.coverage")
-        if (
-            _finite_rate(row.get("harmful_rate"), f"{mode}.harmful_rate")
-            > _GATE_THRESHOLDS["maximum_harmful_rate"]
-        ):
-            raise ValueError(f"ranker admission {mode} harmful Gate failed")
-        _finite_rate(
-            row.get("positive_hit_rate"), f"{mode}.positive_hit_rate"
-        )
+    manifest = Path(manifest_path).resolve()
+    store = _bound_file(manifest, value.get("store_path"), name="store_path")
+    requested_store = Path(seed_path).resolve()
+    if store != requested_store:
+        raise ValueError("ranker admission Store path mismatch")
+    store_sha256 = hashlib.sha256(store.read_bytes()).hexdigest()
+    if value.get("store_sha256") != store_sha256:
+        raise ValueError("ranker admission Store hash mismatch")
+    gate = _bound_file(manifest, value.get("gate_path"), name="gate_path")
+    gate_bytes = gate.read_bytes()
+    gate_sha256 = hashlib.sha256(gate_bytes).hexdigest()
+    if value.get("gate_sha256") != gate_sha256:
+        raise ValueError("ranker admission Gate hash mismatch")
+    try:
+        decoded_gate = json.loads(gate_bytes)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("ranker Gate is not valid JSON") from exc
+    if not isinstance(decoded_gate, Mapping):
+        raise ValueError("ranker Gate must be an object")
+    _validate_ranker_gate(decoded_gate, store_sha256=store_sha256)
+    commit = value.get("current_commit")
+    if not isinstance(commit, str) or _GIT_COMMIT.fullmatch(commit) is None:
+        raise ValueError("ranker admission current_commit is invalid")
+    current_commit = expected_commit or current_repository_commit()
+    if commit != current_commit:
+        raise ValueError("ranker admission current_commit mismatch")
     copied = _plain(value)
     assert isinstance(copied, dict)
     return copied
@@ -218,7 +348,12 @@ class ExperienceV2RuntimeCoordinator:
                 decoded = json.loads(line)
                 if not isinstance(decoded, Mapping):
                     raise ValueError("record is not an object")
-                self._records.append(validate_experience_v2(decoded))
+                record = validate_experience_v2(decoded)
+                if not runtime_support_eligible(record):
+                    raise ValueError(
+                        "record is not eligible for the train-only runtime Store"
+                    )
+                self._records.append(record)
             except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as exc:
                 raise ValueError(
                     f"invalid Experience V2 seed line {line_number}: "
@@ -239,7 +374,9 @@ class ExperienceV2RuntimeCoordinator:
             if not isinstance(decoded, Mapping):
                 raise ValueError("ranker admission manifest must be an object")
             self._admission = validate_ranker_admission_manifest(
-                decoded, seed_sha256=self._seed_sha256
+                decoded,
+                seed_path=self.seed_path,
+                manifest_path=path,
             )
         self._injection_authorized = bool(
             injection_requested and self._admission is not None
@@ -270,8 +407,13 @@ class ExperienceV2RuntimeCoordinator:
             "seed_sha256": self._seed_sha256,
             "record_count": len(self._records),
             "ranker_version": STRATEGY_RANKER_V3_SCHEMA,
-            "admission_evidence_sha256": (
-                self._admission["evidence_sha256"]
+            "admission_gate_sha256": (
+                self._admission["gate_sha256"]
+                if self._admission is not None
+                else None
+            ),
+            "admission_current_commit": (
+                self._admission["current_commit"]
                 if self._admission is not None
                 else None
             ),
@@ -402,7 +544,10 @@ class ExperienceV2RuntimeCoordinator:
     def _ranked_bundle(entry: Mapping[str, object]) -> dict[str, object]:
         return {
             "strategy_bundle": [entry["strategy_atom"]],
-            "context": "VERIFIED_INDEPENDENT_TASK_FAMILIES",
+            "context": str(
+                entry.get("conditioning")
+                or "VERIFIED_INDEPENDENT_TASK_FAMILIES"
+            ),
             "attempts": int(entry["attempts"]),
             "successes": int(entry["successes"]),
             "posterior_success": float(entry["posterior_success"]),
@@ -545,8 +690,8 @@ class ExperienceV2RuntimeCoordinator:
             "guidance": safe,
             "control": {
                 "prompt_injection_authorized": self._injection_authorized,
-                "admission_evidence_sha256": (
-                    self._admission["evidence_sha256"]
+                "admission_gate_sha256": (
+                    self._admission["gate_sha256"]
                     if self._admission is not None
                     else None
                 ),
@@ -578,9 +723,64 @@ class ExperienceV2RuntimeCoordinator:
         }
 
 
+def compact_strategy_card(
+    guidance: Mapping[str, object] | None,
+) -> dict[str, object] | None:
+    """Project one admitted RECOMMEND result into a short Top-1 card."""
+
+    if guidance is None:
+        return None
+    safe = validate_guidance(guidance)
+    recommended = safe["recommended_strategy_bundles"]
+    if not isinstance(recommended, list) or not recommended:
+        return None
+    top = recommended[0]
+    if not isinstance(top, Mapping):
+        return None
+    bundle = top.get("strategy_bundle")
+    if not isinstance(bundle, list) or not bundle:
+        return None
+    atom = str(bundle[0])
+    attempts = int(top.get("attempts") or 0)
+    successes = int(top.get("successes") or 0)
+    applicability = str(top.get("context") or "MATCHED_MODE_AND_SUBTYPE")
+    discouraged = safe["discouraged_strategy_bundles"]
+    avoid: list[str] = []
+    if isinstance(discouraged, list):
+        for item in discouraged[:2]:
+            if not isinstance(item, Mapping):
+                continue
+            strategies = item.get("strategy_bundle")
+            if isinstance(strategies, list) and strategies:
+                token = str(strategies[0])
+                if token and token not in avoid:
+                    avoid.append(token)
+    card = {
+        "schema_version": STRATEGY_CARD_SCHEMA,
+        "strategy_atom": atom,
+        "reason": (
+            f"{successes}/{attempts} independent task families passed"
+            if attempts
+            else "verified independent task-family support"
+        ),
+        "applicability": applicability[:160],
+        "avoid_or_high_risk": avoid,
+        "source_family_count": attempts,
+        "confidence": round(float(safe["confidence"]), 8),
+    }
+    if len(canonical_json(card)) > 900:
+        raise ValueError("Top-1 Strategy Card exceeds the bounded size")
+    return card
+
+
 __all__ = [
     "ExperienceV2RuntimeCoordinator",
     "RANKER_ADMISSION_SCHEMA",
+    "RANKER_GATE_PROTOCOL",
+    "RANKER_GATE_SCHEMA",
     "RUNTIME_COORDINATOR_SCHEMA",
+    "STRATEGY_CARD_SCHEMA",
+    "compact_strategy_card",
+    "current_repository_commit",
     "validate_ranker_admission_manifest",
 ]

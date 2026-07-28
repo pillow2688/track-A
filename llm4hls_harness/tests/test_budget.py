@@ -5,12 +5,14 @@ import math
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from llm4hls_agent.budget import (
     BudgetConfig,
     BudgetExceeded,
     BudgetLedger,
     BudgetLedgerError,
+    resolve_agent_budget_limit,
 )
 
 
@@ -25,6 +27,70 @@ def config(*, runtime: float = 10.0, tokens: int = 0) -> BudgetConfig:
 
 
 class BudgetLedgerTests(unittest.TestCase):
+    def test_task_budget_is_a_hard_cap_and_override_may_only_narrow(self) -> None:
+        narrowed = resolve_agent_budget_limit(
+            name="max_credits",
+            task_limit=80,
+            task_source="task.toml:max_credits",
+            run_override=60,
+            run_override_source="cli:--credit-limit",
+            environment_variable="LLM4HLS_CREDIT_BUDGET",
+            development_fallback=40,
+        )
+        self.assertEqual(narrowed.value, 60)
+        self.assertIn("hard_cap=task.toml:max_credits", narrowed.source)
+
+        with self.assertRaisesRegex(ValueError, "cannot widen"):
+            resolve_agent_budget_limit(
+                name="max_credits",
+                task_limit=80,
+                task_source="task.toml:max_credits",
+                run_override=81,
+                run_override_source="cli:--credit-limit",
+                environment_variable="LLM4HLS_CREDIT_BUDGET",
+                development_fallback=40,
+            )
+
+    def test_missing_task_limit_uses_recorded_development_fallback(self) -> None:
+        with patch.dict("os.environ", {}, clear=True):
+            resolved = resolve_agent_budget_limit(
+                name="max_tokens",
+                task_limit=None,
+                task_source=None,
+                run_override=None,
+                run_override_source="cli:--run-token-limit",
+                environment_variable="LLM4HLS_TOKEN_BUDGET",
+                development_fallback=32768,
+            )
+
+        self.assertEqual(resolved.value, 32768)
+        self.assertEqual(resolved.source, "development-fallback:max_tokens")
+        self.assertIn("task omitted max_tokens", resolved.fallback_assumption or "")
+
+    def test_budget_provenance_is_bound_into_the_config_hash(self) -> None:
+        first = config()
+        second = BudgetConfig(
+            credit_limit=first.credit_limit,
+            costs=first.costs,
+            tool_limits=first.tool_limits,
+            token_limit=first.token_limit,
+            runtime_limit_seconds=first.runtime_limit_seconds,
+            credit_limit_source="task.toml:max_credits",
+            token_limit_source="development-fallback:max_tokens",
+            tool_cost_sources={
+                "csim": "reference-development-cost",
+                "synth": "reference-development-cost",
+                "cosim": "reference-development-cost",
+            },
+            fallback_assumptions=("task omitted max_tokens",),
+        )
+
+        self.assertNotEqual(first.config_hash, second.config_hash)
+        self.assertEqual(second.to_dict()["budget_domain"], "agent_search")
+        self.assertEqual(
+            second.to_dict()["credit_limit_source"], "task.toml:max_credits"
+        )
+
     def test_non_finite_runtime_is_rejected(self) -> None:
         for value in (math.nan, math.inf, -math.inf):
             with self.subTest(value=value), self.assertRaises(ValueError):

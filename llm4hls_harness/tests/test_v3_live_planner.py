@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import llm4hls_agent.v3_planner_action as planner_action_module
+from llm4hls_agent.repair import RepairProviderError
 from llm4hls_agent.task import load_public_task
 from llm4hls_agent.v3_planner_action import PreparedPlannerCall
 from llm4hls_agent.v3_prototype import run_v3_prototype
@@ -55,6 +56,26 @@ class FakeLiveGraphPlanner:
     def invoke(self, prepared: PreparedPlannerCall):
         self.invoke_calls += 1
         self.last_prepared = prepared
+        return self.proposal
+
+
+class RejectOnceLiveGraphPlanner(FakeLiveGraphPlanner):
+    def invoke(self, prepared: PreparedPlannerCall):
+        self.invoke_calls += 1
+        self.last_prepared = prepared
+        if self.invoke_calls == 1:
+            raise RepairProviderError(
+                "provider output is incomplete and cannot create a Candidate",
+                input_tokens=8,
+                output_tokens=3,
+                duration_seconds=0.1,
+                request_id="fixture-provider-rejection",
+                response_excerpt='{"patch":"--- kernel.cpp\\n',
+                finish_reason="stop",
+                output_truncated=True,
+                truncation_reason="PATCH_INCOMPLETE",
+                usage_complete=True,
+            )
         return self.proposal
 
 
@@ -126,6 +147,128 @@ class V3LivePlannerGraphTests(unittest.TestCase):
             self.assertTrue(
                 (run_root / first["live_planner_completed_ref"]).is_file()
             )
+
+    def test_provider_rejection_and_success_are_both_sealed_and_cached(
+        self,
+    ) -> None:
+        project = Path(__file__).resolve().parents[1]
+        task = load_public_task(project / "examples" / "u55c_v2_optimize_task")
+        planner = RejectOnceLiveGraphPlanner()
+        backend = PrototypeBackend()
+
+        with tempfile.TemporaryDirectory() as directory:
+            run_root = Path(directory) / "v3-live-reject-then-success"
+            first = run_v3_prototype(
+                task,
+                run_root,
+                prototype_config(task, credit_limit=100),
+                backend=backend,
+                planner=planner,
+                max_planner_rounds=2,
+                thread_id="prototype-live-reject-then-success-test",
+            )
+            ledger_before_reentry = (
+                run_root / "budget_ledger.jsonl"
+            ).read_bytes()
+            manifest = json.loads(
+                (
+                    run_root / "control" / "package_manifest.json"
+                ).read_text(encoding="utf-8")
+            )
+            manifest_paths = {
+                item["path"] for item in manifest["artifacts"]
+            }
+            failures = list(
+                (run_root / "planner" / "provider_failures").glob(
+                    "*.json"
+                )
+            )
+            self.assertEqual(len(failures), 1)
+            rejected_action_id = failures[0].stem
+            started_ref = (
+                "control/live_planner_actions/"
+                f"{rejected_action_id}.started.json"
+            )
+            completed_ref = (
+                "control/live_planner_actions/"
+                f"{rejected_action_id}.completed.json"
+            )
+            started = json.loads(
+                (run_root / started_ref).read_text(encoding="utf-8")
+            )
+            completed = json.loads(
+                (run_root / completed_ref).read_text(encoding="utf-8")
+            )
+            failure = json.loads(failures[0].read_text(encoding="utf-8"))
+            request_ref = started["request"]["request_ref"]
+            rejection_ref = "control/proposal_rejections/round_001.json"
+            expected_rejected_chain = {
+                started_ref,
+                completed_ref,
+                request_ref,
+                failures[0].relative_to(run_root).as_posix(),
+                rejection_ref,
+                started["request"]["input_ref"],
+            }
+            ledger_events = [
+                json.loads(line)
+                for line in (
+                    run_root / "budget_ledger.jsonl"
+                ).read_text(encoding="utf-8").splitlines()
+            ]
+            rejected_ledger_events = [
+                event
+                for event in ledger_events
+                if event.get("action_id") == rejected_action_id
+            ]
+            calls_before_reentry = list(backend.calls)
+
+            second = run_v3_prototype(
+                task,
+                run_root,
+                prototype_config(task, credit_limit=100),
+                backend=backend,
+                planner=planner,
+                max_planner_rounds=2,
+                thread_id="prototype-live-reject-then-success-test",
+            )
+            ledger_after_reentry = (
+                run_root / "budget_ledger.jsonl"
+            ).read_bytes()
+
+        self.assertEqual(first["status"], "DONE")
+        self.assertEqual(first["final_candidate_id"], "candidate_001")
+        self.assertEqual(first["budget"]["tool_used"]["llm"], 2)
+        self.assertEqual(first["budget"]["tokens_used"], 38)
+        self.assertEqual(planner.invoke_calls, 2)
+        self.assertTrue(expected_rejected_chain.issubset(manifest_paths))
+        self.assertEqual(
+            failure["schema_version"], "v3.token-provider-failure.v1"
+        )
+        self.assertEqual(failure["action_id"], rejected_action_id)
+        self.assertEqual(failure["outcome"], "PROVIDER_OUTPUT_REJECTED")
+        self.assertEqual(failure["truncation_reason"], "PATCH_INCOMPLETE")
+        self.assertTrue(failure["patch_incomplete"])
+        self.assertTrue(failure["output_truncated"])
+        self.assertEqual(failure["usage"]["actual_input_tokens"], 8)
+        self.assertEqual(failure["usage"]["actual_output_tokens"], 3)
+        self.assertEqual(failure["usage"]["actual_total_tokens"], 11)
+        self.assertEqual(completed["outcome"], "PROVIDER_OUTPUT_REJECTED")
+        self.assertEqual(
+            completed["result_ref"],
+            failures[0].relative_to(run_root).as_posix(),
+        )
+        self.assertEqual(
+            [event["state"] for event in rejected_ledger_events],
+            ["STARTED", "COMPLETED"],
+        )
+        self.assertEqual(rejected_ledger_events[1]["tokens_used"], 11)
+        self.assertEqual(second, first)
+        self.assertEqual(backend.calls, calls_before_reentry)
+        self.assertEqual(
+            ledger_before_reentry,
+            ledger_after_reentry,
+        )
 
     def test_graph_resume_after_live_outcome_does_not_call_model_twice(
         self,

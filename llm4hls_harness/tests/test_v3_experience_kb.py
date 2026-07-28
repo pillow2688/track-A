@@ -13,7 +13,7 @@ from llm4hls_agent.v3_experience_kb import (
     build_kb_query,
 )
 from llm4hls_agent.v3_experience_v2 import seal_experience_v2
-from llm4hls_harness.tests.test_v3_experience_v2_schema import sample_body
+from .test_v3_experience_v2_schema import sample_body
 
 
 def record(

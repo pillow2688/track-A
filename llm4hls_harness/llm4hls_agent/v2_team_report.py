@@ -828,7 +828,7 @@ def _normalize_tools(
 ) -> tuple[Mapping[str, object], ...]:
     tools: list[Mapping[str, object]] = []
     expected_validation_scope = (
-        "final" if scope in {"final", "fallback"} else "exploration"
+        "search_closeout" if scope in {"final", "fallback"} else "exploration"
     )
     cosim_state = _cosim_state(
         validation,
@@ -1728,7 +1728,7 @@ def collect_v2_team_report_data(
             "scoring": _redact(optimization.get("scoring", {})),
             "max_rounds": optimization.get("max_rounds"),
             "max_no_improvement_rounds": optimization.get("max_no_improvement_rounds"),
-            "final_reserve_credits": optimization.get("final_reserve_credits"),
+            "search_closeout_reserve_credits": optimization.get("search_closeout_reserve_credits"),
             "official_proxy_is_final_score": False,
             "result_workflow": result.get("workflow"),
             "run_config_workflow": run_config.get("workflow"),
@@ -1942,7 +1942,9 @@ def analyze_v2_team_report_data(data: V2TeamReportData) -> V2TeamReportData:
     stop = data.run_outcome.get("exploration_stop_reason")
     stop_advice = {
         "NO_IMPROVEMENT_LIMIT": "停止是连续无改善保护；复盘 Selector 和评分粒度。",
-        "FINAL_RESERVE_REACHED": "停止是主动保护 final reserve，不代表 Provider 失败。",
+        "SEARCH_CLOSEOUT_RESERVE_REACHED": (
+            "停止是主动保护 Agent 搜索收尾储备，不代表 Provider 失败。"
+        ),
         "TOKEN_RESERVE_REACHED": "缩短 Prompt 或增加明确的 Token 预算后再探索。",
         "MAX_ROUNDS": "检查是否仍有未尝试分支，再决定是否提高轮数。",
         "MAX_OPTIMIZATION_ROUNDS": "已达到本次配置的探索轮数；根据剩余分支与预算决定是否继续。",

@@ -828,7 +828,7 @@ class V2WorkflowTests(unittest.TestCase):
         for stage in ("csim", "synth", "cosim"):
             ref = result["final_validation"][stage]["result_ref"]
             action = json.loads((self.run_root / ref).read_text(encoding="utf-8"))
-            self.assertEqual(action["validation_scope"], "final")
+            self.assertEqual(action["validation_scope"], "search_closeout")
 
     def test_default_candidate_and_no_improvement_limits_match_policy(self) -> None:
         self.assertEqual(self.optimization_config.max_rounds, 6)
@@ -934,10 +934,10 @@ class V2WorkflowTests(unittest.TestCase):
         self.assertIn("public_proxy_v1", report)
         self.assertIn("PPA tie-break", report)
 
-    def test_final_reserve_cannot_be_lower_than_configured_final_tool_cost(self) -> None:
-        unsafe = replace(self.optimization_config, final_reserve_credits=24)
+    def test_search_closeout_reserve_cannot_be_lower_than_configured_final_tool_cost(self) -> None:
+        unsafe = replace(self.optimization_config, search_closeout_reserve_credits=24)
 
-        with self.assertRaisesRegex(ValueError, "final reserve"):
+        with self.assertRaisesRegex(ValueError, "search closeout reserve"):
             run_v2(
                 self.task,
                 self.root / "unsafe-reserve",
@@ -947,7 +947,7 @@ class V2WorkflowTests(unittest.TestCase):
                 backend=PPASequenceBackend(),
             )
 
-    def test_exploration_stops_before_spending_final_reserve(self) -> None:
+    def test_exploration_stops_before_spending_search_closeout_reserve(self) -> None:
         limited = replace(
             self.run_config,
             budget=BudgetConfig(
@@ -970,7 +970,7 @@ class V2WorkflowTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "DONE")
         self.assertEqual(
-            result["exploration_stop_reason"], "FINAL_RESERVE_REACHED"
+            result["exploration_stop_reason"], "SEARCH_CLOSEOUT_RESERVE_REACHED"
         )
         self.assertEqual(result["rounds"], [])
         self.assertEqual(result["budget"]["credits_used"], 50)

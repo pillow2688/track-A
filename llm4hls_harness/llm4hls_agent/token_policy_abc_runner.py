@@ -19,6 +19,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Mapping, Sequence
 
+from .budget import TokenBudgetLimits
 from .v3_batch_benchmark import (
     BenchmarkExecutionError,
     BenchmarkRunSpec,
@@ -39,6 +40,8 @@ RESTRICTED_PATH_PARTS = frozenset(
 )
 _IMPLEMENTATION_FILES = (
     "token_policy_abc_runner.py",
+    "token_policy_experiment_cli.py",
+    "v3_batch_benchmark.py",
     "v3_prototype_cli.py",
     "v3_openai_planner.py",
     "openai_provider.py",
@@ -225,12 +228,29 @@ def _validate_common_config(value: Mapping[str, object]) -> None:
         "credit_limit",
         "max_planner_rounds",
         "max_no_improvement_rounds",
-        "final_reserve_credits",
+        "search_closeout_reserve_credits",
         "runtime_limit_seconds",
         "provider_hard_output_cap",
     ):
         if _integer(value.get(name)) <= 0:
             raise TokenPolicyABCError(f"matrix {name} must be positive")
+    configured_minimums = value.get("mode_minimum_viable_output")
+    if not isinstance(configured_minimums, Mapping):
+        raise TokenPolicyABCError(
+            "matrix mode_minimum_viable_output must be an object"
+        )
+    normalized_minimums = {
+        str(mode): _integer(limit)
+        for mode, limit in configured_minimums.items()
+    }
+    resolved_minimums = dict(
+        TokenBudgetLimits().mode_minimum_viable_output
+    )
+    if normalized_minimums != resolved_minimums:
+        raise TokenPolicyABCError(
+            "matrix mode_minimum_viable_output does not match the "
+            "versioned runtime defaults"
+        )
     if value.get("provider_seed_supported") is not False or value.get("seed") is not None:
         raise TokenPolicyABCError(
             "DeepSeek seed is unsupported and must be recorded as null/false"
@@ -382,15 +402,13 @@ def _condition_args(matrix: LoadedMatrix, condition: str) -> tuple[str, ...]:
         "--llm-max-output-tokens", str(config["provider_hard_output_cap"]),
         "--llm-temperature", str(config["temperature"]),
         "--llm-top-p", str(config["top_p"]),
-        "--max-planner-rounds", str(config["max_planner_rounds"]),
-        "--max-no-improvement-rounds", str(config["max_no_improvement_rounds"]),
-        "--final-reserve-credits", str(config["final_reserve_credits"]),
+        "--search-closeout-reserve-credits", str(config["search_closeout_reserve_credits"]),
         "--token-budget-policy", str(selected["token_budget_policy"]),
         "--context-window-tokens", str(config["context_window_tokens"]),
         "--context-safety-margin-tokens", str(config["context_safety_margin_tokens"]),
         "--token-safety-margin", str(config["token_safety_margin"]),
         "--future-round-token-reserve", str(config["future_round_token_reserve"]),
-        "--final-token-reserve", str(config["final_token_reserve"]),
+        "--search-closeout-token-reserve", str(config["search_closeout_token_reserve"]),
         "--guidance-token-cap", str(config["guidance_token_cap"]),
         "--guidance-ratio", str(config["guidance_ratio"]),
     ]
@@ -407,6 +425,176 @@ def _condition_args(matrix: LoadedMatrix, condition: str) -> tuple[str, ...]:
     if visibility in {"hidden", "visible"}:
         args.extend(("--token-budget-visibility", str(visibility)))
     return tuple(args)
+
+
+def _condition_executor(
+    matrix: LoadedMatrix, condition: str
+) -> V3PrototypeCLIExecutor:
+    """Build one experimental executor without bypassing owned CLI controls."""
+
+    return V3PrototypeCLIExecutor(
+        _condition_args(matrix, condition),
+        validation_profile=str(matrix.config["validation_profile"]),
+        max_planner_rounds=int(matrix.config["max_planner_rounds"]),
+        max_no_improvement_rounds=int(
+            matrix.config["max_no_improvement_rounds"]
+        ),
+        experience_mode="off",
+        experience_task_split="train",
+        experimental_token_policy=True,
+    )
+
+
+def _execution_identity(
+    matrix: LoadedMatrix,
+    *,
+    model: str,
+    vitis_root: Path,
+    executors: Mapping[str, V3PrototypeCLIExecutor],
+) -> dict[str, object]:
+    payload = {
+        "schema_version": "v3e.token-policy-abc-execution-identity.v1",
+        "matrix_config_sha256": matrix.config_sha256,
+        "implementation_sha256": matrix.implementation_sha256,
+        "corpus_manifest_sha256": matrix.corpus_manifest_sha256,
+        "model": model,
+        "vitis_root_sha256": _sha256_bytes(
+            str(vitis_root).encode("utf-8")
+        ),
+        "toolchain_id": os.environ.get(
+            "LLM4HLS_TOOLCHAIN_ID", "Vitis 2025.2"
+        ),
+        "executor_fingerprints": {
+            condition: executors[condition].fingerprint()
+            for condition in CONDITIONS
+        },
+    }
+    return {
+        **payload,
+        "execution_identity_sha256": _sha256_json(payload),
+    }
+
+
+def _validate_schedule(
+    schedule_path: Path, jobs: Sequence[MatrixJob]
+) -> None:
+    expected = [job.to_dict() for job in jobs]
+    if not schedule_path.exists():
+        for row in expected:
+            _append_jsonl(schedule_path, row)
+        return
+    actual: list[Mapping[str, object]] = []
+    for line in schedule_path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        value = json.loads(line)
+        if not isinstance(value, Mapping):
+            raise TokenPolicyABCError("schedule row is not an object")
+        actual.append(value)
+    if actual != expected:
+        raise TokenPolicyABCError(
+            "existing schedule does not match the selected matrix jobs"
+        )
+
+
+def _load_resumed_records(
+    *,
+    matrix: LoadedMatrix,
+    jobs: Sequence[MatrixJob],
+    output: Path,
+    manifest_path: Path,
+    results_path: Path,
+    execution_identity: Mapping[str, object],
+) -> dict[str, Mapping[str, object]]:
+    if not manifest_path.is_file():
+        raise TokenPolicyABCError("resume requires an existing manifest")
+    prior_manifest = _read_json(manifest_path)
+    expected_manifest_fields = {
+        "schema_version": MANIFEST_SCHEMA,
+        "matrix_config_sha256": matrix.config_sha256,
+        "implementation_sha256": matrix.implementation_sha256,
+        "corpus_manifest_sha256": matrix.corpus_manifest_sha256,
+        "execution_identity_sha256": execution_identity[
+            "execution_identity_sha256"
+        ],
+        "planned_runs": len(jobs),
+    }
+    for field, expected in expected_manifest_fields.items():
+        if prior_manifest.get(field) != expected:
+            raise TokenPolicyABCError(
+                f"resume manifest identity mismatch: {field}"
+            )
+
+    by_id = {job.run_id: job for job in jobs}
+    completed: dict[str, Mapping[str, object]] = {}
+    if not results_path.is_file():
+        return completed
+    for line in results_path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        value = json.loads(line)
+        if not isinstance(value, Mapping):
+            raise TokenPolicyABCError("resume result row is not an object")
+        run_id = value.get("run_id")
+        if not isinstance(run_id, str) or run_id not in by_id:
+            raise TokenPolicyABCError("resume result has an unknown run_id")
+        if run_id in completed:
+            raise TokenPolicyABCError("resume result has a duplicate run_id")
+        job = by_id[run_id]
+        condition_config = _mapping(
+            _mapping(matrix.config["conditions"])[job.condition]
+        )
+        expected_fields = {
+            **job.to_dict(),
+            "schema_version": RUN_SCHEMA,
+            "matrix_config_sha256": matrix.config_sha256,
+            "implementation_sha256": matrix.implementation_sha256,
+            "corpus_manifest_sha256": matrix.corpus_manifest_sha256,
+            "execution_identity_sha256": execution_identity[
+                "execution_identity_sha256"
+            ],
+            "run_ref": f"runs/{run_id}",
+            "provider": matrix.config["provider"],
+            "model": execution_identity["model"],
+            "token_budget_policy": condition_config[
+                "token_budget_policy"
+            ],
+            "token_budget_visibility": condition_config[
+                "token_budget_visibility"
+            ],
+        }
+        for field, expected in expected_fields.items():
+            if value.get(field) != expected:
+                raise TokenPolicyABCError(
+                    f"resume result identity mismatch for {run_id}: {field}"
+                )
+        run_dir = output / "runs" / run_id
+        record_path = run_dir / "abc_run_record.json"
+        if value.get("artifact_manifest_ref") != "abc_artifact_hashes.json":
+            raise TokenPolicyABCError(
+                f"resume artifact manifest reference mismatch for {run_id}"
+            )
+        artifact_path = run_dir / "abc_artifact_hashes.json"
+        if not record_path.is_file() or not artifact_path.is_file():
+            raise TokenPolicyABCError(
+                f"resume receipts are missing for {run_id}"
+            )
+        if _read_json(record_path) != dict(value):
+            raise TokenPolicyABCError(
+                f"resume record receipt mismatch for {run_id}"
+            )
+        if value.get("artifact_manifest_sha256") != _sha256_bytes(
+            artifact_path.read_bytes()
+        ):
+            raise TokenPolicyABCError(
+                f"resume artifact manifest hash mismatch for {run_id}"
+            )
+        if _read_json(artifact_path) != _artifact_manifest(run_dir):
+            raise TokenPolicyABCError(
+                f"resume run artifacts changed for {run_id}"
+            )
+        completed[run_id] = value
+    return completed
 
 
 def _read_optional_run_json(run_dir: Path, reference: object) -> Mapping[str, object]:
@@ -604,7 +792,7 @@ def reconcile_record_from_artifacts(
                     action_result = _read_json(result_path)
             fresh = bool(
                 action_result.get("cached") is False
-                and action_result.get("validation_scope") == "final"
+                and action_result.get("validation_scope") == "search_closeout"
             )
             passed = bool(
                 stage_row.get("status") == "PASS"
@@ -845,6 +1033,7 @@ def _manifest(
     *,
     status: str,
     selected_jobs: Sequence[MatrixJob],
+    execution_identity: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     repository_root = Path(__file__).resolve().parents[2]
     return {
@@ -857,6 +1046,16 @@ def _manifest(
         "implementation_sha256": matrix.implementation_sha256,
         "corpus_manifest_ref": str(matrix.corpus_manifest_path),
         "corpus_manifest_sha256": matrix.corpus_manifest_sha256,
+        "execution_identity": (
+            dict(execution_identity)
+            if execution_identity is not None
+            else None
+        ),
+        "execution_identity_sha256": (
+            execution_identity.get("execution_identity_sha256")
+            if execution_identity is not None
+            else None
+        ),
         "scope": "PUBLIC_TRAIN_DEV_ONLY",
         "hidden_like_runs": 0,
         "provider": matrix.config["provider"],
@@ -898,9 +1097,7 @@ def run_matrix(
     results_path = output / "token_policy_abc_results.jsonl"
     if not resume and any(path.exists() for path in (manifest_path, results_path)):
         raise TokenPolicyABCError("output directory already contains a matrix run")
-    if not schedule_path.exists():
-        for job in jobs:
-            _append_jsonl(schedule_path, job.to_dict())
+    _validate_schedule(schedule_path, jobs)
     if dry_run:
         manifest = _manifest(
             matrix, output, status="DRY_RUN", selected_jobs=jobs
@@ -908,27 +1105,36 @@ def run_matrix(
         _atomic_json(manifest_path, manifest)
         return manifest
 
-    model, _vitis_root = _preflight(matrix)
-    completed: dict[str, Mapping[str, object]] = {}
-    if resume and results_path.is_file():
-        for line in results_path.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
-                continue
-            value = json.loads(line)
-            if isinstance(value, Mapping) and isinstance(value.get("run_id"), str):
-                completed[str(value["run_id"])] = value
-    manifest = _manifest(matrix, output, status="RUNNING", selected_jobs=jobs)
-    _atomic_json(manifest_path, manifest)
-    records: list[Mapping[str, object]] = []
+    model, vitis_root = _preflight(matrix)
     executors = {
-        condition: V3PrototypeCLIExecutor(
-            _condition_args(matrix, condition),
-            validation_profile=str(matrix.config["validation_profile"]),
-            experience_mode="off",
-            experience_task_split="train",
-        )
+        condition: _condition_executor(matrix, condition)
         for condition in CONDITIONS
     }
+    execution_identity = _execution_identity(
+        matrix,
+        model=model,
+        vitis_root=vitis_root,
+        executors=executors,
+    )
+    completed: dict[str, Mapping[str, object]] = {}
+    if resume:
+        completed = _load_resumed_records(
+            matrix=matrix,
+            jobs=jobs,
+            output=output,
+            manifest_path=manifest_path,
+            results_path=results_path,
+            execution_identity=execution_identity,
+        )
+    manifest = _manifest(
+        matrix,
+        output,
+        status="RUNNING",
+        selected_jobs=jobs,
+        execution_identity=execution_identity,
+    )
+    _atomic_json(manifest_path, manifest)
+    records: list[Mapping[str, object]] = []
     for job in jobs:
         prior = completed.get(job.run_id)
         if prior is not None:
@@ -977,6 +1183,9 @@ def run_matrix(
         _atomic_json(artifact_path, artifacts)
         record.update(
             {
+                "execution_identity_sha256": execution_identity[
+                    "execution_identity_sha256"
+                ],
                 "artifact_manifest_ref": "abc_artifact_hashes.json",
                 "artifact_manifest_sha256": _sha256_bytes(artifact_path.read_bytes()),
                 "artifact_file_count": artifacts["file_count"],

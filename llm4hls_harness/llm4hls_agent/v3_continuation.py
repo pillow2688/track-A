@@ -1,9 +1,8 @@
-"""Deterministic, leakage-safe continuation and performance-area advice.
+"""Deterministic, leakage-safe performance-area and continuation inputs.
 
 This module deliberately has no tool, Candidate, LLM, or graph authority.  It
-only turns facts already available *before* a prospective Planner call into a
-hash-bound recommendation.  The V3 graph consumes the result at its existing
-budget/stop gates.
+only turns facts already available *before* a prospective Planner call into
+bounded evidence for the active mode-specific continuation policy.
 """
 
 from __future__ import annotations
@@ -18,12 +17,9 @@ from types import MappingProxyType
 from typing import Mapping, Sequence
 
 
-CONTINUATION_DECISION_SCHEMA = "v3.continuation-decision.v1"
-CONTINUATION_POLICY_VERSION = "v3.continuation-policy.v1"
 PERFORMANCE_AREA_DELTA_SCHEMA = "v3.performance-area-delta.v1"
 FOLLOWUP_OUTCOME_SCHEMA = "v3.followup-outcome.v1"
 POLICY_MODES = frozenset({"off", "shadow", "enforce"})
-DECISIONS = frozenset({"ALLOW", "BLOCK", "DEFER_TO_FINAL"})
 MODES = frozenset({"REPAIR", "SYNTH_FIX", "STRUCTURAL_FIX", "OPTIMIZE"})
 _RESOURCE_ALIASES = {
     "lut": ("LUT", "lut"),
@@ -318,57 +314,5 @@ def strategy_novelty(*, declared: Sequence[object] = (), patch: str = "", attemp
     return {"previous_strategy_atoms": sorted({item for group in attempted for item in (str(value).upper() for value in group)}), "failed_strategy_atoms": sorted(failed_atoms), "untried_matched_strategy_atoms": [atom for atom in atoms if atom not in failed_atoms], "observed_strategy_atoms": list(atoms), "duplicate_strategy": duplicate_strategy, "duplicate_patch": duplicate_patch, "strategy_novelty": novelty, "reason_codes": reasons}
 
 
-def continuation_cost(*, ledger: Mapping[str, object], estimated_input_tokens: int, estimated_output_tokens: int, estimated_credits: int, estimated_wall_time_seconds: float, final_reserve_safe: bool) -> dict[str, object]:
-    return {"estimated_next_input_tokens": max(0, int(estimated_input_tokens)), "estimated_next_output_tokens": max(0, int(estimated_output_tokens)), "estimated_next_total_tokens": max(0, int(estimated_input_tokens)) + max(0, int(estimated_output_tokens)), "estimated_next_credits": max(0, int(estimated_credits)), "estimated_next_wall_time_seconds": max(0.0, float(estimated_wall_time_seconds)), "remaining_tokens": max(0, int(ledger.get("tokens_remaining") or 0)), "remaining_credits": ledger.get("credits_remaining"), "final_reserve_safe": bool(final_reserve_safe)}
-
-
-def continuation_decision(*, run_id: str, round_index: int, mode: str, policy_mode: str, has_correct_candidate: bool, has_strict_latency_improvement: bool, performance_area: Mapping[str, object], delta: Mapping[str, object], strategies: Mapping[str, object], cost: Mapping[str, object], remaining_rounds: int) -> dict[str, object]:
-    """Compute the transparent rule-based decision from pre-follow-up facts only."""
-    if mode not in MODES or policy_mode not in POLICY_MODES:
-        raise ValueError("invalid continuation mode")
-    reason_codes: list[str] = []
-    benefit: list[str] = []
-    penalties: list[str] = []
-    score = 0
-    if remaining_rounds <= 0:
-        reason_codes.append("MAX_ROUNDS_REACHED")
-    if not cost.get("final_reserve_safe", False):
-        reason_codes.append("FINAL_RESERVE_UNSAFE")
-    if int(cost.get("remaining_tokens") or 0) < int(cost.get("estimated_next_total_tokens") or 0):
-        reason_codes.append("TOKEN_INSUFFICIENT")
-    remaining_credits = cost.get("remaining_credits")
-    if isinstance(remaining_credits, (int, float)) and remaining_credits < int(cost.get("estimated_next_credits") or 0):
-        reason_codes.append("CREDIT_INSUFFICIENT")
-    if delta.get("has_actionable_new_evidence"):
-        score += 3; benefit.append("ACTIONABLE_EVIDENCE")
-    else:
-        score -= 5; penalties.append("NO_ACTIONABLE_EVIDENCE")
-    if delta.get("evidence_strength") == "HIGH": score += 4
-    elif delta.get("evidence_strength") == "LOW": score -= 2
-    if strategies.get("untried_matched_strategy_atoms"):
-        score += 2; benefit.append("UNTRIED_MATCHED_STRATEGY")
-    if strategies.get("duplicate_strategy") or strategies.get("duplicate_patch"):
-        score -= 4; reason_codes.append("DUPLICATE_STRATEGY_OR_PATCH")
-    if has_correct_candidate and has_strict_latency_improvement and mode == "OPTIMIZE" and not delta.get("bottleneck_changed"):
-        score -= 3; penalties.append("IMPROVED_WITHOUT_NEW_BOTTLENECK")
-    if mode == "STRUCTURAL_FIX" and delta.get("failure_subtype_changed"):
-        score += 2; benefit.append("STRUCTURAL_SUBTYPE_REFINED")
-    if performance_area.get("tradeoff_detected") and strategies.get("untried_matched_strategy_atoms"):
-        score += 3; benefit.append("PERFORMANCE_AREA_REBALANCING_OPPORTUNITY")
-    if performance_area.get("pareto_relation") == "DOMINATES" and not delta.get("has_actionable_new_evidence"):
-        score -= 2; penalties.append("CURRENT_CANDIDATE_PARETO_DOMINATES")
-    if cost.get("final_reserve_safe"):
-        score += 1
-    hard_block = bool(reason_codes)
-    if hard_block:
-        decision = "DEFER_TO_FINAL" if has_correct_candidate and "FINAL_RESERVE_UNSAFE" in reason_codes else "BLOCK"
-    elif score >= 4:
-        decision = "ALLOW"
-    elif score >= 1 and not has_correct_candidate:
-        decision = "ALLOW"
-    else:
-        decision = "BLOCK"
-    expected = "HIGH" if score >= 7 else "MEDIUM" if score >= 4 else "LOW" if score >= 1 else "NONE"
-    record = {"schema_version": CONTINUATION_DECISION_SCHEMA, "run_id": run_id, "round_index": int(round_index), "mode": mode, "policy_mode": policy_mode, "decision": decision, "current_state": {"has_correct_candidate": bool(has_correct_candidate), "has_strict_latency_improvement": bool(has_strict_latency_improvement), "has_performance_area_improvement": bool(performance_area.get("performance_area_proxy_improved")), "best_candidate_id": None, "remaining_rounds": int(remaining_rounds)}, "evidence_delta": dict(delta), "strategy_state": dict(strategies), "cost": dict(cost), "performance_area_state": {key: performance_area.get(key) for key in ("latency_improved", "transaction_interval_improved", "clock_improved", "area_proxy_improved", "performance_area_proxy_improved", "resource_pressure_changed", "tradeoff_detected", "pareto_relation") } | {"reason_codes": []}, "value": {"expected_value": expected, "value_score": score, "benefit_reason_codes": benefit, "cost_reason_codes": penalties}, "reason_codes": reason_codes + list(delta.get("reason_codes", [])) + list(strategies.get("reason_codes", [])), "policy_version": CONTINUATION_POLICY_VERSION}
-    record["decision_hash"] = canonical_sha256(record)
-    return record
+def continuation_cost(*, ledger: Mapping[str, object], estimated_input_tokens: int, estimated_output_tokens: int, estimated_credits: int, estimated_wall_time_seconds: float, search_closeout_reserve_safe: bool) -> dict[str, object]:
+    return {"estimated_next_input_tokens": max(0, int(estimated_input_tokens)), "estimated_next_output_tokens": max(0, int(estimated_output_tokens)), "estimated_next_total_tokens": max(0, int(estimated_input_tokens)) + max(0, int(estimated_output_tokens)), "estimated_next_credits": max(0, int(estimated_credits)), "estimated_next_wall_time_seconds": max(0.0, float(estimated_wall_time_seconds)), "remaining_tokens": max(0, int(ledger.get("tokens_remaining") or 0)), "remaining_credits": ledger.get("credits_remaining"), "search_closeout_reserve_safe": bool(search_closeout_reserve_safe)}

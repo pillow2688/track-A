@@ -6,39 +6,37 @@ import argparse
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 from .budget import (
+    REFERENCE_DEVELOPMENT_MAX_CREDITS,
+    REFERENCE_DEVELOPMENT_MAX_TOKENS,
     BudgetConfig,
     TokenBudgetLimits,
     TokenBudgetPolicy,
     TokenEstimator,
+    resolve_agent_budget_limit,
+    resolve_reference_tool_cost,
 )
 from .repair import PatchProposal
+from .runtime_control import (
+    DEFAULT_CLEANUP_RESERVE_SECONDS,
+    DEFAULT_COSIM_MINIMUM_RUNTIME_SECONDS,
+    RuntimeDeadline,
+)
 from .task import load_public_task
 from .tools import ToolConfig
 from .vitis import detect_vitis_toolchain
 from .workflow import RunConfig
 
 
-def _env_positive_int(name: str, default: int) -> int:
-    """Read a positive integer without making malformed shell state silent."""
-
-    raw = os.environ.get(name)
-    if raw is None or not raw.strip():
-        return default
-    try:
-        value = int(raw)
-    except ValueError as exc:
-        raise ValueError(f"{name} must be a positive integer") from exc
-    if value <= 0:
-        raise ValueError(f"{name} must be a positive integer")
-    return value
-
-
-def _parser() -> argparse.ArgumentParser:
+def _parser(
+    *, experimental_token_policy: bool = False
+) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="llm4hls-v3-prototype",
+        allow_abbrev=False,
         description=(
             "Run the isolated multi-round V3-B0 LangGraph in scripted or live "
             "OpenAI-compatible Planner mode. "
@@ -97,22 +95,36 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--cost-csim",
         type=int,
-        default=_env_positive_int("LLM4HLS_COST_CSIM", 1),
         help="Configured CSim Credit cost (default: LLM4HLS_COST_CSIM or 1).",
     )
     parser.add_argument(
         "--cost-synth",
         type=int,
-        default=_env_positive_int("LLM4HLS_COST_SYNTH", 4),
         help="Configured Synth Credit cost (default: LLM4HLS_COST_SYNTH or 4).",
     )
     parser.add_argument(
         "--cost-cosim",
         type=int,
-        default=_env_positive_int("LLM4HLS_COST_COSIM", 20),
         help="Configured CoSim Credit cost (default: LLM4HLS_COST_COSIM or 20).",
     )
     parser.add_argument("--runtime-limit", type=float, default=7200.0)
+    parser.add_argument(
+        "--run-deadline-monotonic",
+        type=float,
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--cleanup-reserve-seconds",
+        type=float,
+        default=DEFAULT_CLEANUP_RESERVE_SECONDS,
+        help="Seconds reserved for process cleanup and durable terminal output.",
+    )
+    parser.add_argument(
+        "--cosim-minimum-runtime-seconds",
+        type=float,
+        default=DEFAULT_COSIM_MINIMUM_RUNTIME_SECONDS,
+        help="Minimum effective CoSim window required before CoSim may start.",
+    )
     parser.add_argument("--csim-timeout", type=float, default=300.0)
     parser.add_argument("--synth-timeout", type=float, default=1800.0)
     parser.add_argument("--cosim-timeout", type=float, default=1800.0)
@@ -137,30 +149,29 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--token-budget-policy",
-        choices=("fixed", "dynamic", "hybrid"),
+        choices=(
+            ("fixed", "dynamic")
+            if experimental_token_policy
+            else ("fixed",)
+        ),
         default="fixed",
         help=(
-            "fixed preserves V3-D; dynamic enables v3.token-policy.v1; "
-            "hybrid enables empirical stable caps and the Planner-call gate."
+            "The formal product CLI accepts fixed only."
+            if not experimental_token_policy
+            else "Experimental fixed/dynamic Token Policy selector."
         ),
     )
-    parser.add_argument(
-        "--token-policy-config",
-        help=(
-            "Hybrid policy JSON override. By default the versioned package "
-            "configuration generated from the 72-run historical analysis is used."
-        ),
-    )
-    parser.add_argument(
-        "--token-budget-visibility",
-        choices=("hidden", "visible"),
-        default="visible",
-        help=(
-            "For dynamic policy, hidden enforces the Provider cap without adding "
-            "TokenEnvelope text; visible also shows the matching envelope and "
-            "pressure guidance to the Planner."
-        ),
-    )
+    if experimental_token_policy:
+        parser.add_argument(
+            "--token-budget-visibility",
+            choices=("hidden", "visible"),
+            default="visible",
+            help=(
+                "For dynamic policy, hidden enforces the Provider cap without "
+                "adding TokenEnvelope text; visible also shows the matching "
+                "envelope and pressure guidance to the Planner."
+            ),
+        )
     parser.add_argument(
         "--llm-timeout",
         type=float,
@@ -173,22 +184,47 @@ def _parser() -> argparse.ArgumentParser:
         default=int(os.environ.get("LLM4HLS_LLM_MAX_OUTPUT_TOKENS", "1000")),
         help="Maximum output tokens reserved for each live Planner call.",
     )
-    parser.add_argument(
-        "--max-output-tokens",
-        type=int,
-        help="Optional global configured output cap below mode/provider limits.",
-    )
-    parser.add_argument("--repair-max-output-tokens", type=int, default=1400)
-    parser.add_argument("--synth-fix-max-output-tokens", type=int, default=1800)
-    parser.add_argument("--structural-fix-max-output-tokens", type=int, default=2200)
-    parser.add_argument("--optimize-max-output-tokens", type=int, default=2400)
-    parser.add_argument("--minimum-viable-output-tokens", type=int)
-    parser.add_argument("--context-window-tokens", type=int, default=32768)
-    parser.add_argument("--context-safety-margin-tokens", type=int, default=256)
-    parser.add_argument("--token-safety-margin", type=int, default=128)
-    parser.add_argument("--future-round-token-reserve", type=int, default=1800)
-    parser.add_argument("--final-token-reserve", type=int, default=0)
-    parser.add_argument("--guidance-ratio", type=float, default=0.15)
+    if experimental_token_policy:
+        parser.add_argument(
+            "--max-output-tokens",
+            type=int,
+            help="Optional global configured output cap below mode/provider limits.",
+        )
+        parser.add_argument("--repair-max-output-tokens", type=int, default=1400)
+        parser.add_argument("--synth-fix-max-output-tokens", type=int, default=1800)
+        parser.add_argument(
+            "--structural-fix-max-output-tokens", type=int, default=2200
+        )
+        parser.add_argument("--optimize-max-output-tokens", type=int, default=2400)
+        parser.add_argument("--minimum-viable-output-tokens", type=int)
+        parser.add_argument("--context-window-tokens", type=int, default=32768)
+        parser.add_argument(
+            "--context-safety-margin-tokens", type=int, default=256
+        )
+        parser.add_argument("--token-safety-margin", type=int, default=128)
+        parser.add_argument("--future-round-token-reserve", type=int, default=1800)
+        parser.add_argument(
+            "--search-closeout-token-reserve", type=int, default=0
+        )
+        parser.add_argument("--guidance-ratio", type=float, default=0.15)
+    else:
+        # Keep one implementation path while removing Dynamic-only controls
+        # from the formal product surface.
+        parser.set_defaults(
+            token_budget_visibility="visible",
+            max_output_tokens=None,
+            repair_max_output_tokens=1400,
+            synth_fix_max_output_tokens=1800,
+            structural_fix_max_output_tokens=2200,
+            optimize_max_output_tokens=2400,
+            minimum_viable_output_tokens=None,
+            context_window_tokens=32768,
+            context_safety_margin_tokens=256,
+            token_safety_margin=128,
+            future_round_token_reserve=1800,
+            search_closeout_token_reserve=0,
+            guidance_ratio=0.15,
+        )
     parser.add_argument(
         "--llm-temperature",
         type=float,
@@ -212,10 +248,14 @@ def _parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
-        "--final-reserve-credits",
+        "--search-closeout-reserve-credits",
         type=int,
         default=25,
-        help="Credits the live Planner must leave for final CSim/Synth/CoSim.",
+        help=(
+            "Agent-search Credits retained for candidate closeout. This is "
+            "not a final-certification budget; 25 is only a configurable "
+            "development reference."
+        ),
     )
     parser.add_argument(
         "--max-no-improvement-rounds",
@@ -234,11 +274,11 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--continuation-policy-version",
-        choices=("v1", "v2"),
-        default="v1",
+        choices=("v2",),
+        default="v2",
         help=(
-            "Continuation decision implementation. v2 is the mode-specific "
-            "leakage-safe controller and must be selected explicitly."
+            "Active mode-specific, leakage-safe Continuation interface. "
+            "The removed v1 policy is not a product runtime option."
         ),
     )
     parser.add_argument(
@@ -252,8 +292,8 @@ def _parser() -> argparse.ArgumentParser:
         "--enable-final-fallback",
         action="store_true",
         help=(
-            "Allow one additional fresh final CSim/Synth/CoSim attempt when "
-            "credits remain. Disabled by default to preserve legacy run identity."
+            "Allow one additional Agent-search closeout attempt when search "
+            "Credits remain; this never reserves independent certification."
         ),
     )
     parser.add_argument(
@@ -270,8 +310,19 @@ def _parser() -> argparse.ArgumentParser:
         choices=("task_contract", "full_internal_audit"),
         default="task_contract",
         help=(
-            "Fresh final contract: task_contract runs CoSim only when required; "
-            "full_internal_audit always runs CSim/Synth/CoSim."
+            "Agent-search closeout contract: task_contract runs CoSim only when "
+            "required; full_internal_audit always runs CSim/Synth/CoSim. The "
+            "independent certification always runs all three stages separately."
+        ),
+    )
+    parser.add_argument(
+        "--evidence-memory",
+        choices=("off", "on"),
+        default="on",
+        help=(
+            "A1 Structured Evidence Memory. off removes cross-Candidate "
+            "history/Delta from subsequent Planner rounds while retaining "
+            "tool PASS/FAIL, validation, and final certification."
         ),
     )
     parser.add_argument(
@@ -333,12 +384,24 @@ def _print_error(error_type: str, detail: str, **extra: object) -> None:
     print(json.dumps(payload, ensure_ascii=False, sort_keys=True), file=sys.stderr)
 
 
-def main(argv: list[str] | None = None) -> int:
-    args = _parser().parse_args(argv)
+def main(
+    argv: list[str] | None = None,
+    *,
+    experimental_token_policy: bool = False,
+) -> int:
+    args = _parser(
+        experimental_token_policy=experimental_token_policy
+    ).parse_args(argv)
+    run_deadline_monotonic = (
+        float(args.run_deadline_monotonic)
+        if args.run_deadline_monotonic is not None
+        else time.monotonic() + float(args.runtime_limit)
+    )
     vitis_root = Path(args.vitis_root).expanduser()
     experience_ingest: dict[str, object] = {
         "planner_status": "NOT_REQUESTED",
-        "postprocess_status": "NOT_REQUESTED",
+        "postprocess_status": "EXTERNAL_OFFLINE",
+        "postprocess_entry": "llm4hls-experience postprocess-run",
     }
 
     if args.backend == "vitis":
@@ -374,6 +437,55 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         task = load_public_task(args.task_dir)
+        token_override = (
+            args.run_token_limit
+            if args.run_token_limit is not None
+            else args.token_budget
+        )
+        token_override_source = (
+            "cli:--run-token-limit"
+            if args.run_token_limit is not None
+            else "cli:--token-budget"
+        )
+        credit_limit = resolve_agent_budget_limit(
+            name="max_credits",
+            task_limit=task.max_credits,
+            task_source=task.max_credits_source,
+            run_override=args.credit_limit,
+            run_override_source="cli:--credit-limit",
+            environment_variable="LLM4HLS_CREDIT_BUDGET",
+            development_fallback=REFERENCE_DEVELOPMENT_MAX_CREDITS,
+        )
+        token_limit = resolve_agent_budget_limit(
+            name="max_tokens",
+            task_limit=task.max_tokens,
+            task_source=task.max_tokens_source,
+            run_override=token_override,
+            run_override_source=token_override_source,
+            environment_variable="LLM4HLS_TOKEN_BUDGET",
+            development_fallback=REFERENCE_DEVELOPMENT_MAX_TOKENS,
+        )
+        resolved_costs = {
+            tool: resolve_reference_tool_cost(
+                tool=tool,
+                run_override=override,
+                environment_variable=f"LLM4HLS_COST_{tool.upper()}",
+                reference_fallback=reference,
+            )
+            for tool, override, reference in (
+                ("csim", args.cost_csim, 1),
+                ("synth", args.cost_synth, 4),
+                ("cosim", args.cost_cosim, 20),
+            )
+        }
+        fallback_assumptions = tuple(
+            item
+            for item in (
+                credit_limit.fallback_assumption,
+                token_limit.fallback_assumption,
+            )
+            if item is not None
+        )
         planner = None
         live_openai = bool(
             args.live_openai or args.planner == "openai-compatible"
@@ -386,13 +498,6 @@ def main(argv: list[str] | None = None) -> int:
             else 1
         )
         if live_openai:
-            live_token_limit = (
-                args.run_token_limit
-                if args.run_token_limit is not None
-                else 32768
-                if args.token_budget is None
-                else args.token_budget
-            )
             base_url = os.environ.get("OPENAI_BASE_URL", "").strip()
             api_key = os.environ.get("OPENAI_API_KEY", "")
             if not base_url:
@@ -414,7 +519,11 @@ def main(argv: list[str] | None = None) -> int:
                 raise ValueError(
                     "--experience-store must name an existing JSONL file"
                 )
-            if args.experience_ranker_version == "v3" and not args.experience_store:
+            if (
+                args.experience_mode != "off"
+                and args.experience_ranker_version == "v3"
+                and not args.experience_store
+            ):
                 raise ValueError(
                     "--experience-ranker-version v3 requires --experience-store"
                 )
@@ -492,85 +601,43 @@ def main(argv: list[str] | None = None) -> int:
             )
             token_policy = None
             token_estimator = None
-            if args.token_budget_policy in {"dynamic", "hybrid"}:
-                hybrid_config: dict[str, object] = {}
-                if args.token_budget_policy == "hybrid":
-                    hybrid_path = (
-                        Path(args.token_policy_config).expanduser().resolve()
-                        if args.token_policy_config
-                        else Path(__file__).with_name("config")
-                        / "token_policy_hybrid_v2.json"
-                    )
-                    hybrid_config = json.loads(
-                        hybrid_path.read_text(encoding="utf-8")
-                    )
-                    if (
-                        not isinstance(hybrid_config, dict)
-                        or hybrid_config.get("schema_version")
-                        != "v3e.token-policy-hybrid-config.v1"
-                    ):
-                        raise ValueError("invalid Hybrid Token Policy config")
-                configured_caps = (
-                    hybrid_config.get("mode_output_caps")
-                    if hybrid_config
-                    else {
-                        "REPAIR": args.repair_max_output_tokens,
-                        "SYNTH_FIX": args.synth_fix_max_output_tokens,
-                        "STRUCTURAL_FIX": args.structural_fix_max_output_tokens,
-                        "OPTIMIZE": args.optimize_max_output_tokens,
-                    }
-                )
-                configured_minimums = (
-                    hybrid_config.get("mode_minimum_viable_output")
-                    if hybrid_config
-                    else None
-                )
-                if not isinstance(configured_caps, dict):
-                    raise ValueError("Hybrid mode_output_caps must be an object")
-                if configured_minimums is not None and not isinstance(
-                    configured_minimums, dict
-                ):
-                    raise ValueError(
-                        "Hybrid mode_minimum_viable_output must be an object"
-                    )
-                limit_kwargs: dict[str, object] = {
-                    "mode_output_caps": configured_caps,
-                    "configured_max_output_tokens": args.max_output_tokens,
-                    "minimum_viable_output_tokens": (
-                        args.minimum_viable_output_tokens
-                    ),
-                    "provider_hard_output_cap": args.llm_max_output_tokens,
-                    "context_window_tokens": args.context_window_tokens,
-                    "context_safety_margin_tokens": (
-                        args.context_safety_margin_tokens
-                    ),
-                    "token_budget_safety_margin": args.token_safety_margin,
-                    "future_round_token_reserve": (
-                        args.future_round_token_reserve
-                    ),
-                    "final_token_reserve": args.final_token_reserve,
-                    "configured_guidance_cap": (
-                        args.experience_max_guidance_tokens
-                    ),
-                    "guidance_ratio": args.guidance_ratio,
-                }
-                if configured_minimums is not None:
-                    limit_kwargs["mode_minimum_viable_output"] = (
-                        configured_minimums
-                    )
+            if args.token_budget_policy == "dynamic":
                 token_policy = TokenBudgetPolicy(
-                    TokenBudgetLimits(**limit_kwargs),
-                    profile=args.token_budget_policy,
+                    TokenBudgetLimits(
+                        mode_output_caps={
+                            "REPAIR": args.repair_max_output_tokens,
+                            "SYNTH_FIX": args.synth_fix_max_output_tokens,
+                            "STRUCTURAL_FIX": args.structural_fix_max_output_tokens,
+                            "OPTIMIZE": args.optimize_max_output_tokens,
+                        },
+                        configured_max_output_tokens=args.max_output_tokens,
+                        minimum_viable_output_tokens=(
+                            args.minimum_viable_output_tokens
+                        ),
+                        provider_hard_output_cap=args.llm_max_output_tokens,
+                        context_window_tokens=args.context_window_tokens,
+                        context_safety_margin_tokens=(
+                            args.context_safety_margin_tokens
+                        ),
+                        token_budget_safety_margin=args.token_safety_margin,
+                        future_round_token_reserve=(
+                            args.future_round_token_reserve
+                        ),
+                        search_closeout_token_reserve=(
+                            args.search_closeout_token_reserve
+                        ),
+                        configured_guidance_cap=(
+                            args.experience_max_guidance_tokens
+                        ),
+                        guidance_ratio=args.guidance_ratio,
+                    )
                 )
                 token_estimator = TokenEstimator.for_model(str(args.model))
             token_policy_kwargs = (
                 {
                     "token_budget_policy": token_policy,
                     "token_estimator": token_estimator,
-                    "token_budget_visible": (
-                        args.token_budget_policy == "hybrid"
-                        or args.token_budget_visibility == "visible"
-                    ),
+                    "token_budget_visible": args.token_budget_visibility == "visible",
                 }
                 if token_policy is not None
                 else {}
@@ -579,7 +646,7 @@ def main(argv: list[str] | None = None) -> int:
                 planner = OpenAICompatibleV3PlannerAdapter(
                     Path(args.run_dir).resolve(),
                     provider,
-                    final_reserve_credits=args.final_reserve_credits,
+                    search_closeout_reserve_credits=args.search_closeout_reserve_credits,
                     max_output_tokens=args.llm_max_output_tokens,
                     fast_experiment=True,
                     read_only_headers={
@@ -595,7 +662,7 @@ def main(argv: list[str] | None = None) -> int:
                 planner = OpenAICompatibleV3PlannerAdapter(
                     Path(args.run_dir).resolve(),
                     provider,
-                    final_reserve_credits=args.final_reserve_credits,
+                    search_closeout_reserve_credits=args.search_closeout_reserve_credits,
                     max_output_tokens=args.llm_max_output_tokens,
                     read_only_headers={
                         name: content.decode("utf-8")
@@ -607,7 +674,6 @@ def main(argv: list[str] | None = None) -> int:
                     **token_policy_kwargs,
                 )
             proposals: tuple[PatchProposal, ...] = ()
-            token_limit = live_token_limit
         else:
             proposals = tuple(
                 PatchProposal(
@@ -631,13 +697,6 @@ def main(argv: list[str] | None = None) -> int:
                 for index, patch_file in enumerate(args.patch_file, 1)
             )
             planned_rounds = len(proposals)
-            token_limit = (
-                args.run_token_limit
-                if args.run_token_limit is not None
-                else 4096
-                if args.token_budget is None
-                else args.token_budget
-            )
         max_final_attempts = (
             2
             if args.enable_final_fallback
@@ -658,15 +717,11 @@ def main(argv: list[str] | None = None) -> int:
                 toolchain_id=str(args.toolchain_id),
             ),
             budget=BudgetConfig(
-                credit_limit=(
-                    int(args.credit_limit)
-                    if args.credit_limit is not None
-                    else task.budget
-                ),
+                credit_limit=credit_limit.value,
                 costs={
-                    "csim": args.cost_csim,
-                    "synth": args.cost_synth,
-                    "cosim": args.cost_cosim,
+                    "csim": resolved_costs["csim"].value,
+                    "synth": resolved_costs["synth"].value,
+                    "cosim": resolved_costs["cosim"].value,
                     "llm": 0,
                 },
                 tool_limits={
@@ -675,8 +730,17 @@ def main(argv: list[str] | None = None) -> int:
                     "cosim": validation_call_limit,
                     "llm": planned_rounds,
                 },
-                token_limit=token_limit,
+                token_limit=token_limit.value,
                 runtime_limit_seconds=args.runtime_limit,
+                credit_limit_source=credit_limit.source,
+                token_limit_source=token_limit.source,
+                tool_cost_sources={
+                    "csim": resolved_costs["csim"].source,
+                    "synth": resolved_costs["synth"].source,
+                    "cosim": resolved_costs["cosim"].source,
+                    "llm": "command:planner-credit-cost-zero",
+                },
+                fallback_assumptions=fallback_assumptions,
             ),
             minimum_frequency_mhz=args.minimum_frequency_mhz,
         )
@@ -693,10 +757,16 @@ def main(argv: list[str] | None = None) -> int:
                 max_final_attempts=max_final_attempts,
                 validation_profile=args.validation_profile,
                 final_validation_policy=args.final_validation_policy,
+                evidence_memory_mode=args.evidence_memory,
                 continuation_policy_mode=args.continuation_policy,
                 continuation_policy_version=args.continuation_policy_version,
                 continuation_admission_manifest=(
                     args.continuation_admission_manifest
+                ),
+                run_deadline_monotonic=run_deadline_monotonic,
+                cleanup_reserve_seconds=args.cleanup_reserve_seconds,
+                cosim_minimum_runtime_seconds=(
+                    args.cosim_minimum_runtime_seconds
                 ),
             )
         else:
@@ -712,78 +782,45 @@ def main(argv: list[str] | None = None) -> int:
                 max_final_attempts=max_final_attempts,
                 validation_profile=args.validation_profile,
                 final_validation_policy=args.final_validation_policy,
+                evidence_memory_mode=args.evidence_memory,
                 continuation_policy_mode=args.continuation_policy,
                 continuation_policy_version=args.continuation_policy_version,
                 continuation_admission_manifest=(
                     args.continuation_admission_manifest
                 ),
+                run_deadline_monotonic=run_deadline_monotonic,
+                cleanup_reserve_seconds=args.cleanup_reserve_seconds,
+                cosim_minimum_runtime_seconds=(
+                    args.cosim_minimum_runtime_seconds
+                ),
             )
-        if args.experience_mode != "off":
-            # Rebuild Candidate-level records from terminal, hash-bound run
-            # artifacts.  This is idempotent across CLI retries/checkpoint
-            # resumes and intentionally writes to a run-local store so a
-            # frozen pilot seed cannot learn from earlier tasks in the batch.
-            experience_dir = Path(args.run_dir).resolve() / "experience"
-            try:
-                from .v3_experience_importer import (
-                    ImportPolicy,
-                    import_historical_runs,
-                    write_import_artifacts,
-                )
-                from .v3_experience_store import JsonlExperienceRepository
+        if result.get("status") == "DONE":
+            # The Agent graph is terminal and its Candidate/ledger are durable
+            # before this separate domain starts.  Certification never calls
+            # the Planner or resumes the graph.
+            from .final_certification import (
+                CertificationConfig,
+                certify_v3_search_result,
+            )
 
-                local_repository = JsonlExperienceRepository(
-                    experience_dir / "experience_records.jsonl"
-                )
-                imported = import_historical_runs(
-                    [Path(args.run_dir).resolve() / "v3_prototype_result.json"],
-                    local_repository,
-                    policy=ImportPolicy(task_split=args.experience_task_split),
-                )
-                write_import_artifacts(imported, experience_dir)
-                experience_ingest.update(
-                    {
-                        "postprocess_status": "COMPLETE",
-                        "records": len(imported.records),
-                        "inserted": len(imported.inserted_record_ids),
-                        "duplicates": len(imported.duplicate_record_ids),
-                    }
-                )
-            except Exception as exc:
-                # Experience export is post-terminal advisory work.  Its
-                # failure cannot turn a successful HLS run into CLI failure.
-                experience_ingest.update(
-                    {
-                        "postprocess_status": "FAILED_OPEN",
-                        "postprocess_error_type": type(exc).__name__,
-                    }
-                )
-            # Recommendation attribution has an independent fail-open boundary:
-            # a Candidate import problem must not hide whether the Planner
-            # followed the frozen recommendation, and vice versa.
-            try:
-                from .v3_experience_attribution import (
-                    persist_recommendation_attributions,
-                )
-
-                attribution = persist_recommendation_attributions(
-                    Path(args.run_dir).resolve(), result
-                )
-                experience_ingest.update(
-                    {
-                        "attribution_status": "COMPLETE",
-                        "attribution_records": attribution["record_count"],
-                        "attribution_inserted": attribution["inserted"],
-                        "attribution_duplicates": attribution["duplicates"],
-                    }
-                )
-            except Exception as exc:
-                experience_ingest.update(
-                    {
-                        "attribution_status": "FAILED_OPEN",
-                        "attribution_error_type": type(exc).__name__,
-                    }
-                )
+            result = certify_v3_search_result(
+                task,
+                args.run_dir,
+                CertificationConfig(
+                    tool=config.tool,
+                    maximum_clock_period_ns=10.0,
+                    runtime_deadline=RuntimeDeadline(
+                        run_deadline_monotonic=run_deadline_monotonic,
+                        cleanup_reserve_seconds=(
+                            args.cleanup_reserve_seconds
+                        ),
+                        cosim_minimum_runtime_seconds=(
+                            args.cosim_minimum_runtime_seconds
+                        ),
+                    ),
+                ),
+                backend=backend,
+            )
     except Exception as exc:
         _print_error(type(exc).__name__, str(exc))
         return 3
@@ -797,9 +834,16 @@ def main(argv: list[str] | None = None) -> int:
         ),
         "task_id": result.get("task_id"),
         "validation_profile": result.get("validation_profile"),
+        "evidence_memory_mode": result.get(
+            "evidence_memory_mode", args.evidence_memory
+        ),
         "experience_mode": args.experience_mode,
         "experience_ingest": experience_ingest,
         "status": result.get("status"),
+        "agent_search_status": result.get(
+            "agent_search_status", result.get("status")
+        ),
+        "final_certification": result.get("final_certification"),
         "stop_reason": result.get("stop_reason"),
         "exploration_stop_reason": result.get("exploration_stop_reason"),
         "rounds_completed": result.get("rounds_completed"),
@@ -809,7 +853,11 @@ def main(argv: list[str] | None = None) -> int:
         "tokens_used": result.get("budget", {}).get("tokens_used"),
         "tool_calls": result.get("budget", {}).get("tool_used"),
         "run_dir": str(Path(args.run_dir).resolve()),
-        "result_ref": "v3_prototype_result.json",
+        "result_ref": (
+            "v3_certified_result.json"
+            if result.get("final_certification") is not None
+            else "v3_prototype_result.json"
+        ),
         "report_ref": "v3_team_report.md",
     }
     print(json.dumps(summary, ensure_ascii=False, sort_keys=True))

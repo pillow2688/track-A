@@ -93,7 +93,29 @@ def _parser() -> argparse.ArgumentParser:
     command.add_argument("--source", action="append", required=True)
     command.add_argument("--store", required=True)
     command.add_argument("--output-dir", required=True)
-    command.add_argument("--task-split", choices=("train", "dev"), default="train")
+    command.add_argument(
+        "--task-split",
+        choices=("train", "dev", "unspecified"),
+        default="unspecified",
+        help="Defaults fail-closed to unspecified; mark train only with evidence.",
+    )
+
+    command = commands.add_parser(
+        "postprocess-run",
+        help=(
+            "explicit offline import and recommendation attribution for one "
+            "already-terminal Agent run"
+        ),
+    )
+    command.add_argument("--run-root", required=True)
+    command.add_argument("--store")
+    command.add_argument("--output-dir")
+    command.add_argument(
+        "--task-split",
+        choices=("train", "dev", "unspecified"),
+        default="unspecified",
+        help="Defaults fail-closed to unspecified; mark train only with evidence.",
+    )
 
     command = commands.add_parser("migrate", help="derive v2 reports without rewriting v1")
     command.add_argument("--v1-store", required=True)
@@ -162,7 +184,59 @@ def main(argv: list[str] | None = None) -> int:
                     "records": len(result.records),
                     "inserted": len(result.inserted_record_ids),
                     "duplicates": len(result.duplicate_record_ids),
+                    "task_split": args.task_split,
+                    "task_split_source": (
+                        "explicit_cli"
+                        if args.task_split != "unspecified"
+                        else "fail_closed_default"
+                    ),
                     "artifacts": {key: path.name for key, path in artifacts.items()},
+                }
+            )
+            return 0
+        if args.command == "postprocess-run":
+            run_root = _safe_public_source(args.run_root)
+            output_dir = (
+                Path(args.output_dir).expanduser().resolve()
+                if args.output_dir
+                else run_root / "experience"
+            )
+            store = (
+                Path(args.store).expanduser().resolve()
+                if args.store
+                else output_dir / "experience_records.jsonl"
+            )
+            repository = JsonlExperienceRepository(store)
+            result = import_historical_runs(
+                [run_root / "v3_prototype_result.json"],
+                repository,
+                policy=ImportPolicy(task_split=args.task_split),
+            )
+            artifacts = write_import_artifacts(result, output_dir)
+            from .v3_experience_attribution import (
+                persist_recommendation_attributions,
+            )
+
+            attribution = persist_recommendation_attributions(run_root)
+            _emit(
+                {
+                    "status": "OK",
+                    "execution_boundary": "EXPLICIT_OFFLINE_POSTPROCESS",
+                    "llm_calls": 0,
+                    "vitis_calls": 0,
+                    "records": len(result.records),
+                    "inserted": len(result.inserted_record_ids),
+                    "duplicates": len(result.duplicate_record_ids),
+                    "task_split": args.task_split,
+                    "task_split_source": (
+                        "explicit_cli"
+                        if args.task_split != "unspecified"
+                        else "fail_closed_default"
+                    ),
+                    "artifacts": {
+                        key: path.name for key, path in artifacts.items()
+                    },
+                    "attribution": attribution,
                 }
             )
             return 0

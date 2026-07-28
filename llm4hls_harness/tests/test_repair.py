@@ -216,6 +216,106 @@ class RepairTests(unittest.TestCase):
             [line for line in normalized.splitlines() if not line.startswith("@@")],
         )
 
+    def test_strict_patch_parser_reports_old_hunk_count_mismatch(self) -> None:
+        malformed = self.patch().replace(
+            "@@ -1,4 +1,4 @@", "@@ -1,5 +1,4 @@"
+        )
+
+        with self.assertRaises(PatchValidationError) as raised:
+            apply_unified_diff(
+                self.task.kernel_bytes,
+                malformed,
+                kernel_name="kernel.cpp",
+            )
+
+        evidence = raised.exception.failure_evidence
+        self.assertIsNotNone(evidence)
+        assert evidence is not None
+        self.assertEqual(
+            evidence["error_type"], "PATCH_HUNK_OLD_COUNT_MISMATCH"
+        )
+        self.assertEqual(evidence["file"], "kernel.cpp")
+        self.assertEqual(evidence["hunk_index"], 1)
+        self.assertEqual(evidence["hunk_header"], "@@ -1,5 +1,4 @@")
+        self.assertEqual(evidence["declared_old_count"], 5)
+        self.assertEqual(evidence["actual_old_count"], 4)
+        self.assertEqual(evidence["declared_new_count"], 4)
+        self.assertEqual(evidence["actual_new_count"], 4)
+
+    def test_strict_patch_parser_reports_new_hunk_count_mismatch(self) -> None:
+        malformed = self.patch().replace(
+            "@@ -1,4 +1,4 @@", "@@ -1,4 +1,5 @@"
+        )
+
+        with self.assertRaises(PatchValidationError) as raised:
+            apply_unified_diff(
+                self.task.kernel_bytes,
+                malformed,
+                kernel_name="kernel.cpp",
+            )
+
+        evidence = raised.exception.failure_evidence
+        self.assertIsNotNone(evidence)
+        assert evidence is not None
+        self.assertEqual(
+            evidence["error_type"], "PATCH_HUNK_NEW_COUNT_MISMATCH"
+        )
+        self.assertEqual(evidence["declared_old_count"], 4)
+        self.assertEqual(evidence["actual_old_count"], 4)
+        self.assertEqual(evidence["declared_new_count"], 5)
+        self.assertEqual(evidence["actual_new_count"], 4)
+        self.assertIn(
+            "regenerate the unified diff with corrected hunk coordinates",
+            str(raised.exception),
+        )
+
+    def test_strict_patch_parser_reports_prior_delta_coordinate_mismatch(
+        self,
+    ) -> None:
+        source = "a\nb\nc\nd\ne\n"
+        malformed = (
+            "--- kernel.cpp\n"
+            "+++ kernel.cpp\n"
+            "@@ -1,2 +1,1 @@\n"
+            " a\n"
+            "-b\n"
+            "@@ -4,1 +4,1 @@\n"
+            "-d\n"
+            "+D\n"
+        )
+
+        with self.assertRaises(PatchValidationError) as raised:
+            apply_unified_diff(
+                source,
+                malformed,
+                kernel_name="kernel.cpp",
+            )
+
+        evidence = raised.exception.failure_evidence
+        self.assertIsNotNone(evidence)
+        assert evidence is not None
+        self.assertEqual(
+            evidence["error_type"], "PATCH_HUNK_NEW_START_MISMATCH"
+        )
+        self.assertEqual(evidence["hunk_index"], 2)
+        self.assertEqual(evidence["hunk_header"], "@@ -4,1 +4,1 @@")
+        self.assertEqual(evidence["declared_new_start"], 4)
+        self.assertEqual(evidence["expected_new_start"], 3)
+        self.assertEqual(evidence["declared_old_count"], 1)
+        self.assertEqual(evidence["actual_old_count"], 1)
+        self.assertEqual(evidence["declared_new_count"], 1)
+        self.assertEqual(evidence["actual_new_count"], 1)
+
+        corrected = malformed.replace(
+            "@@ -4,1 +4,1 @@", "@@ -4,1 +3,1 @@"
+        )
+        application = apply_unified_diff(
+            source,
+            corrected,
+            kernel_name="kernel.cpp",
+        )
+        self.assertEqual(application.patched_bytes, b"a\nc\nD\ne\n")
+
     def test_patch_relocator_repairs_unique_off_by_one_hunk_start_only(self) -> None:
         misplaced = self.patch().replace("@@ -1,4 +1,4 @@", "@@ -2,4 +2,4 @@")
 

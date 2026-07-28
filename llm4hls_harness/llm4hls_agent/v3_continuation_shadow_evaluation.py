@@ -15,12 +15,9 @@ from collections import Counter
 from pathlib import Path
 from typing import Iterable, Mapping, Sequence
 
-from .v3_continuation import continuation_cost, continuation_decision
 from .v3_continuation_admission import (
-    CONTINUATION_ADMISSION_SCHEMA,
     CONTINUATION_FIXED_THRESHOLDS,
     CONTINUATION_POLICY_VERSION,
-    validate_continuation_admission,
 )
 from .v3_continuation_v2 import (
     CONTINUATION_DECISION_SCHEMA_V2,
@@ -62,7 +59,11 @@ def _is_allow(value: Mapping[str, object]) -> bool:
 def _v1_from_pre_state(
     *, mode: str, round_index: int, pre_state: Mapping[str, object]
 ) -> dict[str, object]:
-    """Project the common frozen pre-state into the legacy V1 rule."""
+    """Reproduce the removed V1 label only for historical Gate comparison.
+
+    This private comparator has no Graph, CLI, or Batch product entry point.
+    It returns only the old decision label needed by the fixed evaluator.
+    """
 
     delta_raw = _mapping(pre_state.get("evidence_delta"))
     actionable = bool(delta_raw.get("new_actionable_evidence"))
@@ -120,54 +121,57 @@ def _v1_from_pre_state(
         "duplicate_patch": False,
         "reason_codes": [],
     }
-    performance_area = {
-        "latency_improved": bool(delta_raw.get("latency_improved")),
-        "transaction_interval_improved": bool(
-            delta_raw.get("interval_improved")
-        ),
-        "clock_improved": bool(delta_raw.get("clock_improved")),
-        "area_proxy_improved": False,
-        "performance_area_proxy_improved": False,
-        "resource_pressure_changed": bool(
-            delta_raw.get("resource_pressure_changed")
-        ),
-        "tradeoff_detected": False,
-        "pareto_relation": "UNKNOWN",
+    estimated_tokens = int(pre_state.get("estimated_next_tokens") or 0)
+    estimated_credits = int(pre_state.get("estimated_next_credits") or 0)
+    remaining_tokens = int(pre_state.get("remaining_tokens") or 0)
+    remaining_credits = pre_state.get("remaining_credits")
+    has_incumbent = bool(pre_state.get("has_verified_incumbent"))
+    hard_block = (
+        int(pre_state.get("remaining_rounds") or 1) <= 0
+        or not bool(pre_state.get("search_closeout_reserve_available"))
+        or remaining_tokens < estimated_tokens
+        or (
+            isinstance(remaining_credits, (int, float))
+            and remaining_credits < estimated_credits
+        )
+        or bool(strategies["duplicate_strategy"])
+    )
+    score = 3 if delta["has_actionable_new_evidence"] else -5
+    if delta["evidence_strength"] == "HIGH":
+        score += 4
+    elif delta["evidence_strength"] == "LOW":
+        score -= 2
+    if strategies["untried_matched_strategy_atoms"]:
+        score += 2
+    if strategies["duplicate_strategy"]:
+        score -= 4
+    if (
+        has_incumbent
+        and bool(delta_raw.get("latency_improved"))
+        and mode == "OPTIMIZE"
+        and not delta["bottleneck_changed"]
+    ):
+        score -= 3
+    if mode == "STRUCTURAL_FIX" and delta["failure_subtype_changed"]:
+        score += 2
+    if bool(pre_state.get("search_closeout_reserve_available")):
+        score += 1
+    if hard_block:
+        decision = (
+            "DEFER_TO_FINAL"
+            if has_incumbent
+            and not bool(pre_state.get("search_closeout_reserve_available"))
+            else "BLOCK"
+        )
+    elif score >= 4 or (score >= 1 and not has_incumbent):
+        decision = "ALLOW"
+    else:
+        decision = "BLOCK"
+    return {
+        "decision": decision,
+        "historical_comparator_only": True,
+        "round_index": round_index,
     }
-    cost = continuation_cost(
-        ledger={
-            "tokens_remaining": pre_state.get("remaining_tokens"),
-            "credits_remaining": pre_state.get("remaining_credits"),
-        },
-        estimated_input_tokens=int(
-            pre_state.get("estimated_next_tokens") or 0
-        ),
-        estimated_output_tokens=0,
-        estimated_credits=int(
-            pre_state.get("estimated_next_credits") or 0
-        ),
-        estimated_wall_time_seconds=0.0,
-        final_reserve_safe=bool(
-            pre_state.get("final_reserve_available")
-        ),
-    )
-    return continuation_decision(
-        run_id="fixed-shadow-evaluation",
-        round_index=round_index,
-        mode=mode,
-        policy_mode="shadow",
-        has_correct_candidate=bool(
-            pre_state.get("has_verified_incumbent")
-        ),
-        has_strict_latency_improvement=bool(
-            delta_raw.get("latency_improved")
-        ),
-        performance_area=performance_area,
-        delta=delta,
-        strategies=strategies,
-        cost=cost,
-        remaining_rounds=int(pre_state.get("remaining_rounds") or 1),
-    )
 
 
 def _outcome_label(
@@ -439,24 +443,6 @@ def evaluate_shadow_samples(
         failures.append("PER_MODE_SAMPLE_GATE")
     if false_blocks > CONTINUATION_FIXED_THRESHOLDS["maximum_false_blocks"]:
         failures.append("FALSE_BLOCK_GATE")
-    if (
-        structural_total
-        < CONTINUATION_FIXED_THRESHOLDS[
-            "minimum_structural_essential_samples"
-        ]
-    ):
-        failures.append("STRUCTURAL_ESSENTIAL_SAMPLE_GATE")
-    if (
-        metrics["structural_essential_retention"]
-        < CONTINUATION_FIXED_THRESHOLDS[
-            "minimum_structural_essential_retention"
-        ]
-    ):
-        failures.append("STRUCTURAL_ESSENTIAL_RETENTION_GATE")
-    if metrics["beneficial_retention"] < metrics["v1_beneficial_retention"]:
-        failures.append("BENEFICIAL_RETENTION_REGRESSION")
-    if metrics["waste_block_rate"] < metrics["v1_waste_block_rate"]:
-        failures.append("WASTE_BLOCK_RATE_REGRESSION")
     if leakage > CONTINUATION_FIXED_THRESHOLDS["maximum_leakage_violations"]:
         failures.append("LEAKAGE_GATE")
     evidence_sha256 = canonical_sha256(audited)
@@ -493,19 +479,9 @@ def evaluate_online_shadow_runs(
             raise ValueError(
                 "Continuation admission is forbidden because the Shadow Gate failed"
             )
-        admission = {
-            "schema_version": CONTINUATION_ADMISSION_SCHEMA,
-            "decision": "PASS",
-            "policy_version": CONTINUATION_POLICY_VERSION,
-            "protocol": "MODE_SPECIFIC_PRE_STATE_ONLINE_SHADOW",
-            "thresholds": CONTINUATION_FIXED_THRESHOLDS,
-            "metrics": evaluation["metrics"],
-            "evidence_sha256": evaluation["evidence_sha256"],
-        }
-        validate_continuation_admission(admission)
-        Path(admission_path).write_text(
-            json.dumps(admission, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
+        raise ValueError(
+            "legacy Shadow evaluation cannot issue a current V3 Admission; "
+            "use v3_continuation_offline_gate"
         )
     return evaluation
 

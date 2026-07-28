@@ -169,7 +169,7 @@ class SubmissionReportingTests(unittest.TestCase):
                 "tool_config_hash": hashlib.sha256(tool.encode()).hexdigest(),
                 "backend_fingerprint": backend_fingerprint,
                 "task_fingerprint": task_fingerprint,
-                "validation_scope": "final",
+                "validation_scope": "search_closeout",
             }
             final_action_id = self._canonical_sha(action_payload)
             result_ref = f"actions/{final_action_id}/result.json"
@@ -224,6 +224,63 @@ class SubmissionReportingTests(unittest.TestCase):
                 "tool_used": {"llm": llm_calls, "csim": 3, "synth": 3, "cosim": 1},
             },
             **live_fields,
+        }
+        ledger_path = root / "budget_ledger.jsonl"
+        ledger_path.write_text(
+            '{"budget_domain":"agent_search","state":"INITIALIZED"}\n',
+            encoding="utf-8",
+        )
+        ledger_sha = hashlib.sha256(ledger_path.read_bytes()).hexdigest()
+        freeze_ref = "control/frozen_candidate.json"
+        self._write_json(
+            root / freeze_ref,
+            {
+                "schema_version": "v3.frozen-search-candidate.v1",
+                "candidate_id": "candidate_001",
+                "source_ref": source_ref,
+                "source_sha256": code_hash,
+                "agent_ledger_sha256": ledger_sha,
+            },
+        )
+        certification_id = "c" * 64
+        receipt_ref = f"certification/{certification_id}/receipt.json"
+        receipt = {
+            "schema_version": "v3.final-certification-receipt.v1",
+            "certification_id": certification_id,
+            "status": "PASS",
+            "budget_domain": "FINAL_CERTIFICATION_OUTSIDE_AGENT_BUDGET",
+            "agent_credits_charged": 0,
+            "feedback_policy": "NO_SAME_RUN_AGENT_FEEDBACK",
+            "frozen_candidate_ref": freeze_ref,
+            "stages": {
+                tool: {
+                    "kind": tool,
+                    "candidate_id": "candidate_001",
+                    "code_hash": code_hash,
+                    "ok": True,
+                }
+                for tool in ("csim", "synth", "cosim")
+            },
+            "clock_gate": {
+                "maximum_period_ns": 10.0,
+                "observed_period_ns": 5.0,
+                "passed": True,
+            },
+            "agent_ledger": {
+                "before_sha256": ledger_sha,
+                "after_sha256": ledger_sha,
+                "unchanged": True,
+            },
+        }
+        receipt["receipt_sha256"] = self._canonical_sha(receipt)
+        self._write_json(root / receipt_ref, receipt)
+        result["final_certification"] = {
+            "status": "PASS",
+            "budget_domain": "FINAL_CERTIFICATION_OUTSIDE_AGENT_BUDGET",
+            "agent_credits_charged": 0,
+            "feedback_policy": "NO_SAME_RUN_AGENT_FEEDBACK",
+            "receipt_ref": receipt_ref,
+            "receipt_sha256": receipt["receipt_sha256"],
         }
         artifact_refs = [
             "v3_task_spec.json",
@@ -369,7 +426,21 @@ class SubmissionReportingTests(unittest.TestCase):
                 )
                 output = repo / "docs"
 
-                generate_submission_docs(repo_root=repo, manifest_path=manifest, output_dir=output)
+                if case == "cached-final":
+                    with self.assertRaisesRegex(
+                        ValueError, "FINAL_ACTION_TERMINAL_INVALID"
+                    ):
+                        generate_submission_docs(
+                            repo_root=repo,
+                            manifest_path=manifest,
+                            output_dir=output,
+                        )
+                    continue
+                generate_submission_docs(
+                    repo_root=repo,
+                    manifest_path=manifest,
+                    output_dir=output,
+                )
 
                 table = (output / "experiment_tables.md").read_text(encoding="utf-8")
                 self.assertIn("| OPTIMIZE | 仅失败证据/待补 |", table)

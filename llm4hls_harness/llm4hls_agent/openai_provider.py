@@ -9,10 +9,10 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Callable, Mapping
 
-from .budget import TOKEN_POLICY_HYBRID_VERSION, validate_token_envelope
+from .budget import validate_token_envelope
 from .optimization import OptimizationContext
 from .repair import PatchProposal, RepairContext, RepairProviderError
 
@@ -80,18 +80,6 @@ def _token_budget_prompt(value: object) -> str:
         return ""
     envelope = validate_token_envelope(value)
     pressure = str(envelope["token_pressure"])
-    if envelope["policy_version"] == TOKEN_POLICY_HYBRID_VERSION:
-        if pressure == "LOW":
-            return ""
-        return (
-            "TOKEN BUDGET: pressure="
-            + pressure
-            + ", max_output="
-            + str(envelope["effective_max_output_tokens"])
-            + ", rounds_left="
-            + str(envelope["rounds_remaining"])
-            + ". Return one concise hypothesis, one strategy, and one focused patch."
-        )
     focus = {
         "LOW": "Use the strongest evidence-backed strategy bundle permitted by the task.",
         "MEDIUM": "Focus on one or two strongly supported strategies and keep explanations concise.",
@@ -390,7 +378,7 @@ def build_optimization_prompt(context: OptimizationContext) -> str:
     budget = {
         "remaining_tokens": context.remaining_tokens,
         "remaining_credits": context.remaining_credits,
-        "final_reserve_credits": context.final_reserve_credits,
+        "search_closeout_reserve_credits": context.search_closeout_reserve_credits,
     }
     role = (
         "You are a Vitis HLS official-score optimization agent."
@@ -472,21 +460,11 @@ def build_fast_experiment_prompt(context: Mapping[str, object]) -> str:
         "attempted_strategies": context["attempted_strategies"],
         "budget": context["budget"],
     }
-    token_budget = context.get("token_budget")
-    high_hybrid_pressure = bool(
-        isinstance(token_budget, Mapping)
-        and token_budget.get("policy_version") == TOKEN_POLICY_HYBRID_VERSION
-        and token_budget.get("token_pressure") == "HIGH"
-    )
     response_contract = {
         "hypothesis": "non-empty string",
         "primary_bottleneck": "non-empty string",
         "evidence_used": ["one or more concise evidence facts"],
-        "strategy_bundle": [
-            "exactly one allowed strategy"
-            if high_hybrid_pressure
-            else "one to three allowed strategies"
-        ],
+        "strategy_bundle": ["one to three allowed strategies"],
         "expected_effect": "non-empty string",
         "risk": {
             "level": "LOW|MEDIUM|HIGH",
@@ -1226,6 +1204,14 @@ class OpenAICompatibleRepairProvider:
             ]
         )
 
+    def with_timeout(
+        self, timeout_seconds: float
+    ) -> "OpenAICompatibleRepairProvider":
+        return type(self)(
+            replace(self.config, timeout_seconds=float(timeout_seconds)),
+            transport=self._transport,
+        )
+
     def propose_patch(self, context: RepairContext) -> PatchProposal:
         completion = _request_completion(
             self.config,
@@ -1294,6 +1280,16 @@ class OpenAICompatibleOptimizationProvider:
                 format(self.config.temperature, ".12g"),
                 "default" if self.config.top_p is None else format(self.config.top_p, ".12g"),
             ]
+        )
+
+    def with_timeout(
+        self, timeout_seconds: float
+    ) -> "OpenAICompatibleOptimizationProvider":
+        """Return a request-equivalent provider with a tighter transport timeout."""
+
+        return type(self)(
+            replace(self.config, timeout_seconds=float(timeout_seconds)),
+            transport=self._transport,
         )
 
     def describe_optimization_request(
@@ -1526,23 +1522,6 @@ class OpenAICompatibleOptimizationProvider:
                 finish_reason=completion.finish_reason,
             ) from exc
         strategy_bundle = tuple(str(item) for item in parsed["strategy_bundle"])
-        token_budget = context.get("token_budget")
-        if (
-            isinstance(token_budget, Mapping)
-            and token_budget.get("policy_version") == TOKEN_POLICY_HYBRID_VERSION
-            and token_budget.get("token_pressure") == "HIGH"
-            and len(strategy_bundle) != 1
-        ):
-            raise RepairProviderError(
-                "HIGH-pressure Hybrid policy requires exactly one strategy",
-                input_tokens=completion.input_tokens,
-                output_tokens=completion.output_tokens,
-                cached_input_tokens=completion.cached_input_tokens,
-                duration_seconds=completion.duration_seconds,
-                request_id=completion.request_id,
-                response_excerpt=completion.content[:2000],
-                finish_reason=completion.finish_reason,
-            )
         risk = dict(parsed["risk"])
         risk["primary_bottleneck"] = str(parsed["primary_bottleneck"])
         risk["evidence_used"] = [str(item) for item in parsed["evidence_used"]]

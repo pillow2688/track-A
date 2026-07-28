@@ -13,6 +13,8 @@ import json
 import math
 from collections.abc import Mapping, Sequence
 
+from .scoring import OFFICIAL_ACCELERATION_CAP
+
 
 CONTINUATION_DECISION_SCHEMA_V2 = "v3.continuation-decision.v2"
 MODES = frozenset({"REPAIR", "SYNTH_FIX", "STRUCTURAL_FIX", "OPTIMIZE"})
@@ -35,6 +37,7 @@ _TOP_LEVEL_FIELDS = frozenset(
         "current_csim",
         "current_synth",
         "current_cosim",
+        "baseline_latency",
         "previous_latency",
         "current_latency",
         "previous_ii",
@@ -50,7 +53,7 @@ _TOP_LEVEL_FIELDS = frozenset(
         "estimated_next_tokens",
         "estimated_next_credits",
         "remaining_rounds",
-        "final_reserve_available",
+        "search_closeout_reserve_available",
         "reserve_tight",
         "has_verified_incumbent",
         "has_better_verified_candidate_needing_final",
@@ -59,6 +62,11 @@ _TOP_LEVEL_FIELDS = frozenset(
         "evidence_conflict",
         "acceleration_vs_baseline",
         "scoring_cap",
+        "incumbent_eligible",
+        "tool_config_comparable",
+        "clock_gate_passed",
+        "resource_gate_passed",
+        "cosim_required",
     }
 )
 _DELTA_FIELDS = frozenset(
@@ -133,6 +141,84 @@ def _optional_bool(value: object) -> bool | None:
     return value if isinstance(value, bool) else None
 
 
+def _positive_number(value: object) -> float | None:
+    number = _number(value)
+    return number if number is not None and number > 0 else None
+
+
+def legal_eight_x_stop_status(
+    *,
+    mode: str,
+    incumbent_eligible: bool,
+    csim_passed: bool,
+    synth_passed: bool,
+    baseline_latency: object,
+    candidate_latency: object,
+    tool_config_comparable: bool,
+    clock_passed: bool,
+    resource_passed: bool,
+    cosim_required: bool,
+    cosim_passed: bool,
+) -> dict[str, object]:
+    """Return the shared, fail-closed legality check for an 8x stop.
+
+    This helper has no Graph or tool authority.  Callers must supply facts
+    already bound to the current Candidate and its completed search actions.
+    """
+
+    normalized_mode = str(mode).upper()
+    baseline = _positive_number(baseline_latency)
+    candidate = _positive_number(candidate_latency)
+    latency_comparable = bool(
+        baseline is not None
+        and candidate is not None
+        and tool_config_comparable is True
+    )
+    acceleration = (
+        baseline / candidate
+        if latency_comparable and baseline is not None and candidate is not None
+        else None
+    )
+    blockers: list[str] = []
+    if normalized_mode != "OPTIMIZE":
+        blockers.append("MODE_NOT_OPTIMIZE")
+    if incumbent_eligible is not True:
+        blockers.append("INCUMBENT_NOT_ELIGIBLE")
+    if csim_passed is not True:
+        blockers.append("CSIM_NOT_PASS")
+    if synth_passed is not True:
+        blockers.append("SYNTH_NOT_PASS")
+    if not latency_comparable:
+        blockers.append("LATENCY_NOT_COMPARABLE")
+    if clock_passed is not True:
+        blockers.append("CLOCK_GATE_NOT_PASS")
+    if resource_passed is not True:
+        blockers.append("RESOURCE_GATE_NOT_PASS")
+    if cosim_required is True and cosim_passed is not True:
+        blockers.append("REQUIRED_COSIM_NOT_PASS")
+    if acceleration is None or acceleration < OFFICIAL_ACCELERATION_CAP:
+        blockers.append("ACCELERATION_BELOW_8X")
+    return {
+        "checked": True,
+        "reached": not blockers,
+        "mode": normalized_mode,
+        "incumbent_eligible": bool(incumbent_eligible),
+        "csim_passed": bool(csim_passed),
+        "synth_passed": bool(synth_passed),
+        "cosim_required": bool(cosim_required),
+        "cosim_passed": bool(cosim_passed),
+        "baseline_latency": baseline,
+        "candidate_latency": candidate,
+        "tool_config_comparable": bool(tool_config_comparable),
+        "latency_comparable": latency_comparable,
+        "clock_passed": bool(clock_passed),
+        "resource_passed": bool(resource_passed),
+        "acceleration": acceleration,
+        "scoring_cap": OFFICIAL_ACCELERATION_CAP,
+        "blockers": blockers,
+    }
+
+
 def _atoms(value: object) -> tuple[str, ...]:
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
         return ()
@@ -204,12 +290,17 @@ def _bounded_pre_state(pre_state: Mapping[str, object]) -> dict[str, object]:
         }:
             state[key] = _text(value)
         elif key in {
-            "final_reserve_available",
+            "search_closeout_reserve_available",
             "reserve_tight",
             "has_verified_incumbent",
             "has_better_verified_candidate_needing_final",
             "evidence_complete",
             "evidence_conflict",
+            "incumbent_eligible",
+            "tool_config_comparable",
+            "clock_gate_passed",
+            "resource_gate_passed",
+            "cosim_required",
         }:
             state[key] = _optional_bool(value)
         elif key == "current_resource_utilization":
@@ -262,15 +353,15 @@ def _decision(
 
 
 def _generic_guard(mode: str, state: Mapping[str, object]) -> dict[str, object] | None:
-    reserve = state.get("final_reserve_available")
+    reserve = state.get("search_closeout_reserve_available")
     incumbent = state.get("has_verified_incumbent") is True
     if reserve is False:
         return _decision(
             mode=mode,
             decision="DEFER_TO_FINAL",
             confidence="HIGH",
-            reason_codes=("FINAL_RESERVE_UNAVAILABLE",),
-            supporting_evidence=("final_reserve_available=false",),
+            reason_codes=("SEARCH_CLOSEOUT_RESERVE_UNAVAILABLE",),
+            supporting_evidence=("search_closeout_reserve_available=false",),
         )
     if state.get("evidence_conflict") is True:
         return _decision(
@@ -448,7 +539,7 @@ def _structural_fix(mode: str, state: Mapping[str, object]) -> dict[str, object]
     )
     same_fifo = delta.get("same_fifo_evidence") is True
     no_actionable = delta.get("new_actionable_evidence") is not True
-    reserve_safe = state.get("final_reserve_available") is True
+    reserve_safe = state.get("search_closeout_reserve_available") is True
     if (
         same_failure
         and same_location
@@ -506,48 +597,9 @@ def _optimize(mode: str, state: Mapping[str, object]) -> dict[str, object]:
         relative_gain = (previous_latency - current_latency) / previous_latency
 
     incumbent = state.get("has_verified_incumbent") is True
-    acceleration = _number(state.get("acceleration_vs_baseline"))
-    scoring_cap = _number(state.get("scoring_cap")) or 8.0
-    cap_reached = acceleration is not None and acceleration >= scoring_cap
     low_gain = relative_gain is not None and relative_gain <= 0.01
     no_gain = relative_gain is not None and relative_gain <= 0
-    current_strategy = {
-        str(item).upper()
-        for item in state.get("current_observed_strategy") or ()
-    }
-    saturated_parallel_reduction = {
-        "LOOP_UNROLL",
-        "MEMORY_PARTITION",
-        "PARALLEL_REDUCTION",
-    }.issubset(current_strategy)
 
-    if incumbent and cap_reached:
-        return _decision(
-            mode=mode,
-            decision="DEFER_TO_FINAL",
-            confidence="HIGH",
-            reason_codes=("SCORING_ACCELERATION_CAP_REACHED",),
-            supporting_evidence=("acceleration_vs_baseline>=scoring_cap",),
-        )
-    if (
-        incumbent
-        and state.get("has_better_verified_candidate_needing_final") is True
-        and saturated_parallel_reduction
-        and relative_gain is not None
-        and relative_gain > 0.01
-    ):
-        return _decision(
-            mode=mode,
-            decision="DEFER_TO_FINAL",
-            confidence="HIGH",
-            reason_codes=("SATURATED_PARALLEL_REDUCTION_BUNDLE_PENDING_FINAL",),
-            supporting_evidence=(
-                "loop_unroll_applied",
-                "memory_partition_applied",
-                "parallel_reduction_applied",
-                "promoted_improvement_requires_fresh_final",
-            ),
-        )
     if incumbent and low_gain and same_strategy:
         return _decision(
             mode=mode,

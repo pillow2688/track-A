@@ -27,6 +27,127 @@ class BudgetLedgerError(BudgetError):
     """Raised when an existing ledger is corrupt or incompatible."""
 
 
+REFERENCE_DEVELOPMENT_MAX_CREDITS = 40
+REFERENCE_DEVELOPMENT_MAX_TOKENS = 32768
+
+
+@dataclass(frozen=True)
+class ResolvedBudgetLimit:
+    """One task-bounded run limit and the provenance used to select it."""
+
+    value: int
+    source: str
+    fallback_assumption: str | None = None
+
+
+def resolve_agent_budget_limit(
+    *,
+    name: str,
+    task_limit: int | None,
+    task_source: str | None,
+    run_override: int | None,
+    run_override_source: str,
+    environment_variable: str,
+    development_fallback: int,
+) -> ResolvedBudgetLimit:
+    """Resolve a run limit without allowing task limits to be widened.
+
+    Precedence is task hard cap, then an optional narrowing run/CLI or
+    environment override.  When the task omits the limit, an explicit run
+    value wins over the environment, and the recorded development fallback is
+    used only as the last resort.
+    """
+
+    def checked(raw: object, source: str) -> int:
+        if isinstance(raw, bool):
+            raise ValueError(f"{name} from {source} must be a non-negative integer")
+        try:
+            value = int(raw)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError(
+                f"{name} from {source} must be a non-negative integer"
+            ) from exc
+        if value < 0:
+            raise ValueError(f"{name} from {source} must be a non-negative integer")
+        return value
+
+    task_value = (
+        None if task_limit is None else checked(task_limit, task_source or "task")
+    )
+    override_value: int | None = None
+    override_source: str | None = None
+    if run_override is not None:
+        override_value = checked(run_override, run_override_source)
+        override_source = run_override_source
+    else:
+        raw_environment = os.environ.get(environment_variable)
+        if raw_environment is not None and raw_environment.strip():
+            override_value = checked(raw_environment, f"env:{environment_variable}")
+            override_source = f"env:{environment_variable}"
+
+    if task_value is not None:
+        authoritative_source = task_source or "task"
+        if override_value is None:
+            return ResolvedBudgetLimit(task_value, authoritative_source)
+        if override_value > task_value:
+            raise ValueError(
+                f"{name} override from {override_source} ({override_value}) "
+                f"cannot widen {authoritative_source} ({task_value})"
+            )
+        return ResolvedBudgetLimit(
+            override_value,
+            f"{override_source}; hard_cap={authoritative_source}",
+        )
+
+    if override_value is not None:
+        return ResolvedBudgetLimit(override_value, str(override_source))
+
+    fallback = checked(development_fallback, "development fallback")
+    assumption = (
+        f"task omitted {name}; used recorded development fallback {fallback}"
+    )
+    return ResolvedBudgetLimit(
+        fallback,
+        f"development-fallback:{name}",
+        assumption,
+    )
+
+
+def resolve_reference_tool_cost(
+    *,
+    tool: str,
+    run_override: int | None,
+    environment_variable: str,
+    reference_fallback: int,
+) -> ResolvedBudgetLimit:
+    """Resolve a configurable tool cost and label the reference fallback."""
+
+    source: str
+    raw: object
+    if run_override is not None:
+        raw = run_override
+        source = f"cli:--cost-{tool}"
+    else:
+        environment_value = os.environ.get(environment_variable)
+        if environment_value is not None and environment_value.strip():
+            raw = environment_value
+            source = f"env:{environment_variable}"
+        else:
+            raw = reference_fallback
+            source = "reference-development-cost"
+    if isinstance(raw, bool):
+        raise ValueError(f"{tool} cost from {source} must be a non-negative integer")
+    try:
+        value = int(raw)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(
+            f"{tool} cost from {source} must be a non-negative integer"
+        ) from exc
+    if value < 0:
+        raise ValueError(f"{tool} cost from {source} must be a non-negative integer")
+    return ResolvedBudgetLimit(value, source)
+
+
 def _utc_now() -> str:
     return datetime.now(UTC).isoformat()
 
@@ -42,6 +163,11 @@ class BudgetConfig:
     tool_limits: Mapping[str, int | None]
     token_limit: int
     runtime_limit_seconds: float
+    budget_domain: str = "agent_search"
+    credit_limit_source: str = "unspecified"
+    token_limit_source: str = "unspecified"
+    tool_cost_sources: Mapping[str, str] = field(default_factory=dict)
+    fallback_assumptions: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         credit_limit = None if self.credit_limit is None else int(self.credit_limit)
@@ -52,6 +178,19 @@ class BudgetConfig:
             str(kind): (None if limit is None else int(limit))
             for kind, limit in self.tool_limits.items()
         }
+        cost_sources = {
+            str(kind): str(source)
+            for kind, source in self.tool_cost_sources.items()
+        }
+        if not cost_sources:
+            cost_sources = {kind: "unspecified" for kind in costs}
+        assumptions = tuple(
+            dict.fromkeys(
+                str(item).strip()
+                for item in self.fallback_assumptions
+                if str(item).strip()
+            )
+        )
         if credit_limit is not None and credit_limit < 0:
             raise ValueError("credit_limit must be non-negative or None")
         if any(cost < 0 for cost in costs.values()):
@@ -60,15 +199,27 @@ class BudgetConfig:
             raise ValueError("tool limits must be non-negative or None")
         if set(costs) != set(limits):
             raise ValueError("costs and tool_limits must contain the same tools")
+        if set(cost_sources) != set(costs):
+            raise ValueError(
+                "tool_cost_sources must contain the same tools as costs"
+            )
         if token_limit < 0:
             raise ValueError("token_limit must be non-negative")
         if not math.isfinite(runtime_limit) or runtime_limit <= 0:
             raise ValueError("runtime_limit_seconds must be finite and positive")
+        if not self.budget_domain.strip():
+            raise ValueError("budget_domain must not be empty")
+        if not self.credit_limit_source.strip() or not self.token_limit_source.strip():
+            raise ValueError("budget limit sources must not be empty")
         object.__setattr__(self, "credit_limit", credit_limit)
         object.__setattr__(self, "token_limit", token_limit)
         object.__setattr__(self, "runtime_limit_seconds", runtime_limit)
         object.__setattr__(self, "costs", MappingProxyType(costs))
         object.__setattr__(self, "tool_limits", MappingProxyType(limits))
+        object.__setattr__(
+            self, "tool_cost_sources", MappingProxyType(cost_sources)
+        )
+        object.__setattr__(self, "fallback_assumptions", assumptions)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -77,6 +228,11 @@ class BudgetConfig:
             "tool_limits": dict(self.tool_limits),
             "token_limit": self.token_limit,
             "runtime_limit_seconds": self.runtime_limit_seconds,
+            "budget_domain": self.budget_domain,
+            "credit_limit_source": self.credit_limit_source,
+            "token_limit_source": self.token_limit_source,
+            "tool_cost_sources": dict(self.tool_cost_sources),
+            "fallback_assumptions": list(self.fallback_assumptions),
         }
 
     @property
@@ -96,7 +252,6 @@ class BudgetConfig:
 
 TOKEN_ENVELOPE_SCHEMA = "v3.token-envelope.v1"
 TOKEN_POLICY_VERSION = "v3.token-policy.v1"
-TOKEN_POLICY_HYBRID_VERSION = "v3.token-policy.hybrid-v2"
 TOKEN_PRESSURES = frozenset({"LOW", "MEDIUM", "HIGH", "CRITICAL"})
 TOKEN_POLICY_MODES = frozenset(
     {"REPAIR", "SYNTH_FIX", "STRUCTURAL_FIX", "OPTIMIZE"}
@@ -266,7 +421,7 @@ class TokenBudgetLimits:
     context_safety_margin_tokens: int = 256
     token_budget_safety_margin: int = 128
     future_round_token_reserve: int = 1800
-    final_token_reserve: int = 0
+    search_closeout_token_reserve: int = 0
     configured_guidance_cap: int = 600
     guidance_ratio: float = 0.15
 
@@ -284,7 +439,7 @@ class TokenBudgetLimits:
             "context_safety_margin_tokens": self.context_safety_margin_tokens,
             "token_budget_safety_margin": self.token_budget_safety_margin,
             "future_round_token_reserve": self.future_round_token_reserve,
-            "final_token_reserve": self.final_token_reserve,
+            "search_closeout_token_reserve": self.search_closeout_token_reserve,
             "configured_guidance_cap": self.configured_guidance_cap,
         }
         if any(isinstance(value, bool) or int(value) < 0 for value in integers.values()):
@@ -327,7 +482,7 @@ class TokenEnvelope:
     context_window_tokens: int
     context_safety_margin_tokens: int
     future_round_token_reserve: int
-    final_token_reserve: int
+    search_closeout_token_reserve: int
     guidance_token_cap: int
     rounds_remaining: int
     minimum_viable_output_tokens: int
@@ -387,7 +542,7 @@ class TokenEnvelope:
             "context_window_tokens": self.context_window_tokens,
             "context_safety_margin_tokens": self.context_safety_margin_tokens,
             "future_round_token_reserve": self.future_round_token_reserve,
-            "final_token_reserve": self.final_token_reserve,
+            "search_closeout_token_reserve": self.search_closeout_token_reserve,
             "guidance_token_cap": self.guidance_token_cap,
             "rounds_remaining": self.rounds_remaining,
             "minimum_viable_output_tokens": self.minimum_viable_output_tokens,
@@ -436,17 +591,8 @@ class TokenBudgetPolicy:
     def __init__(
         self,
         limits: TokenBudgetLimits | None = None,
-        *,
-        profile: str = "dynamic",
     ) -> None:
-        if profile not in {"dynamic", "hybrid"}:
-            raise ValueError("unsupported TokenBudgetPolicy profile")
         self.limits = limits or TokenBudgetLimits()
-        self.profile = profile
-
-    @property
-    def hybrid_enabled(self) -> bool:
-        return self.profile == "hybrid"
 
     def allocate(
         self,
@@ -500,7 +646,7 @@ class TokenBudgetPolicy:
             tokens_remaining
             - int(estimated_input_tokens)
             - future_reserve
-            - self.limits.final_token_reserve
+            - self.limits.search_closeout_token_reserve
             - self.limits.token_budget_safety_margin,
         )
         context_available_for_output = max(
@@ -525,48 +671,32 @@ class TokenBudgetPolicy:
             reasons.append("INPUT_EXCEEDS_CONTEXT_WINDOW")
         if capacity < minimum:
             reasons.append("BELOW_MINIMUM_VIABLE_OUTPUT")
-        if tokens_remaining <= self.limits.final_token_reserve:
-            reasons.append("ONLY_FINAL_TOKEN_RESERVE_REMAINS")
+        if tokens_remaining <= self.limits.search_closeout_token_reserve:
+            reasons.append("ONLY_SEARCH_CLOSEOUT_TOKEN_RESERVE_REMAINS")
 
         future_need = max(0, rounds_remaining - 1) * minimum
         available_after_fixed = max(
             0,
             tokens_remaining
             - estimated_input_tokens
-            - self.limits.final_token_reserve
+            - self.limits.search_closeout_token_reserve
             - self.limits.token_budget_safety_margin,
         )
         planner_allowed = not reasons and capacity >= minimum
-        if self.hybrid_enabled:
-            if not planner_allowed:
-                pressure = "CRITICAL"
-                effective = capacity
-            elif (
-                capacity < configured
-                or available_after_fixed < minimum + future_need
-            ):
-                pressure = "HIGH"
-                effective = capacity
-                reasons.append("HYBRID_HIGH_PRESSURE_OUTPUT_SHRINK")
-            elif available_after_fixed < configured + future_need:
-                pressure = "MEDIUM"
-                effective = configured
-                reasons.append("HYBRID_MEDIUM_PRESSURE_STABLE_CAP")
-            else:
-                pressure = "LOW"
-                effective = configured
+        effective = capacity
+        if not planner_allowed:
+            pressure = "CRITICAL"
+        elif (
+            effective < max(minimum + 1, configured // 2)
+            or available_after_fixed < minimum + future_need
+        ):
+            pressure = "HIGH"
+            reasons.append("TIGHT_OUTPUT_OR_FUTURE_ROUND_HEADROOM")
+        elif effective < configured or available_after_fixed < configured + future_need:
+            pressure = "MEDIUM"
+            reasons.append("OUTPUT_CAP_REDUCED_TO_PRESERVE_BUDGET")
         else:
-            effective = capacity
-            if not planner_allowed:
-                pressure = "CRITICAL"
-            elif effective < max(minimum + 1, configured // 2) or available_after_fixed < minimum + future_need:
-                pressure = "HIGH"
-                reasons.append("TIGHT_OUTPUT_OR_FUTURE_ROUND_HEADROOM")
-            elif effective < configured or available_after_fixed < configured + future_need:
-                pressure = "MEDIUM"
-                reasons.append("OUTPUT_CAP_REDUCED_TO_PRESERVE_BUDGET")
-            else:
-                pressure = "LOW"
+            pressure = "LOW"
 
         available_context_budget = max(
             0,
@@ -580,7 +710,7 @@ class TokenBudgetPolicy:
             tokens_remaining
             - estimated_base_prompt_tokens
             - future_reserve
-            - self.limits.final_token_reserve
+            - self.limits.search_closeout_token_reserve
             - self.limits.token_budget_safety_margin
             - minimum,
         )
@@ -618,7 +748,7 @@ class TokenBudgetPolicy:
             context_window_tokens=self.limits.context_window_tokens,
             context_safety_margin_tokens=self.limits.context_safety_margin_tokens,
             future_round_token_reserve=future_reserve,
-            final_token_reserve=self.limits.final_token_reserve,
+            search_closeout_token_reserve=self.limits.search_closeout_token_reserve,
             guidance_token_cap=guidance_cap,
             rounds_remaining=int(rounds_remaining),
             minimum_viable_output_tokens=minimum,
@@ -626,11 +756,7 @@ class TokenBudgetPolicy:
             token_budget_safety_margin=self.limits.token_budget_safety_margin,
             token_pressure=pressure,
             planner_call_allowed=planner_allowed,
-            policy_version=(
-                TOKEN_POLICY_HYBRID_VERSION
-                if self.hybrid_enabled
-                else TOKEN_POLICY_VERSION
-            ),
+            policy_version=TOKEN_POLICY_VERSION,
             reason_codes=tuple(reasons),
             estimator_name=estimate.estimator_name,
             estimator_version=estimate.estimator_version,
@@ -901,7 +1027,9 @@ class BudgetLedger:
         start_epoch = float(initialized.get("epoch_seconds", time.time()))
         runtime_used = max(0.0, time.time() - start_epoch)
         return {
+            "budget_domain": self.config.budget_domain,
             "credit_limit": self.config.credit_limit,
+            "credit_limit_source": self.config.credit_limit_source,
             "credits_used": credits_used,
             "pending_credits_reserved": pending_credits,
             "credits_remaining": (
@@ -910,11 +1038,14 @@ class BudgetLedger:
                 else self.config.credit_limit - credits_used - pending_credits
             ),
             "tool_costs": dict(self.config.costs),
+            "tool_cost_sources": dict(self.config.tool_cost_sources),
             "tool_limits": dict(self.config.tool_limits),
             "tool_used": tool_used,
             "tool_pending": tool_pending,
             "run_token_limit": self.config.run_token_limit,
             "token_limit": self.config.token_limit,
+            "token_limit_source": self.config.token_limit_source,
+            "fallback_assumptions": list(self.config.fallback_assumptions),
             "pending_tokens_reserved": pending_tokens,
             "tokens_used": tokens_used,
             "input_tokens_used": input_tokens_used,

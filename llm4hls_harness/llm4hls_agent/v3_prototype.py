@@ -14,12 +14,13 @@ import math
 import operator
 import os
 import re
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from functools import cmp_to_key
 from pathlib import Path
-from typing import Annotated, Mapping, TypedDict
+from typing import Annotated, Callable, Mapping, TypedDict
 
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
@@ -35,6 +36,12 @@ from .repair import (
     normalize_unified_diff_headers,
     relocate_unified_diff_hunks,
     task_patch_limits,
+)
+from .runtime_control import (
+    DEFAULT_CLEANUP_RESERVE_SECONDS,
+    DEFAULT_COSIM_MINIMUM_RUNTIME_SECONDS,
+    RuntimeDeadline,
+    RuntimeUnavailable,
 )
 from .scoring import (
     OFFICIAL_SCORE_SOURCE,
@@ -57,15 +64,20 @@ from .v3_phase_router import PhaseMode, PhaseRoutingError, route_phase
 from .v3_continuation import (
     POLICY_MODES as CONTINUATION_POLICY_MODES,
     continuation_cost,
-    continuation_decision,
     evidence_delta,
     load_performance_area_policy,
     observed_strategy_atoms,
     performance_area_delta,
     strategy_novelty,
 )
-from .v3_continuation_v2 import continuation_decision_v2
-from .v3_continuation_admission import load_continuation_admission
+from .v3_continuation_v2 import (
+    continuation_decision_v2,
+    legal_eight_x_stop_status,
+)
+from .v3_continuation_admission import (
+    CONTINUATION_POLICY_VERSION,
+    load_continuation_admission,
+)
 from .v3_planner import (
     PLANNER_ACTION_SCHEMA,
     PLANNER_INPUT_SCHEMA,
@@ -83,12 +95,19 @@ from .v3_planner import (
 )
 from .v3_planner_action import (
     LIVE_PLANNER_ACTION_SCHEMA,
+    LIVE_PLANNER_COMPLETED_SCHEMA,
+    LIVE_PLANNER_FAILURE_SCHEMA,
     LIVE_PLANNER_OUTCOME_SCHEMA,
+    LIVE_PLANNER_STARTED_SCHEMA,
+    LIVE_PROVIDER_REQUEST_SCHEMA,
     LivePlanner,
     PlannerActionJournal,
+    PlannerActionError,
     PlannerActionRejected,
     PlannerActionResult,
     PreparedPlannerCall,
+    completed_llm_action_ids,
+    validate_live_planner_action_identity,
 )
 from .vitis import VitisBackend
 from .workflow import (
@@ -121,6 +140,7 @@ FINAL_VALIDATION_POLICIES = (
     TASK_CONTRACT_FINAL_POLICY,
     FULL_INTERNAL_AUDIT_FINAL_POLICY,
 )
+EVIDENCE_MEMORY_MODES = ("off", "on")
 LATENCY_STATUSES = frozenset(
     {"VALID", "MISSING", "INVALID", "NOT_REPORTED", "NOT_COMPARABLE"}
 )
@@ -227,6 +247,9 @@ class V3PrototypeState(TypedDict, total=False):
     planner_input_sha256: str
     planner_output_ref: str
     planner_output_sha256: str
+    patch_failure_evidence: dict[str, object]
+    patch_failure_evidence_ref: str
+    patch_failure_evidence_sha256: str
     live_planner_action_id: str
     live_planner_request_ref: str
     live_planner_request_sha256: str
@@ -295,9 +318,11 @@ class _Runtime:
     max_planner_rounds: int = 1
     validation_profile: str = STRICT_VALIDATION_PROFILE
     final_validation_policy: str = FULL_INTERNAL_AUDIT_FINAL_POLICY
+    evidence_memory_mode: str = "on"
     continuation_policy_mode: str = "off"
-    continuation_policy_version: str = "v1"
+    continuation_policy_version: str = "v2"
     continuation_admission: Mapping[str, object] | None = None
+    runtime_deadline: RuntimeDeadline | None = None
 
     @property
     def proposal(self) -> PatchProposal:
@@ -428,6 +453,10 @@ def _run_config_snapshot(runtime: _Runtime) -> dict[str, object]:
             _sha256_json(proposal.to_dict()) for proposal in runtime.proposals
         ]
         value["max_no_improvement_rounds"] = runtime.max_no_improvement_rounds
+    if runtime.evidence_memory_mode != "on":
+        # ``on`` is the pre-ablation behavior and therefore keeps the existing
+        # durable identity.  Only the new OFF projection must fork identity.
+        value["evidence_memory_mode"] = runtime.evidence_memory_mode
     if runtime.continuation_policy_mode != "off":
         # A persisted shadow/enforce decision is part of the durable routing
         # identity even for scripted smoke runs.
@@ -823,6 +852,26 @@ def _planner_candidate_facts(
     }
 
 
+def _basic_failure_projection(value: object) -> dict[str, object]:
+    """Keep the current routed failure while dropping A1-only detail."""
+
+    if not isinstance(value, Mapping):
+        return {}
+    allowed = (
+        "schema_version",
+        "candidate_id",
+        "phase",
+        "failure_kind",
+        "error_summary",
+        "synthesis_error",
+    )
+    return {
+        key: value[key]
+        for key in allowed
+        if key in value
+    }
+
+
 def _build_round_planner_input(
     runtime: _Runtime, state: Mapping[str, object]
 ) -> dict[str, object]:
@@ -925,6 +974,56 @@ def _build_round_planner_input(
             or rejected_round >= round_index
         ):
             continue
+        patch_failure_ref = rejection.get("patch_failure_evidence_ref")
+        stored_patch_failure_hash = rejection.get(
+            "patch_failure_evidence_sha256"
+        )
+        has_patch_failure_ref = (
+            isinstance(patch_failure_ref, str) and bool(patch_failure_ref)
+        )
+        has_patch_failure_hash = (
+            isinstance(stored_patch_failure_hash, str)
+            and bool(stored_patch_failure_hash)
+        )
+        if has_patch_failure_ref != has_patch_failure_hash:
+            raise RuntimeError(
+                "proposal rejection Patch evidence binding is incomplete"
+            )
+        patch_failure_evidence = _artifact_binding(
+            runtime, patch_failure_ref
+        )
+        if has_patch_failure_ref and (
+            patch_failure_evidence.get("sha256")
+            != stored_patch_failure_hash
+        ):
+            raise RuntimeError(
+                "proposal rejection Patch evidence binding mismatch"
+            )
+        if has_patch_failure_ref:
+            patch_failure = _read_json_object(
+                _safe_run_ref(runtime, patch_failure_ref)
+            )
+            if (
+                patch_failure.get("schema_version")
+                not in {
+                    "v3.patch-failure-evidence.v1",
+                    "v3.patch-hunk-failure-evidence.v1",
+                }
+                or patch_failure.get("round_index") != rejected_round
+                or patch_failure.get("parent_candidate_id")
+                != rejection.get("parent_candidate_id")
+                or patch_failure.get("planner_action_id")
+                != rejection.get("planner_action_id")
+                or patch_failure.get("planner_output_ref")
+                != rejection.get("planner_output_ref")
+                or patch_failure.get("planner_output_sha256")
+                != rejection.get("planner_output_sha256")
+                or patch_failure.get("error_type")
+                != rejection.get("patch_error_type")
+            ):
+                raise RuntimeError(
+                    "proposal rejection Patch evidence identity mismatch"
+                )
         history.append(
             {
                 "kind": "proposal_rejection",
@@ -939,6 +1038,7 @@ def _build_round_planner_input(
                 "planner_output": _artifact_binding(
                     runtime, rejection.get("planner_output_ref")
                 ),
+                "patch_failure_evidence": patch_failure_evidence,
             }
         )
     history.sort(
@@ -950,14 +1050,41 @@ def _build_round_planner_input(
     )
     if runtime.validation_profile == FAST_EXPERIMENT_PROFILE:
         history = history[-8:]
+    if runtime.evidence_memory_mode == "off":
+        # A1 OFF is deliberately a projection boundary, not a validation
+        # bypass: tool PASS/FAIL, the current routed failure, Candidate hashes,
+        # and final correctness checks remain intact.  Only cross-Candidate
+        # enhanced memory is withheld from the next Planner round.
+        history = []
     budget_snapshot = BudgetLedger(
         runtime.run_root / "budget_ledger.jsonl", runtime.config.budget
     ).snapshot()
+    round_failure_evidence = dict(state.get("failure_evidence", {}))
+    if runtime.evidence_memory_mode == "off":
+        round_failure_evidence = _basic_failure_projection(
+            round_failure_evidence
+        )
+    policy = {
+        "minimum_frequency_mhz": runtime.config.minimum_frequency_mhz,
+        "requires_cosim": runtime.task.requires_cosim,
+        "candidate_gate": "strict_score_improvement_before_cosim",
+        "final_validation": list(_final_required_stages(runtime)),
+        "validation_profile": runtime.validation_profile,
+        "max_optimization_rounds": (
+            runtime.max_planner_rounds
+            if runtime.live_planner is not None
+            else len(runtime.proposals)
+        ),
+        "max_no_improvement_rounds": runtime.max_no_improvement_rounds,
+        "scoring": runtime.scoring.to_dict(),
+    }
+    if runtime.evidence_memory_mode == "off":
+        policy["evidence_memory_mode"] = "off"
     return build_planner_input(
         task=_v3_task_spec(runtime.task),
         round_state={
             "mode": mode,
-            "failure_evidence": dict(state.get("failure_evidence", {})),
+            "failure_evidence": round_failure_evidence,
             "round_index": round_index,
             "rounds_completed": int(state.get("rounds_completed", 0)),
             "consecutive_no_improvement": int(
@@ -968,20 +1095,7 @@ def _build_round_planner_input(
         incumbent=_planner_candidate_facts(runtime, registry, incumbent_id),
         baseline=_planner_candidate_facts(runtime, registry, baseline_id),
         history=history,
-        policy={
-            "minimum_frequency_mhz": runtime.config.minimum_frequency_mhz,
-            "requires_cosim": runtime.task.requires_cosim,
-            "candidate_gate": "strict_score_improvement_before_cosim",
-            "final_validation": list(_final_required_stages(runtime)),
-            "validation_profile": runtime.validation_profile,
-            "max_optimization_rounds": (
-                runtime.max_planner_rounds
-                if runtime.live_planner is not None
-                else len(runtime.proposals)
-            ),
-            "max_no_improvement_rounds": runtime.max_no_improvement_rounds,
-            "scoring": runtime.scoring.to_dict(),
-        },
+        policy=policy,
         budget={
             "credit_limit": budget_snapshot.get("credit_limit"),
             "credits_used": budget_snapshot.get("credits_used"),
@@ -1057,6 +1171,317 @@ def _write_synth_evidence(
     return reference, _sha256_file(path)
 
 
+def _completed_live_planner_package_artifacts(
+    runtime: _Runtime,
+) -> list[Path]:
+    """Validate and return every artifact for each completed LLM action."""
+
+    ledger = BudgetLedger(
+        runtime.run_root / "budget_ledger.jsonl", runtime.config.budget
+    )
+    ledger_events = ledger.events()
+    try:
+        ledger_completed_ids = completed_llm_action_ids(ledger_events)
+    except PlannerActionError as exc:
+        raise RuntimeError(str(exc)) from exc
+
+    action_root = runtime.run_root / "control" / "live_planner_actions"
+    completed_paths = sorted(action_root.glob("*.completed.json"))
+    journal_completed_ids = {
+        path.name[: -len(".completed.json")] for path in completed_paths
+    }
+    if ledger_completed_ids != journal_completed_ids:
+        raise RuntimeError(
+            "completed LLM Ledger actions and live Planner journals diverge"
+        )
+
+    events_by_action: dict[str, list[Mapping[str, object]]] = {}
+    for event in ledger_events:
+        action_id = event.get("action_id")
+        if isinstance(action_id, str):
+            events_by_action.setdefault(action_id, []).append(event)
+
+    rejection_paths = sorted(
+        (runtime.run_root / "control" / "proposal_rejections").glob(
+            "round_*.json"
+        )
+    )
+    rejections_by_action: dict[str, list[tuple[Path, Mapping[str, object]]]] = {}
+    for path in rejection_paths:
+        rejection = _read_json_object(path)
+        action_id = rejection.get("planner_action_id")
+        if isinstance(action_id, str):
+            rejections_by_action.setdefault(action_id, []).append(
+                (path, rejection)
+            )
+
+    artifacts: list[Path] = []
+    for action_id in sorted(ledger_completed_ids):
+        started_ref = (
+            f"control/live_planner_actions/{action_id}.started.json"
+        )
+        completed_ref = (
+            f"control/live_planner_actions/{action_id}.completed.json"
+        )
+        started_path = _safe_run_ref(runtime, started_ref)
+        completed_path = _safe_run_ref(runtime, completed_ref)
+        started = _read_json_object(started_path)
+        completed = _read_json_object(completed_path)
+        action_request = completed.get("request")
+        if (
+            started.get("schema_version") != LIVE_PLANNER_STARTED_SCHEMA
+            or completed.get("schema_version")
+            != LIVE_PLANNER_COMPLETED_SCHEMA
+            or started.get("action_id") != action_id
+            or started.get("status") != "STARTED"
+            or completed.get("action_id") != action_id
+            or completed.get("status") != "COMPLETED"
+            or not isinstance(action_request, Mapping)
+            or started.get("request") != action_request
+            or action_request.get("schema_version")
+            != LIVE_PLANNER_ACTION_SCHEMA
+            or canonical_sha256(action_request) != action_id
+        ):
+            raise RuntimeError(
+                "completed live Planner STARTED/COMPLETED identity mismatch"
+            )
+        input_ref = action_request.get("input_ref")
+        input_sha256 = action_request.get("input_sha256")
+        request_ref = action_request.get("request_ref")
+        request_sha256 = action_request.get("request_sha256")
+        result_ref = completed.get("result_ref")
+        result_sha256 = completed.get("result_sha256")
+        if not all(
+            isinstance(value, str) and value
+            for value in (
+                input_ref,
+                input_sha256,
+                request_ref,
+                request_sha256,
+                result_ref,
+                result_sha256,
+            )
+        ):
+            raise RuntimeError(
+                "completed live Planner artifact binding is incomplete"
+            )
+        input_path = _safe_run_ref(runtime, input_ref)
+        request_path = _safe_run_ref(runtime, request_ref)
+        result_path = _safe_run_ref(runtime, result_ref)
+        planner_input = _read_json_object(input_path)
+        request_audit = _read_json_object(request_path)
+        outcome = _read_json_object(result_path)
+        if (
+            canonical_sha256(planner_input) != input_sha256
+            or canonical_sha256(request_audit) != request_sha256
+            or _sha256_file(result_path) != result_sha256
+            or request_audit.get("planner_fingerprint")
+            != action_request.get("planner_fingerprint")
+            or request_audit.get("input_sha256") != input_sha256
+            or request_audit.get("schema_version")
+            != LIVE_PROVIDER_REQUEST_SCHEMA
+        ):
+            raise RuntimeError(
+                "completed live Planner request/outcome hash binding mismatch"
+            )
+        try:
+            validate_live_planner_action_identity(
+                action_request,
+                request_audit,
+                expected_action_id=action_id,
+            )
+        except PlannerActionError as exc:
+            raise RuntimeError(str(exc)) from exc
+
+        ledger_action = events_by_action.get(action_id, [])
+        ledger_started = [
+            event for event in ledger_action if event.get("state") == "STARTED"
+        ]
+        ledger_completed = [
+            event for event in ledger_action if event.get("state") == "COMPLETED"
+        ]
+        estimated_tokens = (
+            ledger_started[0].get("estimated_tokens")
+            if len(ledger_started) == 1
+            else None
+        )
+        charged_tokens = (
+            ledger_completed[0].get("tokens_used")
+            if len(ledger_completed) == 1
+            else None
+        )
+        if (
+            len(ledger_action) != 2
+            or len(ledger_started) != 1
+            or len(ledger_completed) != 1
+            or ledger_started[0].get("kind") != "llm"
+            or ledger_started[0].get("tool_config_hash") != request_sha256
+            or ledger_completed[0].get("token_reservation_overrun") is True
+            or isinstance(estimated_tokens, bool)
+            or not isinstance(estimated_tokens, int)
+            or estimated_tokens <= 0
+            or isinstance(charged_tokens, bool)
+            or not isinstance(charged_tokens, int)
+            or charged_tokens > estimated_tokens
+            or ledger_completed[0].get("result_ref") != result_ref
+            or ledger_completed[0].get("result_sha256") != result_sha256
+            or ledger_completed[0].get("tokens_used")
+            != completed.get("tokens_used")
+            or ledger_completed[0].get("input_tokens")
+            != completed.get("input_tokens")
+            or ledger_completed[0].get("output_tokens")
+            != completed.get("output_tokens")
+            or ledger_completed[0].get("cached_input_tokens")
+            != completed.get("cached_input_tokens")
+        ):
+            raise RuntimeError(
+                "completed live Planner action is not bound to its Ledger"
+            )
+
+        outcome_type = completed.get("outcome")
+        if outcome_type == "PROPOSAL":
+            expected_outcome_ref = (
+                f"planner/live_outcomes/{action_id}.json"
+            )
+            usage = outcome.get("usage")
+            proposal = outcome.get("proposal")
+            if (
+                result_ref != expected_outcome_ref
+                or outcome.get("schema_version")
+                != LIVE_PLANNER_OUTCOME_SCHEMA
+                or outcome.get("outcome") != "PROPOSAL"
+                or outcome.get("action_id") != action_id
+                or outcome.get("input_sha256") != input_sha256
+                or not isinstance(usage, Mapping)
+                or usage.get("usage_complete") is not True
+                or not isinstance(proposal, Mapping)
+            ):
+                raise RuntimeError(
+                    "completed live Planner proposal outcome is invalid"
+                )
+            input_tokens = usage.get("input_tokens")
+            output_tokens = usage.get("output_tokens")
+            cached_tokens = usage.get("cached_input_tokens")
+            tokens_used = usage.get("tokens_used")
+            if (
+                any(
+                    isinstance(value, bool)
+                    or not isinstance(value, int)
+                    or value < 0
+                    for value in (
+                        input_tokens,
+                        output_tokens,
+                        cached_tokens,
+                        tokens_used,
+                    )
+                )
+                or input_tokens == 0
+                or output_tokens == 0
+                or tokens_used != input_tokens + output_tokens
+                or proposal.get("input_tokens") != input_tokens
+                or proposal.get("output_tokens") != output_tokens
+                or proposal.get("cached_input_tokens") != cached_tokens
+            ):
+                raise RuntimeError(
+                    "completed live Planner proposal usage is invalid"
+                )
+        elif outcome_type == "PROVIDER_OUTPUT_REJECTED":
+            failure_reason = (
+                outcome.get("truncation_reason")
+                or outcome.get("error_type")
+            )
+            usage = outcome.get("usage")
+            expected_failure_ref = (
+                f"planner/provider_failures/{action_id}.json"
+            )
+            if (
+                result_ref != expected_failure_ref
+                or outcome.get("schema_version") != LIVE_PLANNER_FAILURE_SCHEMA
+                or outcome.get("outcome") != "PROVIDER_OUTPUT_REJECTED"
+                or outcome.get("action_id") != action_id
+                or outcome.get("input_sha256") != input_sha256
+                or outcome.get("planner_fingerprint")
+                != action_request.get("planner_fingerprint")
+                or not isinstance(usage, Mapping)
+                or usage.get("usage_complete") is not True
+                or not isinstance(failure_reason, str)
+                or not failure_reason
+                or completed.get("truncation_reason")
+                != outcome.get("truncation_reason")
+                or completed.get("finish_reason")
+                != outcome.get("finish_reason")
+            ):
+                raise RuntimeError(
+                    "completed live Planner provider rejection is invalid"
+                )
+            input_tokens = usage.get("actual_input_tokens")
+            output_tokens = usage.get("actual_output_tokens")
+            cached_tokens = usage.get("cached_input_tokens")
+            tokens_used = usage.get("actual_total_tokens")
+            if (
+                any(
+                    isinstance(value, bool)
+                    or not isinstance(value, int)
+                    or value < 0
+                    for value in (
+                        input_tokens,
+                        output_tokens,
+                        cached_tokens,
+                        tokens_used,
+                    )
+                )
+                or input_tokens == 0
+                or tokens_used != input_tokens + output_tokens
+            ):
+                raise RuntimeError(
+                    "completed provider rejection usage is invalid"
+                )
+            matching_rejections = rejections_by_action.get(action_id, [])
+            if len(matching_rejections) != 1:
+                raise RuntimeError(
+                    "completed provider rejection lacks one durable decision"
+                )
+            rejection_path, rejection = matching_rejections[0]
+            if (
+                rejection.get("schema_version")
+                != "v3a.proposal-rejection.v1"
+                or rejection.get("planner_action_id") != action_id
+                or rejection.get("planner_input_ref") != input_ref
+                or rejection.get("planner_input_sha256") != input_sha256
+                or rejection.get("planner_output_ref") != result_ref
+                or rejection.get("planner_output_sha256") != result_sha256
+                or rejection.get("reason")
+                != f"PROVIDER_OUTPUT_REJECTED:{failure_reason}"
+            ):
+                raise RuntimeError(
+                    "completed provider rejection decision binding mismatch"
+                )
+            artifacts.append(rejection_path)
+        else:
+            raise RuntimeError(
+                "completed live Planner action has an unsupported outcome"
+            )
+        if (
+            completed.get("input_tokens") != input_tokens
+            or completed.get("output_tokens") != output_tokens
+            or completed.get("cached_input_tokens") != cached_tokens
+            or completed.get("tokens_used") != tokens_used
+        ):
+            raise RuntimeError(
+                "completed live Planner journal usage is inconsistent"
+            )
+        artifacts.extend(
+            [
+                started_path,
+                completed_path,
+                input_path,
+                request_path,
+                result_path,
+            ]
+        )
+    return sorted(set(artifacts))
+
+
 def _build_package_manifest(
     runtime: _Runtime, result: Mapping[str, object]
 ) -> dict[str, object]:
@@ -1116,6 +1541,19 @@ def _build_package_manifest(
 
     collect_references(registry)
     collect_references(result)
+    artifact_paths.extend(_completed_live_planner_package_artifacts(runtime))
+
+    # Proposal rejections are part of the decision audit even when the live
+    # action itself succeeded but its Patch was rejected before Candidate
+    # allocation.  Seal each record and every explicit ref it contains.
+    for rejection_path in sorted(
+        (runtime.run_root / "control" / "proposal_rejections").glob(
+            "round_*.json"
+        )
+    ):
+        rejection = _read_json_object(rejection_path)
+        artifact_paths.append(rejection_path)
+        collect_references(rejection)
 
     # A Planner result is usable only as one complete provenance chain.  Do
     # not let optional glob collection make a missing STARTED/COMPLETED journal
@@ -1346,6 +1784,7 @@ def _verify_package_manifest(
     artifacts = manifest.get("artifacts")
     if not isinstance(artifacts, list):
         raise RuntimeError("terminal V3 package artifact list is invalid")
+    manifest_paths: set[str] = set()
     for item in artifacts:
         if not isinstance(item, Mapping):
             raise RuntimeError("terminal V3 package artifact record is invalid")
@@ -1358,6 +1797,9 @@ def _verify_package_manifest(
             or not isinstance(size, int)
         ):
             raise RuntimeError("terminal V3 package artifact record is incomplete")
+        if reference in manifest_paths:
+            raise RuntimeError("terminal V3 package artifact is duplicated")
+        manifest_paths.add(reference)
         if reference == "v3_team_report.md" and not verify_report:
             continue
         path = _safe_run_ref(runtime, reference)
@@ -1367,6 +1809,16 @@ def _verify_package_manifest(
             or _sha256_file(path) != digest
         ):
             raise RuntimeError(f"terminal V3 package artifact mismatch: {reference}")
+    required_live_paths = {
+        str(path.relative_to(runtime.run_root)).replace("\\", "/")
+        for path in _completed_live_planner_package_artifacts(runtime)
+    }
+    missing_live_paths = required_live_paths - manifest_paths
+    if missing_live_paths:
+        raise RuntimeError(
+            "terminal V3 package omits completed live Planner artifacts: "
+            + ", ".join(sorted(missing_live_paths))
+        )
 
 
 def _commit_registry_operation(
@@ -2128,6 +2580,44 @@ def _budget_affordability(
             blockers.append(f"{kind}_calls:{available}<{count}")
     if float(snapshot["runtime_remaining_seconds"]) <= 0:
         blockers.append("runtime_exhausted")
+    if runtime.runtime_deadline is not None:
+        runtime_operations = (
+            tuple(
+                kind
+                for kind, count in required_calls.items()
+                if int(count) > 0
+            )
+            or ("planner",)
+        )
+        final_runtime_scope = (
+            policy.casefold().startswith("final_closure:")
+            or policy
+            in {
+                "final_fallback_closure",
+                "task_repair_no_broken_baseline_fallback",
+            }
+        )
+        for operation in runtime_operations:
+            configured_timeout = (
+                runtime.config.tool.timeout_for(operation)
+                if operation in {"csim", "synth", "cosim"}
+                else max(1.0, runtime.config.budget.runtime_limit_seconds)
+            )
+            runtime_permit = runtime.runtime_deadline.permit(
+                configured_timeout,
+                operation=operation,
+                final_closure=final_runtime_scope,
+                minimum_runtime_seconds=(
+                    None if operation == "cosim" else 0.0
+                ),
+            )
+            if not runtime_permit.allowed:
+                reason = str(
+                    runtime_permit.reason_code
+                    or "TOOL_NOT_STARTED_INSUFFICIENT_RUNTIME"
+                )
+                if reason not in blockers:
+                    blockers.append(reason)
     if (
         isinstance(required_tokens, bool)
         or not isinstance(required_tokens, int)
@@ -2160,6 +2650,7 @@ def _server(runtime: _Runtime) -> tuple[BudgetLedger, ToolServer]:
         run_root=runtime.run_root,
         config=runtime.config.tool,
         backend=runtime.backend,
+        runtime_deadline=runtime.runtime_deadline,
     )
     return budget, server
 
@@ -2766,7 +3257,7 @@ def _validate_score_artifacts(
     completed_final_results: dict[tuple[str, str], ToolResult] = {
         (item.candidate_id, item.kind): item
         for item in _validate_completed_tool_actions(runtime)
-        if item.validation_scope == "final"
+        if item.validation_scope == "search_closeout"
     }
     attempted_final_ids = {
         str(item) for item in result.get("final_attempted_candidate_ids", [])
@@ -2796,7 +3287,7 @@ def _validate_score_artifacts(
             final_metrics = dict(synth_result.report)
             final_validation = {
                 stage: _validation_record(tool_result) | {
-                    "validation_scope": "final"
+                    "validation_scope": "search_closeout"
                 }
                 for stage, tool_result in stage_results.items()
                 if tool_result is not None
@@ -3431,6 +3922,7 @@ def _continuation_v2_pre_state(
     baseline_latency: float | None,
     has_verified_incumbent: bool,
     remaining_rounds: int,
+    acceleration_cap: Mapping[str, object],
 ) -> dict[str, object]:
     """Project current run facts into the V2 decision-time allow-list."""
 
@@ -3445,15 +3937,17 @@ def _continuation_v2_pre_state(
 
     previous_latency = pa_before.get("latency")
     current_latency = pa_after.get("latency")
-    acceleration = None
-    if (
-        isinstance(baseline_latency, (int, float))
-        and not isinstance(baseline_latency, bool)
-        and isinstance(current_latency, (int, float))
-        and not isinstance(current_latency, bool)
-        and float(current_latency) > 0
+    cap_baseline_latency = acceleration_cap.get("baseline_latency")
+    cap_candidate_latency = acceleration_cap.get("candidate_latency")
+    if isinstance(cap_baseline_latency, (int, float)) and not isinstance(
+        cap_baseline_latency, bool
     ):
-        acceleration = float(baseline_latency) / float(current_latency)
+        baseline_latency = float(cap_baseline_latency)
+    if isinstance(cap_candidate_latency, (int, float)) and not isinstance(
+        cap_candidate_latency, bool
+    ):
+        current_latency = float(cap_candidate_latency)
+    acceleration = acceleration_cap.get("acceleration")
 
     previous_location = before.get("source_location")
     current_location = after.get("source_location")
@@ -3514,6 +4008,10 @@ def _continuation_v2_pre_state(
         "observed_strategy_history": [list(group) for group in attempted],
         "current_observed_strategy": list(current_atoms),
         "strategy_novelty": novelty.get("strategy_novelty", "UNKNOWN"),
+        "current_csim": acceleration_cap.get("csim_status"),
+        "current_synth": acceleration_cap.get("synth_status"),
+        "current_cosim": acceleration_cap.get("cosim_status"),
+        "baseline_latency": baseline_latency,
         "previous_latency": previous_latency,
         "current_latency": current_latency,
         "previous_interval": pa_before.get("transaction_interval"),
@@ -3526,7 +4024,7 @@ def _continuation_v2_pre_state(
         "estimated_next_tokens": cost.get("estimated_next_total_tokens"),
         "estimated_next_credits": cost.get("estimated_next_credits"),
         "remaining_rounds": max(0, int(remaining_rounds)),
-        "final_reserve_available": bool(cost.get("final_reserve_safe")),
+        "search_closeout_reserve_available": bool(cost.get("search_closeout_reserve_safe")),
         "has_verified_incumbent": bool(has_verified_incumbent),
         "has_better_verified_candidate_needing_final": bool(
             has_verified_incumbent
@@ -3539,6 +4037,13 @@ def _continuation_v2_pre_state(
         "consecutive_no_progress": int(state.get("no_improvement_rounds", 0)),
         "acceleration_vs_baseline": acceleration,
         "scoring_cap": 8.0,
+        "incumbent_eligible": acceleration_cap.get("incumbent_eligible"),
+        "tool_config_comparable": acceleration_cap.get(
+            "tool_config_comparable"
+        ),
+        "clock_gate_passed": acceleration_cap.get("clock_passed"),
+        "resource_gate_passed": acceleration_cap.get("resource_passed"),
+        "cosim_required": acceleration_cap.get("cosim_required"),
     }
 
 
@@ -3574,58 +4079,66 @@ def _apply_continuation_policy(
         patch_digests=patches[:-1],
     )
     pa = performance_area_delta(before_metrics, after_metrics, policy=load_performance_area_policy(), reference="previous_incumbent")
-    baseline_metrics = _completed_synth_report(runtime, state["baseline_metrics_ref"], candidate_id=state["baseline_candidate_id"], validation_scope="exploration") if state.get("baseline_metrics_ref") else {}
-    best_latency = _worst_latency(after_metrics, name="incumbent") if after_metrics else None
-    baseline_latency = _worst_latency(baseline_metrics, name="baseline") if baseline_metrics else None
-    strict_improvement = bool(best_latency is not None and baseline_latency is not None and best_latency < baseline_latency)
-    has_correct = mode == PhaseMode.OPTIMIZE.value or state.get("best_candidate_id") != state.get("baseline_candidate_id")
+    acceleration_cap = _acceleration_cap_status(runtime, state)
+    baseline_latency_value = acceleration_cap.get("baseline_latency")
+    baseline_latency = (
+        float(baseline_latency_value)
+        if isinstance(baseline_latency_value, (int, float))
+        and not isinstance(baseline_latency_value, bool)
+        else None
+    )
+    has_correct = (
+        bool(
+            acceleration_cap.get("incumbent_eligible")
+            and acceleration_cap.get("csim_passed")
+            and acceleration_cap.get("synth_passed")
+            and (
+                not acceleration_cap.get("cosim_required")
+                or acceleration_cap.get("cosim_passed")
+            )
+        )
+        if mode == PhaseMode.OPTIMIZE.value
+        else state.get("best_candidate_id") != state.get("baseline_candidate_id")
+    )
     cost = continuation_cost(
         ledger=ledger,
         estimated_input_tokens=estimated_tokens,
         estimated_output_tokens=0,
         estimated_credits=estimated_credits,
         estimated_wall_time_seconds=0.0,
-        final_reserve_safe=bool(budget_gate.get("allowed")),
+        search_closeout_reserve_safe=bool(budget_gate.get("allowed")),
     )
-    if runtime.continuation_policy_version == "v2":
-        pre_state = _continuation_v2_pre_state(
-            state=state,
-            mode=mode,
-            delta=delta,
-            novelty=novelty,
-            attempted=attempted,
-            current_atoms=current_atoms,
-            cost=cost,
-            performance_area=pa,
-            baseline_latency=baseline_latency,
-            has_verified_incumbent=has_correct,
-            remaining_rounds=max(0, planner_limit - round_index + 1),
-        )
-        decision = continuation_decision_v2(mode=mode, pre_state=pre_state)
-        decision.update(
-            {
-                "run_id": runtime.run_root.name,
-                "round_index": round_index,
-                "policy_mode": policy_mode,
-                "policy_version": "v3.continuation-policy.v2",
-                "pre_state": pre_state,
-            }
-        )
-        decision["decision_hash"] = canonical_sha256(
-            {
-                key: value
-                for key, value in decision.items()
-                if key != "decision_hash"
-            }
-        )
-    else:
-        decision = continuation_decision(
-            run_id=runtime.run_root.name, round_index=round_index, mode=mode,
-            policy_mode=policy_mode, has_correct_candidate=has_correct,
-            has_strict_latency_improvement=strict_improvement, performance_area=pa,
-            delta=delta, strategies=novelty, cost=cost,
-            remaining_rounds=max(0, planner_limit - round_index + 1),
-        )
+    pre_state = _continuation_v2_pre_state(
+        state=state,
+        mode=mode,
+        delta=delta,
+        novelty=novelty,
+        attempted=attempted,
+        current_atoms=current_atoms,
+        cost=cost,
+        performance_area=pa,
+        baseline_latency=baseline_latency,
+        has_verified_incumbent=has_correct,
+        remaining_rounds=max(0, planner_limit - round_index + 1),
+        acceleration_cap=acceleration_cap,
+    )
+    decision = continuation_decision_v2(mode=mode, pre_state=pre_state)
+    decision.update(
+        {
+            "run_id": runtime.run_root.name,
+            "round_index": round_index,
+            "policy_mode": policy_mode,
+            "policy_version": CONTINUATION_POLICY_VERSION,
+            "pre_state": pre_state,
+        }
+    )
+    decision["decision_hash"] = canonical_sha256(
+        {
+            key: value
+            for key, value in decision.items()
+            if key != "decision_hash"
+        }
+    )
     # Initial calls have no follow-up to suppress, but are still recorded in
     # shadow/enforce for auditability.
     if round_index == 1:
@@ -3744,7 +4257,7 @@ def _evaluate_task_round_budget(
             reason = (
                 "TASK_REPAIR_BUDGET_AVAILABLE"
                 if gate["allowed"] is True
-                else "TASK_REPAIR_SKIPPED_FINAL_RESERVE"
+                else "TASK_REPAIR_SKIPPED_SEARCH_CLOSEOUT_RESERVE"
             )
     if gate["allowed"] is True:
         allowed, continuation, continuation_ref, continuation_hash, pa_ref = _apply_continuation_policy(
@@ -3801,15 +4314,39 @@ def _acceleration_cap_status(
     from the OPTIMIZE loop; repair paths retain their correctness iterations.
     """
 
-    unknown: dict[str, object] = {
-        "checked": False,
-        "reached": False,
-        "acceleration": None,
-        "clock_passed": False,
-        "resource_passed": False,
-    }
-    if str(state.get("mode", PhaseMode.OPTIMIZE.value)) != PhaseMode.OPTIMIZE.value:
-        return unknown
+    mode = str(state.get("mode", PhaseMode.OPTIMIZE.value))
+
+    def unknown(reason: str) -> dict[str, object]:
+        return legal_eight_x_stop_status(
+            mode=mode,
+            incumbent_eligible=False,
+            csim_passed=False,
+            synth_passed=False,
+            baseline_latency=None,
+            candidate_latency=None,
+            tool_config_comparable=False,
+            clock_passed=False,
+            resource_passed=False,
+            cosim_required=bool(runtime.task.requires_cosim),
+            cosim_passed=False,
+        ) | {
+            "checked": False,
+            "reason": reason,
+            "csim_status": "UNKNOWN",
+            "synth_status": "UNKNOWN",
+            "cosim_status": "UNKNOWN",
+            "risk": {
+                "requires_cosim": bool(runtime.task.requires_cosim),
+                "reasons": (
+                    ["TASK_REQUIRES_COSIM"]
+                    if runtime.task.requires_cosim
+                    else ["CANDIDATE_RISK_NOT_EVALUATED"]
+                ),
+            },
+        }
+
+    if mode != PhaseMode.OPTIMIZE.value:
+        return unknown("MODE_NOT_OPTIMIZE")
     baseline_ref = state.get("baseline_metrics_ref")
     best_ref = state.get("best_metrics_ref")
     incumbent_id = state.get("best_candidate_id")
@@ -3818,59 +4355,141 @@ def _acceleration_cap_status(
         isinstance(item, str) and item
         for item in (baseline_ref, best_ref, incumbent_id, baseline_id)
     ):
-        return unknown
+        return unknown("INCOMPLETE_CANDIDATE_OR_METRICS_BINDING")
     try:
-        baseline = _completed_synth_report(
+        registry = CandidateManager(runtime.run_root, runtime.task).load_registry()
+        candidates = registry.get("candidates")
+        incumbent_record = (
+            candidates.get(incumbent_id)
+            if isinstance(candidates, Mapping)
+            else None
+        )
+        baseline_record = (
+            candidates.get(baseline_id)
+            if isinstance(candidates, Mapping)
+            else None
+        )
+        if not isinstance(incumbent_record, Mapping) or not isinstance(
+            baseline_record, Mapping
+        ):
+            return unknown("INCUMBENT_MISSING_FROM_REGISTRY")
+        incumbent_source = _candidate_source(
+            runtime,
+            incumbent_id,
+            registry=registry,
+        )
+        baseline_result = _completed_tool_result(
             runtime,
             baseline_ref,
-            candidate_id=baseline_id,
-            validation_scope="exploration",
+            expected_kind="synth",
+            expected_candidate_id=baseline_id,
+            expected_scope="exploration",
         )
-        incumbent = _completed_synth_report(
+        incumbent_result = _completed_tool_result(
             runtime,
             best_ref,
-            candidate_id=incumbent_id,
-            validation_scope="exploration",
+            expected_kind="synth",
+            expected_candidate_id=incumbent_id,
+            expected_scope="exploration",
         )
+        if not isinstance(baseline_result.report, Mapping) or not isinstance(
+            incumbent_result.report, Mapping
+        ):
+            return unknown("SYNTH_REPORT_MISSING")
+        baseline = dict(baseline_result.report)
+        incumbent = dict(incumbent_result.report)
         validation = _registry_validation(runtime, incumbent_id)
     except (RuntimeError, ValueError, KeyError):
-        return unknown
+        return unknown("CANDIDATE_OR_TOOL_BINDING_INVALID")
+    registry_revision = registry.get("v3_revision", 0)
+    state_revision = state.get("registry_revision", 0)
+    revision_matches = bool(
+        isinstance(registry_revision, int)
+        and not isinstance(registry_revision, bool)
+        and isinstance(state_revision, int)
+        and not isinstance(state_revision, bool)
+        and registry_revision == state_revision
+    )
+    incumbent_eligible = bool(
+        registry.get("best_candidate_id") == incumbent_id
+        and registry.get("active_candidate_id") in (None, "")
+        and revision_matches
+        and incumbent_record.get("status") == "PROMOTED"
+        and incumbent_record.get("immutable") is True
+        and incumbent_record.get("kind") == "optimization"
+        and incumbent_record.get("metrics_ref") == best_ref
+        and baseline_record.get("metrics_ref") == baseline_ref
+    )
+    proposal = _proposal_for_candidate(runtime, incumbent_id)
+    if proposal is None:
+        incumbent_eligible = False
+        risk = {
+            "level": "UNKNOWN",
+            "dimensions": [],
+            "requires_cosim": True,
+            "reasons": ["CANDIDATE_PROPOSAL_BINDING_MISSING"],
+            "strategy_bundle": [],
+        }
+    else:
+        risk = _fast_experiment_risk(
+            runtime,
+            proposal,
+            candidate_source=incumbent_source,
+        )
     baseline_observation = _latency_observation(baseline)
     incumbent_observation = _latency_observation(incumbent)
-    if (
-        baseline_observation.status != "VALID"
-        or incumbent_observation.status != "VALID"
-        or baseline_observation.value is None
-        or incumbent_observation.value is None
-    ):
-        return unknown | {
-            "performance_comparability": "NOT_COMPARABLE",
-            "baseline_latency_status": baseline_observation.to_dict(),
-            "incumbent_latency_status": incumbent_observation.to_dict(),
-        }
     baseline_latency = baseline_observation.value
     incumbent_latency = incumbent_observation.value
-    required_stages = ("csim", "synth", "cosim") if runtime.task.requires_cosim else ("csim", "synth")
-    correctness_passed = all(_stage_passed(validation, stage) for stage in required_stages)
+    csim_passed = _stage_passed(validation, "csim")
+    synth_passed = _stage_passed(validation, "synth")
+    cosim_passed = _stage_passed(validation, "cosim")
+    cosim_required = bool(risk.get("requires_cosim"))
     clock = _clock_constraint(incumbent, runtime.config.minimum_frequency_mhz)
     resource = _resource_constraint(incumbent, runtime.scoring)
-    acceleration = baseline_latency / incumbent_latency if incumbent_latency > 0 else None
-    clock_passed = bool(clock["passed"])
-    resource_passed = bool(resource["passed"])
-    return {
-        "checked": True,
-        "reached": bool(
-            acceleration is not None
-            and acceleration >= 8.0
-            and correctness_passed
-            and clock_passed
-            and resource_passed
+    tool_config_comparable = (
+        baseline_result.tool_config_hash == incumbent_result.tool_config_hash
+    )
+    status = legal_eight_x_stop_status(
+        mode=mode,
+        incumbent_eligible=incumbent_eligible,
+        csim_passed=csim_passed,
+        synth_passed=synth_passed,
+        baseline_latency=baseline_latency,
+        candidate_latency=incumbent_latency,
+        tool_config_comparable=tool_config_comparable,
+        clock_passed=bool(clock["passed"]),
+        resource_passed=bool(resource["passed"]),
+        cosim_required=cosim_required,
+        cosim_passed=cosim_passed,
+    )
+    return status | {
+        "correctness_passed": bool(
+            csim_passed
+            and synth_passed
+            and (not cosim_required or cosim_passed)
         ),
-        "acceleration": acceleration,
-        "correctness_passed": correctness_passed,
-        "clock_passed": clock_passed,
-        "resource_passed": resource_passed,
-        "required_stages": list(required_stages),
+        "csim_status": "PASS" if csim_passed else "NOT_PASS",
+        "synth_status": "PASS" if synth_passed else "NOT_PASS",
+        "cosim_status": (
+            "PASS"
+            if cosim_passed
+            else "REQUIRED_NOT_PASS"
+            if cosim_required
+            else "NOT_RUN_OR_NOT_REQUIRED"
+        ),
+        "required_stages": [
+            "csim",
+            "synth",
+            *(["cosim"] if cosim_required else []),
+        ],
+        "risk": risk,
+        "performance_comparability": (
+            "COMPARABLE"
+            if status["latency_comparable"] is True
+            else "NOT_COMPARABLE"
+        ),
+        "baseline_latency_status": baseline_observation.to_dict(),
+        "incumbent_latency_status": incumbent_observation.to_dict(),
     }
 
 
@@ -3885,7 +4504,21 @@ def _evaluate_round_budget(
         if runtime.live_planner is not None
         else len(runtime.proposals)
     )
-    acceleration_cap = _acceleration_cap_status(runtime, state)
+    # The fixed 8x score-cap stop is part of A2's continuation semantics.
+    # Keep it enabled for the safe Shadow/Enforce profiles, but remove it from
+    # the A2-off ablation so B0/B1 do not retain a hidden continuation rule.
+    acceleration_cap = (
+        _acceleration_cap_status(runtime, state)
+        if runtime.continuation_policy_mode != "off"
+        else {
+            "checked": False,
+            "reached": False,
+            "acceleration": None,
+            "clock_passed": False,
+            "resource_passed": False,
+            "disabled_reason": "CONTINUATION_OFF",
+        }
+    )
     if acceleration_cap["reached"] is True:
         gate: dict[str, object] = {
             "policy": "track_a_acceleration_cap",
@@ -3894,8 +4527,17 @@ def _evaluate_round_budget(
             "required_credits": 0,
             "blockers": ["acceleration_cap_reached:8x"],
             "acceleration": acceleration_cap["acceleration"],
+            "incumbent_eligible": acceleration_cap["incumbent_eligible"],
+            "csim_passed": acceleration_cap["csim_passed"],
+            "synth_passed": acceleration_cap["synth_passed"],
+            "cosim_required": acceleration_cap["cosim_required"],
+            "cosim_passed": acceleration_cap["cosim_passed"],
+            "tool_config_comparable": acceleration_cap[
+                "tool_config_comparable"
+            ],
             "clock_passed": acceleration_cap["clock_passed"],
             "resource_passed": acceleration_cap["resource_passed"],
+            "risk": acceleration_cap.get("risk"),
         }
         reason = "ACCELERATION_CAP_REACHED"
     elif round_index > planner_round_limit:
@@ -3968,7 +4610,7 @@ def _evaluate_round_budget(
             reason = (
                 "ROUND_BUDGET_AVAILABLE"
                 if gate["allowed"] is True
-                else "ROUND_SKIPPED_FINAL_RESERVE"
+                else "ROUND_SKIPPED_SEARCH_CLOSEOUT_RESERVE"
             )
     if gate["allowed"] is True:
         allowed, continuation, continuation_ref, continuation_hash, pa_ref = _apply_continuation_policy(
@@ -4087,6 +4729,48 @@ def _plan_candidate(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeSt
         budget = BudgetLedger(
             runtime.run_root / "budget_ledger.jsonl", runtime.config.budget
         )
+        planner_timeout = float(
+            getattr(
+                getattr(
+                    getattr(runtime.live_planner, "provider", None),
+                    "config",
+                    None,
+                ),
+                "timeout_seconds",
+                120.0,
+            )
+        )
+        planner_effective_timeout: float | None = None
+        if runtime.runtime_deadline is not None:
+            try:
+                planner_effective_timeout = (
+                    runtime.runtime_deadline.require(
+                        planner_timeout,
+                        operation="planner",
+                        minimum_runtime_seconds=0.0,
+                    ).effective_timeout_seconds
+                )
+            except RuntimeUnavailable as exc:
+                event = _event(
+                    runtime,
+                    node="plan_candidate",
+                    phase=mode,
+                    candidate_id=state["best_candidate_id"],
+                    action="planner_not_started",
+                    why=(
+                        "The shared run deadline reserves time for cleanup "
+                        "and a durable terminal report."
+                    ),
+                    outcome=exc.reason_code,
+                    round_index=round_index,
+                    details=exc.permit.to_dict(),
+                )
+                return {
+                    "last_tool_ok": False,
+                    "last_tool_reason": exc.reason_code,
+                    "exploration_stop_reason": exc.reason_code,
+                    "node_events": [event],
+                }
         try:
             live_result = PlannerActionJournal(
                 runtime.run_root, budget
@@ -4097,6 +4781,7 @@ def _plan_candidate(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeSt
                 input_sha256=input_sha256,
                 candidate_id=state["best_candidate_id"],
                 code_hash=str(incumbent["code_hash"]),
+                timeout_seconds=planner_effective_timeout,
             )
         except PlannerActionRejected as exc:
             rejection_ref = (
@@ -4363,6 +5048,34 @@ def _materialize_candidate(
         )
     except PatchValidationError as exc:
         reason = "PATCH_POLICY_REJECTED"
+        evidence = dict(
+            exc.failure_evidence
+            or {
+                "schema_version": "v3.patch-failure-evidence.v1",
+                "error_type": "PATCH_VALIDATION_ERROR",
+                "file": runtime.task.kernel_name,
+                "message": str(exc),
+                "guidance": (
+                    "regenerate a directly applicable unified diff for the "
+                    "current kernel"
+                ),
+            }
+        )
+        evidence.update(
+            {
+                "round_index": round_index,
+                "parent_candidate_id": parent_id,
+                "planner_action_id": state.get("planner_action_id"),
+                "planner_output_ref": state.get("planner_output_ref"),
+                "planner_output_sha256": state.get("planner_output_sha256"),
+            }
+        )
+        evidence_ref = (
+            f"evidence/failures/patch_round_{round_index:03d}.json"
+        )
+        evidence_path = runtime.run_root / evidence_ref
+        _write_once_or_verify(evidence_path, evidence)
+        evidence_sha256 = _sha256_file(evidence_path)
         event = _event(
             runtime,
             node="materialize_candidate",
@@ -4377,13 +5090,19 @@ def _materialize_candidate(
                     exc.interface_guard.to_dict()
                     if exc.interface_guard is not None
                     else None
-                )
+                ),
+                "patch_failure_evidence_ref": evidence_ref,
+                "patch_failure_evidence_sha256": evidence_sha256,
+                "patch_error_type": evidence.get("error_type"),
             },
         )
         return {
             "active_candidate_id": None,
             "last_tool_ok": False,
             "last_tool_reason": reason,
+            "patch_failure_evidence": evidence,
+            "patch_failure_evidence_ref": evidence_ref,
+            "patch_failure_evidence_sha256": evidence_sha256,
             "cosim_gate": {"eligible": False, "reason": reason},
             "node_events": [event],
         }
@@ -4571,6 +5290,17 @@ def _record_rejected_proposal(
         "planner_input_sha256": state.get("planner_input_sha256"),
         "planner_output_ref": state.get("planner_output_ref"),
         "planner_output_sha256": state.get("planner_output_sha256"),
+        "patch_failure_evidence_ref": (
+            state.get("patch_failure_evidence_ref") or None
+        ),
+        "patch_failure_evidence_sha256": (
+            state.get("patch_failure_evidence_sha256") or None
+        ),
+        "patch_error_type": (
+            state.get("patch_failure_evidence", {}).get("error_type")
+            if isinstance(state.get("patch_failure_evidence"), Mapping)
+            else None
+        ),
         "change_class": _current_proposal(runtime, state).change_class,
         "selection_metrics_digest": state.get(
             "planner_selection_metrics_digest"
@@ -4599,6 +5329,9 @@ def _record_rejected_proposal(
         "candidate_clock": {},
         "last_round_improved": False,
         "decision_ref": rejection_ref,
+        "patch_failure_evidence": {},
+        "patch_failure_evidence_ref": "",
+        "patch_failure_evidence_sha256": "",
         "node_events": [event],
     }
 
@@ -4868,7 +5601,10 @@ def _optional_worst_latency(
 
 
 def _fast_experiment_risk(
-    runtime: _Runtime, proposal: PatchProposal
+    runtime: _Runtime,
+    proposal: PatchProposal,
+    *,
+    candidate_source: bytes | str | None = None,
 ) -> dict[str, object]:
     changed = "\n".join(
         line[1:]
@@ -4890,10 +5626,38 @@ def _fast_experiment_risk(
         if isinstance(risk_payload, Mapping)
         else "MEDIUM"
     )
+    dimensions = (
+        [str(item) for item in risk_payload.get("dimensions", [])]
+        if isinstance(risk_payload, Mapping)
+        and isinstance(risk_payload.get("dimensions"), list)
+        else []
+    )
+    risk_text = " ".join(
+        [
+            str(proposal.change_class or ""),
+            str(proposal.risk or ""),
+            *dimensions,
+        ]
+    ).casefold()
+    source_text = (
+        candidate_source.decode("utf-8", errors="ignore")
+        if isinstance(candidate_source, bytes)
+        else str(candidate_source or "")
+    ).casefold()
     reasons: list[str] = []
     if runtime.task.requires_cosim:
         reasons.append("TASK_REQUIRES_COSIM")
-    if bundle.intersection({"DATAFLOW", "STREAMING", "BITWIDTH_OPTIMIZATION"}):
+    if bundle.intersection(
+        {
+            "DATAFLOW",
+            "STREAMING",
+            "FIFO",
+            "INTERFACE",
+            "PROTOCOL",
+            "RTL_C_MISMATCH",
+            "BITWIDTH_OPTIMIZATION",
+        }
+    ):
         reasons.append("HIGH_RISK_STRATEGY")
     structural_patterns = {
         "#pragma hls dataflow": "DATAFLOW_CHANGE",
@@ -4908,17 +5672,37 @@ def _fast_experiment_risk(
     for token, reason in structural_patterns.items():
         if token in changed and reason not in reasons:
             reasons.append(reason)
+    source_risk_patterns = {
+        "#pragma hls dataflow": "CANDIDATE_HAS_DATAFLOW",
+        "hls::stream": "CANDIDATE_HAS_HLS_STREAM",
+        "#pragma hls stream": "CANDIDATE_HAS_FIFO_PRAGMA",
+    }
+    for token, reason in source_risk_patterns.items():
+        if token in source_text and reason not in reasons:
+            reasons.append(reason)
+    if re.search(r"\bfifo\b", source_text) and "CANDIDATE_HAS_FIFO" not in reasons:
+        reasons.append("CANDIDATE_HAS_FIFO")
+    declared_risk_patterns = {
+        "dataflow": "DECLARED_DATAFLOW_RISK",
+        "stream": "DECLARED_STREAM_RISK",
+        "fifo": "DECLARED_FIFO_RISK",
+        "deadlock": "DECLARED_DEADLOCK_RISK",
+        "interface": "DECLARED_INTERFACE_RISK",
+        "protocol": "DECLARED_PROTOCOL_RISK",
+        "rtl/c": "DECLARED_RTL_C_MISMATCH_RISK",
+        "c/rtl": "DECLARED_RTL_C_MISMATCH_RISK",
+        "rtl mismatch": "DECLARED_RTL_C_MISMATCH_RISK",
+        "c model mismatch": "DECLARED_RTL_C_MISMATCH_RISK",
+    }
+    for token, reason in declared_risk_patterns.items():
+        if token in risk_text and reason not in reasons:
+            reasons.append(reason)
     if declared_level == "HIGH":
         reasons.append("PLANNER_DECLARED_HIGH_RISK")
     requires_cosim = bool(reasons)
     return {
         "level": declared_level,
-        "dimensions": (
-            list(risk_payload.get("dimensions", []))
-            if isinstance(risk_payload, Mapping)
-            and isinstance(risk_payload.get("dimensions"), list)
-            else []
-        ),
+        "dimensions": dimensions,
         "requires_cosim": requires_cosim,
         "reasons": reasons or ["LOW_OR_MEDIUM_NON_STRUCTURAL_CHANGE"],
         "strategy_bundle": sorted(bundle),
@@ -5123,7 +5907,7 @@ def _candidate_cosim_budget_gate(
     reason = (
         "CANDIDATE_COSIM_BUDGET_AVAILABLE"
         if allowed
-        else "CANDIDATE_COSIM_SKIPPED_FINAL_RESERVE"
+        else "CANDIDATE_COSIM_SKIPPED_SEARCH_CLOSEOUT_RESERVE"
     )
     event = _event(
         runtime,
@@ -5703,7 +6487,7 @@ def _final_stage(
         phase="FINAL",
         candidate_id=candidate_id,
         stage=stage,
-        validation_scope="final",
+        validation_scope="search_closeout",
     )
     validation = {
         name: dict(value)
@@ -5820,7 +6604,7 @@ def _final_cosim(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeState
         runtime,
         state["final_metrics_ref"],
         candidate_id=candidate_id,
-        validation_scope="final",
+        validation_scope="search_closeout",
     )
     mode = str(state.get("mode", PhaseMode.OPTIMIZE.value))
     if mode != PhaseMode.OPTIMIZE.value:
@@ -6112,8 +6896,23 @@ def _planner_token_rounds(runtime: _Runtime) -> list[dict[str, object]]:
             if isinstance(adapter_request, Mapping)
             else None
         )
+        envelope_source = "provider_request.token_envelope"
         if not isinstance(envelope, Mapping):
-            continue
+            # Task-aware provider requests expose the same bounded token
+            # fields in the durable outer request audit rather than embedding
+            # a TokenEnvelope in the provider payload.
+            envelope = {
+                "estimated_input_tokens": request_audit.get(
+                    "estimated_input_tokens"
+                ),
+                "configured_max_output_tokens": request_audit.get(
+                    "configured_max_output_tokens"
+                ),
+                "effective_max_output_tokens": request_audit.get(
+                    "effective_max_output_tokens"
+                ),
+            }
+            envelope_source = "planner_request_audit"
         planner_input = _read_json_object(_safe_run_ref(runtime, input_ref))
         round_state = planner_input.get("round")
         round_state = round_state if isinstance(round_state, Mapping) else {}
@@ -6185,6 +6984,7 @@ def _planner_token_rounds(runtime: _Runtime) -> list[dict[str, object]]:
                 "output_truncated": truncated,
                 "truncation_reason": truncation_reason,
                 "estimator_name": envelope.get("estimator_name"),
+                "token_audit_source": envelope_source,
                 "action_id": action_id,
             }
         )
@@ -6235,10 +7035,21 @@ def _planner_token_summary(
         if isinstance(row.get("actual_input_tokens"), (int, float))
         and isinstance(row.get("final_input_estimate"), (int, float))
     ]
+    planner_calls = len(rows)
+    tool_used = budget.get("tool_used")
+    ledger_calls = (
+        tool_used.get("llm") if isinstance(tool_used, Mapping) else None
+    )
+    if isinstance(ledger_calls, int) and not isinstance(ledger_calls, bool):
+        if ledger_calls != planner_calls:
+            raise RuntimeError(
+                "Planner token audit count does not match the Agent Ledger"
+            )
+        planner_calls = ledger_calls
     return {
         "run_token_limit": budget.get("run_token_limit", budget.get("token_limit")),
         "tokens_used": budget.get("tokens_used"),
-        "planner_calls": len(rows),
+        "planner_calls": planner_calls,
         "average_estimated_input_tokens": (
             sum(estimates) / len(estimates) if estimates else None
         ),
@@ -6354,14 +7165,16 @@ def _render_team_report(
         "| Agent search cost | "
         + report_cell(track_a_budget.get("agent_search_cost"))
         + " |",
-        "| Internal final validation cost | "
-        + report_cell(track_a_budget.get("internal_final_validation_cost"))
+        "| Search closeout cost（Agent Ledger 子集） | "
+        + report_cell(track_a_budget.get("search_closeout_cost"))
         + " |",
-        "| External grader cost | "
-        + report_cell(track_a_budget.get("external_grader_cost"))
+        "| Final certification charged to Agent | "
+        + report_cell(
+            track_a_budget.get("final_certification_agent_credits_charged")
+        )
         + " |",
-        "| External grader status | "
-        + report_cell(track_a_budget.get("external_grader_status"))
+        "| Final certification accounting | "
+        + report_cell(track_a_budget.get("final_certification_status"))
         + " |",
         "| Ledger reconciliation | "
         + report_cell(track_a_budget.get("reconciled"))
@@ -6599,10 +7412,13 @@ def _render_team_report(
             + report_cell(result.get("phase_decision", {}))
             + "`",
             f"- Failure evidence: `{result.get('failure_evidence_ref') or '-'}`",
+            "- Structured Evidence Memory: `"
+            + str(result.get("evidence_memory_mode", "on"))
+            + "`",
             "- Continuation policy / last decision: `"
             + str(result.get("continuation_policy_mode", "off"))
             + " / "
-            + str(result.get("continuation_policy_version", "v1"))
+            + str(result.get("continuation_policy_version", "v2"))
             + " / "
             + str(result.get("continuation_decision_ref") or "-")
             + "`",
@@ -6673,7 +7489,7 @@ def _render_team_report(
             *call_gate_rows,
             "",
             "- 汇总：`" + report_cell(result.get("token_policy_summary", {})) + "`",
-            "- Search/Planner Token 与 final CSim/Synth/CoSim Credit 分开记账。",
+            "- 本报告只统计 Agent 搜索（含 search closeout）；冻结后的独立认证不写入 Agent Ledger。",
             "- Token Policy 属于 Budget 横向组件内部能力；主 Graph 新增节点数：`0`。",
             "",
             "## 数据与控制流",
@@ -6691,19 +7507,13 @@ def _render_team_report(
 def _track_a_budget_accounting(
     runtime: _Runtime, budget: Mapping[str, object]
 ) -> dict[str, object]:
-    """Split charged internal actions without inventing grader execution.
-
-    The append-only ledger remains the authority.  Tool result artifacts carry
-    the immutable ``validation_scope`` needed to distinguish exploration from
-    the agent's own fresh final closure.  The external hidden grader is never
-    invoked by this process and therefore has a literal zero recorded cost.
-    """
+    """Reconcile the one Agent-search Ledger without counting certification."""
 
     ledger = BudgetLedger(
         runtime.run_root / "budget_ledger.jsonl", runtime.config.budget
     )
     search_cost = 0
-    final_cost = 0
+    closeout_cost = 0
     completed_actions = 0
     classification_errors: list[str] = []
     for event in ledger.events():
@@ -6734,8 +7544,9 @@ def _track_a_budget_accounting(
         if result.kind != kind:
             classification_errors.append(f"RESULT_KIND_MISMATCH:{kind}")
             continue
-        if result.validation_scope == "final":
-            final_cost += cost
+        if result.validation_scope == "search_closeout":
+            search_cost += cost
+            closeout_cost += cost
         elif result.validation_scope == "exploration":
             search_cost += cost
         else:
@@ -6747,15 +7558,16 @@ def _track_a_budget_accounting(
         not classification_errors
         and isinstance(ledger_credits, int)
         and not isinstance(ledger_credits, bool)
-        and search_cost + final_cost == ledger_credits
+        and search_cost == ledger_credits
     )
     return {
-        "schema_version": "v3.track-a-budget-accounting.v1",
+        "schema_version": "v3.track-a-budget-accounting.v2",
+        "budget_domain": "agent_search",
         "agent_search_cost": search_cost,
-        "internal_final_validation_cost": final_cost,
-        "external_grader_cost": 0,
-        "external_grader_status": "NOT_RUN_BY_AGENT",
-        "total_internal_cost": search_cost + final_cost,
+        "search_closeout_cost": closeout_cost,
+        "final_certification_agent_credits_charged": 0,
+        "final_certification_status": "OUTSIDE_AGENT_LEDGER",
+        "total_agent_cost": search_cost,
         "ledger_credits_used": ledger_credits,
         "completed_actions": completed_actions,
         "classification_errors": classification_errors,
@@ -6834,6 +7646,7 @@ def _write_report(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeStat
         "failure_evidence_ref": state.get("failure_evidence_ref"),
         "failure_evidence_sha256": state.get("failure_evidence_sha256"),
         "validation_profile": runtime.validation_profile,
+        "evidence_memory_mode": runtime.evidence_memory_mode,
         "continuation_policy_mode": runtime.continuation_policy_mode,
         "continuation_policy_version": runtime.continuation_policy_version,
         "continuation_admission_sha256": (
@@ -7328,9 +8141,16 @@ def run_v3_prototype(
     max_final_attempts: int = 1,
     validation_profile: str = STRICT_VALIDATION_PROFILE,
     final_validation_policy: str = FULL_INTERNAL_AUDIT_FINAL_POLICY,
+    evidence_memory_mode: str = "on",
     continuation_policy_mode: str = "off",
-    continuation_policy_version: str = "v1",
+    continuation_policy_version: str = "v2",
     continuation_admission_manifest: str | Path | None = None,
+    run_deadline_monotonic: float | None = None,
+    cleanup_reserve_seconds: float = DEFAULT_CLEANUP_RESERVE_SECONDS,
+    cosim_minimum_runtime_seconds: float = (
+        DEFAULT_COSIM_MINIMUM_RUNTIME_SECONDS
+    ),
+    monotonic: Callable[[], float] = time.monotonic,
 ) -> dict[str, object]:
     """Run the checkpointed V3-A1 graph and return its durable result.
 
@@ -7352,16 +8172,24 @@ def run_v3_prototype(
         raise ValueError("unsupported validation profile")
     if final_validation_policy not in FINAL_VALIDATION_POLICIES:
         raise ValueError("unsupported final validation policy")
+    if evidence_memory_mode not in EVIDENCE_MEMORY_MODES:
+        raise ValueError("unsupported evidence memory mode")
     if continuation_policy_mode not in CONTINUATION_POLICY_MODES:
         raise ValueError("unsupported continuation policy mode")
-    if continuation_policy_version not in {"v1", "v2"}:
-        raise ValueError("unsupported continuation policy version")
+    if continuation_policy_version != "v2":
+        raise ValueError(
+            "unsupported continuation policy version; only v2 is available"
+        )
+    if (
+        evidence_memory_mode == "off"
+        and continuation_policy_mode != "off"
+    ):
+        raise ValueError(
+            "Continuation requires evidence memory on; use continuation off "
+            "for the A1-off baseline"
+        )
     continuation_admission = None
     if continuation_policy_mode == "enforce":
-        if continuation_policy_version != "v2":
-            raise ValueError(
-                "Continuation enforce requires the mode-specific v2 policy"
-            )
         if continuation_admission_manifest is None:
             raise ValueError(
                 "Continuation enforce requires a passing admission manifest"
@@ -7393,6 +8221,16 @@ def run_v3_prototype(
             raise ValueError("live planner requires an llm budget entry")
     root = Path(run_dir).resolve()
     root.mkdir(parents=True, exist_ok=True)
+    runtime_deadline = RuntimeDeadline(
+        run_deadline_monotonic=(
+            float(run_deadline_monotonic)
+            if run_deadline_monotonic is not None
+            else float(monotonic()) + config.budget.runtime_limit_seconds
+        ),
+        cleanup_reserve_seconds=cleanup_reserve_seconds,
+        cosim_minimum_runtime_seconds=cosim_minimum_runtime_seconds,
+        monotonic=monotonic,
+    )
     scoring = scoring_config or load_scoring_config(
         Path(__file__).with_name("config") / "v2_scoring.yaml"
     )
@@ -7414,9 +8252,11 @@ def run_v3_prototype(
         max_planner_rounds=max_planner_rounds,
         validation_profile=validation_profile,
         final_validation_policy=final_validation_policy,
+        evidence_memory_mode=evidence_memory_mode,
         continuation_policy_mode=continuation_policy_mode,
         continuation_policy_version=continuation_policy_version,
         continuation_admission=continuation_admission,
+        runtime_deadline=runtime_deadline,
     )
     checkpoint_path = root / "graph_checkpoints.sqlite"
     graph_schema_path = root / "v3_graph_schema.json"

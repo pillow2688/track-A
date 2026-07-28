@@ -122,7 +122,7 @@ class OptimizationContext:
     failed_actions: tuple[Mapping[str, object], ...]
     remaining_tokens: int
     remaining_credits: int | None
-    final_reserve_credits: int
+    search_closeout_reserve_credits: int
     top: str
     kernel_name: str
     part: str
@@ -137,7 +137,7 @@ class OptimizationContext:
             raise ValueError("optimization context has an unsupported class")
         if self.round_index <= 0:
             raise ValueError("optimization round index must be positive")
-        if self.remaining_tokens < 0 or self.final_reserve_credits < 0:
+        if self.remaining_tokens < 0 or self.search_closeout_reserve_credits < 0:
             raise ValueError("optimization budget values must be non-negative")
         if (
             isinstance(self.difficulty, bool)
@@ -183,7 +183,7 @@ class OptimizationContext:
             "failed_actions": [dict(item) for item in self.failed_actions],
             "remaining_tokens": self.remaining_tokens,
             "remaining_credits": self.remaining_credits,
-            "final_reserve_credits": self.final_reserve_credits,
+            "search_closeout_reserve_credits": self.search_closeout_reserve_credits,
             "top": self.top,
             "kernel_name": self.kernel_name,
             "part": self.part,
@@ -206,7 +206,7 @@ class OptimizationConfig:
     max_no_improvement_rounds: int = 2
     max_llm_calls: int = 6
     max_final_attempts: int = 2
-    final_reserve_credits: int = 25
+    search_closeout_reserve_credits: int = 25
     exploration_cosim_policy: str = "auto"
     patch_limits: PatchLimits = field(
         default_factory=lambda: PatchLimits(max_changed_lines=30, max_hunks=4)
@@ -221,8 +221,8 @@ class OptimizationConfig:
             raise ValueError("optimization round limits must be positive")
         if self.max_llm_calls < self.max_rounds:
             raise ValueError("LLM call limit cannot be lower than the round limit")
-        if self.final_reserve_credits < 0:
-            raise ValueError("final reserve credits must be non-negative")
+        if self.search_closeout_reserve_credits < 0:
+            raise ValueError("search closeout reserve credits must be non-negative")
         if self.exploration_cosim_policy == "auto":
             object.__setattr__(
                 self,
@@ -247,7 +247,7 @@ class OptimizationConfig:
             "max_no_improvement_rounds": self.max_no_improvement_rounds,
             "max_llm_calls": self.max_llm_calls,
             "max_final_attempts": self.max_final_attempts,
-            "final_reserve_credits": self.final_reserve_credits,
+            "search_closeout_reserve_credits": self.search_closeout_reserve_credits,
             "exploration_cosim_policy": self.exploration_cosim_policy,
             "patch_limits": asdict(self.patch_limits),
         }
@@ -1082,7 +1082,7 @@ def _ensure_round_affordable(
     snapshot = budget.snapshot()
     stage_cost = sum(budget.cost(stage) for stage in ("csim", "synth", "cosim"))
     remaining = snapshot["credits_remaining"]
-    required = stage_cost + config.final_reserve_credits
+    required = stage_cost + config.search_closeout_reserve_credits
     if remaining is not None and int(remaining) < required:
         raise BudgetExceeded(
             f"optimization closure requires {required} credits but {remaining} remain"
@@ -1092,7 +1092,7 @@ def _ensure_round_affordable(
         used = int(snapshot["tool_used"][stage]) + int(snapshot["tool_pending"][stage])
         if limit is not None and used + 2 > limit:
             raise BudgetExceeded(
-                f"optimization and final validation require two {stage} calls"
+                f"optimization and search closeout require two {stage} calls"
             )
     llm_limit = budget.config.tool_limits["llm"]
     llm_used = int(snapshot["tool_used"]["llm"]) + int(snapshot["tool_pending"]["llm"])
@@ -1108,13 +1108,13 @@ def _ensure_final_affordable(budget: BudgetLedger) -> None:
     remaining = snapshot["credits_remaining"]
     if remaining is not None and int(remaining) < required:
         raise BudgetExceeded(
-            f"final validation requires {required} credits but {remaining} remain"
+            f"search closeout requires {required} credits but {remaining} remain"
         )
     for stage in ("csim", "synth", "cosim"):
         limit = budget.config.tool_limits[stage]
         used = int(snapshot["tool_used"][stage]) + int(snapshot["tool_pending"][stage])
         if limit is not None and used >= limit:
-            raise BudgetExceeded(f"final validation requires another {stage} call")
+            raise BudgetExceeded(f"search closeout requires another {stage} call")
 
 
 def _rank_scores(values: list[CandidateScore]) -> list[CandidateScore]:
@@ -1499,13 +1499,13 @@ def run_v2(
         raise ValueError("V2 requires task_type=optimize")
     if "llm" not in run_config.budget.costs:
         raise ValueError("V2 budget must configure llm")
-    final_cost = sum(
+    closeout_cost = sum(
         int(run_config.budget.costs[stage])
         for stage in ("csim", "synth", "cosim")
     )
-    if optimization_config.final_reserve_credits < final_cost:
+    if optimization_config.search_closeout_reserve_credits < closeout_cost:
         raise ValueError(
-            "final reserve credits cannot be lower than final validation cost"
+            "search closeout reserve cannot be lower than its validation cost"
         )
     run_root = Path(run_dir).resolve()
     run_root.mkdir(parents=True, exist_ok=True)
@@ -1754,7 +1754,7 @@ def run_v2(
             ),
             remaining_tokens=0,
             remaining_credits=None,
-            final_reserve_credits=optimization_config.final_reserve_credits,
+            search_closeout_reserve_credits=optimization_config.search_closeout_reserve_credits,
             top=task.top,
             kernel_name=task.kernel_name,
             part=run_config.tool.part,
@@ -2154,7 +2154,7 @@ def run_v2(
         try:
             _ensure_round_affordable(budget, optimization_config)
         except BudgetExceeded:
-            exploration_stop_reason = "FINAL_RESERVE_REACHED"
+            exploration_stop_reason = "SEARCH_CLOSEOUT_RESERVE_REACHED"
             break
         current_metrics = metrics_by_candidate[best_id]
         current_source = _candidate_source(run_root, registry, best_id)
@@ -2198,7 +2198,7 @@ def run_v2(
                 if snapshot["credits_remaining"] is not None
                 else None
             ),
-            final_reserve_credits=optimization_config.final_reserve_credits,
+            search_closeout_reserve_credits=optimization_config.search_closeout_reserve_credits,
             top=task.top,
             kernel_name=task.kernel_name,
             part=run_config.tool.part,
@@ -2485,7 +2485,7 @@ def run_v2(
         run_root,
         run_config,
         backend=backend,
-        validation_scope="final",
+        validation_scope="search_closeout",
     )
     final_attempts: list[dict[str, object]] = [
         {
@@ -2524,7 +2524,7 @@ def run_v2(
                 run_root,
                 run_config,
                 backend=backend,
-                validation_scope="final",
+                validation_scope="search_closeout",
             )
             final_attempts.append(
                 {

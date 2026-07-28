@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import IO
 
 from .budget import BudgetConfig, BudgetError, BudgetExceeded, BudgetLedger, BudgetLedgerError
+from .runtime_control import RuntimeUnavailable
 from .task import PublicTask, TaskPackageError, current_public_file_hashes
 from .tools import (
     AmbiguousActionError,
@@ -168,7 +169,11 @@ def _task_spec(task: PublicTask) -> dict[str, object]:
         "task_type": task.task_type,
         "difficulty": task.difficulty,
         "top": task.top,
-        "task_budget": task.budget,
+        "task_budget": task.max_credits,
+        "max_credits": task.max_credits,
+        "max_credits_source": task.max_credits_source,
+        "max_tokens": task.max_tokens,
+        "max_tokens_source": task.max_tokens_source,
         "part": task.part,
         "clock_ns": task.clock_ns,
         "requires_cosim": task.requires_cosim,
@@ -315,6 +320,31 @@ def _stop_reason(stage: str, result: ToolResult) -> str:
 
 
 def _tool_exception(stage: str, exc: Exception) -> tuple[dict[str, object], str]:
+    if isinstance(exc, RuntimeUnavailable):
+        permit = exc.permit
+        return (
+            {
+                "status": "NOT_STARTED",
+                "phase": "runtime_gate",
+                "ok": False,
+                "error_type": type(exc).__name__,
+                "detail": str(exc),
+                "reason_code": exc.reason_code,
+                "remaining_runtime_seconds": (
+                    permit.remaining_runtime_seconds
+                ),
+                "cleanup_reserve_seconds": (
+                    permit.cleanup_reserve_seconds
+                ),
+                "effective_timeout_seconds": (
+                    permit.effective_timeout_seconds
+                ),
+                "minimum_runtime_seconds": (
+                    permit.minimum_runtime_seconds
+                ),
+            },
+            exc.reason_code,
+        )
     if isinstance(exc, BudgetExceeded):
         status, phase, suffix = "BUDGET_EXCEEDED", "budget_exceeded", "BUDGET_EXCEEDED"
     elif isinstance(exc, AmbiguousActionError):
@@ -355,6 +385,7 @@ def _invoke_stage(
         BudgetError,
         AmbiguousActionError,
         ToolArtifactError,
+        RuntimeUnavailable,
     ) as exc:
         record, reason = _tool_exception(stage, exc)
         return None, record, reason

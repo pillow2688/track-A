@@ -196,12 +196,12 @@ class MeteredToolServerTests(unittest.TestCase):
         final = server.csim(
             self.task.kernel_code,
             candidate_id="candidate_001",
-            validation_scope="final",
+            validation_scope="search_closeout",
         )
 
         self.assertNotEqual(exploration.action_id, final.action_id)
         self.assertEqual(exploration.validation_scope, "exploration")
-        self.assertEqual(final.validation_scope, "final")
+        self.assertEqual(final.validation_scope, "search_closeout")
         self.assertEqual(self.backend.calls, ["csim", "csim"])
         self.assertEqual(budget.snapshot()["tool_used"]["csim"], 2)
 

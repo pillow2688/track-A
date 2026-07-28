@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -16,9 +17,11 @@ from llm4hls_agent.v3_planner import (
 )
 from llm4hls_agent.v3_planner_action import (
     PlannerActionAmbiguous,
+    PlannerActionError,
     PlannerActionJournal,
     PlannerActionRejected,
     PreparedPlannerCall,
+    validate_live_planner_action_identity,
 )
 
 
@@ -95,6 +98,15 @@ class FakeLivePlanner:
         self.last_prepared = prepared
         return self.proposal
 
+    def invoke_with_timeout(
+        self,
+        prepared: PreparedPlannerCall,
+        *,
+        timeout_seconds: float,
+    ) -> PatchProposal:
+        self.last_timeout_seconds = timeout_seconds
+        return self.invoke(prepared)
+
 
 class V3PlannerActionJournalTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -166,6 +178,40 @@ class V3PlannerActionJournalTests(unittest.TestCase):
         self.assertEqual(snapshot["output_tokens_used"], 11)
         self.assertEqual(snapshot["cached_input_tokens_used"], 3)
         self.assertTrue(snapshot["token_usage_complete"])
+
+    def test_runtime_bounded_timeout_is_forwarded_before_dispatch(self) -> None:
+        planner = FakeLivePlanner()
+        self.journal().execute_or_recover(
+            planner,
+            self.input,
+            input_ref=self.input_ref,
+            input_sha256=self.input_sha256,
+            candidate_id="candidate_000",
+            code_hash="a" * 64,
+            timeout_seconds=7.5,
+        )
+        self.assertEqual(planner.last_timeout_seconds, 7.5)
+        self.assertEqual(planner.invoke_calls, 1)
+
+    def test_live_action_identity_rejects_boolean_attempt_index(self) -> None:
+        result = self.execute(self.journal(), FakeLivePlanner())
+        completed = json.loads(
+            (self.run_root / result.completed_ref).read_text(encoding="utf-8")
+        )
+        action_request = dict(completed["request"])
+        request_audit = json.loads(
+            (self.run_root / result.request_ref).read_text(encoding="utf-8")
+        )
+        action_request["attempt_index"] = False
+
+        with self.assertRaisesRegex(
+            PlannerActionError, "deterministic identity"
+        ):
+            validate_live_planner_action_identity(
+                action_request,
+                request_audit,
+                expected_action_id=canonical_sha256(action_request),
+            )
 
     def test_completed_action_is_reused_without_reinvocation_or_recharge(self) -> None:
         planner = FakeLivePlanner()
@@ -467,6 +513,58 @@ class V3PlannerActionJournalTests(unittest.TestCase):
         completed = self.ledger().completed_event(self.only_started_action_id())
         self.assertIsNotNone(completed)
         self.assertTrue(completed["token_reservation_overrun"])
+
+    def test_provider_failure_overrun_never_recovers_as_cached_rejection(
+        self,
+    ) -> None:
+        class UnderReservedFailurePlanner(FakeLivePlanner):
+            def prepare(self, value) -> PreparedPlannerCall:
+                self.prepare_calls += 1
+                return PreparedPlannerCall(
+                    request={
+                        "model": "fixture-live-model",
+                        "input": value["round"],
+                    },
+                    estimated_input_tokens=5,
+                    max_output_tokens=5,
+                )
+
+            def invoke(self, prepared: PreparedPlannerCall) -> PatchProposal:
+                self.invoke_calls += 1
+                raise RepairProviderError(
+                    "provider output is incomplete",
+                    input_tokens=17,
+                    output_tokens=30,
+                    cached_input_tokens=2,
+                    duration_seconds=0.2,
+                    request_id="overrun-provider-failure",
+                    response_excerpt='{"patch":"--- a/kernel.cpp\\n',
+                    finish_reason="length",
+                    output_truncated=True,
+                    truncation_reason="PATCH_INCOMPLETE",
+                    usage_complete=True,
+                )
+
+        planner = UnderReservedFailurePlanner()
+
+        with self.assertRaisesRegex(BudgetExceeded, "durable reservation"):
+            self.execute(self.journal(), planner)
+        with self.assertRaisesRegex(BudgetExceeded, "durable reservation"):
+            self.execute(self.journal(), planner)
+
+        self.assertEqual(planner.invoke_calls, 1)
+        action_id = self.only_started_action_id()
+        completed = self.ledger().completed_event(action_id)
+        self.assertIsNotNone(completed)
+        self.assertTrue(completed["token_reservation_overrun"])
+        self.assertFalse(
+            (
+                self.run_root
+                / "control"
+                / "live_planner_actions"
+                / f"{action_id}.completed.json"
+            ).exists()
+        )
 
     def test_reserve_before_started_crash_is_recovered_before_dispatch(self) -> None:
         planner = FakeLivePlanner()

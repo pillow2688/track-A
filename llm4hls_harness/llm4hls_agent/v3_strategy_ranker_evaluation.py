@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Callable, Mapping, Sequence
@@ -12,10 +13,14 @@ from typing import Callable, Mapping, Sequence
 from .v3_experience import canonical_json
 from .v3_experience_kb import build_kb_query
 from .v3_experience_v2 import STRATEGIES_BY_MODE, validate_experience_v2
-from .v3_experience_v2_runtime import RANKER_ADMISSION_SCHEMA
+from .v3_experience_v2_runtime import (
+    RANKER_ADMISSION_SCHEMA,
+    current_repository_commit,
+)
 from .v3_strategy_ranker_v3 import (
     STRATEGY_RANKER_V3_SCHEMA,
     BayesianStrategyRankerV3,
+    runtime_support_eligible,
     verified_success,
 )
 
@@ -206,14 +211,21 @@ def _evaluate_policy(
 def evaluate_ranker_v3(
     raw_records: Sequence[Mapping[str, object]],
     audit_groups: Mapping[str, Mapping[str, str]],
+    *,
+    store_sha256: str | None = None,
+    audit_groups_sha256: str | None = None,
 ) -> dict[str, object]:
-    eligible = [
-        validate_experience_v2(record)
-        for record in raw_records
-        if record.get("source", {}).get("evidence_level")
-        == "REAL_LLM_VITIS"
-        and record.get("provenance", {}).get("eligible_for_ranking") is True
-    ]
+    eligible: list[dict[str, object]] = []
+    for raw in raw_records:
+        source = raw.get("source")
+        if not isinstance(source, Mapping) or (
+            source.get("evidence_level") != "REAL_LLM_VITIS"
+            or source.get("task_split") != "train"
+        ):
+            continue
+        record = validate_experience_v2(raw)
+        if runtime_support_eligible(record):
+            eligible.append(record)
     verified = [
         record for record in eligible if verified_success(record) is not None
     ]
@@ -303,6 +315,8 @@ def evaluate_ranker_v3(
             "verified_records": len(verified),
             "excluded_unverified_records": len(eligible) - len(verified),
             "verified_by_mode": dict(sorted(mode_counts.items())),
+            "store_sha256": store_sha256,
+            "audit_groups_sha256": audit_groups_sha256,
         },
         "policies": policies,
         "checks": {
@@ -316,6 +330,13 @@ def evaluate_ranker_v3(
             "same_data_threshold_tuning": False,
             "query_outcome_fields_present": False,
             "heldout_labels_read_after_decision": True,
+            "train_only_support": all(
+                record["source"]["task_split"] == "train"
+                for record in verified
+            ),
+            "public_only_support": all(
+                runtime_support_eligible(record) for record in verified
+            ),
         },
     }
 
@@ -323,62 +344,24 @@ def evaluate_ranker_v3(
 def admission_manifest(
     report: Mapping[str, object],
     *,
-    seed_sha256: str,
-    evidence_sha256: str,
+    store_path: str,
+    store_sha256: str,
+    gate_path: str,
+    gate_sha256: str,
+    current_commit: str,
 ) -> dict[str, object]:
     if report.get("decision") != "PASS":
         raise ValueError("cannot admit a Ranker V3 evaluation that did not PASS")
-    policies = report["policies"]
-    assert isinstance(policies, Mapping)
-    task = policies["leave_one_task_out"]
-    family = policies["leave_one_task_family_out"]
-    assert isinstance(task, Mapping) and isinstance(family, Mapping)
-    by_mode: dict[str, object] = {}
-    counts = report["input"]["verified_by_mode"]
-    for mode in sorted(STRATEGIES_BY_MODE):
-        task_row = task["by_mode"][mode]
-        family_row = family["by_mode"][mode]
-        by_mode[mode] = {
-            "records": int(counts[mode]),
-            "coverage": min(
-                float(task_row["coverage"]), float(family_row["coverage"])
-            ),
-            "harmful_rate": max(
-                float(task_row["harmful_recommendation_rate"]),
-                float(family_row["harmful_recommendation_rate"]),
-            ),
-            "positive_hit_rate": min(
-                float(task_row["positive_strategy_hit_rate"]),
-                float(family_row["positive_strategy_hit_rate"]),
-            ),
-        }
     return {
         "schema_version": RANKER_ADMISSION_SCHEMA,
         "decision": "PASS",
-        "ranker_version": STRATEGY_RANKER_V3_SCHEMA,
-        "seed_sha256": seed_sha256,
-        "protocol": "LOTO_AND_LEAVE_ONE_TASK_FAMILY_OUT",
+        "ranker_schema": STRATEGY_RANKER_V3_SCHEMA,
+        "store_path": store_path,
+        "store_sha256": store_sha256,
+        "gate_path": gate_path,
+        "gate_sha256": gate_sha256,
         "thresholds": FIXED_THRESHOLDS,
-        "metrics": {
-            "coverage": min(
-                float(task["overall"]["coverage"]),
-                float(family["overall"]["coverage"]),
-            ),
-            "harmful_rate": max(
-                float(task["overall"]["harmful_recommendation_rate"]),
-                float(family["overall"]["harmful_recommendation_rate"]),
-            ),
-            "global_positive_hit_rate": min(
-                float(task["overall"]["positive_strategy_hit_rate"]),
-                float(family["overall"]["positive_strategy_hit_rate"]),
-            ),
-            "leakage_violations": sum(
-                int(policy["overall"]["leakage_violations"])
-                for policy in (task, family)
-            ),
-            "by_mode": by_mode,
-        },
-        "evidence_sha256": evidence_sha256,
+        "current_commit": current_commit,
     }
 
 
@@ -400,15 +383,26 @@ def main(argv: Sequence[str] | None = None) -> int:
     groups = groups_value.get("groups")
     if not isinstance(groups, Mapping):
         raise ValueError("audit groups file is malformed")
-    report = evaluate_ranker_v3(records, groups)
+    store_sha256 = hashlib.sha256(args.records.read_bytes()).hexdigest()
+    groups_sha256 = hashlib.sha256(args.audit_groups.read_bytes()).hexdigest()
+    report = evaluate_ranker_v3(
+        records,
+        groups,
+        store_sha256=store_sha256,
+        audit_groups_sha256=groups_sha256,
+    )
     encoded = canonical_json(report) + b"\n"
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_bytes(encoded)
     if args.admission_output is not None and report["decision"] == "PASS":
+        admission_root = args.admission_output.resolve().parent
         manifest = admission_manifest(
             report,
-            seed_sha256=hashlib.sha256(args.records.read_bytes()).hexdigest(),
-            evidence_sha256=hashlib.sha256(encoded).hexdigest(),
+            store_path=os.path.relpath(args.records.resolve(), admission_root),
+            store_sha256=store_sha256,
+            gate_path=os.path.relpath(args.output.resolve(), admission_root),
+            gate_sha256=hashlib.sha256(encoded).hexdigest(),
+            current_commit=current_repository_commit(),
         )
         args.admission_output.parent.mkdir(parents=True, exist_ok=True)
         args.admission_output.write_bytes(canonical_json(manifest) + b"\n")

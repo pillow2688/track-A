@@ -86,7 +86,10 @@ class PublicTask:
     difficulty_declared: bool
     generation_required: bool
     top: str
-    budget: int
+    max_credits: int | None
+    max_credits_source: str | None
+    max_tokens: int | None
+    max_tokens_source: str | None
     part: str
     clock_ns: float
     requires_cosim: bool
@@ -106,6 +109,36 @@ class PublicTask:
     @property
     def kernel_sha256(self) -> str:
         return _sha256(self.kernel_bytes)
+
+    @property
+    def budget(self) -> int:
+        """Legacy spelling for task packages that still declare ``budget``.
+
+        New run setup must use ``max_credits`` plus the shared budget resolver
+        so a missing task limit receives an explicit, recorded development
+        fallback instead of silently becoming 40 Credits.
+        """
+
+        if self.max_credits is None:
+            raise TaskPackageError(
+                "task does not declare max_credits (or legacy budget)"
+            )
+        return self.max_credits
+
+
+def _optional_non_negative_limit(
+    spec: Mapping[str, object],
+    name: str,
+) -> int | None:
+    if name not in spec:
+        return None
+    raw = spec[name]
+    if isinstance(raw, bool):
+        raise ValueError(f"{name} must be a non-negative integer")
+    parsed = int(raw)
+    if parsed < 0:
+        raise ValueError(f"{name} must be a non-negative integer")
+    return parsed
 
 
 def current_public_file_hashes(task: PublicTask) -> Mapping[str, str]:
@@ -218,6 +251,29 @@ def load_public_task(task_dir: str | Path) -> PublicTask:
     raw_difficulty = spec.get("difficulty", 1)
 
     try:
+        declared_max_credits = _optional_non_negative_limit(spec, "max_credits")
+        legacy_budget = _optional_non_negative_limit(spec, "budget")
+        if (
+            declared_max_credits is not None
+            and legacy_budget is not None
+            and declared_max_credits != legacy_budget
+        ):
+            raise ValueError(
+                "max_credits conflicts with legacy budget; declare one limit"
+            )
+        max_credits = (
+            declared_max_credits
+            if declared_max_credits is not None
+            else legacy_budget
+        )
+        max_credits_source = (
+            "task.toml:max_credits"
+            if declared_max_credits is not None
+            else "task.toml:budget(legacy)"
+            if legacy_budget is not None
+            else None
+        )
+        max_tokens = _optional_non_negative_limit(spec, "max_tokens")
         parsed_clock_ns = float(clock_ns)
         if not math.isfinite(parsed_clock_ns) or parsed_clock_ns <= 0:
             raise ValueError("target clock_ns must be finite and positive")
@@ -229,7 +285,12 @@ def load_public_task(task_dir: str | Path) -> PublicTask:
             difficulty_declared=difficulty_declared,
             generation_required=raw_generation_required,
             top=str(top),
-            budget=int(spec.get("budget", 40)),
+            max_credits=max_credits,
+            max_credits_source=max_credits_source,
+            max_tokens=max_tokens,
+            max_tokens_source=(
+                "task.toml:max_tokens" if max_tokens is not None else None
+            ),
             part=str(part),
             clock_ns=parsed_clock_ns,
             requires_cosim=bool(spec.get("requires_cosim", False)),

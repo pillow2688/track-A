@@ -107,10 +107,10 @@ def validate_candidate(
     validation_scope: str = "exploration",
     run_cosim: bool = True,
 ) -> CandidateValidation:
-    if validation_scope not in {"exploration", "final"}:
+    if validation_scope not in {"exploration", "search_closeout"}:
         raise ValueError(f"unsupported validation scope: {validation_scope}")
-    if validation_scope == "final" and not run_cosim:
-        raise ValueError("final validation cannot skip cosim")
+    if validation_scope == "search_closeout" and not run_cosim:
+        raise ValueError("search closeout validation cannot skip cosim")
     root = Path(run_root).resolve()
     budget = BudgetLedger(root / "budget_ledger.jsonl", config.budget)
     server = ToolServer(
@@ -236,7 +236,7 @@ def complete_candidate_cosim(
 ) -> CandidateValidation:
     """Complete a synth-verified Candidate with exactly one gated CoSim action."""
 
-    if validation_scope not in {"exploration", "final"}:
+    if validation_scope not in {"exploration", "search_closeout"}:
         raise ValueError(f"unsupported validation scope: {validation_scope}")
     if (
         preliminary.status != "DONE"

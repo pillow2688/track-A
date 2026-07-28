@@ -250,6 +250,25 @@ class V3ExperienceImporterTests(unittest.TestCase):
         self.assertNotIn(str(run), rendered)
         self.assertFalse(any(Path(ref["ref"]).is_absolute() for ref in record["artifact_refs"]))
 
+    def test_only_train_real_candidates_are_ranking_eligible(self) -> None:
+        for task_split, expected in (
+            ("train", True),
+            ("dev", False),
+            ("unspecified", False),
+        ):
+            with self.subTest(task_split=task_split):
+                with tempfile.TemporaryDirectory() as tmp:
+                    run = _make_v3_run(Path(tmp))
+                    result = import_historical_runs(
+                        [run],
+                        policy=ImportPolicy(task_split=task_split),
+                    )
+
+                self.assertEqual(len(result.records), 1)
+                self.assertIs(
+                    result.records[0]["eligible_for_ranking"], expected
+                )
+
     def test_repository_import_is_idempotent(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -381,7 +381,12 @@ def _log_evidence(result: ProcessResult) -> list[str]:
 
 
 class VitisBackend:
-    """Raw Vitis adapter; callers must access it through ``ToolServer``."""
+    """Raw Vitis adapter for Agent ``ToolServer`` or frozen final certification.
+
+    Search-time calls must go through ``ToolServer`` and its Agent Ledger.  The
+    post-search certification runner is the only direct caller and records its
+    own receipt outside that Ledger.
+    """
 
     def __init__(self, runner: ProcessRunner | None = None) -> None:
         self._runner = runner or SubprocessRunner()

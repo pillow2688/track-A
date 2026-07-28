@@ -85,6 +85,9 @@ class PublicTaskLoaderTests(unittest.TestCase):
             self.assertEqual(task.id, "fixture")
             self.assertEqual(task.task_type, "structural")
             self.assertTrue(task.requires_cosim)
+            self.assertEqual(task.max_credits, 80)
+            self.assertEqual(task.max_credits_source, "task.toml:budget(legacy)")
+            self.assertIsNone(task.max_tokens)
             self.assertEqual(task.kernel_bytes, (root / "kernel.cpp").read_bytes())
             self.assertEqual(set(task.headers), {"kernel.h"})
             self.assertNotIn("hidden", " ".join(task.public_file_hashes))
@@ -94,6 +97,55 @@ class PublicTaskLoaderTests(unittest.TestCase):
                 task.top = "changed"  # type: ignore[misc]
             with self.assertRaises(TypeError):
                 task.headers["changed.h"] = b""  # type: ignore[index]
+
+    def test_prefers_declared_max_limits_and_rejects_legacy_conflict(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_public_task(root)
+            task_toml = root / "task.toml"
+            original = task_toml.read_text(encoding="utf-8")
+            task_toml.write_text(
+                original.replace(
+                    "budget = 80",
+                    "max_credits = 80\nmax_tokens = 32768",
+                ),
+                encoding="utf-8",
+            )
+
+            task = load_public_task(root)
+
+            self.assertEqual(task.max_credits, 80)
+            self.assertEqual(task.max_credits_source, "task.toml:max_credits")
+            self.assertEqual(task.max_tokens, 32768)
+            self.assertEqual(task.max_tokens_source, "task.toml:max_tokens")
+
+            task_toml.write_text(
+                original.replace(
+                    "budget = 80",
+                    "max_credits = 81\nbudget = 80",
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(TaskPackageError, "conflicts"):
+                load_public_task(root)
+
+    def test_missing_limits_remain_explicitly_unresolved(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_public_task(root)
+            task_toml = root / "task.toml"
+            task_toml.write_text(
+                task_toml.read_text(encoding="utf-8").replace("budget = 80\n", ""),
+                encoding="utf-8",
+            )
+
+            task = load_public_task(root)
+
+            self.assertIsNone(task.max_credits)
+            self.assertIsNone(task.max_credits_source)
+            self.assertIsNone(task.max_tokens)
+            with self.assertRaisesRegex(TaskPackageError, "does not declare"):
+                _ = task.budget
 
     def test_rejects_task_paths_that_escape_or_enter_forbidden_directories(self) -> None:
         for kernel_file in (

@@ -3,9 +3,6 @@ from __future__ import annotations
 import unittest
 
 from llm4hls_agent.v3_continuation import (
-    canonical_sha256,
-    continuation_cost,
-    continuation_decision,
     evidence_delta,
     evidence_fingerprint,
     load_performance_area_policy,
@@ -86,45 +83,9 @@ class EvidenceDeltaTests(unittest.TestCase):
         self.assertTrue(delta["has_actionable_new_evidence"])
 
 
-class StrategyAndDecisionTests(unittest.TestCase):
+class StrategyTests(unittest.TestCase):
     def test_observed_patch_strategy_beats_declared_order(self) -> None:
         atoms = observed_strategy_atoms(declared=("loop_unroll", "memory_partition"), patch="#pragma HLS UNROLL factor=4\n#pragma HLS ARRAY_PARTITION variable=a cyclic factor=4")
         self.assertEqual(atoms, ("LOOP_UNROLL", "MEMORY_PARTITION"))
         novelty = strategy_novelty(declared=("x",), patch="#pragma HLS UNROLL", attempted=(("LOOP_UNROLL",),))
         self.assertTrue(novelty["duplicate_strategy"])
-
-    def test_optimize_improvement_without_new_bottleneck_blocks(self) -> None:
-        decision = continuation_decision(
-            run_id="safe", round_index=2, mode="OPTIMIZE", policy_mode="enforce",
-            has_correct_candidate=True, has_strict_latency_improvement=True,
-            performance_area={"pareto_relation": "DOMINATES", "tradeoff_detected": False},
-            delta={"has_actionable_new_evidence": False, "evidence_strength": "NONE", "bottleneck_changed": False, "reason_codes": []},
-            strategies={"untried_matched_strategy_atoms": [], "duplicate_strategy": False, "duplicate_patch": False, "reason_codes": []},
-            cost=continuation_cost(ledger={"tokens_remaining": 10000, "credits_remaining": 50}, estimated_input_tokens=100, estimated_output_tokens=200, estimated_credits=5, estimated_wall_time_seconds=1, final_reserve_safe=True),
-            remaining_rounds=2,
-        )
-        self.assertEqual(decision["decision"], "BLOCK")
-        self.assertEqual(decision["decision_hash"], canonical_sha256({key: value for key, value in decision.items() if key != "decision_hash"}))
-
-    def test_structural_new_subtype_is_allowed(self) -> None:
-        decision = continuation_decision(
-            run_id="safe", round_index=2, mode="STRUCTURAL_FIX", policy_mode="enforce",
-            has_correct_candidate=False, has_strict_latency_improvement=False,
-            performance_area={},
-            delta={"has_actionable_new_evidence": True, "evidence_strength": "MEDIUM", "failure_subtype_changed": True, "reason_codes": ["EVIDENCE_FAILURE_SUBTYPE_CHANGED"]},
-            strategies={"untried_matched_strategy_atoms": ["FIFO_DEPTH"], "duplicate_strategy": False, "duplicate_patch": False, "reason_codes": []},
-            cost=continuation_cost(ledger={"tokens_remaining": 10000, "credits_remaining": 50}, estimated_input_tokens=100, estimated_output_tokens=200, estimated_credits=21, estimated_wall_time_seconds=1, final_reserve_safe=True),
-            remaining_rounds=2,
-        )
-        self.assertEqual(decision["decision"], "ALLOW")
-
-    def test_hard_reserve_blocks(self) -> None:
-        decision = continuation_decision(
-            run_id="safe", round_index=2, mode="REPAIR", policy_mode="enforce",
-            has_correct_candidate=True, has_strict_latency_improvement=False, performance_area={},
-            delta={"has_actionable_new_evidence": True, "evidence_strength": "HIGH", "reason_codes": []},
-            strategies={"untried_matched_strategy_atoms": ["REPAIR"], "duplicate_strategy": False, "duplicate_patch": False, "reason_codes": []},
-            cost=continuation_cost(ledger={"tokens_remaining": 10000, "credits_remaining": 4}, estimated_input_tokens=100, estimated_output_tokens=200, estimated_credits=5, estimated_wall_time_seconds=1, final_reserve_safe=False),
-            remaining_rounds=1,
-        )
-        self.assertEqual(decision["decision"], "DEFER_TO_FINAL")

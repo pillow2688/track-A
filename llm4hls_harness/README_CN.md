@@ -16,13 +16,73 @@ V0–V2 运行时是自包含的，仅依赖 Python 3.11 及以上版本的标�
 
 ## V3-A1 LangGraph 原型
 
-V3-A1 不改变原有 `run`、`repair` 或 `optimize`（V2）入口。它通过独立命令把 baseline CSim/Synth/CoSim、scripted Planner、Candidate 物化、Candidate CSim/Synth、CoSim 价值门控、晋升/拒绝、轮次继续/停止、final CSim/Synth/CoSim 和团队报告拆成可 checkpoint 的动作节点。重复传入 `--patch-file` 可按顺序运行多个确定性提议；只传一个文件时保持原单轮行为。`--max-no-improvement-rounds` 控制连续无提升停止线；只有显式传入 `--enable-final-fallback` 且预算充足时，才最多再尝试一次完整 final 闭环。
+V3-A1 不改变原有 `run`、`repair` 或 `optimize`（V2）入口。它通过独立命令把 baseline CSim/Synth/CoSim、scripted Planner、Candidate 物化、Candidate CSim/Synth、CoSim 价值门控、晋升/拒绝、轮次继续/停止、Agent 搜索收口和团队报告拆成可 checkpoint 的动作节点。Graph 冻结终态 Candidate 后，独立认证路径在不恢复 Graph 的前提下执行 CSim、Synth、CoSim 和 100 MHz Gate。重复传入 `--patch-file` 可按顺序运行多个确定性提议；只传一个文件时保持原单轮行为。`--max-no-improvement-rounds` 控制连续无提升停止线；只有显式传入 `--enable-final-fallback` 且搜索预算充足时，才最多再尝试一次 Agent 搜索收口。
 
 每一轮 Planner 现在都会持久化 canonical input、STARTED 日志、版本化 output、旧报告投影和 COMPLETED 日志；Candidate 元数据与最终 Manifest 通过哈希绑定整条链。封包前还会从 Ledger 绑定的工具结果重新计算全部 score，并校验 Candidate 决策的 prepared/committed 配对、operation ID、revision 链和最终 Registry 绑定。若 `csynth.xml` 提供循环信息，综合证据会记录 loop `PipelineII`、TripCount、loop latency 和调度 violation，并明确区分 top-level transaction interval 与 loop II。任何缺失或被修改的溯源证据都会 fail closed。
 
-严格 happy path 的工具成本是 `25 + 25 + 25 = 75 credits`：baseline 完整闭环、Candidate
-完整闭环和一套全新的 final 闭环。如果启动 Candidate 后无法保留 final 所需的 25 credits，
-原型会跳过这一轮优化，改为最终验证已通过的 baseline。
+题目级 `max_credits` 与 `max_tokens` 是 Agent 搜索的权威上限；运行参数只能收紧。CSim/Synth/CoSim 的 `1/4/20` 成本和 `25` Credit 搜索收口储备都只是可配置的开发参考值，不是官方固定值。独立最终认证位于 Agent Ledger 之外，生成单独 receipt，不能把预算外结果免费反馈给同一轮搜索；认证失败必须开启新的计量型 Agent 运行。
+
+可冻结的正式默认清单是
+[`track_a_safe_baseline_v1.json`](llm4hls_agent/config/track_a_safe_baseline_v1.json)。
+它是可审计的冻结 Artifact，不是由 CLI 直接加载的配置；真正生效的运行时默认值由
+CLI parser 和契约测试共同约束。
+正式组件口径只有三个可消融创新变量：
+
+1. A1 **Structured Evidence Memory**：`--evidence-memory off|on`；
+2. A2 **Budget-Aware Continuation**：
+   `--continuation-policy off|shadow|enforce`；
+3. A3 **Experience Strategy Advisor**：
+   `--experience-mode off|shadow|guided`。
+
+安全默认值为 A1 `on`、A2 `shadow`、A3 `shadow`。A1 `off` 仍保留基础
+CSim/Synth/CoSim PASS/FAIL 结果、验证 Artifact、B1 evidence 绑定和 Candidate
+幂等物化保护；只关闭增强型跨 Candidate 记忆、Evidence Delta、提供给
+Planner/Continuation 的重复失败/重复 Patch 反馈和精炼瓶颈反馈，因此 A1
+`off` 要求 A2 `off`。A2 `off` 同时关闭固定 8× stop；A2 `shadow` 不执行 V3
+学习型 Continuation 决策，但保留该确定性评分封顶规则。A2 的外部兼容版本仍叫
+`v2`，实际实现是 `v3.continuation-policy.v3`；历史 V2 Admission 不能授权
+Enforce。A3 运行时默认仍使用 legacy V1 advisory ranker；Ranker V3 只保留
+为依赖冻结 Store 的显式 Shadow 研究，在线收益尚未证明。Guided 当前没有有效
+Admission，即使显式选择也会 fail-closed。
+
+**Candidate and Safety Baseline** 与 **Independent Final Certification**
+始终启用，禁止作为消融变量。**Offline Experience Pipeline** 与
+**Evaluation Harness** 属于正式运行时组件统计之外的支撑类别。基础组件编号
+B1/B2 与实验配置名 B0–B3 是两个不同命名空间。
+
+四个递进配置对应以下命令行参数组合：
+
+| 配置 | Fixed Token | Evidence Memory | Continuation | Strategy Advisor |
+| --- | --- | --- | --- | --- |
+| B0 | `fixed` | `off` | `off` | `off` |
+| B1 | `fixed` | `on` | `off` | `off` |
+| B2 | `fixed` | `on` | `shadow` | `off` |
+| B3 | `fixed` | `on` | `shadow` | `shadow` |
+
+四种配置中 Candidate Safety、fail-closed Admission/Provenance 和独立最终认证
+都保持启用。当前只证明配置可切换，不声称已经产生新的 B0–B3 结果。
+
+Dynamic Token Policy V1 已退出正式产品 CLI，也不构成第四个消融变量。其
+72-run A/B/C 没有通过工程准入；复现入口隔离为 Evaluation Harness 中的
+`python -m llm4hls_agent.token_policy_experiment_cli`。安全配置始终使用
+Fixed Token Policy。
+
+Experience Import、Normalizer、Reconcile、推荐 attribution 和分析都属于
+离线数据处理。主 Agent CLI 不再在 Graph 结束后、最终认证前自动执行它们。
+只有在 Agent 与认证 Artifact 均已持久化后，才显式运行不调用模型和 Vitis
+的后处理入口：
+
+```bash
+.venv/bin/llm4hls-experience postprocess-run \
+  --run-root /absolute/path/to/a/terminal-run \
+  --task-split train
+```
+
+省略 `--task-split` 时默认使用 fail-closed 的 `unspecified`，该记录不能成为
+Ranker support。只有在公开 split provenance 已明确确认时才应填写 `train`。
+
+Off/Shadow 测试证明的是 Planner 请求与路由不受干扰，不声称完整 run identity
+逐字节相同，因为 Shadow 会有意写入可审计 sidecar。
 
 ```bash
 PROJECT_ROOT=/absolute/path/to/track-A
@@ -333,7 +393,7 @@ python3 -m llm4hls_agent optimize examples/u55c_v2_optimize_task \
   --credit-limit 160 --max-optimization-rounds 6 \
   --max-no-improvement-rounds 2 --max-final-attempts 2 \
   --max-csim-calls 8 --max-synth-calls 8 --max-cosim-calls 8 \
-  --final-reserve-credits 25 \
+  --search-closeout-reserve-credits 25 \
   --csim-timeout 180 --synth-timeout 900 --cosim-timeout 900
 ```
 

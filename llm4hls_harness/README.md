@@ -1,6 +1,10 @@
-# LLM4HLS Agent — Internal Milestones V0–V3-A1
+# LLM4HLS Agent — Internal Milestones V0–V3-D
 
 English | [简体中文](README_CN.md)
+
+> The current code has advanced to V3-D. The V0–V3-A1 sections below remain
+> for historical commands and compatibility; they are not the current
+> component-count or release overview.
 
 V0–V4 are this project's internal engineering milestones, not official contest
 stages. The contest-provided example is named **Reference Agent & Evaluation
@@ -39,12 +43,14 @@ headers, and the configured public testbench. Paths entering `hidden/` or
 V3-A1 leaves the existing `run`, `repair`, and `optimize` (V2) commands
 unchanged. Its independent command splits baseline CSim/Synth/CoSim, a scripted
 Planner, Candidate materialization, Candidate CSim/Synth, the CoSim value gate,
-promotion/rejection, round continuation/stop, final CSim/Synth/CoSim, and
-reporting into checkpointed action nodes. Repeat `--patch-file` to provide an
+promotion/rejection, round continuation/stop, Agent-search closeout, and
+reporting into checkpointed action nodes. After the Graph freezes a terminal
+Candidate, a separate certification path runs CSim, Synth, CoSim, and the
+100 MHz gate without resuming the Graph. Repeat `--patch-file` to provide an
 ordered deterministic proposal sequence; one file preserves the original
 single-round behavior. `--max-no-improvement-rounds` controls convergence;
-`--enable-final-fallback` reserves at most one additional fresh final closure
-when the configured credits and tool-call limits can afford it.
+`--enable-final-fallback` allows at most one additional Agent-search closeout
+attempt when the configured search Credits and tool-call limits can afford it.
 
 Every Planner round now persists a canonical input, STARTED journal, versioned
 output, legacy report projection, and COMPLETED journal. Candidate metadata and
@@ -56,10 +62,84 @@ Registry binding are checked semantically. Synthesis evidence records loop
 `csynth.xml` exposes them; top-level transaction interval is explicitly kept
 separate from loop II. Missing or mutated provenance fails closed.
 
-The strict happy path costs `25 + 25 + 25 = 75` credits: one complete baseline
-closure, one complete Candidate closure, and one fresh final closure. If a
-Candidate round cannot preserve the final 25-credit reserve, the prototype
-skips that round and finalizes the verified baseline instead.
+Task `max_credits` and `max_tokens` are the authoritative Agent-search limits;
+run overrides may only narrow them. The `1/4/20` CSim/Synth/CoSim costs and a
+`25`-credit search-closeout reserve are configurable development references,
+not organizer-fixed values. Independent certification is outside the Agent
+Ledger, emits a separate receipt, and cannot feed free evidence back into the
+same search run. A failed certification requires a new metered Agent run.
+
+The freeze-ready default manifest is
+[`track_a_safe_baseline_v1.json`](llm4hls_agent/config/track_a_safe_baseline_v1.json).
+It is an auditable freeze artifact, not a CLI-loaded configuration; the
+effective runtime defaults are enforced by the CLI parser and contract tests.
+The formal component model has exactly three ablatable innovations:
+
+1. A1 **Structured Evidence Memory** — `--evidence-memory off|on`;
+2. A2 **Budget-Aware Continuation** —
+   `--continuation-policy off|shadow|enforce`;
+3. A3 **Experience Strategy Advisor** —
+   `--experience-mode off|shadow|guided`.
+
+The safe defaults are A1 `on`, A2 `shadow`, and A3 `shadow`. A1 `off` still
+retains basic CSim/Synth/CoSim PASS/FAIL results, validation artifacts, B1
+evidence bindings, and the idempotent Candidate materialization guard; it
+turns off enhanced cross-Candidate memory, Evidence Delta, duplicate
+failure/repeated-patch feedback to Planner and Continuation, and refined
+bottleneck feedback. A1 `off` therefore requires A2 `off`. A2 `off` also
+disables the fixed 8x stop; A2 `shadow` does not enforce learned V3 decisions
+but retains that deterministic score-aligned stop. A2's externally compatible
+version is still named `v2`, while its implementation is
+`v3.continuation-policy.v3`; historical V2 Admission cannot authorize Enforce.
+A3 still uses the legacy V1 advisory ranker by default. Ranker V3 remains
+explicit Shadow research with a frozen Store, and its online benefit is not
+established. Guided has no valid current Admission and fails closed even when
+selected explicitly.
+
+Two foundations are always enabled and are never ablation variables:
+**Candidate and Safety Baseline** and **Independent Final Certification**.
+The **Offline Experience Pipeline** and **Evaluation Harness** are support
+categories outside the formal runtime-component count. The B1/B2 foundation
+identifiers and the B0–B3 experiment-profile labels are separate namespaces.
+
+The four staged profiles are command-line argument sets:
+
+| Profile | Fixed Token | Evidence Memory | Continuation | Strategy Advisor |
+| --- | --- | --- | --- | --- |
+| B0 | `fixed` | `off` | `off` | `off` |
+| B1 | `fixed` | `on` | `off` | `off` |
+| B2 | `fixed` | `on` | `shadow` | `off` |
+| B3 | `fixed` | `on` | `shadow` | `shadow` |
+
+Candidate safety, fail-closed Admission/Provenance, and independent final
+certification stay enabled in all four profiles. These profiles are
+configuration-ready; this cleanup does not claim fresh B0–B3 outcome runs.
+
+Dynamic Token Policy V1 is no longer a product-CLI choice and is not a fourth
+ablation variable. Its completed 72-run A/B/C evaluation did not pass
+engineering admission. Reproduction is isolated behind
+`python -m llm4hls_agent.token_policy_experiment_cli`, as part of the
+Evaluation Harness. Fixed Token Policy remains mandatory in the safe profile.
+
+Experience import, normalization, reconcile, recommendation attribution, and
+analysis are offline data processing. The main Agent CLI no longer runs them
+after Graph termination or before certification. Run the model- and
+Vitis-free postprocessor explicitly only after the Agent and certification
+artifacts are durable:
+
+```bash
+.venv/bin/llm4hls-experience postprocess-run \
+  --run-root /absolute/path/to/a/terminal-run \
+  --task-split train
+```
+
+Omitting `--task-split` defaults to fail-closed `unspecified`, which cannot
+become Ranker support. Use `train` only when the public split provenance is
+explicitly established.
+
+Off/Shadow tests establish Planner-request and routing non-interference; they
+do not claim byte-identical run identities because Shadow intentionally writes
+an auditable sidecar.
 
 ```bash
 PROJECT_ROOT=/absolute/path/to/track-A
@@ -417,7 +497,7 @@ python3 -m llm4hls_agent optimize examples/u55c_v2_optimize_task \
   --credit-limit 160 --max-optimization-rounds 6 \
   --max-no-improvement-rounds 2 --max-final-attempts 2 \
   --max-csim-calls 8 --max-synth-calls 8 --max-cosim-calls 8 \
-  --final-reserve-credits 25 \
+  --search-closeout-reserve-credits 25 \
   --csim-timeout 180 --synth-timeout 900 --cosim-timeout 900
 ```
 

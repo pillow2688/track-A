@@ -20,6 +20,7 @@ import json
 import math
 import os
 import re
+import signal
 import statistics
 import subprocess
 import sys
@@ -32,17 +33,34 @@ from datetime import UTC, datetime
 from enum import Enum
 from functools import lru_cache
 from pathlib import Path
+from types import MappingProxyType
 from typing import Callable, Iterator, Mapping, Protocol, Sequence, TextIO
 
+from .full_agent_manifest import (
+    FullAgentManifest,
+    FullAgentManifestError,
+    load_full_agent_manifest,
+)
 from .task import PublicTask, load_public_task
 from .v3_continuation_admission import load_continuation_admission
 from .v3_experience_v2_runtime import validate_ranker_admission_manifest
+from .v3_planner_action import (
+    LIVE_PLANNER_ACTION_SCHEMA,
+    LIVE_PLANNER_COMPLETED_SCHEMA,
+    LIVE_PLANNER_FAILURE_SCHEMA,
+    LIVE_PLANNER_OUTCOME_SCHEMA,
+    LIVE_PLANNER_STARTED_SCHEMA,
+    LIVE_PROVIDER_REQUEST_SCHEMA,
+    PlannerActionError,
+    completed_llm_action_ids,
+    validate_live_planner_action_identity,
+)
 
 
 RUN_SCHEMA = "v3d.benchmark-run.v1"
 SUMMARY_SCHEMA = "v3d.benchmark-summary.v1"
 PLAN_SCHEMA = "v3d.benchmark-plan.v1"
-RUNNER_FINGERPRINT = "llm4hls-v3d-batch-benchmark:v4"
+RUNNER_FINGERPRINT = "llm4hls-v3d-batch-benchmark:v6"
 REAL_EVIDENCE_AUTHORITY = "V3_PROTOTYPE_CLI_VITIS_V1"
 
 # These files contain the execution semantics which can change a benchmark
@@ -51,15 +69,17 @@ REAL_EVIDENCE_AUTHORITY = "V3_PROTOTYPE_CLI_VITIS_V1"
 # prompt construction/response parsing, Planner journals and Vitis parsing.
 _CRITICAL_IMPLEMENTATION_MODULES = (
     "v3_batch_benchmark.py",
+    "full_agent_manifest.py",
     "v3_prototype_cli.py",
+    "token_policy_experiment_cli.py",
     "v3_prototype.py",
     "v3_experience.py",
     "v3_experience_store.py",
     "v3_experience_guidance.py",
-    "v3_experience_importer.py",
     "v3_experience_v2.py",
     "v3_experience_v2_runtime.py",
     "v3_strategy_ranker_v3.py",
+    "v3_continuation.py",
     "v3_continuation_v2.py",
     "v3_continuation_admission.py",
     "v3_phase_router.py",
@@ -72,16 +92,19 @@ _CRITICAL_IMPLEMENTATION_MODULES = (
     "budget.py",
     "tools.py",
     "vitis.py",
+    "final_certification.py",
+    "runtime_control.py",
 )
 
 _MODES = {"REPAIR", "SYNTH_FIX", "STRUCTURAL_FIX", "OPTIMIZE"}
 _VALIDATION_PROFILES = {"strict", "fast-experiment"}
 _FINAL_VALIDATION_POLICIES = {"task_contract", "full_internal_audit"}
+_EVIDENCE_MEMORY_MODES = {"off", "on"}
 _EXPERIENCE_MODES = {"off", "shadow", "guided"}
 _EXPERIENCE_TASK_SPLITS = {"train", "dev", "hidden_like"}
 _EXPERIENCE_RANKER_VERSIONS = {"v1", "v3"}
 _CONTINUATION_POLICY_MODES = {"off", "shadow", "enforce"}
-_CONTINUATION_POLICY_VERSIONS = {"v1", "v2"}
+_CONTINUATION_POLICY_VERSIONS = {"v2"}
 _MODE_ALIASES = {
     "REPAIR": "REPAIR",
     "BUGFIX": "REPAIR",
@@ -114,6 +137,25 @@ class BenchmarkError(RuntimeError):
 
 class BenchmarkExecutionError(BenchmarkError):
     """Raised when one executor invocation has no structured result."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        partial_report: Mapping[str, object] | None = None,
+        process_cleanup: Mapping[str, object] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.partial_report = (
+            dict(partial_report) if partial_report is not None else None
+        )
+        self.process_cleanup = (
+            dict(process_cleanup) if process_cleanup is not None else None
+        )
+
+
+class BenchmarkExecutionTimeout(BenchmarkExecutionError):
+    """Raised after the executor deadline and scoped process-tree cleanup."""
 
 
 class EvidenceClass(str, Enum):
@@ -219,7 +261,7 @@ def _validate_component_admissions(
     *,
     continuation_path: Path | None,
     experience_path: Path | None,
-    experience_seed_sha256: str | None,
+    experience_seed_path: Path | None,
     error_type: type[Exception],
 ) -> None:
     """Fail before scheduling when an admission artifact is malformed."""
@@ -228,7 +270,7 @@ def _validate_component_admissions(
         if continuation_path is not None:
             load_continuation_admission(continuation_path)
         if experience_path is not None:
-            if experience_seed_sha256 is None:
+            if experience_seed_path is None:
                 raise ValueError(
                     "experience admission requires a frozen experience store"
                 )
@@ -237,12 +279,75 @@ def _validate_component_admissions(
                 raise ValueError("experience admission manifest must be an object")
             validate_ranker_admission_manifest(
                 decoded,
-                seed_sha256=experience_seed_sha256,
+                seed_path=experience_seed_path,
+                manifest_path=experience_path,
             )
     except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
         raise error_type(
             f"component admission preflight failed: {type(exc).__name__}: {exc}"
         ) from exc
+
+
+def _load_matching_full_agent_manifest(
+    path: Path | str | None,
+    *,
+    backend: str,
+    evidence_memory_mode: str,
+    continuation_policy_mode: str,
+    continuation_policy_version: str,
+    continuation_admission_path: Path | None,
+    continuation_admission_sha256: object,
+    experience_mode: str,
+    experience_store_path: Path | None,
+    experience_store_sha256: object,
+    experience_ranker_version: str,
+    experience_admission_path: Path | None,
+    experience_admission_sha256: object,
+) -> FullAgentManifest | None:
+    """Load Full Agent authority only when every runtime input matches it."""
+
+    if path is None:
+        return None
+    try:
+        manifest = load_full_agent_manifest(path, require_ready=True)
+    except FullAgentManifestError as exc:
+        raise ValueError(f"Full Agent manifest preflight failed: {exc}") from exc
+    expected_runtime = {
+        "backend": (backend, "vitis"),
+        "evidence_memory_mode": (evidence_memory_mode, "on"),
+        "continuation_policy_mode": (continuation_policy_mode, "enforce"),
+        "continuation_policy_version": (continuation_policy_version, "v2"),
+        "experience_mode": (experience_mode, "guided"),
+        "experience_ranker_version": (experience_ranker_version, "v3"),
+    }
+    mismatches = [
+        name
+        for name, (observed, expected) in expected_runtime.items()
+        if observed != expected
+    ]
+    if mismatches:
+        raise ValueError(
+            "Full Agent manifest runtime arguments mismatch: "
+            + ", ".join(mismatches)
+        )
+    runtime_artifacts = {
+        "a2_admission": (
+            continuation_admission_path,
+            continuation_admission_sha256,
+        ),
+        "a3_store": (experience_store_path, experience_store_sha256),
+        "a3_admission": (
+            experience_admission_path,
+            experience_admission_sha256,
+        ),
+    }
+    for role, (runtime_path, runtime_sha256) in runtime_artifacts.items():
+        expected = manifest.artifact(role)
+        if runtime_path != expected.path or runtime_sha256 != expected.sha256:
+            raise ValueError(
+                f"Full Agent manifest artifact does not match runtime {role}"
+            )
+    return manifest
 
 
 @lru_cache(maxsize=1)
@@ -262,6 +367,7 @@ def _implementation_facts() -> dict[str, object]:
     categories = {
         "batch_and_task_parsing": (
             modules["v3_batch_benchmark.py"],
+            modules["full_agent_manifest.py"],
             modules["v3_prototype_cli.py"],
             modules["task.py"],
         ),
@@ -277,12 +383,12 @@ def _implementation_facts() -> dict[str, object]:
             modules["v3_experience.py"],
             modules["v3_experience_store.py"],
             modules["v3_experience_guidance.py"],
-            modules["v3_experience_importer.py"],
             modules["v3_experience_v2.py"],
             modules["v3_experience_v2_runtime.py"],
             modules["v3_strategy_ranker_v3.py"],
         ),
         "continuation_layer": (
+            modules["v3_continuation.py"],
             modules["v3_continuation_v2.py"],
             modules["v3_continuation_admission.py"],
         ),
@@ -291,6 +397,7 @@ def _implementation_facts() -> dict[str, object]:
             modules["tools.py"],
             modules["budget.py"],
             modules["v3_prototype.py"],
+            modules["final_certification.py"],
         ),
     }
     return {
@@ -329,6 +436,158 @@ def _atomic_text(path: Path, value: str) -> None:
         stream.flush()
         os.fsync(stream.fileno())
     os.replace(temporary, path)
+
+
+def _subprocess_text(value: object) -> str:
+    """Normalize partial ``TimeoutExpired`` streams without hiding timeout."""
+
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return str(value)
+
+
+def _enable_child_subreaper() -> bool:
+    """Best-effort Linux subreaper for exact-PGID orphan reaping."""
+
+    if not sys.platform.startswith("linux"):
+        return False
+    try:
+        import ctypes
+
+        libc = ctypes.CDLL(None, use_errno=True)
+        # PR_SET_CHILD_SUBREAPER from linux/prctl.h.
+        return int(libc.prctl(36, 1, 0, 0, 0)) == 0
+    except (AttributeError, OSError, TypeError, ValueError):
+        return False
+
+
+def _process_group_members(pgid: int) -> list[int]:
+    """Return Linux process IDs in one exact process group."""
+
+    if not sys.platform.startswith("linux") or pgid <= 1:
+        return []
+    members: list[int] = []
+    try:
+        entries = list(Path("/proc").iterdir())
+    except OSError:
+        return []
+    for entry in entries:
+        if not entry.name.isdigit():
+            continue
+        try:
+            stat_value = (entry / "stat").read_text(encoding="utf-8")
+            closing = stat_value.rfind(")")
+            fields = stat_value[closing + 2 :].split()
+            process_group = int(fields[2])
+        except (OSError, UnicodeDecodeError, ValueError, IndexError):
+            continue
+        if process_group == pgid:
+            members.append(int(entry.name))
+    return sorted(members)
+
+
+def _reap_process_group_children(pgid: int) -> list[int]:
+    reaped: list[int] = []
+    if os.name != "posix" or pgid <= 1:
+        return reaped
+    while True:
+        try:
+            pid, _status = os.waitpid(-pgid, os.WNOHANG)
+        except (ChildProcessError, ProcessLookupError):
+            break
+        if pid <= 0:
+            break
+        reaped.append(pid)
+    return reaped
+
+
+def _signal_process_group(pgid: int, selected_signal: int) -> bool:
+    if pgid <= 1 or pgid == os.getpgrp():
+        raise BenchmarkExecutionError(
+            "refusing to signal an unsafe executor process group"
+        )
+    try:
+        os.killpg(pgid, selected_signal)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+def _terminate_executor_process_group(
+    process: subprocess.Popen[str],
+    *,
+    pgid: int,
+    term_grace_seconds: float = 5.0,
+    kill_grace_seconds: float = 5.0,
+) -> tuple[str, str, dict[str, object]]:
+    """TERM, then KILL, one run-owned process group and reap what we own."""
+
+    term_sent = False
+    kill_sent = False
+    stdout = ""
+    stderr = ""
+    members_before = _process_group_members(pgid)
+    if os.name == "posix":
+        term_sent = _signal_process_group(pgid, signal.SIGTERM)
+    else:
+        process.terminate()
+        term_sent = True
+    try:
+        stdout, stderr = process.communicate(timeout=term_grace_seconds)
+    except subprocess.TimeoutExpired as exc:
+        stdout = _subprocess_text(exc.stdout)
+        stderr = _subprocess_text(exc.stderr)
+
+    members_after_term = _process_group_members(pgid)
+    if process.poll() is None or members_after_term:
+        if os.name == "posix":
+            kill_sent = _signal_process_group(pgid, signal.SIGKILL)
+        else:
+            process.kill()
+            kill_sent = True
+        try:
+            final_stdout, final_stderr = process.communicate(
+                timeout=kill_grace_seconds
+            )
+            stdout = _subprocess_text(final_stdout) or stdout
+            stderr = _subprocess_text(final_stderr) or stderr
+        except subprocess.TimeoutExpired as exc:
+            stdout = _subprocess_text(exc.stdout) or stdout
+            stderr = _subprocess_text(exc.stderr) or stderr
+            process.kill()
+            try:
+                final_stdout, final_stderr = process.communicate(timeout=1.0)
+                stdout = _subprocess_text(final_stdout) or stdout
+                stderr = _subprocess_text(final_stderr) or stderr
+            except subprocess.TimeoutExpired:
+                pass
+
+    reaped_descendants = _reap_process_group_children(pgid)
+    deadline = time.monotonic() + max(0.0, kill_grace_seconds)
+    members_after = _process_group_members(pgid)
+    while members_after and time.monotonic() < deadline:
+        _reap_process_group_children(pgid)
+        time.sleep(0.01)
+        members_after = _process_group_members(pgid)
+    cleanup = {
+        "schema_version": "v3d.executor-process-cleanup.v1",
+        "pid": process.pid,
+        "pgid": pgid,
+        "term_sent": term_sent,
+        "kill_sent": kill_sent,
+        "term_grace_seconds": float(term_grace_seconds),
+        "kill_grace_seconds": float(kill_grace_seconds),
+        "parent_reaped": process.poll() is not None,
+        "return_code": process.returncode,
+        "members_before": members_before,
+        "members_after_term": members_after_term,
+        "members_after": members_after,
+        "reaped_descendant_pids": reaped_descendants,
+        "process_tree_cleaned": process.poll() is not None and not members_after,
+    }
+    return _subprocess_text(stdout), _subprocess_text(stderr), cleanup
 
 
 def _atomic_json(path: Path, value: object) -> None:
@@ -455,17 +714,28 @@ class BenchmarkConfig:
     max_runtime_seconds: float | None = None
     validation_profile: str = "strict"
     final_validation_policy: str = "task_contract"
+    evidence_memory_mode: str = "on"
     max_planner_rounds: int | None = None
     max_no_improvement_rounds: int = 2
     enable_final_fallback: bool = False
     continuation_policy_mode: str = "shadow"
-    continuation_policy_version: str = "v1"
+    continuation_policy_version: str = "v2"
     continuation_admission_manifest: Path | str | None = None
     continuation_admission_sha256: str | None = field(
         init=False, default=None, repr=False
     )
     continuation_admission_size_bytes: int = field(
         init=False, default=0, repr=False
+    )
+    full_agent_manifest: Path | str | None = None
+    full_agent_manifest_sha256: str | None = field(
+        init=False, default=None, repr=False
+    )
+    full_agent_artifact_sha256s: Mapping[str, str] = field(
+        init=False, default_factory=dict, repr=False
+    )
+    _full_agent_manifest_snapshot: FullAgentManifest | None = field(
+        init=False, default=None, repr=False, compare=False
     )
     experience_mode: str = "shadow"
     experience_store: Path | str | None = None
@@ -517,6 +787,11 @@ class BenchmarkConfig:
                 "final_validation_policy must be task_contract or "
                 "full_internal_audit"
             )
+        evidence_memory_mode = (
+            str(self.evidence_memory_mode).strip().casefold()
+        )
+        if evidence_memory_mode not in _EVIDENCE_MEMORY_MODES:
+            raise ValueError("evidence_memory_mode must be off or on")
         max_planner_rounds = self.max_planner_rounds
         if max_planner_rounds is not None:
             max_planner_rounds = int(max_planner_rounds)
@@ -538,7 +813,14 @@ class BenchmarkConfig:
             str(self.continuation_policy_version).strip().casefold()
         )
         if continuation_policy_version not in _CONTINUATION_POLICY_VERSIONS:
-            raise ValueError("continuation_policy_version must be v1 or v2")
+            raise ValueError("continuation_policy_version must be v2")
+        if (
+            evidence_memory_mode == "off"
+            and continuation_policy_mode != "off"
+        ):
+            raise ValueError(
+                "continuation requires evidence memory on"
+            )
         (
             continuation_admission_manifest,
             continuation_admission_snapshot,
@@ -549,10 +831,6 @@ class BenchmarkConfig:
             error_type=ValueError,
         )
         if continuation_policy_mode == "enforce":
-            if continuation_policy_version != "v2":
-                raise ValueError(
-                    "continuation enforce requires continuation policy v2"
-                )
             if continuation_admission_manifest is None:
                 raise ValueError(
                     "continuation enforce requires an admission manifest"
@@ -594,7 +872,11 @@ class BenchmarkConfig:
             label="experience_admission_manifest",
             error_type=ValueError,
         )
-        if experience_ranker_version == "v3" and experience_store is None:
+        if (
+            experience_mode != "off"
+            and experience_ranker_version == "v3"
+            and experience_store is None
+        ):
             raise ValueError("experience ranker v3 requires an experience store")
         if experience_mode == "guided":
             if experience_ranker_version != "v3":
@@ -608,8 +890,27 @@ class BenchmarkConfig:
         _validate_component_admissions(
             continuation_path=continuation_admission_manifest,
             experience_path=experience_admission_manifest,
-            experience_seed_sha256=experience_snapshot["sha256"],
+            experience_seed_path=experience_store,
             error_type=ValueError,
+        )
+        full_agent_manifest = _load_matching_full_agent_manifest(
+            self.full_agent_manifest,
+            backend=backend,
+            evidence_memory_mode=evidence_memory_mode,
+            continuation_policy_mode=continuation_policy_mode,
+            continuation_policy_version=continuation_policy_version,
+            continuation_admission_path=continuation_admission_manifest,
+            continuation_admission_sha256=continuation_admission_snapshot[
+                "sha256"
+            ],
+            experience_mode=experience_mode,
+            experience_store_path=experience_store,
+            experience_store_sha256=experience_snapshot["sha256"],
+            experience_ranker_version=experience_ranker_version,
+            experience_admission_path=experience_admission_manifest,
+            experience_admission_sha256=experience_admission_snapshot[
+                "sha256"
+            ],
         )
         max_tasks = self.max_tasks
         if max_tasks is not None and int(max_tasks) <= 0:
@@ -637,6 +938,9 @@ class BenchmarkConfig:
         object.__setattr__(self, "validation_profile", validation_profile)
         object.__setattr__(
             self, "final_validation_policy", final_validation_policy
+        )
+        object.__setattr__(
+            self, "evidence_memory_mode", evidence_memory_mode
         )
         object.__setattr__(self, "max_planner_rounds", max_planner_rounds)
         object.__setattr__(
@@ -667,6 +971,45 @@ class BenchmarkConfig:
             self,
             "continuation_admission_size_bytes",
             continuation_admission_snapshot["size_bytes"],
+        )
+        object.__setattr__(
+            self,
+            "full_agent_manifest",
+            (
+                full_agent_manifest.path
+                if full_agent_manifest is not None
+                else None
+            ),
+        )
+        object.__setattr__(
+            self,
+            "full_agent_manifest_sha256",
+            (
+                full_agent_manifest.sha256
+                if full_agent_manifest is not None
+                else None
+            ),
+        )
+        object.__setattr__(
+            self,
+            "full_agent_artifact_sha256s",
+            (
+                MappingProxyType(
+                    {
+                        role: artifact.sha256
+                        for role, artifact in (
+                            full_agent_manifest.artifacts.items()
+                        )
+                    }
+                )
+                if full_agent_manifest is not None
+                else MappingProxyType({})
+            ),
+        )
+        object.__setattr__(
+            self,
+            "_full_agent_manifest_snapshot",
+            full_agent_manifest,
         )
         object.__setattr__(self, "experience_mode", experience_mode)
         object.__setattr__(self, "experience_store", experience_store)
@@ -713,6 +1056,14 @@ class BenchmarkConfig:
         object.__setattr__(self, "max_tasks", None if max_tasks is None else int(max_tasks))
         object.__setattr__(self, "max_runtime_seconds", max_runtime)
 
+    def verify_full_agent_manifest(self) -> None:
+        if self._full_agent_manifest_snapshot is None:
+            return
+        try:
+            self._full_agent_manifest_snapshot.verify_unchanged()
+        except FullAgentManifestError as exc:
+            raise BenchmarkError(str(exc)) from exc
+
     def public_dict(self) -> dict[str, object]:
         return {
             "corpus": [str(item) for item in self.corpus],
@@ -731,6 +1082,7 @@ class BenchmarkConfig:
             "max_runtime_seconds": self.max_runtime_seconds,
             "validation_profile": self.validation_profile,
             "final_validation_policy": self.final_validation_policy,
+            "evidence_memory_mode": self.evidence_memory_mode,
             "max_planner_rounds": self.max_planner_rounds,
             "max_no_improvement_rounds": self.max_no_improvement_rounds,
             "enable_final_fallback": self.enable_final_fallback,
@@ -747,6 +1099,16 @@ class BenchmarkConfig:
                 "size_bytes": self.continuation_admission_size_bytes,
                 "sha256": self.continuation_admission_sha256,
             },
+            "full_agent_manifest": (
+                str(self.full_agent_manifest)
+                if self.full_agent_manifest is not None
+                else None
+            ),
+            "full_agent_manifest_snapshot": (
+                self._full_agent_manifest_snapshot.public_dict()
+                if self._full_agent_manifest_snapshot is not None
+                else None
+            ),
             "experience_mode": self.experience_mode,
             "experience_store": (
                 str(self.experience_store)
@@ -1190,6 +1552,8 @@ class V3PrototypeCLIExecutor:
     evidence_class = EvidenceClass.REAL
     requires_vitis_lock = True
     real_evidence_authority = REAL_EVIDENCE_AUTHORITY
+    process_term_grace_seconds = 5.0
+    process_kill_grace_seconds = 5.0
 
     _FORBIDDEN_EXTRA_ARGUMENTS = {
         "--task-dir",
@@ -1202,17 +1566,35 @@ class V3PrototypeCLIExecutor:
         "--model",
         "--validation-profile",
         "--final-validation-policy",
+        "--evidence-memory",
         "--max-planner-rounds",
         "--max-no-improvement-rounds",
         "--enable-final-fallback",
         "--continuation-policy",
         "--continuation-policy-version",
         "--continuation-admission-manifest",
+        "--full-agent-manifest",
         "--experience-mode",
         "--experience-store",
         "--experience-ranker-version",
         "--experience-admission-manifest",
         "--experience-task-split",
+    }
+    _TOKEN_POLICY_EXTRA_ARGUMENTS = {
+        "--token-budget-policy",
+        "--token-budget-visibility",
+        "--max-output-tokens",
+        "--repair-max-output-tokens",
+        "--synth-fix-max-output-tokens",
+        "--structural-fix-max-output-tokens",
+        "--optimize-max-output-tokens",
+        "--minimum-viable-output-tokens",
+        "--context-window-tokens",
+        "--context-safety-margin-tokens",
+        "--token-safety-margin",
+        "--future-round-token-reserve",
+        "--search-closeout-token-reserve",
+        "--guidance-ratio",
     }
 
     def __init__(
@@ -1221,22 +1603,31 @@ class V3PrototypeCLIExecutor:
         *,
         validation_profile: str = "strict",
         final_validation_policy: str = "task_contract",
+        evidence_memory_mode: str = "on",
         max_planner_rounds: int | None = None,
         max_no_improvement_rounds: int = 2,
         enable_final_fallback: bool = False,
         continuation_policy_mode: str = "shadow",
-        continuation_policy_version: str = "v1",
+        continuation_policy_version: str = "v2",
         continuation_admission_manifest: Path | str | None = None,
         experience_mode: str = "shadow",
         experience_store: Path | str | None = None,
         experience_ranker_version: str = "v1",
         experience_admission_manifest: Path | str | None = None,
         experience_task_split: str | None = None,
+        experimental_token_policy: bool = False,
     ) -> None:
+        self.experimental_token_policy = bool(experimental_token_policy)
         self.extra_args = tuple(str(item) for item in extra_args)
         for item in self.extra_args:
             option = item.split("=", 1)[0]
-            if option in self._FORBIDDEN_EXTRA_ARGUMENTS:
+            if (
+                option in self._FORBIDDEN_EXTRA_ARGUMENTS
+                or (
+                    not self.experimental_token_policy
+                    and option in self._TOKEN_POLICY_EXTRA_ARGUMENTS
+                )
+            ):
                 raise BenchmarkError(
                     f"real benchmark executor cannot override {option}"
                 )
@@ -1253,6 +1644,11 @@ class V3PrototypeCLIExecutor:
                 "final_validation_policy must be task_contract or "
                 "full_internal_audit"
             )
+        self.evidence_memory_mode = (
+            str(evidence_memory_mode).strip().casefold()
+        )
+        if self.evidence_memory_mode not in _EVIDENCE_MEMORY_MODES:
+            raise BenchmarkError("evidence_memory_mode must be off or on")
         self.max_planner_rounds = (
             None if max_planner_rounds is None else int(max_planner_rounds)
         )
@@ -1278,7 +1674,14 @@ class V3PrototypeCLIExecutor:
             str(continuation_policy_version).strip().casefold()
         )
         if self.continuation_policy_version not in _CONTINUATION_POLICY_VERSIONS:
-            raise BenchmarkError("continuation_policy_version must be v1 or v2")
+            raise BenchmarkError("continuation_policy_version must be v2")
+        if (
+            self.evidence_memory_mode == "off"
+            and self.continuation_policy_mode != "off"
+        ):
+            raise BenchmarkError(
+                "continuation requires evidence memory on"
+            )
         (
             self.continuation_admission_manifest,
             self.continuation_admission_snapshot,
@@ -1288,10 +1691,6 @@ class V3PrototypeCLIExecutor:
             label="continuation_admission_manifest",
         )
         if self.continuation_policy_mode == "enforce":
-            if self.continuation_policy_version != "v2":
-                raise BenchmarkError(
-                    "continuation enforce requires continuation policy v2"
-                )
             if self.continuation_admission_manifest is None:
                 raise BenchmarkError(
                     "continuation enforce requires an admission manifest"
@@ -1335,7 +1734,11 @@ class V3PrototypeCLIExecutor:
             role="EXPERIENCE_GUIDED_ADMISSION",
             label="experience_admission_manifest",
         )
-        if self.experience_ranker_version == "v3" and self.experience_store is None:
+        if (
+            self.experience_mode != "off"
+            and self.experience_ranker_version == "v3"
+            and self.experience_store is None
+        ):
             raise BenchmarkError(
                 "experience ranker v3 requires an experience store"
             )
@@ -1351,7 +1754,7 @@ class V3PrototypeCLIExecutor:
         _validate_component_admissions(
             continuation_path=self.continuation_admission_manifest,
             experience_path=self.experience_admission_manifest,
-            experience_seed_sha256=self.experience_store_snapshot["sha256"],
+            experience_seed_path=self.experience_store,
             error_type=BenchmarkError,
         )
 
@@ -1417,14 +1820,25 @@ class V3PrototypeCLIExecutor:
             "llm_max_output_tokens": os.environ.get(
                 "LLM4HLS_LLM_MAX_OUTPUT_TOKENS", "1000"
             ),
+            "agent_credit_budget": os.environ.get(
+                "LLM4HLS_CREDIT_BUDGET", ""
+            ),
+            "agent_token_budget": os.environ.get(
+                "LLM4HLS_TOKEN_BUDGET", ""
+            ),
+            "cost_csim": os.environ.get("LLM4HLS_COST_CSIM", ""),
+            "cost_synth": os.environ.get("LLM4HLS_COST_SYNTH", ""),
+            "cost_cosim": os.environ.get("LLM4HLS_COST_COSIM", ""),
         }
         return _sha256_json(
             {
-                "executor": "v3-prototype-cli:v2",
+                "executor": "v3-prototype-cli:v3",
                 "python": sys.version.split()[0],
                 "extra_args": self.extra_args,
                 "validation_profile": self.validation_profile,
                 "final_validation_policy": self.final_validation_policy,
+                "evidence_memory_mode": self.evidence_memory_mode,
+                "experimental_token_policy": self.experimental_token_policy,
                 "max_planner_rounds": self.max_planner_rounds,
                 "max_no_improvement_rounds": (
                     self.max_no_improvement_rounds
@@ -1454,7 +1868,11 @@ class V3PrototypeCLIExecutor:
         command = [
             sys.executable,
             "-m",
-            "llm4hls_agent.v3_prototype_cli",
+            (
+                "llm4hls_agent.token_policy_experiment_cli"
+                if self.experimental_token_policy
+                else "llm4hls_agent.v3_prototype_cli"
+            ),
             "--task-dir",
             str(spec.descriptor.directory),
             "--run-dir",
@@ -1471,6 +1889,8 @@ class V3PrototypeCLIExecutor:
             self.validation_profile,
             "--final-validation-policy",
             self.final_validation_policy,
+            "--evidence-memory",
+            self.evidence_memory_mode,
             "--max-no-improvement-rounds",
             str(self.max_no_improvement_rounds),
             "--continuation-policy",
@@ -1526,12 +1946,27 @@ class V3PrototypeCLIExecutor:
         *,
         timeout_seconds: float | None = None,
     ) -> Mapping[str, object]:
-        result_path = spec.run_dir / "v3_prototype_result.json"
-        if result_path.exists():
+        search_result_path = spec.run_dir / "v3_prototype_result.json"
+        certified_result_path = spec.run_dir / "v3_certified_result.json"
+        if search_result_path.exists() or certified_result_path.exists():
             raise BenchmarkExecutionError(
                 "refusing to execute with a pre-existing V3 terminal result"
             )
+        run_deadline_monotonic = (
+            None
+            if timeout_seconds is None
+            else time.monotonic() + float(timeout_seconds)
+        )
         command = self._command(spec)
+        if run_deadline_monotonic is not None:
+            command.extend(
+                (
+                    "--run-deadline-monotonic",
+                    format(run_deadline_monotonic, ".17g"),
+                    "--cleanup-reserve-seconds",
+                    "30",
+                )
+            )
         _atomic_json(spec.run_dir / "benchmark_executor_command.json", command)
         _atomic_json(
             spec.run_dir / "benchmark_execution_binding.json",
@@ -1544,20 +1979,92 @@ class V3PrototypeCLIExecutor:
                 "model": spec.model,
             },
         )
+        if timeout_seconds is not None and float(timeout_seconds) <= 0:
+            raise BenchmarkExecutionTimeout(
+                "V3 CLI was not started because the run deadline expired",
+                partial_report=recover_partial_run_report(spec.run_dir),
+                process_cleanup={
+                    "schema_version": "v3d.executor-process-cleanup.v1",
+                    "process_started": False,
+                    "process_tree_cleaned": True,
+                },
+            )
+        subreaper_enabled = _enable_child_subreaper()
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            start_new_session=os.name == "posix",
+        )
+        pgid = process.pid
         try:
-            completed = subprocess.run(
-                command,
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=timeout_seconds,
+            communicate_timeout = (
+                None
+                if run_deadline_monotonic is None
+                else max(
+                    0.001,
+                    run_deadline_monotonic - time.monotonic(),
+                )
+            )
+            stdout, stderr = process.communicate(
+                timeout=communicate_timeout
             )
         except subprocess.TimeoutExpired as exc:
-            _atomic_text(spec.run_dir / "benchmark_stdout.log", exc.stdout or "")
-            _atomic_text(spec.run_dir / "benchmark_stderr.log", exc.stderr or "")
-            raise BenchmarkExecutionError("V3 CLI timed out") from exc
-        _atomic_text(spec.run_dir / "benchmark_stdout.log", completed.stdout)
-        _atomic_text(spec.run_dir / "benchmark_stderr.log", completed.stderr)
+            stdout, stderr, cleanup = _terminate_executor_process_group(
+                process,
+                pgid=pgid,
+                term_grace_seconds=self.process_term_grace_seconds,
+                kill_grace_seconds=self.process_kill_grace_seconds,
+            )
+            cleanup["subreaper_enabled"] = subreaper_enabled
+            cleanup["timeout_seconds"] = timeout_seconds
+            cleanup["run_deadline_monotonic"] = run_deadline_monotonic
+            _atomic_text(
+                spec.run_dir / "benchmark_stdout.log",
+                stdout or _subprocess_text(exc.stdout),
+            )
+            _atomic_text(
+                spec.run_dir / "benchmark_stderr.log",
+                stderr or _subprocess_text(exc.stderr),
+            )
+            partial_report = recover_partial_run_report(spec.run_dir)
+            _atomic_json(
+                spec.run_dir / "benchmark_executor_timeout.json",
+                cleanup,
+            )
+            _atomic_json(
+                spec.run_dir / "benchmark_partial_run_report.json",
+                partial_report,
+            )
+            raise BenchmarkExecutionTimeout(
+                "V3 CLI timed out after its absolute run deadline",
+                partial_report=partial_report,
+                process_cleanup=cleanup,
+            ) from exc
+        except BaseException:
+            if process.poll() is None or _process_group_members(pgid):
+                _terminate_executor_process_group(process, pgid=pgid)
+            raise
+        completed = subprocess.CompletedProcess(
+            command,
+            int(process.returncode or 0),
+            _subprocess_text(stdout),
+            _subprocess_text(stderr),
+        )
+        _atomic_text(
+            spec.run_dir / "benchmark_stdout.log",
+            _subprocess_text(completed.stdout),
+        )
+        _atomic_text(
+            spec.run_dir / "benchmark_stderr.log",
+            _subprocess_text(completed.stderr),
+        )
+        result_path = (
+            certified_result_path
+            if certified_result_path.is_file()
+            else search_result_path
+        )
         if result_path.is_file():
             try:
                 value = json.loads(result_path.read_text(encoding="utf-8"))
@@ -1578,9 +2085,11 @@ class V3PrototypeCLIExecutor:
                     )
                 self._validate_terminal_provenance(spec, value)
                 return value
+        partial_report = recover_partial_run_report(spec.run_dir)
         detail = completed.stderr.strip().splitlines()[-1:] or ["no stderr"]
         raise BenchmarkExecutionError(
-            f"V3 CLI exited {completed.returncode} without a terminal result: {detail[0]}"
+            f"V3 CLI exited {completed.returncode} without a terminal result: {detail[0]}",
+            partial_report=partial_report,
         )
 
     @staticmethod
@@ -1680,7 +2189,14 @@ class V3PrototypeCLIExecutor:
         source has been changed.
         """
 
-        source_ref = "v3_prototype_result.json"
+        certified_payload = (
+            result.get("result_schema") == "v3.certified-result.v1"
+        )
+        source_ref = (
+            "v3_certified_result.json"
+            if certified_payload
+            else "v3_prototype_result.json"
+        )
         source_result, source_sha256, _source_size = self._run_json_with_hash(
             spec.run_dir, source_ref
         )
@@ -1688,6 +2204,126 @@ class V3PrototypeCLIExecutor:
             raise BenchmarkExecutionError(
                 "V3 source terminal result differs from the validated payload"
             )
+        if (
+            str(result.get("status", "")).upper() == "DONE"
+            and not certified_payload
+        ):
+            raise BenchmarkExecutionError(
+                "successful REAL row lacks independent final certification"
+            )
+        certification_provenance: dict[str, object] | None = None
+        agent_search_source: dict[str, str] | None = None
+        if certified_payload:
+            search_result, search_result_sha256, _ = self._run_json_with_hash(
+                spec.run_dir, "v3_prototype_result.json"
+            )
+            for key, value in search_result.items():
+                if key in {"status", "stop_reason", "result_schema"}:
+                    continue
+                if result.get(key) != value:
+                    raise BenchmarkExecutionError(
+                        f"certified result changed Agent search field {key}"
+                    )
+            if result.get("agent_search_status") != search_result.get("status"):
+                raise BenchmarkExecutionError(
+                    "certified result does not preserve Agent search status"
+                )
+            certification = _mapping(result.get("final_certification"))
+            receipt_ref = certification.get("receipt_ref")
+            if not isinstance(receipt_ref, str):
+                raise BenchmarkExecutionError(
+                    "certified result lacks certification receipt_ref"
+                )
+            receipt, receipt_file_sha256, _ = self._run_json_with_hash(
+                spec.run_dir, receipt_ref
+            )
+            receipt_payload = {
+                key: value
+                for key, value in receipt.items()
+                if key != "receipt_sha256"
+            }
+            if (
+                receipt.get("schema_version")
+                != "v3.final-certification-receipt.v1"
+                or receipt.get("receipt_sha256") != _sha256_json(receipt_payload)
+                or certification.get("receipt_sha256")
+                != receipt.get("receipt_sha256")
+                or receipt.get("budget_domain")
+                != "FINAL_CERTIFICATION_OUTSIDE_AGENT_BUDGET"
+                or receipt.get("agent_credits_charged") != 0
+                or receipt.get("feedback_policy")
+                != "NO_SAME_RUN_AGENT_FEEDBACK"
+            ):
+                raise BenchmarkExecutionError(
+                    "independent certification receipt contract is invalid"
+                )
+            freeze_ref = receipt.get("frozen_candidate_ref")
+            if not isinstance(freeze_ref, str):
+                raise BenchmarkExecutionError(
+                    "certification receipt lacks frozen Candidate ref"
+                )
+            freeze, freeze_file_sha256, _ = self._run_json_with_hash(
+                spec.run_dir, freeze_ref
+            )
+            terminal_binding = _mapping(
+                search_result.get("terminal_candidate_binding")
+            )
+            if (
+                freeze.get("schema_version") != "v3.frozen-search-candidate.v1"
+                or freeze.get("candidate_id") != terminal_binding.get("candidate_id")
+                or freeze.get("source_sha256")
+                != terminal_binding.get("source_sha256")
+                or freeze.get("search_result_sha256") != search_result_sha256
+            ):
+                raise BenchmarkExecutionError(
+                    "certification freeze does not bind the Agent terminal"
+                )
+            ledger_path = self._run_path(spec.run_dir, "budget_ledger.jsonl")
+            ledger_sha256_now = _sha256_file(ledger_path)
+            certified_ledger = _mapping(receipt.get("agent_ledger"))
+            if (
+                freeze.get("agent_ledger_sha256") != ledger_sha256_now
+                or certified_ledger.get("before_sha256") != ledger_sha256_now
+                or certified_ledger.get("after_sha256") != ledger_sha256_now
+                or certified_ledger.get("unchanged") is not True
+            ):
+                raise BenchmarkExecutionError(
+                    "certification did not preserve the Agent Ledger"
+                )
+            stages = _mapping(receipt.get("stages"))
+            clock_gate = _mapping(receipt.get("clock_gate"))
+            receipt_passed = (
+                receipt.get("status") == "PASS"
+                and all(
+                    _mapping(stages.get(stage)).get("ok") is True
+                    for stage in ("csim", "synth", "cosim")
+                )
+                and clock_gate.get("passed") is True
+                and clock_gate.get("maximum_period_ns") == 10.0
+            )
+            if (str(result.get("status", "")).upper() == "DONE") != receipt_passed:
+                raise BenchmarkExecutionError(
+                    "certified terminal status disagrees with certification receipt"
+                )
+            certification_provenance = {
+                "receipt": {
+                    "ref": receipt_ref,
+                    "file_sha256": receipt_file_sha256,
+                    "receipt_sha256": receipt.get("receipt_sha256"),
+                },
+                "frozen_candidate": {
+                    "ref": freeze_ref,
+                    "sha256": freeze_file_sha256,
+                },
+                "status": receipt.get("status"),
+                "budget_domain": receipt.get("budget_domain"),
+                "agent_credits_charged": 0,
+            }
+            agent_search_source = {
+                "ref": "v3_prototype_result.json",
+                "sha256": search_result_sha256,
+            }
+            result = search_result
 
         config_ref = "v3_run_config.json"
         task_spec_ref = "v3_task_spec.json"
@@ -1708,7 +2344,27 @@ class V3PrototypeCLIExecutor:
             recorded_command = json.loads(command_data.decode("utf-8"))
         except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise BenchmarkExecutionError("V3 benchmark command is unreadable") from exc
-        if recorded_command != self._command(spec):
+        scheduled_command = self._command(spec)
+        command_matches = recorded_command == scheduled_command
+        if (
+            not command_matches
+            and isinstance(recorded_command, list)
+            and recorded_command[: len(scheduled_command)] == scheduled_command
+        ):
+            runtime_suffix = recorded_command[len(scheduled_command) :]
+            if (
+                len(runtime_suffix) == 4
+                and runtime_suffix[0] == "--run-deadline-monotonic"
+                and runtime_suffix[2:] == ["--cleanup-reserve-seconds", "30"]
+            ):
+                try:
+                    recorded_deadline = float(runtime_suffix[1])
+                except (TypeError, ValueError):
+                    recorded_deadline = math.nan
+                command_matches = (
+                    math.isfinite(recorded_deadline) and recorded_deadline > 0.0
+                )
+        if not command_matches:
             raise BenchmarkExecutionError(
                 "V3 benchmark command does not match the scheduled run"
             )
@@ -1936,6 +2592,26 @@ class V3PrototypeCLIExecutor:
             if reference.startswith("control/live_planner_actions/")
             and reference.endswith(".completed.json")
         )
+        rejection_records_by_action: dict[
+            str, list[tuple[str, Mapping[str, object]]]
+        ] = {}
+        for rejection_ref in sorted(
+            reference
+            for reference in artifact_index
+            if reference.startswith("control/proposal_rejections/")
+            and reference.endswith(".json")
+        ):
+            rejection = validate_json_ref(
+                role=f"proposal_rejection:{Path(rejection_ref).name}",
+                reference_value=rejection_ref,
+                required=True,
+            )
+            assert rejection is not None
+            rejection_action_id = rejection.get("planner_action_id")
+            if isinstance(rejection_action_id, str):
+                rejection_records_by_action.setdefault(
+                    rejection_action_id, []
+                ).append((rejection_ref, rejection))
         model_outcomes: list[dict[str, object]] = []
         live_action_ids: set[str] = set()
         for completed_ref in live_completed_refs:
@@ -1956,16 +2632,29 @@ class V3PrototypeCLIExecutor:
             assert completed is not None and started is not None
             action_request = _mapping(completed.get("request"))
             if (
-                completed.get("action_id") != action_id
+                completed.get("schema_version")
+                != LIVE_PLANNER_COMPLETED_SCHEMA
+                or started.get("schema_version")
+                != LIVE_PLANNER_STARTED_SCHEMA
+                or completed.get("action_id") != action_id
                 or completed.get("status") != "COMPLETED"
                 or started.get("action_id") != action_id
                 or started.get("status") != "STARTED"
                 or _mapping(started.get("request")) != action_request
+                or action_request.get("schema_version")
+                != LIVE_PLANNER_ACTION_SCHEMA
                 or _sha256_json(action_request) != action_id
             ):
                 raise BenchmarkExecutionError(
                     "V3 live Planner STARTED/COMPLETED identity mismatch"
                 )
+            action_input = validate_json_ref(
+                role=f"live_planner_input:{action_id}",
+                reference_value=action_request.get("input_ref"),
+                digest_value=action_request.get("input_sha256"),
+                canonical_digest=True,
+                required=True,
+            )
             request_ref = action_request.get("request_ref")
             request_sha256 = action_request.get("request_sha256")
             request_audit = validate_json_ref(
@@ -1983,49 +2672,163 @@ class V3PrototypeCLIExecutor:
                 digest_value=output_sha256,
                 required=True,
             )
-            assert request_audit is not None and outcome is not None
+            assert (
+                action_input is not None
+                and request_audit is not None
+                and outcome is not None
+            )
+            try:
+                validate_live_planner_action_identity(
+                    action_request,
+                    request_audit,
+                    expected_action_id=action_id,
+                )
+            except PlannerActionError as exc:
+                raise BenchmarkExecutionError(str(exc)) from exc
             provider_request = _mapping(
                 _mapping(request_audit.get("request")).get("provider_request")
             )
             provider_body = _mapping(provider_request.get("http_body"))
-            provider_binding = _mapping(outcome.get("provider_binding"))
-            proposal = _mapping(outcome.get("proposal"))
-            usage = _mapping(outcome.get("usage"))
             if (
                 request_audit.get("planner_fingerprint")
                 != action_request.get("planner_fingerprint")
+                or request_audit.get("schema_version")
+                != LIVE_PROVIDER_REQUEST_SCHEMA
                 or request_audit.get("input_sha256")
                 != action_request.get("input_sha256")
                 or provider_request.get("provider") != "openai-compatible"
                 or provider_request.get("model") != spec.model
                 or provider_body.get("model") != spec.model
-                or provider_binding.get("planner_fingerprint")
-                != action_request.get("planner_fingerprint")
-                or provider_binding.get("provider") != proposal.get("provider")
-                or provider_binding.get("model") != spec.model
-                or proposal.get("model") != spec.model
                 or outcome.get("action_id") != action_id
                 or outcome.get("input_sha256")
                 != action_request.get("input_sha256")
-                or usage.get("usage_complete") is not True
             ):
                 raise BenchmarkExecutionError(
                     "V3 live Planner provider/model binding mismatch"
                 )
-            input_tokens = _as_nonnegative_int(usage.get("input_tokens"), -1)
-            output_tokens = _as_nonnegative_int(usage.get("output_tokens"), -1)
-            cached_tokens = _as_nonnegative_int(
-                usage.get("cached_input_tokens"), -1
-            )
-            tokens_used = _as_nonnegative_int(usage.get("tokens_used"), -1)
+            completed_outcome = completed.get("outcome")
+            rejection_reason: str | None = None
+            rejection_ref: str | None = None
+            if completed_outcome == "PROPOSAL":
+                provider_binding = _mapping(outcome.get("provider_binding"))
+                proposal = _mapping(outcome.get("proposal"))
+                usage = _mapping(outcome.get("usage"))
+                if (
+                    outcome.get("schema_version")
+                    != LIVE_PLANNER_OUTCOME_SCHEMA
+                    or outcome.get("outcome") != "PROPOSAL"
+                    or provider_binding.get("planner_fingerprint")
+                    != action_request.get("planner_fingerprint")
+                    or provider_binding.get("provider")
+                    != proposal.get("provider")
+                    or provider_binding.get("model") != spec.model
+                    or proposal.get("model") != spec.model
+                    or usage.get("usage_complete") is not True
+                ):
+                    raise BenchmarkExecutionError(
+                        "V3 live Planner provider/model binding mismatch"
+                    )
+                input_tokens = _as_nonnegative_int(
+                    usage.get("input_tokens"), -1
+                )
+                output_tokens = _as_nonnegative_int(
+                    usage.get("output_tokens"), -1
+                )
+                cached_tokens = _as_nonnegative_int(
+                    usage.get("cached_input_tokens"), -1
+                )
+                tokens_used = _as_nonnegative_int(
+                    usage.get("tokens_used"), -1
+                )
+                proposal_usage_matches = (
+                    proposal.get("input_tokens") == input_tokens
+                    and proposal.get("output_tokens") == output_tokens
+                    and proposal.get("cached_input_tokens") == cached_tokens
+                )
+            elif completed_outcome == "PROVIDER_OUTPUT_REJECTED":
+                usage = _mapping(outcome.get("usage"))
+                raw_reason = (
+                    outcome.get("truncation_reason")
+                    or outcome.get("error_type")
+                )
+                rejection_reason = (
+                    str(raw_reason)
+                    if isinstance(raw_reason, str) and raw_reason
+                    else None
+                )
+                expected_failure_ref = (
+                    f"planner/provider_failures/{action_id}.json"
+                )
+                if (
+                    output_ref != expected_failure_ref
+                    or outcome.get("schema_version")
+                    != LIVE_PLANNER_FAILURE_SCHEMA
+                    or outcome.get("outcome")
+                    != "PROVIDER_OUTPUT_REJECTED"
+                    or outcome.get("planner_fingerprint")
+                    != action_request.get("planner_fingerprint")
+                    or usage.get("usage_complete") is not True
+                    or rejection_reason is None
+                    or completed.get("truncation_reason")
+                    != outcome.get("truncation_reason")
+                    or completed.get("finish_reason")
+                    != outcome.get("finish_reason")
+                ):
+                    raise BenchmarkExecutionError(
+                        "V3 live Planner provider rejection binding mismatch"
+                    )
+                matching_rejections = rejection_records_by_action.get(
+                    action_id, []
+                )
+                if len(matching_rejections) != 1:
+                    raise BenchmarkExecutionError(
+                        "V3 provider rejection lacks one packaged decision"
+                    )
+                rejection_ref, rejection = matching_rejections[0]
+                if (
+                    rejection.get("schema_version")
+                    != "v3a.proposal-rejection.v1"
+                    or rejection.get("planner_action_id") != action_id
+                    or rejection.get("planner_input_ref")
+                    != action_request.get("input_ref")
+                    or rejection.get("planner_input_sha256")
+                    != action_request.get("input_sha256")
+                    or rejection.get("planner_output_ref") != output_ref
+                    or rejection.get("planner_output_sha256")
+                    != output_sha256
+                    or rejection.get("reason")
+                    != f"PROVIDER_OUTPUT_REJECTED:{rejection_reason}"
+                ):
+                    raise BenchmarkExecutionError(
+                        "V3 provider rejection decision binding mismatch"
+                    )
+                input_tokens = _as_nonnegative_int(
+                    usage.get("actual_input_tokens"), -1
+                )
+                output_tokens = _as_nonnegative_int(
+                    usage.get("actual_output_tokens"), -1
+                )
+                cached_tokens = _as_nonnegative_int(
+                    usage.get("cached_input_tokens"), -1
+                )
+                tokens_used = _as_nonnegative_int(
+                    usage.get("actual_total_tokens"), -1
+                )
+                proposal_usage_matches = True
+            else:
+                raise BenchmarkExecutionError(
+                    "V3 live Planner completed outcome is unsupported"
+                )
             if (
                 input_tokens <= 0
-                or output_tokens <= 0
+                or output_tokens < 0
+                or (
+                    completed_outcome == "PROPOSAL"
+                    and output_tokens == 0
+                )
                 or cached_tokens < 0
                 or tokens_used != input_tokens + output_tokens
-                or proposal.get("input_tokens") != input_tokens
-                or proposal.get("output_tokens") != output_tokens
-                or proposal.get("cached_input_tokens") != cached_tokens
+                or not proposal_usage_matches
                 or completed.get("input_tokens") != input_tokens
                 or completed.get("output_tokens") != output_tokens
                 or completed.get("cached_input_tokens") != cached_tokens
@@ -2043,12 +2846,29 @@ class V3PrototypeCLIExecutor:
                 for event in ledger_action
                 if event.get("state") == "COMPLETED"
             ]
+            estimated_tokens = (
+                ledger_started[0].get("estimated_tokens")
+                if len(ledger_started) == 1
+                else None
+            )
+            charged_tokens = (
+                ledger_completed[0].get("tokens_used")
+                if len(ledger_completed) == 1
+                else None
+            )
             if (
                 len(ledger_started) != 1
                 or len(ledger_completed) != 1
                 or len(ledger_action) != 2
                 or ledger_started[0].get("kind") != "llm"
                 or ledger_started[0].get("tool_config_hash") != request_sha256
+                or ledger_completed[0].get("token_reservation_overrun") is True
+                or isinstance(estimated_tokens, bool)
+                or not isinstance(estimated_tokens, int)
+                or estimated_tokens <= 0
+                or isinstance(charged_tokens, bool)
+                or not isinstance(charged_tokens, int)
+                or charged_tokens > estimated_tokens
                 or ledger_completed[0].get("result_ref") != output_ref
                 or ledger_completed[0].get("result_sha256") != output_sha256
                 or ledger_completed[0].get("tokens_used") != tokens_used
@@ -2063,12 +2883,15 @@ class V3PrototypeCLIExecutor:
             model_outcomes.append(
                 {
                     "action_id": action_id,
-                    "provider": provider_binding.get("provider"),
+                    "outcome": completed_outcome,
+                    "provider": provider_request.get("provider"),
                     "model": spec.model,
                     "request_ref": request_ref,
                     "request_sha256": request_sha256,
                     "outcome_ref": output_ref,
                     "outcome_sha256": output_sha256,
+                    "rejection_ref": rejection_ref,
+                    "rejection_reason": rejection_reason,
                     "tokens_used": tokens_used,
                     "input_tokens": input_tokens,
                     "output_tokens": output_tokens,
@@ -2082,11 +2905,12 @@ class V3PrototypeCLIExecutor:
             if event.get("kind") == "llm"
             and event.get("state") in {"COMPLETED", "AMBIGUOUS"}
         ]
-        completed_llm_ids = {
-            str(event.get("action_id"))
-            for event in llm_terminal_events
-            if event.get("state") == "COMPLETED"
-        }
+        try:
+            completed_llm_ids = completed_llm_action_ids(
+                llm_terminal_events
+            )
+        except PlannerActionError as exc:
+            raise BenchmarkExecutionError(str(exc)) from exc
         if completed_llm_ids != live_action_ids:
             raise BenchmarkExecutionError(
                 "V3 live Planner artifacts do not cover all completed ledger calls"
@@ -2192,7 +3016,7 @@ class V3PrototypeCLIExecutor:
             if status == "DONE" and stage_required and (
                 str(record.get("status", "")).upper() not in _PASS_STATUSES
                 or record.get("cached") is not False
-                or record.get("validation_scope") != "final"
+                or record.get("validation_scope") != "search_closeout"
             ):
                 raise BenchmarkExecutionError(
                     f"successful REAL model row lacks fresh final {stage}"
@@ -2229,7 +3053,7 @@ class V3PrototypeCLIExecutor:
             assert action is not None and isinstance(reference, str)
             if (
                 action.get("kind") != stage
-                or action.get("validation_scope") != "final"
+                or action.get("validation_scope") != "search_closeout"
                 or action.get("action_id") != record.get("action_id")
                 or (
                     status == "DONE"
@@ -2254,6 +3078,8 @@ class V3PrototypeCLIExecutor:
         return {
             "schema_version": "v3d.real-provenance-receipt.v1",
             "source_result": {"ref": source_ref, "sha256": source_sha256},
+            "agent_search_source": agent_search_source,
+            "independent_certification": certification_provenance,
             "package_manifest": {
                 "ref": manifest_ref,
                 "sha256": manifest_sha256,
@@ -2292,11 +3118,12 @@ def default_executor(
     *,
     validation_profile: str = "strict",
     final_validation_policy: str = "task_contract",
+    evidence_memory_mode: str = "on",
     max_planner_rounds: int | None = None,
     max_no_improvement_rounds: int = 2,
     enable_final_fallback: bool = False,
     continuation_policy_mode: str = "shadow",
-    continuation_policy_version: str = "v1",
+    continuation_policy_version: str = "v2",
     continuation_admission_manifest: Path | str | None = None,
     experience_mode: str = "shadow",
     experience_store: Path | str | None = None,
@@ -2312,6 +3139,7 @@ def default_executor(
         return V3PrototypeCLIExecutor(
             validation_profile=validation_profile,
             final_validation_policy=final_validation_policy,
+            evidence_memory_mode=evidence_memory_mode,
             max_planner_rounds=max_planner_rounds,
             max_no_improvement_rounds=max_no_improvement_rounds,
             enable_final_fallback=enable_final_fallback,
@@ -2371,6 +3199,7 @@ def _execution_policy_fingerprint(config: BenchmarkConfig) -> str:
             "max_runtime_seconds": config.max_runtime_seconds,
             "validation_profile": config.validation_profile,
             "final_validation_policy": config.final_validation_policy,
+            "evidence_memory_mode": config.evidence_memory_mode,
             "max_planner_rounds": config.max_planner_rounds,
             "max_no_improvement_rounds": (
                 config.max_no_improvement_rounds
@@ -2384,6 +3213,16 @@ def _execution_policy_fingerprint(config: BenchmarkConfig) -> str:
                 "size_bytes": config.continuation_admission_size_bytes,
                 "sha256": config.continuation_admission_sha256,
             },
+            "full_agent_manifest_snapshot": (
+                {
+                    "sha256": config.full_agent_manifest_sha256,
+                    "artifact_sha256s": dict(
+                        sorted(config.full_agent_artifact_sha256s.items())
+                    ),
+                }
+                if config.full_agent_manifest is not None
+                else None
+            ),
             "experience_mode": config.experience_mode,
             "experience_ranker_version": config.experience_ranker_version,
             "experience_task_split": config.experience_task_split,
@@ -2463,6 +3302,15 @@ def _fresh_final(
     *,
     requires_cosim: bool,
 ) -> tuple[bool, bool]:
+    certification = _mapping(result.get("final_certification"))
+    if certification:
+        passed = (
+            certification.get("status") == "PASS"
+            and certification.get("budget_domain")
+            == "FINAL_CERTIFICATION_OUTSIDE_AGENT_BUDGET"
+            and certification.get("agent_credits_charged") == 0
+        )
+        return passed, passed
     validation = _mapping(result.get("final_validation"))
     cosim = _mapping(validation.get("cosim"))
     cosim_ran = str(cosim.get("status", "")).upper() not in {
@@ -2778,7 +3626,9 @@ def _normalise_result(
         "result_ref": "executor_result.json",
         "result_sha256": executor_result_sha256,
         "source_result_ref": (
-            "v3_prototype_result.json"
+            "v3_certified_result.json"
+            if (spec.run_dir / "v3_certified_result.json").is_file()
+            else "v3_prototype_result.json"
             if (spec.run_dir / "v3_prototype_result.json").is_file()
             else None
         ),
@@ -2808,6 +3658,494 @@ def _normalise_result(
     return record
 
 
+_UNKNOWN_USAGE = "UNKNOWN"
+
+
+def _partial_safe_path(run_dir: Path, reference: object) -> Path:
+    if not isinstance(reference, str) or not reference:
+        raise BenchmarkExecutionError("partial artifact reference is empty")
+    relative = Path(reference)
+    if relative.is_absolute() or ".." in relative.parts:
+        raise BenchmarkExecutionError("partial artifact reference is unsafe")
+    root = run_dir.resolve()
+    cursor = root
+    for part in relative.parts:
+        cursor = cursor / part
+        if cursor.is_symlink():
+            raise BenchmarkExecutionError(
+                "partial artifact reference uses a symbolic link"
+            )
+    resolved = (root / relative).resolve()
+    try:
+        resolved.relative_to(root)
+    except ValueError as exc:
+        raise BenchmarkExecutionError(
+            "partial artifact reference escapes its run"
+        ) from exc
+    return resolved
+
+
+def _partial_json(run_dir: Path, reference: object) -> dict[str, object]:
+    path = _partial_safe_path(run_dir, reference)
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise BenchmarkExecutionError(
+            f"partial artifact is unreadable: {reference}"
+        ) from exc
+    if not isinstance(value, dict):
+        raise BenchmarkExecutionError(
+            f"partial artifact is not an object: {reference}"
+        )
+    return value
+
+
+def _validate_partial_tool_result(
+    run_dir: Path,
+    *,
+    started: Mapping[str, object],
+    completed: Mapping[str, object],
+) -> dict[str, object]:
+    reference = completed.get("result_ref")
+    result_path = _partial_safe_path(run_dir, reference)
+    try:
+        data = result_path.read_bytes()
+        result = json.loads(data.decode("utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise BenchmarkExecutionError(
+            "completed partial tool action has no readable result"
+        ) from exc
+    if not isinstance(result, dict):
+        raise BenchmarkExecutionError(
+            "completed partial tool result is not an object"
+        )
+    action_id = completed.get("action_id")
+    expected = {
+        "action_id": action_id,
+        "kind": completed.get("kind"),
+        "candidate_id": started.get("candidate_id"),
+        "code_hash": started.get("code_hash"),
+        "tool_config_hash": started.get("tool_config_hash"),
+        "result_ref": reference,
+    }
+    if any(result.get(name) != value for name, value in expected.items()):
+        raise BenchmarkExecutionError(
+            "completed partial tool result binding is inconsistent"
+        )
+    if completed.get("result_sha256") != _sha256_bytes(data):
+        raise BenchmarkExecutionError(
+            "completed partial tool result digest is inconsistent"
+        )
+    artifacts = result.get("artifacts")
+    hashes = result.get("artifact_hashes")
+    if not isinstance(artifacts, Mapping) or not isinstance(hashes, Mapping):
+        raise BenchmarkExecutionError(
+            "completed partial tool artifact bindings are missing"
+        )
+    action_root = result_path.parent
+    actual_hashes: dict[str, str] = {}
+    for name, artifact_ref in artifacts.items():
+        artifact_path = _partial_safe_path(
+            run_dir,
+            str(
+                (
+                    action_root.relative_to(run_dir.resolve())
+                    / str(artifact_ref)
+                )
+            ),
+        )
+        if not artifact_path.is_file():
+            raise BenchmarkExecutionError(
+                "completed partial tool artifact is missing"
+            )
+        actual_hashes[str(name)] = _sha256_bytes(artifact_path.read_bytes())
+    if actual_hashes != {str(key): str(value) for key, value in hashes.items()}:
+        raise BenchmarkExecutionError(
+            "completed partial tool artifact digest is inconsistent"
+        )
+    return result
+
+
+def _validate_partial_planner_action(
+    run_dir: Path,
+    *,
+    started: Mapping[str, object],
+    completed: Mapping[str, object],
+) -> None:
+    action_id = completed.get("action_id")
+    if not isinstance(action_id, str) or not action_id:
+        raise BenchmarkExecutionError(
+            "completed partial Planner action has no identity"
+        )
+    started_journal = _partial_json(
+        run_dir,
+        f"control/live_planner_actions/{action_id}.started.json",
+    )
+    completed_journal = _partial_json(
+        run_dir,
+        f"control/live_planner_actions/{action_id}.completed.json",
+    )
+    action_request = started_journal.get("request")
+    if (
+        started_journal.get("action_id") != action_id
+        or started_journal.get("status") != "STARTED"
+        or completed_journal.get("action_id") != action_id
+        or completed_journal.get("status") != "COMPLETED"
+        or not isinstance(action_request, Mapping)
+        or completed_journal.get("request") != action_request
+    ):
+        raise BenchmarkExecutionError(
+            "partial Planner STARTED/COMPLETED journal is inconsistent"
+        )
+    request_ref = action_request.get("request_ref")
+    request_audit = _partial_json(run_dir, request_ref)
+    try:
+        validate_live_planner_action_identity(
+            action_request,
+            request_audit,
+            expected_action_id=action_id,
+        )
+    except PlannerActionError as exc:
+        raise BenchmarkExecutionError(
+            "partial Planner deterministic identity is invalid"
+        ) from exc
+    if action_request.get("request_sha256") != _sha256_json(request_audit):
+        raise BenchmarkExecutionError(
+            "partial Planner request digest is inconsistent"
+        )
+    input_value = _partial_json(run_dir, action_request.get("input_ref"))
+    if action_request.get("input_sha256") != _sha256_json(input_value):
+        raise BenchmarkExecutionError(
+            "partial Planner input digest is inconsistent"
+        )
+    result_ref = completed.get("result_ref")
+    if (
+        completed_journal.get("result_ref") != result_ref
+        or completed_journal.get("result_sha256")
+        != completed.get("result_sha256")
+    ):
+        raise BenchmarkExecutionError(
+            "partial Planner journal and Ledger result binding differ"
+        )
+    result_path = _partial_safe_path(run_dir, result_ref)
+    try:
+        result_data = result_path.read_bytes()
+        result_value = json.loads(result_data.decode("utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise BenchmarkExecutionError(
+            "partial Planner outcome is unreadable"
+        ) from exc
+    if (
+        not isinstance(result_value, Mapping)
+        or result_value.get("action_id") != action_id
+        or completed.get("result_sha256") != _sha256_bytes(result_data)
+    ):
+        raise BenchmarkExecutionError(
+            "partial Planner outcome binding is inconsistent"
+        )
+    usage = result_value.get("usage")
+    if not isinstance(usage, Mapping) or usage.get("usage_complete") is not True:
+        raise BenchmarkExecutionError(
+            "partial Planner outcome has incomplete usage"
+        )
+    for field in (
+        "tokens_used",
+        "input_tokens",
+        "output_tokens",
+        "cached_input_tokens",
+    ):
+        journal_value = completed_journal.get(field)
+        ledger_value = completed.get(field)
+        usage_value = usage.get(field)
+        if field == "tokens_used":
+            expected_value = usage_value
+        else:
+            expected_value = usage_value
+        if journal_value != ledger_value or ledger_value != expected_value:
+            raise BenchmarkExecutionError(
+                "partial Planner usage differs across artifacts"
+            )
+
+
+def recover_partial_run_report(
+    run_dir: str | Path,
+) -> dict[str, object]:
+    """Read-only, fail-closed recovery for an executor-interrupted run."""
+
+    root = Path(run_dir).resolve()
+    report: dict[str, object] = {
+        "schema_version": "v3d.partial-run-recovery.v1",
+        "status": "ABSENT",
+        "usage_recovered_from_partial_artifacts": False,
+        "credits_used": _UNKNOWN_USAGE,
+        "pending_credits_reserved": _UNKNOWN_USAGE,
+        "credits_accounted_conservative": _UNKNOWN_USAGE,
+        "tokens_used": _UNKNOWN_USAGE,
+        "input_tokens_used": _UNKNOWN_USAGE,
+        "output_tokens_used": _UNKNOWN_USAGE,
+        "cached_input_tokens_used": _UNKNOWN_USAGE,
+        "planner_calls": _UNKNOWN_USAGE,
+        "tool_calls": _UNKNOWN_USAGE,
+        "pending_tool_calls": _UNKNOWN_USAGE,
+        "last_completed_graph_node": _UNKNOWN_USAGE,
+        "last_started_tool": _UNKNOWN_USAGE,
+        "unfinished_action_ids": _UNKNOWN_USAGE,
+        "ledger_planner_artifacts_consistent": _UNKNOWN_USAGE,
+        "candidate_frozen": False,
+        "agent_terminal_present": (
+            (root / "v3_prototype_result.json").is_file()
+            or (root / "v3_certified_result.json").is_file()
+        ),
+        "why_no_agent_terminal": (
+            None
+            if (root / "v3_prototype_result.json").is_file()
+            or (root / "v3_certified_result.json").is_file()
+            else "NO_DURABLE_AGENT_TERMINAL_COMMIT_MARKER"
+        ),
+        "run_dir": str(root),
+        "recovery_errors": [],
+    }
+    ledger_path = root / "budget_ledger.jsonl"
+    if not ledger_path.is_file():
+        return report
+    try:
+        ledger_data = ledger_path.read_bytes()
+        raw_lines = ledger_data.decode("utf-8").splitlines()
+        events: list[dict[str, object]] = []
+        for number, line in enumerate(raw_lines, 1):
+            if not line.strip():
+                continue
+            value = json.loads(line)
+            if not isinstance(value, dict):
+                raise TypeError(f"ledger line {number} is not an object")
+            events.append(value)
+        if (
+            not events
+            or events[0].get("state") != "INITIALIZED"
+            or [event.get("sequence") for event in events]
+            != list(range(len(events)))
+        ):
+            raise BenchmarkExecutionError(
+                "partial Ledger initialization or sequence is invalid"
+            )
+        initialized = events[0]
+        config = initialized.get("config")
+        if not isinstance(config, Mapping):
+            raise BenchmarkExecutionError(
+                "partial Ledger has no valid configuration"
+            )
+        by_action: dict[str, list[dict[str, object]]] = {}
+        for event in events[1:]:
+            action_id = event.get("action_id")
+            if not isinstance(action_id, str) or not action_id:
+                raise BenchmarkExecutionError(
+                    "partial Ledger action has no identity"
+                )
+            by_action.setdefault(action_id, []).append(event)
+
+        completed_events: list[dict[str, object]] = []
+        pending_events: list[dict[str, object]] = []
+        credits_used = 0
+        pending_credits = 0
+        tokens_used = 0
+        input_tokens = 0
+        output_tokens = 0
+        cached_input_tokens = 0
+        tool_calls: Counter[str] = Counter()
+        pending_calls: Counter[str] = Counter()
+        for action_id, action_events in by_action.items():
+            started_events = [
+                event
+                for event in action_events
+                if event.get("state") == "STARTED"
+            ]
+            terminal_events = [
+                event
+                for event in action_events
+                if event.get("state") in {"COMPLETED", "AMBIGUOUS"}
+            ]
+            if len(started_events) != 1 or len(terminal_events) > 1:
+                raise BenchmarkExecutionError(
+                    "partial Ledger action lifecycle is invalid"
+                )
+            started = started_events[0]
+            terminal = terminal_events[0] if terminal_events else None
+            if terminal is None:
+                pending_events.append(started)
+                pending_cost = started.get("estimated_cost")
+                if isinstance(pending_cost, bool) or not isinstance(
+                    pending_cost, int
+                ):
+                    raise BenchmarkExecutionError(
+                        "partial Ledger pending cost is invalid"
+                    )
+                pending_credits += pending_cost
+                pending_calls[str(started.get("kind"))] += 1
+                continue
+            if terminal.get("state") == "AMBIGUOUS":
+                pending_events.append(started)
+                pending_cost = started.get("estimated_cost")
+                if isinstance(pending_cost, bool) or not isinstance(
+                    pending_cost, int
+                ):
+                    raise BenchmarkExecutionError(
+                        "partial Ledger ambiguous cost is invalid"
+                    )
+                pending_credits += pending_cost
+                pending_calls[str(started.get("kind"))] += 1
+                continue
+            if terminal.get("kind") != started.get("kind"):
+                raise BenchmarkExecutionError(
+                    "partial Ledger STARTED/COMPLETED kind differs"
+                )
+            completed_events.append(terminal)
+            actual_cost = terminal.get("actual_cost")
+            if isinstance(actual_cost, bool) or not isinstance(actual_cost, int):
+                raise BenchmarkExecutionError(
+                    "partial Ledger completed cost is invalid"
+                )
+            credits_used += actual_cost
+            kind = str(terminal.get("kind"))
+            tool_calls[kind] += 1
+            for name, accumulator in (
+                ("tokens_used", "tokens"),
+                ("input_tokens", "input"),
+                ("output_tokens", "output"),
+                ("cached_input_tokens", "cached"),
+            ):
+                value = terminal.get(name)
+                if isinstance(value, bool) or not isinstance(value, int):
+                    raise BenchmarkExecutionError(
+                        f"partial Ledger {name} is invalid"
+                    )
+                if accumulator == "tokens":
+                    tokens_used += value
+                elif accumulator == "input":
+                    input_tokens += value
+                elif accumulator == "output":
+                    output_tokens += value
+                else:
+                    cached_input_tokens += value
+            if kind == "llm":
+                _validate_partial_planner_action(
+                    root,
+                    started=started,
+                    completed=terminal,
+                )
+            else:
+                _validate_partial_tool_result(
+                    root,
+                    started=started,
+                    completed=terminal,
+                )
+
+        pending_llm = int(pending_calls.get("llm", 0))
+        report.update(
+            {
+                "status": "VALID",
+                "usage_recovered_from_partial_artifacts": True,
+                "ledger_sha256": _sha256_bytes(ledger_data),
+                "credits_used": credits_used,
+                "pending_credits_reserved": pending_credits,
+                "credits_accounted_conservative": (
+                    credits_used + pending_credits
+                ),
+                "tokens_used": (
+                    tokens_used if pending_llm == 0 else _UNKNOWN_USAGE
+                ),
+                "input_tokens_used": (
+                    input_tokens if pending_llm == 0 else _UNKNOWN_USAGE
+                ),
+                "output_tokens_used": (
+                    output_tokens if pending_llm == 0 else _UNKNOWN_USAGE
+                ),
+                "cached_input_tokens_used": (
+                    cached_input_tokens
+                    if pending_llm == 0
+                    else _UNKNOWN_USAGE
+                ),
+                "planner_calls": int(tool_calls.get("llm", 0)),
+                "tool_calls": dict(sorted(tool_calls.items())),
+                "pending_tool_calls": dict(sorted(pending_calls.items())),
+                "unfinished_action_ids": sorted(
+                    str(event["action_id"]) for event in pending_events
+                ),
+                "ledger_planner_artifacts_consistent": True,
+            }
+        )
+
+        trace_path = root / "trace.jsonl"
+        if trace_path.is_file():
+            trace_events: list[Mapping[str, object]] = []
+            for line in trace_path.read_text(encoding="utf-8").splitlines():
+                if line.strip():
+                    value = json.loads(line)
+                    if isinstance(value, Mapping):
+                        trace_events.append(value)
+            completed_nodes = [
+                event
+                for event in trace_events
+                if event.get("event") == "V3_NODE_COMPLETED"
+            ]
+            started_tools = [
+                event
+                for event in trace_events
+                if event.get("event") == "TOOL_STARTED"
+            ]
+            if completed_nodes:
+                report["last_completed_graph_node"] = completed_nodes[-1].get(
+                    "node", _UNKNOWN_USAGE
+                )
+            if started_tools:
+                last_started = started_tools[-1]
+                report["last_started_tool"] = {
+                    "kind": last_started.get("kind"),
+                    "action_id": last_started.get("action_id"),
+                    "candidate_id": last_started.get("candidate_id"),
+                }
+
+        registry_path = root / "candidate_registry.json"
+        if registry_path.is_file():
+            registry = _partial_json(root, "candidate_registry.json")
+            candidates = registry.get("candidates")
+            report["candidate_count"] = (
+                len(candidates) if isinstance(candidates, Mapping) else 0
+            )
+            report["active_candidate_id"] = registry.get(
+                "active_candidate_id"
+            )
+            report["best_candidate_id"] = registry.get("best_candidate_id")
+            final_candidate_id = registry.get("final_candidate_id")
+            report["final_candidate_id"] = final_candidate_id
+            report["candidate_frozen"] = (
+                isinstance(final_candidate_id, str)
+                and bool(final_candidate_id)
+                and report["agent_terminal_present"] is True
+            )
+            if isinstance(candidates, Mapping):
+                validations: dict[str, object] = {}
+                for candidate_id, candidate in candidates.items():
+                    if isinstance(candidate, Mapping):
+                        validations[str(candidate_id)] = candidate.get(
+                            "validation"
+                        )
+                report["candidate_validation"] = validations
+        return report
+    except (
+        BenchmarkExecutionError,
+        OSError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        TypeError,
+        ValueError,
+    ) as exc:
+        report["status"] = "INVALID"
+        report["usage_recovered_from_partial_artifacts"] = False
+        report["ledger_planner_artifacts_consistent"] = False
+        report["recovery_errors"] = [f"{type(exc).__name__}: {exc}"]
+        return report
+
+
 def _failure_record(
     descriptor: TaskDescriptor,
     *,
@@ -2825,8 +4163,59 @@ def _failure_record(
     error_type: str,
     detail: str,
     execution_started: bool,
+    partial_report: Mapping[str, object] | None = None,
+    process_cleanup: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     load_failure = not descriptor.loadable
+    timeout_failure = error_type in {
+        "BenchmarkExecutionTimeout",
+        "EXECUTOR_TIMEOUT",
+    }
+    recovered = (
+        partial_report is not None
+        and partial_report.get("status") == "VALID"
+        and partial_report.get("usage_recovered_from_partial_artifacts")
+        is True
+    )
+    unknown = _UNKNOWN_USAGE if timeout_failure else 0
+    credits_used = (
+        partial_report.get("credits_used", unknown)
+        if recovered and partial_report is not None
+        else unknown
+    )
+    tokens_used = (
+        partial_report.get("tokens_used", unknown)
+        if recovered and partial_report is not None
+        else unknown
+    )
+    input_tokens_used = (
+        partial_report.get("input_tokens_used", unknown)
+        if recovered and partial_report is not None
+        else unknown
+    )
+    output_tokens_used = (
+        partial_report.get("output_tokens_used", unknown)
+        if recovered and partial_report is not None
+        else unknown
+    )
+    cached_input_tokens_used = (
+        partial_report.get("cached_input_tokens_used", unknown)
+        if recovered and partial_report is not None
+        else unknown
+    )
+    tool_calls = (
+        dict(partial_report.get("tool_calls", {}))
+        if recovered
+        and partial_report is not None
+        and isinstance(partial_report.get("tool_calls"), Mapping)
+        else {} if not timeout_failure else _UNKNOWN_USAGE
+    )
+    model_calls = (
+        partial_report.get("planner_calls", unknown)
+        if recovered and partial_report is not None
+        else unknown
+    )
+    status = "EXECUTOR_TIMEOUT" if timeout_failure else "ERROR"
     return {
         "schema_version": RUN_SCHEMA,
         "terminal": True,
@@ -2857,23 +4246,73 @@ def _failure_record(
         # diagnostics, but exclude this row from the real-evidence headline.
         "real_evidence_eligible": False,
         "execution_started": execution_started,
-        "status": "ERROR",
-        "raw_status": "ERROR",
+        "status": status,
+        "raw_status": status,
         "e2e_success": False,
         "final_validation_success": False,
         "fresh_final_success": False,
-        "stop_reason": error_type,
-        "failure_stage": _failure_stage(
-            None, error_type=error_type, load_failure=load_failure
+        "stop_reason": (
+            "EXECUTOR_TIMEOUT_AND_INCOMPLETE_ARTIFACT"
+            if timeout_failure
+            else error_type
+        ),
+        "failure_stage": (
+            "EXECUTOR_TIMEOUT_AND_INCOMPLETE_ARTIFACT"
+            if timeout_failure
+            else _failure_stage(
+                None, error_type=error_type, load_failure=load_failure
+            )
         ),
         "acceleration_vs_baseline": None,
-        "credits_used": 0,
-        "tokens_used": 0,
-        "input_tokens_used": 0,
-        "output_tokens_used": 0,
-        "cached_input_tokens_used": 0,
-        "tool_calls": {},
-        "model_calls": 0,
+        "credits_used": credits_used,
+        "tokens_used": tokens_used,
+        "input_tokens_used": input_tokens_used,
+        "output_tokens_used": output_tokens_used,
+        "cached_input_tokens_used": cached_input_tokens_used,
+        "tool_calls": tool_calls,
+        "model_calls": model_calls,
+        "usage_recovered_from_partial_artifacts": recovered,
+        "partial_run_report": (
+            dict(partial_report) if partial_report is not None else None
+        ),
+        "process_cleanup": (
+            dict(process_cleanup) if process_cleanup is not None else None
+        ),
+        "pending_credits_reserved": (
+            partial_report.get("pending_credits_reserved", unknown)
+            if partial_report is not None
+            else unknown
+        ),
+        "pending_tool_calls": (
+            partial_report.get("pending_tool_calls", unknown)
+            if partial_report is not None
+            else unknown
+        ),
+        "unfinished_action_ids": (
+            partial_report.get("unfinished_action_ids", unknown)
+            if partial_report is not None
+            else unknown
+        ),
+        "last_completed_graph_node": (
+            partial_report.get("last_completed_graph_node", unknown)
+            if partial_report is not None
+            else unknown
+        ),
+        "last_started_tool": (
+            partial_report.get("last_started_tool", unknown)
+            if partial_report is not None
+            else unknown
+        ),
+        "candidate_frozen": (
+            partial_report.get("candidate_frozen", False)
+            if partial_report is not None
+            else False
+        ),
+        "why_no_agent_terminal": (
+            partial_report.get("why_no_agent_terminal")
+            if partial_report is not None
+            else None
+        ),
         "reported_runtime_s": None,
         "wall_time_s": wall_time_s,
         "patch_candidates": 0,
@@ -3121,9 +4560,24 @@ def _aggregate(records: Sequence[Mapping[str, object]]) -> dict[str, object]:
     failures = [record for record in records if record.get("e2e_success") is False]
     failure_stages = Counter(str(record.get("failure_stage") or "UNKNOWN") for record in failures)
     failure_reasons = Counter(str(record.get("stop_reason") or "UNKNOWN") for record in failures)
-    credits = [_as_nonnegative_int(record.get("credits_used")) for record in records]
-    tokens = [_as_nonnegative_int(record.get("tokens_used")) for record in records]
-    model_calls = [_as_nonnegative_int(record.get("model_calls")) for record in records]
+    credits = [
+        int(value)
+        for record in records
+        for value in [record.get("credits_used")]
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0
+    ]
+    tokens = [
+        int(value)
+        for record in records
+        for value in [record.get("tokens_used")]
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0
+    ]
+    model_calls = [
+        int(value)
+        for record in records
+        for value in [record.get("model_calls")]
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0
+    ]
     wall_times = [
         value
         for record in records
@@ -3157,6 +4611,11 @@ def _aggregate(records: Sequence[Mapping[str, object]]) -> dict[str, object]:
             "credits": _metric_stats(credits),
             "tokens": _metric_stats(tokens),
             "model_calls": _metric_stats(model_calls),
+            "unknown": {
+                "credits": runs - len(credits),
+                "tokens": runs - len(tokens),
+                "model_calls": runs - len(model_calls),
+            },
             "wall_time_s": _metric_stats(wall_times),
             "tool_calls": dict(sorted(tool_calls.items())),
         },
@@ -3605,10 +5064,12 @@ class BatchBenchmarkRunner:
         utc_now: Callable[[], str] = _utc_now,
     ) -> None:
         self.config = config
+        self.config.verify_full_agent_manifest()
         self.executor = executor or default_executor(
             config.backend,
             validation_profile=config.validation_profile,
             final_validation_policy=config.final_validation_policy,
+            evidence_memory_mode=config.evidence_memory_mode,
             max_planner_rounds=config.max_planner_rounds,
             max_no_improvement_rounds=config.max_no_improvement_rounds,
             enable_final_fallback=config.enable_final_fallback,
@@ -3623,10 +5084,19 @@ class BatchBenchmarkRunner:
             experience_admission_manifest=config.experience_admission_manifest,
             experience_task_split=config.experience_task_split,
         )
+        if config.full_agent_manifest is not None and (
+            type(self.executor) is not V3PrototypeCLIExecutor
+            or self.executor.experimental_token_policy
+        ):
+            raise BenchmarkError(
+                "Full Agent manifest requires the formal fixed-token "
+                "V3PrototypeCLIExecutor"
+            )
         if type(self.executor) is V3PrototypeCLIExecutor:
             executor_policy = (
                 self.executor.validation_profile,
                 self.executor.final_validation_policy,
+                self.executor.evidence_memory_mode,
                 self.executor.max_planner_rounds,
                 self.executor.max_no_improvement_rounds,
                 self.executor.enable_final_fallback,
@@ -3639,6 +5109,7 @@ class BatchBenchmarkRunner:
             config_policy = (
                 config.validation_profile,
                 config.final_validation_policy,
+                config.evidence_memory_mode,
                 config.max_planner_rounds,
                 config.max_no_improvement_rounds,
                 config.enable_final_fallback,
@@ -3706,6 +5177,7 @@ class BatchBenchmarkRunner:
             type(self.executor) is V3PrototypeCLIExecutor
             and self.config.backend == "vitis"
             and self.evidence_class is EvidenceClass.REAL
+            and not self.executor.experimental_token_policy
             and getattr(self.executor, "real_evidence_authority", None)
             == REAL_EVIDENCE_AUTHORITY
         )
@@ -3735,7 +5207,22 @@ class BatchBenchmarkRunner:
                     )
         return plan
 
+    def _verify_executor_identity(self) -> None:
+        self.config.verify_full_agent_manifest()
+        if _executor_fingerprint(self.executor) != self.executor_fingerprint:
+            raise BenchmarkError(
+                "benchmark executor changed after its identity was frozen"
+            )
+        if (
+            self.real_evidence_authorized
+            and getattr(self.executor, "experimental_token_policy", False)
+        ):
+            raise BenchmarkError(
+                "experimental token policy cannot use formal REAL authority"
+            )
+
     def run(self) -> BenchmarkOutcome:
+        self._verify_executor_identity()
         output_dir = self.config.output_dir
         results_path = output_dir / "benchmark_results.jsonl"
         if results_path.exists() and results_path.stat().st_size and not self.config.resume:
@@ -3948,16 +5435,18 @@ class BatchBenchmarkRunner:
                     run_fingerprint=fingerprint,
                     run_dir=run_dir,
                 )
-                remaining = (
-                    None
-                    if self.config.max_runtime_seconds is None
-                    else max(
-                        0.001,
-                        self.config.max_runtime_seconds
-                        - (self.monotonic() - start),
+                def remaining_runtime() -> float | None:
+                    return (
+                        None
+                        if self.config.max_runtime_seconds is None
+                        else max(
+                            0.0,
+                            self.config.max_runtime_seconds
+                            - (self.monotonic() - start),
+                        )
                     )
-                )
                 try:
+                    self._verify_executor_identity()
                     execution_started = True
                     if (
                         self.config.backend == "vitis"
@@ -3967,11 +5456,13 @@ class BatchBenchmarkRunner:
                             Path("/tmp/llm4hls-v3d-vitis-serial.lock")
                         ):
                             raw_result = self.executor.execute(
-                                spec, timeout_seconds=remaining
+                                spec,
+                                timeout_seconds=remaining_runtime(),
                             )
                     else:
                         raw_result = self.executor.execute(
-                            spec, timeout_seconds=remaining
+                            spec,
+                            timeout_seconds=remaining_runtime(),
                         )
                     if not isinstance(raw_result, Mapping):
                         raise BenchmarkExecutionError(
@@ -3997,6 +5488,8 @@ class BatchBenchmarkRunner:
                         wall_time_s=max(0.0, self.monotonic() - run_start),
                     )
                 except Exception as exc:
+                    partial_report = getattr(exc, "partial_report", None)
+                    process_cleanup = getattr(exc, "process_cleanup", None)
                     record = _failure_record(
                         descriptor,
                         model=model,
@@ -4013,9 +5506,19 @@ class BatchBenchmarkRunner:
                         error_type=type(exc).__name__,
                         detail=str(exc),
                         execution_started=execution_started,
+                        partial_report=(
+                            partial_report
+                            if isinstance(partial_report, Mapping)
+                            else None
+                        ),
+                        process_cleanup=(
+                            process_cleanup
+                            if isinstance(process_cleanup, Mapping)
+                            else None
+                        ),
                     )
             _atomic_json(run_dir / "benchmark_run.json", record)
-            if record.get("status") == "ERROR":
+            if record.get("status") in {"ERROR", "EXECUTOR_TIMEOUT"}:
                 _atomic_json(run_dir / "failure.json", record.get("error", {}))
             _append_jsonl(results_path, record)
             records.append(record)
@@ -4178,7 +5681,19 @@ def _parser() -> argparse.ArgumentParser:
         "--final-validation-policy",
         choices=("task_contract", "full_internal_audit"),
         default="task_contract",
-        help="Fresh final policy forwarded to each V3 single-task run.",
+        help=(
+            "Agent-search closeout policy forwarded to each V3 run; independent "
+            "certification remains a separate post-search domain."
+        ),
+    )
+    parser.add_argument(
+        "--evidence-memory",
+        choices=("off", "on"),
+        default="on",
+        help=(
+            "A1 Structured Evidence Memory mode forwarded to each V3 run. "
+            "A1 off requires Continuation off."
+        ),
     )
     parser.add_argument(
         "--max-planner-rounds",
@@ -4197,7 +5712,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--enable-final-fallback",
         action="store_true",
-        help="Allow the existing bounded fresh-final fallback.",
+        help="Allow the bounded Agent-search closeout fallback.",
     )
     parser.add_argument(
         "--continuation-policy",
@@ -4207,15 +5722,25 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--continuation-policy-version",
-        choices=("v1", "v2"),
-        default="v1",
+        choices=("v2",),
+        default="v2",
         help="Continuation implementation forwarded to each run.",
     )
     parser.add_argument(
         "--continuation-admission-manifest",
         help=(
-            "Passing, immutable Continuation V2 admission manifest. Required "
-            "for enforce and content-bound into batch/run identity."
+            "Passing, immutable, implementation-version-matched Continuation "
+            "admission manifest. Required for enforce and content-bound into "
+            "batch/run identity."
+        ),
+    )
+    parser.add_argument(
+        "--full-agent-manifest",
+        help=(
+            "READY Track A Full Agent manifest. It never overrides arguments: "
+            "backend=vitis, A1=on, A2=enforce/v2 with matching Admission, and "
+            "A3=guided/ranker-v3 with matching Store/Admission must all be "
+            "provided explicitly or the batch fails closed."
         ),
     )
     parser.add_argument(
@@ -4300,6 +5825,7 @@ def main(argv: list[str] | None = None, *, stdout: TextIO | None = None) -> int:
             max_runtime_seconds=args.max_runtime_seconds,
             validation_profile=args.validation_profile,
             final_validation_policy=args.final_validation_policy,
+            evidence_memory_mode=args.evidence_memory,
             max_planner_rounds=args.max_planner_rounds,
             max_no_improvement_rounds=args.max_no_improvement_rounds,
             enable_final_fallback=args.enable_final_fallback,
@@ -4308,6 +5834,7 @@ def main(argv: list[str] | None = None, *, stdout: TextIO | None = None) -> int:
             continuation_admission_manifest=(
                 args.continuation_admission_manifest
             ),
+            full_agent_manifest=args.full_agent_manifest,
             experience_mode=args.experience_mode,
             experience_store=args.experience_store,
             experience_ranker_version=args.experience_ranker_version,

@@ -1,0 +1,58 @@
+{
+  "schema_version": "v3d.partial-run-offline-report.v1",
+  "classification": "EXECUTOR_TIMEOUT_AND_INCOMPLETE_ARTIFACT",
+  "task_id": "v3d_fast_020",
+  "source_run_dir": "/home/ying/CompetitionTrackA/track-A/llm4hls_harness/runs/full-agent-v3d-fast-targeted-rerun-20260728-a01/v3d_fast_020/runs/v3d_fast_020--deepseek-v4-pro--r001--3cd15b547f31",
+  "source_run_read_only": true,
+  "source_run_modified": false,
+  "recovery_status": "VALID",
+  "usage_recovered_from_partial_artifacts": true,
+  "ledger_sha256": "8beda8d191437a66257e7e37d67d68441734a761eef170ea25cbf261fc21c372",
+  "usage": {
+    "planner_calls": 1,
+    "tokens_used": 2594,
+    "input_tokens_used": 2120,
+    "output_tokens_used": 474,
+    "cached_input_tokens_used": 256,
+    "credits_used_completed": 26,
+    "pending_credits_reserved": 20,
+    "credits_accounted_conservative": 46,
+    "completed_calls": {
+      "csim": 2,
+      "synth": 1,
+      "cosim": 1,
+      "llm": 1
+    },
+    "pending_calls": {
+      "cosim": 1
+    }
+  },
+  "baseline": {
+    "candidate_id": "candidate_000",
+    "csim": "PASS",
+    "synth": "PASS",
+    "cosim": "TIMEOUT"
+  },
+  "candidate": {
+    "candidate_id": "candidate_001",
+    "created": true,
+    "csim": "PASS",
+    "synth": "NOT_RUN",
+    "cosim": "STARTED_NOT_COMPLETED",
+    "status": "EVALUATING"
+  },
+  "last_completed_graph_node": "candidate_csim",
+  "last_started_tool": {
+    "kind": "cosim",
+    "candidate_id": "candidate_001",
+    "action_id": "c3ba394acb3c22fa91439c9c5042d700e38b2daaffa7dd20fce61aa1790a047b"
+  },
+  "unfinished_action_ids": [
+    "c3ba394acb3c22fa91439c9c5042d700e38b2daaffa7dd20fce61aa1790a047b"
+  ],
+  "candidate_frozen": false,
+  "agent_terminal_present": false,
+  "why_no_agent_terminal": "The outer 2400-second executor deadline interrupted candidate CoSim before it could return a result; no final Candidate, search closeout, sealed package, v3_prototype_result.json, or independent certification receipt was created.",
+  "resume_authorized": false,
+  "next_run_requirement": "Use a fresh run directory; do not Resume this incomplete run."
+}

@@ -23,14 +23,17 @@ class BayesianStrategyRankerV3Tests(unittest.TestCase):
         failure_subtype: str = "UNKNOWN",
         bottleneck_subtype: str = "SERIAL_REDUCTION",
         atom: str = "LOOP_UNROLL",
+        task_split: str = "train",
+        run_id: str | None = None,
     ) -> dict[str, object]:
         body = copy.deepcopy(sample_body())
         body["source"].update(
             {
-                "run_id": f"run-{index}",
+                "run_id": run_id or f"run-{index}",
                 "candidate_id": f"candidate-{index}",
                 "round_index": index,
                 "task_family_hash": family or f"{index + 10:064x}",
+                "task_split": task_split,
             }
         )
         body["strategy"].update(
@@ -223,6 +226,40 @@ class BayesianStrategyRankerV3Tests(unittest.TestCase):
         self.assertFalse(
             result["input_contract"]["prompt_injection_authorized"]
         )
+
+    def test_dev_records_cannot_provide_support(self) -> None:
+        result = BayesianStrategyRankerV3().rank(
+            self.query(),
+            [
+                self.record(index, task_split="dev")
+                for index in range(1, 6)
+            ],
+        )
+
+        self.assertEqual(result["decision"], "ABSTAIN")
+        self.assertEqual(result["verified_support_record_count"], 0)
+        self.assertEqual(
+            result["abstain_reason"], "NO_MATCHING_VERIFIED_SUPPORT"
+        )
+
+    def test_non_train_and_non_public_records_cannot_provide_support(
+        self,
+    ) -> None:
+        records = [
+            self.record(1, task_split="dev"),
+            self.record(2, task_split="hidden_like"),
+            self.record(3, run_id="debug-run"),
+            self.record(4, run_id="reference-run"),
+            self.record(5, run_id="golden-run"),
+        ]
+        unspecified = copy.deepcopy(self.record(6))
+        unspecified["source"]["task_split"] = "unspecified"
+        records.append(unspecified)
+
+        result = BayesianStrategyRankerV3().rank(self.query(), records)
+
+        self.assertEqual(result["decision"], "ABSTAIN")
+        self.assertEqual(result["verified_support_record_count"], 0)
 
     def test_zero_failure_safe_tie_uses_stable_order(self) -> None:
         records = [

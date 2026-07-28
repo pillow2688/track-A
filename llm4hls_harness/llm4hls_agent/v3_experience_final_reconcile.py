@@ -135,7 +135,7 @@ def _bound_final_results(
             raise ValueError(f"final {kind} Candidate mismatch")
         if value.get("code_hash") != code_hash:
             raise ValueError(f"final {kind} code hash mismatch")
-        if value.get("validation_scope") != "final":
+        if value.get("validation_scope") != "search_closeout":
             raise ValueError(f"final {kind} scope mismatch")
         output[kind] = {
             "status": "PASS" if value.get("ok") is True else "FAIL",

@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping, Protocol
+from typing import Iterable, Mapping, Protocol
 
 from .budget import BudgetExceeded, BudgetLedger
 from .repair import PatchProposal, RepairProviderError
@@ -58,6 +59,86 @@ class PlannerActionRejected(PlannerActionError):
         self.failure_sha256 = failure_sha256
         self.reason = reason
         self.cached = cached
+
+
+def completed_llm_action_ids(
+    events: Iterable[Mapping[str, object]],
+) -> set[str]:
+    """Return the shared package/provenance identity set for charged calls."""
+
+    completed: set[str] = set()
+    for event in events:
+        if event.get("kind") != "llm" or event.get("state") != "COMPLETED":
+            continue
+        action_id = event.get("action_id")
+        if not isinstance(action_id, str) or not action_id:
+            raise PlannerActionError(
+                "completed LLM Ledger action has no valid identity"
+            )
+        completed.add(action_id)
+    return completed
+
+
+def validate_live_planner_action_identity(
+    action_request: Mapping[str, object],
+    request_audit: Mapping[str, object],
+    *,
+    expected_action_id: str,
+) -> None:
+    """Validate the deterministic, non-replayable identity of one live call."""
+
+    expected_fields = {
+        "schema_version",
+        "logical_operation_id",
+        "attempt_index",
+        "retry_of",
+        "planner_fingerprint",
+        "input_ref",
+        "input_sha256",
+        "request_ref",
+        "request_sha256",
+        "replay_policy",
+    }
+    planner_fingerprint = action_request.get("planner_fingerprint")
+    input_sha256 = action_request.get("input_sha256")
+    attempt_index = action_request.get("attempt_index")
+    if (
+        set(action_request) != expected_fields
+        or action_request.get("schema_version") != LIVE_PLANNER_ACTION_SCHEMA
+        or isinstance(attempt_index, bool)
+        or not isinstance(attempt_index, int)
+        or attempt_index != 0
+        or action_request.get("retry_of") is not None
+        or action_request.get("replay_policy") != "NON_REPLAYABLE"
+        or not isinstance(planner_fingerprint, str)
+        or not planner_fingerprint
+        or not isinstance(input_sha256, str)
+        or len(input_sha256) != 64
+        or any(character not in "0123456789abcdef" for character in input_sha256)
+    ):
+        raise PlannerActionError(
+            "live Planner action deterministic identity is invalid"
+        )
+    logical_operation_id = canonical_sha256(
+        {
+            "schema_version": "v3b.planner-logical-operation.v1",
+            "planner_fingerprint": planner_fingerprint,
+            "input_sha256": input_sha256,
+        }
+    )
+    expected_request_ref = f"planner/requests/{logical_operation_id}.json"
+    if (
+        action_request.get("logical_operation_id") != logical_operation_id
+        or action_request.get("request_ref") != expected_request_ref
+        or request_audit.get("schema_version") != LIVE_PROVIDER_REQUEST_SCHEMA
+        or request_audit.get("logical_operation_id") != logical_operation_id
+        or request_audit.get("planner_fingerprint") != planner_fingerprint
+        or request_audit.get("input_sha256") != input_sha256
+        or canonical_sha256(action_request) != expected_action_id
+    ):
+        raise PlannerActionError(
+            "live Planner action deterministic identity is invalid"
+        )
 
 
 @dataclass(frozen=True)
@@ -381,6 +462,7 @@ class PlannerActionJournal:
         input_sha256: str,
         candidate_id: str,
         code_hash: str,
+        timeout_seconds: float | None = None,
     ) -> PlannerActionResult:
         canonical_input = validate_planner_input(planner_input)
         if canonical_sha256(canonical_input) != input_sha256:
@@ -614,7 +696,23 @@ class PlannerActionJournal:
         )
         _after_started(action_id)
         try:
-            proposal = planner.invoke(prepared)
+            bounded_invoke = getattr(planner, "invoke_with_timeout", None)
+            if timeout_seconds is not None:
+                timeout = float(timeout_seconds)
+                if not math.isfinite(timeout) or timeout <= 0:
+                    raise ValueError(
+                        "timeout_seconds must be finite and positive"
+                    )
+                proposal = (
+                    bounded_invoke(
+                        prepared,
+                        timeout_seconds=timeout,
+                    )
+                    if callable(bounded_invoke)
+                    else planner.invoke(prepared)
+                )
+            else:
+                proposal = planner.invoke(prepared)
         except RepairProviderError as exc:
             failure = self._provider_failure_record(
                 action_id=action_id,
@@ -827,13 +925,40 @@ class PlannerActionJournal:
         completed = self.budget.completed_event(action_id)
         if completed is not None:
             if (
-                completed.get("result_ref") != failure_ref
+                completed.get("kind") != "llm"
+                or completed.get("actual_cost") != self.budget.cost("llm")
+                or completed.get("result_ref") != failure_ref
                 or completed.get("result_sha256") != failure_sha256
                 or completed.get("input_tokens") != input_tokens
                 or completed.get("output_tokens") != output_tokens
+                or completed.get("cached_input_tokens")
+                != cached_input_tokens
                 or completed.get("tokens_used") != input_tokens + output_tokens
             ):
                 raise PlannerActionError("provider failure Ledger mismatch")
+            started = next(
+                (
+                    event
+                    for event in self.budget.action_events(action_id)
+                    if event.get("state") == "STARTED"
+                ),
+                None,
+            )
+            estimated_tokens = (
+                started.get("estimated_tokens")
+                if isinstance(started, Mapping)
+                else None
+            )
+            if (
+                completed.get("token_reservation_overrun") is True
+                or isinstance(estimated_tokens, bool)
+                or not isinstance(estimated_tokens, int)
+                or input_tokens + output_tokens > estimated_tokens
+                or int(self.budget.snapshot()["tokens_remaining"]) < 0
+            ):
+                raise BudgetExceeded(
+                    "live Planner token usage exceeded its durable reservation"
+                )
             return
         if self.budget.is_ambiguous(action_id):
             raise PlannerActionError(

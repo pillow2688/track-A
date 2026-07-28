@@ -111,7 +111,7 @@ class CandidateValidationTests(unittest.TestCase):
         self.assertEqual(result.validation["cosim"]["status"], "PASS")
         self.assertIsNotNone(result.metrics_ref)
 
-    def test_final_scope_is_propagated_to_every_stage(self) -> None:
+    def test_search_closeout_scope_is_propagated_to_every_stage(self) -> None:
         result = validate_candidate(
             self.task,
             self.task.kernel_bytes,
@@ -119,7 +119,7 @@ class CandidateValidationTests(unittest.TestCase):
             self.root / "final-run",
             self.config,
             backend=PassingBackend(),
-            validation_scope="final",
+            validation_scope="search_closeout",
         )
 
         self.assertEqual(
@@ -127,7 +127,7 @@ class CandidateValidationTests(unittest.TestCase):
                 result.validation[stage]["validation_scope"]
                 for stage in ("csim", "synth", "cosim")
             ],
-            ["final", "final", "final"],
+            ["search_closeout", "search_closeout", "search_closeout"],
         )
 
     def test_exploration_can_stop_after_synth_then_complete_cosim(self) -> None:

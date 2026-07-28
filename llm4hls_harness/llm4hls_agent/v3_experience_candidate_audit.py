@@ -156,13 +156,13 @@ def _audit_one(
     results["csim"] = server.csim(
         kernel_bytes,
         candidate_id=candidate_id,
-        validation_scope="final",
+        validation_scope="search_closeout",
     )
     if results["csim"].ok:
         results["synth"] = server.synth(
             kernel_bytes,
             candidate_id=candidate_id,
-            validation_scope="final",
+            validation_scope="search_closeout",
         )
     else:
         results["synth"] = None
@@ -170,7 +170,7 @@ def _audit_one(
         results["cosim"] = server.cosim(
             kernel_bytes,
             candidate_id=candidate_id,
-            validation_scope="final",
+            validation_scope="search_closeout",
         )
     else:
         results["cosim"] = None

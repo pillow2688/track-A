@@ -11,6 +11,7 @@ from llm4hls_agent.v3_continuation_shadow_evaluation import (
     evaluate_online_shadow_runs,
     evaluate_shadow_samples,
 )
+from llm4hls_agent.v3_continuation_admission import CONTINUATION_POLICY_VERSION
 from llm4hls_agent.v3_continuation_v2 import continuation_decision_v2
 
 
@@ -86,7 +87,7 @@ class ContinuationShadowEvaluationTests(unittest.TestCase):
             pre_state = {
                 "previous_latency": 120,
                 "current_latency": 100,
-                "final_reserve_available": True,
+                "search_closeout_reserve_available": True,
                 "remaining_tokens": 1000,
                 "remaining_credits": 50,
                 "remaining_rounds": 1,
@@ -101,7 +102,7 @@ class ContinuationShadowEvaluationTests(unittest.TestCase):
                     "run_id": root.name,
                     "round_index": 2,
                     "policy_mode": "shadow",
-                    "policy_version": "v3.continuation-policy.v2",
+                    "policy_version": CONTINUATION_POLICY_VERSION,
                     "pre_state": pre_state,
                     "decision_hash": "f" * 64,
                 }

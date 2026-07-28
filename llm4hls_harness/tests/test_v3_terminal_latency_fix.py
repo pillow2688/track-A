@@ -18,7 +18,7 @@ from llm4hls_agent.v3_prototype import (
 )
 import llm4hls_agent.v3_prototype as v3_prototype_module
 
-from llm4hls_harness.tests.test_v3_prototype import (
+from .test_v3_prototype import (
     PrototypeBackend,
     prototype_config,
     prototype_proposal,

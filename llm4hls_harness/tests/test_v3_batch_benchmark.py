@@ -7,7 +7,25 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
+from llm4hls_agent import v3_batch_benchmark as benchmark_module
+from llm4hls_agent.v3_continuation_admission import (
+    CONTINUATION_ADMISSION_SCHEMA,
+    CONTINUATION_DECISION_SCHEMA,
+    CONTINUATION_FIXED_THRESHOLDS,
+    CONTINUATION_GATE_SCHEMA,
+    CONTINUATION_POLICY_VERSION,
+    CONTINUATION_PROTOCOL_VERSION,
+    current_repository_commit,
+)
+from llm4hls_agent.v3_strategy_ranker_v3 import STRATEGY_RANKER_V3_SCHEMA
+from llm4hls_agent.v3_experience_v2_runtime import (
+    RANKER_ADMISSION_SCHEMA,
+    RANKER_GATE_PROTOCOL,
+    RANKER_GATE_SCHEMA,
+    current_repository_commit as current_experience_repository_commit,
+)
 from llm4hls_agent.v3_batch_benchmark import (
     RUN_SCHEMA,
     SUMMARY_SCHEMA,
@@ -69,38 +87,79 @@ def write_task(
 
 
 def write_ranker_admission(path: Path, seed: Path) -> Path:
-    by_mode = {
-        mode: {
-            "records": 10,
-            "coverage": 0.5,
-            "harmful_rate": 0.0,
-            "positive_hit_rate": 0.5,
-        }
+    thresholds = {
+        "minimum_coverage": 0.40,
+        "maximum_harmful_rate": 0.05,
+        "minimum_records_per_mode": 10,
+        "minimum_global_positive_hit_rate": 0.2727,
+        "maximum_leakage_violations": 0,
+    }
+    verified_by_mode = {
+        mode: 10
         for mode in ("OPTIMIZE", "REPAIR", "STRUCTURAL_FIX", "SYNTH_FIX")
     }
+    gate_path = path.with_name(f"{path.stem}-gate.json")
+    gate = {
+        "schema_version": RANKER_GATE_SCHEMA,
+        "decision": "PASS",
+        "authority": "ELIGIBLE_FOR_ADMISSION",
+        "ranker_version": STRATEGY_RANKER_V3_SCHEMA,
+        "fixed_protocol": RANKER_GATE_PROTOCOL,
+        "thresholds": thresholds,
+        "input": {
+            "store_sha256": hashlib.sha256(seed.read_bytes()).hexdigest(),
+            "verified_by_mode": verified_by_mode,
+        },
+        "checks": {
+            "coverage_gate_pass": True,
+            "harmful_rate_gate_pass": True,
+            "mode_count_gate_pass": True,
+            "positive_hit_gate_pass": True,
+            "leakage_gate_pass": True,
+            "unverified_labels_excluded": True,
+            "family_level_sampling": True,
+            "query_outcome_fields_present": False,
+            "heldout_labels_read_after_decision": True,
+            "train_only_support": True,
+            "public_only_support": True,
+        },
+        "policies": {
+            policy: {
+                "overall": {
+                    "coverage": 0.5,
+                    "harmful_recommendation_rate": 0.0,
+                    "leakage_violations": 0,
+                    "positive_strategy_hit_rate": 0.5,
+                },
+                "by_mode": {
+                    mode: {"harmful_recommendation_rate": 0.0}
+                    for mode in verified_by_mode
+                },
+            }
+            for policy in (
+                "leave_one_task_out",
+                "leave_one_task_family_out",
+            )
+        },
+    }
+    gate_path.write_text(
+        json.dumps(gate, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     path.write_text(
         json.dumps(
             {
-                "schema_version": "v3e.strategy-ranker-admission.v1",
+                "schema_version": RANKER_ADMISSION_SCHEMA,
                 "decision": "PASS",
-                "ranker_version": "v3e.bayesian-strategy-ranker.v3",
-                "seed_sha256": hashlib.sha256(seed.read_bytes()).hexdigest(),
-                "protocol": "LOTO_AND_LEAVE_ONE_TASK_FAMILY_OUT",
-                "thresholds": {
-                    "minimum_coverage": 0.40,
-                    "maximum_harmful_rate": 0.05,
-                    "minimum_records_per_mode": 10,
-                    "minimum_global_positive_hit_rate": 0.2727,
-                    "maximum_leakage_violations": 0,
-                },
-                "metrics": {
-                    "coverage": 0.5,
-                    "harmful_rate": 0.0,
-                    "global_positive_hit_rate": 0.5,
-                    "leakage_violations": 0,
-                    "by_mode": by_mode,
-                },
-                "evidence_sha256": "a" * 64,
+                "ranker_schema": STRATEGY_RANKER_V3_SCHEMA,
+                "store_path": seed.name,
+                "store_sha256": hashlib.sha256(seed.read_bytes()).hexdigest(),
+                "gate_path": gate_path.name,
+                "gate_sha256": hashlib.sha256(
+                    gate_path.read_bytes()
+                ).hexdigest(),
+                "thresholds": thresholds,
+                "current_commit": current_experience_repository_commit(),
             },
             sort_keys=True,
         )
@@ -111,39 +170,59 @@ def write_ranker_admission(path: Path, seed: Path) -> Path:
 
 
 def write_continuation_admission(path: Path) -> Path:
+    commit = current_repository_commit()
+    mode_coverage = {
+        mode: 1
+        for mode in ("REPAIR", "SYNTH_FIX", "STRUCTURAL_FIX", "OPTIMIZE")
+    }
+    gate_path = path.with_name(f"{path.stem}-gate.json")
+    gate = {
+        "schema_version": CONTINUATION_GATE_SCHEMA,
+        "gate_status": "PASS",
+        "policy_version": CONTINUATION_POLICY_VERSION,
+        "decision_schema": CONTINUATION_DECISION_SCHEMA,
+        "current_commit": commit,
+        "protocol_version": CONTINUATION_PROTOCOL_VERSION,
+        "thresholds": CONTINUATION_FIXED_THRESHOLDS,
+        "mode_coverage": mode_coverage,
+        "metrics": {
+            "sample_count": 4,
+            "false_blocks": 0,
+            "leakage_violations": 0,
+        },
+        "source_manifest_sha256": "b" * 64,
+        "audited_samples": [
+            {
+                "mode": mode,
+                "outcome": "BENEFICIAL_PERFORMANCE",
+                "current_decision": {
+                    "schema_version": CONTINUATION_DECISION_SCHEMA,
+                    "policy_version": CONTINUATION_POLICY_VERSION,
+                    "decision": "ALLOW",
+                },
+                "leakage_violations": 0,
+            }
+            for mode in mode_coverage
+        ],
+    }
+    gate_path.write_text(
+        json.dumps(gate, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     path.write_text(
         json.dumps(
             {
-                "schema_version": "v3.continuation-admission.v1",
-                "decision": "PASS",
-                "policy_version": "v3.continuation-policy.v2",
-                "protocol": "MODE_SPECIFIC_PRE_STATE_ONLINE_SHADOW",
-                "thresholds": {
-                    "minimum_samples_per_mode": 1,
-                    "maximum_false_blocks": 0,
-                    "minimum_structural_essential_samples": 1,
-                    "minimum_structural_essential_retention": 1.0,
-                    "maximum_leakage_violations": 0,
-                    "beneficial_retention_not_below_v1": True,
-                    "waste_block_rate_not_below_v1": True,
-                },
-                "metrics": {
-                    "mode_counts": {
-                        "REPAIR": 1,
-                        "SYNTH_FIX": 1,
-                        "STRUCTURAL_FIX": 1,
-                        "OPTIMIZE": 1,
-                    },
-                    "beneficial_retention": 1.0,
-                    "v1_beneficial_retention": 1.0,
-                    "waste_block_rate": 0.5,
-                    "v1_waste_block_rate": 0.5,
-                    "false_blocks": 0,
-                    "structural_essential_samples": 1,
-                    "structural_essential_retention": 1.0,
-                    "leakage_violations": 0,
-                },
-                "evidence_sha256": "b" * 64,
+                "schema_version": CONTINUATION_ADMISSION_SCHEMA,
+                "policy_version": CONTINUATION_POLICY_VERSION,
+                "decision_schema": CONTINUATION_DECISION_SCHEMA,
+                "current_commit": commit,
+                "gate_json_path": gate_path.name,
+                "gate_json_sha256": hashlib.sha256(
+                    gate_path.read_bytes()
+                ).hexdigest(),
+                "gate_status": "PASS",
+                "protocol_version": CONTINUATION_PROTOCOL_VERSION,
+                "mode_coverage": mode_coverage,
             },
             sort_keys=True,
         )
@@ -250,6 +329,11 @@ def write_real_fixture(
     outcome_model: str | None = None,
     ledger_tokens: int | None = None,
     final_validation_policy: str = "full_internal_audit",
+    include_provider_rejection: bool = False,
+    provider_rejection_package_omissions: tuple[str, ...] = (),
+    tamper_provider_rejection_hash: bool = False,
+    tamper_provider_rejection_identity: bool = False,
+    provider_rejection_token_overrun: bool = False,
 ) -> dict[str, object]:
     """Write a minimal internally hash-bound REAL terminal package."""
 
@@ -272,7 +356,12 @@ def write_real_fixture(
     budget_config = {
         "credit_limit": 100,
         "costs": {"csim": 1, "synth": 4, "cosim": 20, "llm": 0},
-        "tool_limits": {"csim": 4, "synth": 4, "cosim": 4, "llm": 1},
+        "tool_limits": {
+            "csim": 4,
+            "synth": 4,
+            "cosim": 4,
+            "llm": 2 if include_provider_rejection else 1,
+        },
         "token_limit": 1000,
         "runtime_limit_seconds": 100.0,
     }
@@ -316,16 +405,24 @@ def write_real_fixture(
     planner_input = {"schema_version": "fixture.input.v1", "round": 1}
     planner_input_ref = "planner/inputs/round_001.json"
     write_canonical_json(run_dir / planner_input_ref, planner_input)
+    planner_input_sha = json_sha256(planner_input)
     planner_output = {"schema_version": "fixture.output.v1", "proposal": "p"}
     planner_output_ref = "planner/outputs/projection.json"
     write_canonical_json(run_dir / planner_output_ref, planner_output)
 
     model = spec.model if outcome_model is None else outcome_model
+    planner_logical_id = json_sha256(
+        {
+            "schema_version": "v3b.planner-logical-operation.v1",
+            "planner_fingerprint": "fixture-planner",
+            "input_sha256": planner_input_sha,
+        }
+    )
     request_audit = {
         "schema_version": "v3b.planner-provider-request.v1",
-        "logical_operation_id": "fixture-operation",
+        "logical_operation_id": planner_logical_id,
         "planner_fingerprint": "fixture-planner",
-        "input_sha256": json_sha256(planner_input),
+        "input_sha256": planner_input_sha,
         "estimated_input_tokens": 10,
         "max_output_tokens": 10,
         "request": {
@@ -336,17 +433,17 @@ def write_real_fixture(
             }
         },
     }
-    request_ref = "planner/requests/fixture.json"
+    request_ref = f"planner/requests/{planner_logical_id}.json"
     write_canonical_json(run_dir / request_ref, request_audit)
     request_sha = json_sha256(request_audit)
     action_request = {
         "schema_version": "v3b.planner-action.v1",
-        "logical_operation_id": "fixture-operation",
+        "logical_operation_id": planner_logical_id,
         "attempt_index": 0,
         "retry_of": None,
         "planner_fingerprint": "fixture-planner",
         "input_ref": planner_input_ref,
-        "input_sha256": json_sha256(planner_input),
+        "input_sha256": planner_input_sha,
         "request_ref": request_ref,
         "request_sha256": request_sha,
         "replay_policy": "NON_REPLAYABLE",
@@ -380,7 +477,7 @@ def write_real_fixture(
     outcome = {
         "schema_version": "v3b.planner-outcome.v1",
         "action_id": action_id,
-        "input_sha256": json_sha256(planner_input),
+        "input_sha256": planner_input_sha,
         "outcome": "PROPOSAL",
         "proposal": proposal,
         "semantic_proposal_sha256": "0" * 64,
@@ -398,7 +495,7 @@ def write_real_fixture(
     write_canonical_json(
         run_dir / live_started_ref,
         {
-            "schema_version": "v3b.planner-action-started.v1",
+            "schema_version": "v3b.planner-started.v1",
             "action_id": action_id,
             "status": "STARTED",
             "request": action_request,
@@ -408,7 +505,7 @@ def write_real_fixture(
     write_canonical_json(
         run_dir / live_completed_ref,
         {
-            "schema_version": "v3b.planner-action-completed.v1",
+            "schema_version": "v3b.planner-completed.v1",
             "action_id": action_id,
             "status": "COMPLETED",
             "request": action_request,
@@ -423,6 +520,163 @@ def write_real_fixture(
         },
     )
 
+    provider_rejection: dict[str, object] | None = None
+    if include_provider_rejection:
+        failure_planner_input = {
+            "schema_version": "fixture.input.v1",
+            "round": 0,
+        }
+        failure_planner_input_ref = "planner/inputs/round_000.json"
+        write_canonical_json(
+            run_dir / failure_planner_input_ref, failure_planner_input
+        )
+        failure_planner_input_sha = json_sha256(failure_planner_input)
+        failure_logical_id = json_sha256(
+            {
+                "schema_version": "v3b.planner-logical-operation.v1",
+                "planner_fingerprint": "fixture-planner",
+                "input_sha256": failure_planner_input_sha,
+            }
+        )
+        if tamper_provider_rejection_identity:
+            failure_logical_id = "f" * 64
+        failure_request_audit = {
+            "schema_version": "v3b.planner-provider-request.v1",
+            "logical_operation_id": failure_logical_id,
+            "planner_fingerprint": "fixture-planner",
+            "input_sha256": failure_planner_input_sha,
+            "estimated_input_tokens": 8,
+            "max_output_tokens": 10,
+            "request": {
+                "provider_request": {
+                    "provider": "openai-compatible",
+                    "model": model,
+                    "http_body": {"model": model},
+                }
+            },
+        }
+        failure_request_ref = (
+            f"planner/requests/{failure_logical_id}.json"
+        )
+        write_canonical_json(
+            run_dir / failure_request_ref, failure_request_audit
+        )
+        failure_request_sha = json_sha256(failure_request_audit)
+        failure_action_request = {
+            "schema_version": "v3b.planner-action.v1",
+            "logical_operation_id": failure_logical_id,
+            "attempt_index": 0,
+            "retry_of": None,
+            "planner_fingerprint": "fixture-planner",
+            "input_ref": failure_planner_input_ref,
+            "input_sha256": failure_planner_input_sha,
+            "request_ref": failure_request_ref,
+            "request_sha256": failure_request_sha,
+            "replay_policy": "NON_REPLAYABLE",
+        }
+        failure_action_id = json_sha256(failure_action_request)
+        failure_ref = (
+            f"planner/provider_failures/{failure_action_id}.json"
+        )
+        failure = {
+            "schema_version": "v3.token-provider-failure.v1",
+            "action_id": failure_action_id,
+            "input_sha256": failure_planner_input_sha,
+            "planner_fingerprint": "fixture-planner",
+            "outcome": "PROVIDER_OUTPUT_REJECTED",
+            "error_type": "RepairProviderError",
+            "error_message": (
+                "provider output is incomplete and cannot create a Candidate"
+            ),
+            "response_excerpt": '{"patch":"--- kernel.cpp\\n',
+            "requested_max_output_tokens": 10,
+            "effective_max_output_tokens": 10,
+            "provider_parameter_name": "max_tokens",
+            "finish_reason": "stop",
+            "output_truncated": True,
+            "truncation_reason": "PATCH_INCOMPLETE",
+            "json_incomplete": False,
+            "patch_incomplete": True,
+            "usage": {
+                "actual_input_tokens": 8,
+                "actual_output_tokens": 3,
+                "actual_total_tokens": 11,
+                "cached_input_tokens": 0,
+                "duration_seconds": 0.25,
+                "request_id": "request-failure",
+                "usage_complete": True,
+            },
+        }
+        failure_sha = write_canonical_json(run_dir / failure_ref, failure)
+        failure_started_ref = (
+            "control/live_planner_actions/"
+            f"{failure_action_id}.started.json"
+        )
+        write_canonical_json(
+            run_dir / failure_started_ref,
+            {
+                "schema_version": "v3b.planner-started.v1",
+                "action_id": failure_action_id,
+                "status": "STARTED",
+                "request": failure_action_request,
+            },
+        )
+        failure_completed_ref = (
+            "control/live_planner_actions/"
+            f"{failure_action_id}.completed.json"
+        )
+        write_canonical_json(
+            run_dir / failure_completed_ref,
+            {
+                "schema_version": "v3b.planner-completed.v1",
+                "action_id": failure_action_id,
+                "status": "COMPLETED",
+                "request": failure_action_request,
+                "outcome": "PROVIDER_OUTPUT_REJECTED",
+                "result_ref": failure_ref,
+                "result_sha256": failure_sha,
+                "truncation_reason": "PATCH_INCOMPLETE",
+                "finish_reason": "stop",
+                "tokens_used": 11,
+                "input_tokens": 8,
+                "output_tokens": 3,
+                "cached_input_tokens": 0,
+            },
+        )
+        rejection_ref = "control/proposal_rejections/round_000.json"
+        write_canonical_json(
+            run_dir / rejection_ref,
+            {
+                "schema_version": "v3a.proposal-rejection.v1",
+                "round_index": 0,
+                "parent_candidate_id": "candidate_000",
+                "planner_ref": None,
+                "planner_action_id": failure_action_id,
+                "planner_input_ref": failure_planner_input_ref,
+                "planner_input_sha256": failure_planner_input_sha,
+                "planner_output_ref": failure_ref,
+                "planner_output_sha256": (
+                    "f" * 64
+                    if tamper_provider_rejection_hash
+                    else failure_sha
+                ),
+                "change_class": None,
+                "selection_metrics_digest": None,
+                "reason": "PROVIDER_OUTPUT_REJECTED:PATCH_INCOMPLETE",
+            },
+        )
+        provider_rejection = {
+            "action_id": failure_action_id,
+            "input_ref": failure_planner_input_ref,
+            "request_ref": failure_request_ref,
+            "request_sha256": failure_request_sha,
+            "started_ref": failure_started_ref,
+            "completed_ref": failure_completed_ref,
+            "result_ref": failure_ref,
+            "result_sha256": failure_sha,
+            "rejection_ref": rejection_ref,
+        }
+
     charged_tokens = 10 if ledger_tokens is None else ledger_tokens
     ledger_events = [
         {
@@ -432,6 +686,48 @@ def write_real_fixture(
             "config_hash": "fixture",
             "config": budget_config,
         },
+        *(
+            [
+                {
+                    "state": "STARTED",
+                    "timestamp": "2026-01-01T00:00:00.100000+00:00",
+                    "action_id": provider_rejection["action_id"],
+                    "kind": "llm",
+                    "candidate_id": "candidate_000",
+                    "code_hash": "0" * 64,
+                    "tool_config_hash": provider_rejection[
+                        "request_sha256"
+                    ],
+                    "estimated_cost": 0,
+                    "estimated_tokens": (
+                        10 if provider_rejection_token_overrun else 18
+                    ),
+                },
+                {
+                    "state": "COMPLETED",
+                    "timestamp": "2026-01-01T00:00:00.200000+00:00",
+                    "action_id": provider_rejection["action_id"],
+                    "kind": "llm",
+                    "actual_cost": 0,
+                    "tokens_used": 11,
+                    "input_tokens": 8,
+                    "output_tokens": 3,
+                    "cached_input_tokens": 0,
+                    "elapsed_s": 0.25,
+                    "result_ref": provider_rejection["result_ref"],
+                    "result_sha256": provider_rejection[
+                        "result_sha256"
+                    ],
+                    **(
+                        {"token_reservation_overrun": True}
+                        if provider_rejection_token_overrun
+                        else {}
+                    ),
+                },
+            ]
+            if provider_rejection is not None
+            else []
+        ),
         {
             "state": "STARTED",
             "timestamp": "2026-01-01T00:00:01+00:00",
@@ -481,13 +777,13 @@ def write_real_fixture(
                 "ok": True,
                 "candidate_id": "candidate_001",
                 "code_hash": source_sha,
-                "validation_scope": "final",
+                "validation_scope": "search_closeout",
             },
         )
         final_validation[stage] = {
             "status": "PASS",
             "cached": False,
-            "validation_scope": "final",
+            "validation_scope": "search_closeout",
             "action_id": f"final-{stage}",
             "result_ref": final_ref,
         }
@@ -507,6 +803,11 @@ def write_real_fixture(
         "stop_reason": "COMPLETED",
         "baseline_candidate_id": "candidate_000",
         "final_candidate_id": "candidate_001",
+        "terminal_candidate_binding": {
+            "candidate_id": "candidate_001",
+            "source_ref": source_ref,
+            "source_sha256": source_sha,
+        },
         "planner_input_ref": planner_input_ref,
         "planner_input_sha256": json_sha256(planner_input),
         "planner_output_ref": planner_output_ref,
@@ -523,19 +824,44 @@ def write_real_fixture(
         "node_events": [],
         "budget": {
             "credits_used": 0,
-            "tokens_used": charged_tokens,
-            "input_tokens_used": 7,
-            "output_tokens_used": 3,
+            "tokens_used": charged_tokens + (
+                11 if include_provider_rejection else 0
+            ),
+            "input_tokens_used": 7 + (
+                8 if include_provider_rejection else 0
+            ),
+            "output_tokens_used": 3 + (
+                3 if include_provider_rejection else 0
+            ),
             "cached_input_tokens_used": 1,
             "token_usage_complete": True,
             "runtime_used_seconds": 1.0,
-            "tool_used": {"llm": 1},
+            "tool_used": {
+                "llm": 2 if include_provider_rejection else 1
+            },
         },
     }
+    omitted_artifacts = set(provider_rejection_package_omissions)
+    if provider_rejection is not None:
+        omission_roles = {
+            "INPUT": "input_ref",
+            "REQUEST": "request_ref",
+            "STARTED": "started_ref",
+            "COMPLETED": "completed_ref",
+            "OUTCOME": "result_ref",
+            "REJECTION": "rejection_ref",
+        }
+        omitted_artifacts.update(
+            str(provider_rejection[field])
+            for role, field in omission_roles.items()
+            if role in omitted_artifacts
+        )
     artifact_paths = sorted(
         path
         for path in run_dir.rglob("*")
         if path.is_file()
+        and path.relative_to(run_dir).as_posix()
+        not in omitted_artifacts
         and path.name not in {
             "benchmark_executor_command.json",
             "benchmark_execution_binding.json",
@@ -568,8 +894,62 @@ def write_real_fixture(
         "manifest_ref": manifest_ref,
         "manifest_sha256": json_sha256(manifest),
     }
-    write_canonical_json(run_dir / "v3_prototype_result.json", result)
-    return result
+    search_result_sha256 = write_canonical_json(
+        run_dir / "v3_prototype_result.json", result
+    )
+    ledger_sha256 = hashlib.sha256(ledger_path.read_bytes()).hexdigest()
+    freeze = {
+        "schema_version": "v3.frozen-search-candidate.v1",
+        "candidate_id": "candidate_001",
+        "source_ref": source_ref,
+        "source_sha256": source_sha,
+        "search_result_sha256": search_result_sha256,
+        "agent_ledger_sha256": ledger_sha256,
+    }
+    freeze_ref = "control/frozen_candidate.json"
+    write_canonical_json(run_dir / freeze_ref, freeze)
+    certification_id = "c" * 64
+    receipt_ref = f"certification/{certification_id}/receipt.json"
+    receipt = {
+        "schema_version": "v3.final-certification-receipt.v1",
+        "certification_id": certification_id,
+        "status": "PASS",
+        "budget_domain": "FINAL_CERTIFICATION_OUTSIDE_AGENT_BUDGET",
+        "agent_credits_charged": 0,
+        "feedback_policy": "NO_SAME_RUN_AGENT_FEEDBACK",
+        "frozen_candidate_ref": freeze_ref,
+        "stages": {
+            stage: {"kind": stage, "ok": True}
+            for stage in ("csim", "synth", "cosim")
+        },
+        "clock_gate": {
+            "maximum_period_ns": 10.0,
+            "observed_period_ns": 5.0,
+            "passed": True,
+        },
+        "agent_ledger": {
+            "before_sha256": ledger_sha256,
+            "after_sha256": ledger_sha256,
+            "unchanged": True,
+        },
+    }
+    receipt["receipt_sha256"] = json_sha256(receipt)
+    write_canonical_json(run_dir / receipt_ref, receipt)
+    certified = dict(result)
+    certified["result_schema"] = "v3.certified-result.v1"
+    certified["agent_search_status"] = result["status"]
+    certified["agent_search_stop_reason"] = result["stop_reason"]
+    certified["final_certification"] = {
+        "status": "PASS",
+        "certification_id": certification_id,
+        "budget_domain": "FINAL_CERTIFICATION_OUTSIDE_AGENT_BUDGET",
+        "agent_credits_charged": 0,
+        "feedback_policy": "NO_SAME_RUN_AGENT_FEEDBACK",
+        "receipt_ref": receipt_ref,
+        "receipt_sha256": receipt["receipt_sha256"],
+    }
+    write_canonical_json(run_dir / "v3_certified_result.json", certified)
+    return certified
 
 
 class FakeExecutor:
@@ -634,6 +1014,32 @@ class RealFixtureExecutor(FakeExecutor):
 
 
 class V3BatchBenchmarkTests(unittest.TestCase):
+    def test_continuation_module_change_changes_implementation_fingerprint(
+        self,
+    ) -> None:
+        benchmark_module._implementation_facts.cache_clear()
+        baseline = benchmark_module._implementation_fingerprint()
+        real_sha256_file = benchmark_module._sha256_file
+
+        def altered_sha256_file(path: Path) -> str:
+            observed = real_sha256_file(path)
+            if path.name != "v3_continuation.py":
+                return observed
+            return "f" * 64 if observed != "f" * 64 else "e" * 64
+
+        try:
+            with mock.patch.object(
+                benchmark_module,
+                "_sha256_file",
+                side_effect=altered_sha256_file,
+            ):
+                benchmark_module._implementation_facts.cache_clear()
+                changed = benchmark_module._implementation_fingerprint()
+        finally:
+            benchmark_module._implementation_facts.cache_clear()
+
+        self.assertNotEqual(baseline, changed)
+
     def test_discovery_and_filters_need_no_corpus_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "corpus"
@@ -756,11 +1162,21 @@ class V3BatchBenchmarkTests(unittest.TestCase):
             assert descriptor.task is not None
             store = Path(directory) / "experience.jsonl"
             store.write_text('{"experience_id":"exp-1"}\n', encoding="utf-8")
-            copied_store = Path(directory) / "copied-experience.jsonl"
-            copied_store.write_bytes(store.read_bytes())
             admission = write_ranker_admission(
                 Path(directory) / "ranker-admission.json",
                 store,
+            )
+            copied_bundle = Path(directory) / "copied-bundle"
+            copied_bundle.mkdir()
+            copied_store = copied_bundle / store.name
+            copied_store.write_bytes(store.read_bytes())
+            copied_admission = copied_bundle / admission.name
+            copied_admission.write_bytes(admission.read_bytes())
+            copied_gate = copied_bundle / f"{admission.stem}-gate.json"
+            copied_gate.write_bytes(
+                admission.with_name(
+                    f"{admission.stem}-gate.json"
+                ).read_bytes()
             )
             executor = V3PrototypeCLIExecutor(
                 validation_profile="fast-experiment",
@@ -784,6 +1200,7 @@ class V3BatchBenchmarkTests(unittest.TestCase):
             command = executor._command(spec)
             expected_values = {
                 "--validation-profile": "fast-experiment",
+                "--evidence-memory": "on",
                 "--experience-mode": "guided",
                 "--experience-store": str(store.resolve()),
                 "--experience-ranker-version": "v3",
@@ -801,7 +1218,7 @@ class V3BatchBenchmarkTests(unittest.TestCase):
                     experience_mode="guided",
                     experience_store=copied_store,
                     experience_ranker_version="v3",
-                    experience_admission_manifest=admission,
+                    experience_admission_manifest=copied_admission,
                     experience_task_split="dev",
                 ).fingerprint(),
             )
@@ -812,7 +1229,7 @@ class V3BatchBenchmarkTests(unittest.TestCase):
                     experience_mode="shadow",
                     experience_store=copied_store,
                     experience_ranker_version="v3",
-                    experience_admission_manifest=admission,
+                    experience_admission_manifest=copied_admission,
                     experience_task_split="dev",
                 ).fingerprint(),
             )
@@ -823,7 +1240,7 @@ class V3BatchBenchmarkTests(unittest.TestCase):
                     experience_mode="guided",
                     experience_store=copied_store,
                     experience_ranker_version="v3",
-                    experience_admission_manifest=admission,
+                    experience_admission_manifest=copied_admission,
                     experience_task_split="dev",
                 ).fingerprint(),
             )
@@ -1004,6 +1421,27 @@ class V3BatchBenchmarkTests(unittest.TestCase):
             )
             defaults = BenchmarkConfig(root, Path(directory) / "defaults")
             self.assertEqual(defaults.experience_mode, "shadow")
+            self.assertEqual(defaults.evidence_memory_mode, "on")
+
+            a3_off = BenchmarkConfig(
+                root,
+                Path(directory) / "a3-off",
+                evidence_memory_mode="off",
+                continuation_policy_mode="off",
+                experience_mode="off",
+                experience_ranker_version="v3",
+            )
+            self.assertIsNone(a3_off.experience_store)
+
+            with self.assertRaisesRegex(
+                ValueError, "continuation requires evidence memory on"
+            ):
+                BenchmarkConfig(
+                    root,
+                    Path(directory) / "invalid-a1-a2",
+                    evidence_memory_mode="off",
+                    continuation_policy_mode="shadow",
+                )
 
     def test_batch_continues_after_failure_and_aggregates_every_required_metric(
         self,
@@ -1389,6 +1827,7 @@ class V3BatchBenchmarkTests(unittest.TestCase):
             "--model",
             "--validation-profile",
             "--final-validation-policy",
+            "--evidence-memory",
             "--max-planner-rounds",
             "--max-no-improvement-rounds",
             "--enable-final-fallback",
@@ -1400,6 +1839,20 @@ class V3BatchBenchmarkTests(unittest.TestCase):
             "--experience-ranker-version",
             "--experience-admission-manifest",
             "--experience-task-split",
+            "--token-budget-policy",
+            "--token-budget-visibility",
+            "--max-output-tokens",
+            "--repair-max-output-tokens",
+            "--synth-fix-max-output-tokens",
+            "--structural-fix-max-output-tokens",
+            "--optimize-max-output-tokens",
+            "--minimum-viable-output-tokens",
+            "--context-window-tokens",
+            "--context-safety-margin-tokens",
+            "--token-safety-margin",
+            "--future-round-token-reserve",
+            "--search-closeout-token-reserve",
+            "--guidance-ratio",
         )
         for option in forbidden:
             with self.subTest(option=option, spelling="separate"):
@@ -1408,6 +1861,79 @@ class V3BatchBenchmarkTests(unittest.TestCase):
             with self.subTest(option=option, spelling="equals"):
                 with self.assertRaisesRegex(BenchmarkError, option):
                     V3PrototypeCLIExecutor((f"{option}=untrusted-value",))
+
+    def test_experimental_token_executor_is_separate_from_product_cli(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "corpus"
+            write_task(root, "token_policy")
+            descriptor = discover_tasks(root)[0]
+            assert descriptor.task is not None
+            spec = BenchmarkRunSpec(
+                task=descriptor.task,
+                descriptor=descriptor,
+                model="scheduled-model",
+                repeat_index=1,
+                backend="vitis",
+                run_id="token-policy-experiment",
+                run_fingerprint="f" * 64,
+                run_dir=Path(directory) / "run",
+            )
+            executor = V3PrototypeCLIExecutor(
+                ("--token-budget-policy", "dynamic"),
+                experimental_token_policy=True,
+            )
+            command = executor._command(spec)
+
+        self.assertIn(
+            "llm4hls_agent.token_policy_experiment_cli", command
+        )
+        self.assertNotIn("llm4hls_agent.v3_prototype_cli", command)
+        self.assertEqual(
+            command[command.index("--token-budget-policy") + 1],
+            "dynamic",
+        )
+
+    def test_experimental_token_executor_cannot_authorize_formal_real_evidence(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "corpus"
+            write_task(root, "token_policy_authority")
+            config = BenchmarkConfig(
+                corpus=root,
+                output_dir=Path(directory) / "output",
+                backend="vitis",
+            )
+            executor = V3PrototypeCLIExecutor(
+                ("--token-budget-policy", "dynamic"),
+                experimental_token_policy=True,
+            )
+            runner = BatchBenchmarkRunner(config, executor)
+
+        self.assertFalse(runner.real_evidence_authorized)
+
+    def test_formal_real_executor_mutation_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "corpus"
+            write_task(root, "token_policy_mutation")
+            config = BenchmarkConfig(
+                corpus=root,
+                output_dir=Path(directory) / "output",
+                backend="vitis",
+            )
+            executor = V3PrototypeCLIExecutor()
+            runner = BatchBenchmarkRunner(config, executor)
+            self.assertTrue(runner.real_evidence_authorized)
+            executor.experimental_token_policy = True
+            executor.extra_args = (
+                "--token-budget-policy",
+                "dynamic",
+            )
+
+            with self.assertRaisesRegex(
+                BenchmarkError, "executor changed"
+            ):
+                runner.run()
 
     def test_real_executor_refuses_preexisting_terminal_result(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1629,6 +2155,32 @@ class V3BatchBenchmarkTests(unittest.TestCase):
             )
             self.assertIn("openai_provider.py", facts["modules"])
             self.assertIn("vitis.py", facts["modules"])
+            self.assertIn("final_certification.py", facts["modules"])
+            self.assertIn("full_agent_manifest.py", facts["modules"])
+            self.assertIn("v3_continuation.py", facts["modules"])
+            self.assertNotIn("v3_experience_importer.py", facts["modules"])
+            self.assertEqual(
+                facts["category_sha256"]["continuation_layer"],
+                json_sha256(
+                    [
+                        facts["modules"]["v3_continuation.py"],
+                        facts["modules"]["v3_continuation_v2.py"],
+                        facts["modules"]["v3_continuation_admission.py"],
+                    ]
+                ),
+            )
+            self.assertEqual(
+                facts["category_sha256"]["backend_and_accounting"],
+                json_sha256(
+                    [
+                        facts["modules"]["vitis.py"],
+                        facts["modules"]["tools.py"],
+                        facts["modules"]["budget.py"],
+                        facts["modules"]["v3_prototype.py"],
+                        facts["modules"]["final_certification.py"],
+                    ]
+                ),
+            )
             plan = json.loads((output / "benchmark_plan.json").read_text())
             self.assertEqual(
                 plan["implementation_fingerprint"],
@@ -1659,8 +2211,12 @@ class V3BatchBenchmarkTests(unittest.TestCase):
             self.assertEqual(
                 receipt["source_result"]["sha256"],
                 hashlib.sha256(
-                    (spec.run_dir / "v3_prototype_result.json").read_bytes()
+                    (spec.run_dir / "v3_certified_result.json").read_bytes()
                 ).hexdigest(),
+            )
+            self.assertEqual(
+                receipt["independent_certification"]["agent_credits_charged"],
+                0,
             )
             self.assertEqual(
                 receipt["model_outcomes"][0]["model"], "scheduled-model"
@@ -1707,6 +2263,230 @@ class V3BatchBenchmarkTests(unittest.TestCase):
             ):
                 executor._validate_terminal_provenance(
                     bad_ledger_spec, bad_ledger_result
+                )
+
+    def test_real_validator_accepts_only_the_bounded_runtime_command_suffix(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "corpus"
+            write_task(root, "real_task")
+            descriptor = discover_tasks(root)[0]
+            assert descriptor.task is not None
+            executor = V3PrototypeCLIExecutor()
+            spec = BenchmarkRunSpec(
+                task=descriptor.task,
+                descriptor=descriptor,
+                model="scheduled-model",
+                repeat_index=1,
+                backend="vitis",
+                run_id="bounded-command-run",
+                run_fingerprint="f" * 64,
+                run_dir=Path(directory) / "run",
+            )
+            result = write_real_fixture(executor, spec)
+            scheduled = executor._command(spec)
+            command_path = spec.run_dir / "benchmark_executor_command.json"
+            write_canonical_json(
+                command_path,
+                scheduled
+                + [
+                    "--run-deadline-monotonic",
+                    "12345.5",
+                    "--cleanup-reserve-seconds",
+                    "30",
+                ],
+            )
+            executor._validate_terminal_provenance(spec, result)
+
+            invalid_suffixes = (
+                [
+                    "--run-deadline-monotonic",
+                    "nan",
+                    "--cleanup-reserve-seconds",
+                    "30",
+                ],
+                [
+                    "--run-deadline-monotonic",
+                    "12345.5",
+                    "--cleanup-reserve-seconds",
+                    "29",
+                ],
+                ["--unexpected-runtime-override", "1"],
+            )
+            for invalid_suffix in invalid_suffixes:
+                with self.subTest(invalid_suffix=invalid_suffix):
+                    write_canonical_json(
+                        command_path, scheduled + invalid_suffix
+                    )
+                    with self.assertRaisesRegex(
+                        BenchmarkExecutionError,
+                        "command does not match the scheduled run",
+                    ):
+                        executor._validate_terminal_provenance(spec, result)
+
+    def test_real_validator_covers_success_and_provider_rejection_actions(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "corpus"
+            write_task(root, "mixed_provider_outcomes")
+            descriptor = discover_tasks(root)[0]
+            assert descriptor.task is not None
+            executor = V3PrototypeCLIExecutor()
+
+            def fixture(
+                name: str,
+                *,
+                omissions: tuple[str, ...] = (),
+                tamper_hash: bool = False,
+                tamper_identity: bool = False,
+                token_overrun: bool = False,
+            ) -> tuple[BenchmarkRunSpec, dict[str, object]]:
+                spec = BenchmarkRunSpec(
+                    task=descriptor.task,
+                    descriptor=descriptor,
+                    model="scheduled-model",
+                    repeat_index=1,
+                    backend="vitis",
+                    run_id=name,
+                    run_fingerprint=hashlib.sha256(
+                        name.encode("utf-8")
+                    ).hexdigest(),
+                    run_dir=Path(directory) / name,
+                )
+                result = write_real_fixture(
+                    executor,
+                    spec,
+                    include_provider_rejection=True,
+                    provider_rejection_package_omissions=omissions,
+                    tamper_provider_rejection_hash=tamper_hash,
+                    tamper_provider_rejection_identity=tamper_identity,
+                    provider_rejection_token_overrun=token_overrun,
+                )
+                return spec, result
+
+            spec, result = fixture("mixed-valid")
+            receipt = executor._validate_terminal_provenance(spec, result)
+            self.assertEqual(receipt["token_ledger"]["llm_calls"], 2)
+            self.assertEqual(receipt["token_ledger"]["tokens_used"], 21)
+            self.assertEqual(len(receipt["model_outcomes"]), 2)
+            self.assertEqual(
+                {
+                    item["outcome"]
+                    for item in receipt["model_outcomes"]
+                },
+                {"PROPOSAL", "PROVIDER_OUTPUT_REJECTED"},
+            )
+            rejected = next(
+                item
+                for item in receipt["model_outcomes"]
+                if item["outcome"] == "PROVIDER_OUTPUT_REJECTED"
+            )
+            self.assertEqual(
+                rejected["rejection_reason"], "PATCH_INCOMPLETE"
+            )
+            self.assertTrue(str(rejected["rejection_ref"]).endswith(".json"))
+            manifest = json.loads(
+                (
+                    spec.run_dir / "control" / "package_manifest.json"
+                ).read_text(encoding="utf-8")
+            )
+            manifest_paths = {
+                item["path"] for item in manifest["artifacts"]
+            }
+            rejected_action_id = rejected["action_id"]
+            self.assertTrue(
+                {
+                    rejected["request_ref"],
+                    rejected["outcome_ref"],
+                    rejected["rejection_ref"],
+                    (
+                        "control/live_planner_actions/"
+                        f"{rejected_action_id}.started.json"
+                    ),
+                    (
+                        "control/live_planner_actions/"
+                        f"{rejected_action_id}.completed.json"
+                    ),
+                }.issubset(manifest_paths)
+            )
+
+            for name, omissions, message in (
+                (
+                    "missing-failure-input",
+                    ("INPUT",),
+                    "absent from package",
+                ),
+                (
+                    "missing-failure-request",
+                    ("REQUEST",),
+                    "absent from package",
+                ),
+                (
+                    "missing-failure-outcome",
+                    ("OUTCOME",),
+                    "absent from package",
+                ),
+                (
+                    "missing-failure-rejection",
+                    ("REJECTION",),
+                    "lacks one packaged decision",
+                ),
+                (
+                    "ignored-failure-action",
+                    (
+                        "REQUEST",
+                        "STARTED",
+                        "COMPLETED",
+                        "OUTCOME",
+                        "REJECTION",
+                    ),
+                    "do not cover all completed ledger calls",
+                ),
+            ):
+                with self.subTest(name=name):
+                    bad_spec, bad_result = fixture(
+                        name, omissions=omissions
+                    )
+                    with self.assertRaisesRegex(
+                        BenchmarkExecutionError, message
+                    ):
+                        executor._validate_terminal_provenance(
+                            bad_spec, bad_result
+                        )
+
+            tampered_spec, tampered_result = fixture(
+                "tampered-rejection-hash", tamper_hash=True
+            )
+            with self.assertRaisesRegex(
+                BenchmarkExecutionError,
+                "provider rejection decision binding mismatch",
+            ):
+                executor._validate_terminal_provenance(
+                    tampered_spec, tampered_result
+                )
+
+            identity_spec, identity_result = fixture(
+                "tampered-rejection-identity", tamper_identity=True
+            )
+            with self.assertRaisesRegex(
+                BenchmarkExecutionError,
+                "deterministic identity",
+            ):
+                executor._validate_terminal_provenance(
+                    identity_spec, identity_result
+                )
+
+            overrun_spec, overrun_result = fixture(
+                "provider-rejection-token-overrun", token_overrun=True
+            )
+            with self.assertRaisesRegex(
+                BenchmarkExecutionError,
+                "token ledger",
+            ):
+                executor._validate_terminal_provenance(
+                    overrun_spec, overrun_result
                 )
 
     def test_real_validator_accepts_task_contract_without_optional_cosim(

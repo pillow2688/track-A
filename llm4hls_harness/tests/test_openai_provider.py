@@ -70,7 +70,7 @@ def optimization_context() -> OptimizationContext:
         failed_actions=(),
         remaining_tokens=4096,
         remaining_credits=135,
-        final_reserve_credits=25,
+        search_closeout_reserve_credits=25,
         top="vector_add",
         kernel_name="kernel.cpp",
         part="xcu55c-fsvh2892-2L-e",
@@ -114,7 +114,7 @@ def task_aware_context(mode: str = "REPAIR") -> dict[str, object]:
             "remaining_credits": 55,
             "round_index": 1,
             "rounds_completed": 0,
-            "final_reserve_credits": 25,
+            "search_closeout_reserve_credits": 25,
         },
         "constraints": {
             "allowed_files": ["kernel.cpp"],
@@ -260,7 +260,7 @@ class OpenAICompatibleProviderTests(unittest.TestCase):
         prompt = build_optimization_prompt(optimization_context())
 
         self.assertIn('"allowed_optimization_class": "LOOP_PIPELINE"', prompt)
-        self.assertIn('"final_reserve_credits": 25', prompt)
+        self.assertIn('"search_closeout_reserve_credits": 25', prompt)
         self.assertIn("maximum interval is 16", prompt)
         self.assertIn('"kind": "PUBLIC_OFFICIAL_SCORE_PROXY"', prompt)
         self.assertIn('"acceleration_cap": 8.0', prompt)

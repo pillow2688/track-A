@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from llm4hls_agent.budget import BudgetConfig
@@ -217,6 +219,32 @@ def forbidden_path_proposal() -> PatchProposal:
     )
 
 
+def wrong_new_start_proposal() -> PatchProposal:
+    return PatchProposal(
+        patch=(
+            "--- a/kernel.cpp\n"
+            "+++ b/kernel.cpp\n"
+            "@@ -1,2 +1,1 @@\n"
+            ' #include "kernel.h"\n'
+            "-\n"
+            "@@ -10,5 +10,5 @@\n"
+            " vector_add_loop:\n"
+            "     for (int i = 0; i < VECTOR_SIZE; ++i) {\n"
+            "-#pragma HLS PIPELINE II=16\n"
+            "+#pragma HLS PIPELINE II=1\n"
+            "         c[i] = a[i] + b[i];\n"
+            "     }\n"
+        ),
+        provider="scripted-prototype",
+        model="fixture-v1",
+        hypothesis="Exercise strict multi-hunk coordinate validation.",
+        change_class="pipeline",
+        expected_effect="The malformed metadata must be rejected.",
+        risk="low",
+        required_validation=("csim", "synth", "cosim"),
+    )
+
+
 def prototype_config(task, *, credit_limit: int = 80) -> RunConfig:
     tool_limits = (
         {"csim": 5, "synth": 5, "cosim": 4, "llm": 2}
@@ -243,6 +271,101 @@ def prototype_config(task, *, credit_limit: int = 80) -> RunConfig:
 
 @unittest.skipIf(run_v3_prototype is None, "V3 optional dependencies are not installed")
 class V3PrototypeTests(unittest.TestCase):
+    def test_planner_token_summary_rejects_ledger_mismatch(self) -> None:
+        self.assertIsNotNone(v3_prototype_module)
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "Planner token audit count does not match the Agent Ledger",
+        ):
+            v3_prototype_module._planner_token_summary(
+                [],
+                {"tool_used": {"llm": 1}},
+            )
+
+    def test_task_aware_request_audit_counts_planner_call(self) -> None:
+        self.assertIsNotNone(v3_prototype_module)
+        with tempfile.TemporaryDirectory() as directory:
+            run_root = Path(directory)
+            action_id = "task-aware-action"
+            input_ref = "planner/inputs/round_001.json"
+            request_ref = "planner/requests/task-aware-request.json"
+            input_path = run_root / input_ref
+            request_path = run_root / request_ref
+            started_path = (
+                run_root
+                / "control"
+                / "live_planner_actions"
+                / f"{action_id}.started.json"
+            )
+            outcome_path = (
+                run_root / "planner" / "live_outcomes" / f"{action_id}.json"
+            )
+            for path in (input_path, request_path, started_path, outcome_path):
+                path.parent.mkdir(parents=True, exist_ok=True)
+            input_path.write_text(
+                json.dumps(
+                    {"round": {"round_index": 1, "mode": "REPAIR"}}
+                ),
+                encoding="utf-8",
+            )
+            request_path.write_text(
+                json.dumps(
+                    {
+                        "estimated_input_tokens": 1200,
+                        "configured_max_output_tokens": 4096,
+                        "effective_max_output_tokens": 4096,
+                        "request": {
+                            "schema_version": "v3c.openai-task-aware-request.v1"
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            started_path.write_text(
+                json.dumps(
+                    {
+                        "action_id": action_id,
+                        "request": {
+                            "input_ref": input_ref,
+                            "request_ref": request_ref,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            outcome_path.write_text(
+                json.dumps(
+                    {
+                        "proposal": {
+                            "input_tokens": 300,
+                            "output_tokens": 100,
+                            "finish_reason": "stop",
+                            "output_truncated": False,
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            runtime = type("Runtime", (), {"run_root": run_root})()
+
+            rows = v3_prototype_module._planner_token_rounds(runtime)
+            summary = v3_prototype_module._planner_token_summary(
+                rows,
+                {
+                    "run_token_limit": 32768,
+                    "tokens_used": 400,
+                    "tool_used": {"llm": 1},
+                },
+            )
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["token_audit_source"], "planner_request_audit")
+        self.assertEqual(rows[0]["final_input_estimate"], 1200)
+        self.assertEqual(rows[0]["actual_input_tokens"], 300)
+        self.assertEqual(rows[0]["actual_output_tokens"], 100)
+        self.assertEqual(summary["planner_calls"], 1)
+
     def test_task_contract_final_skips_cosim_only_when_not_required(self) -> None:
         project = Path(__file__).resolve().parents[1]
         structural_task = load_public_task(
@@ -269,7 +392,10 @@ class V3PrototypeTests(unittest.TestCase):
         self.assertEqual(result["final_validation"]["synth"]["status"], "PASS")
         self.assertEqual(result["final_validation"]["cosim"]["status"], "NOT_RUN")
         accounting = result["track_a_budget_accounting"]
-        self.assertEqual(accounting["internal_final_validation_cost"], 5)
+        self.assertEqual(accounting["search_closeout_cost"], 5)
+        self.assertEqual(
+            accounting["final_certification_agent_credits_charged"], 0
+        )
         self.assertTrue(accounting["reconciled"])
 
     def test_task_contract_final_keeps_required_cosim(self) -> None:
@@ -290,7 +416,7 @@ class V3PrototypeTests(unittest.TestCase):
         self.assertEqual(result["status"], "DONE")
         self.assertEqual(result["final_validation"]["cosim"]["status"], "PASS")
         self.assertEqual(
-            result["track_a_budget_accounting"]["internal_final_validation_cost"],
+            result["track_a_budget_accounting"]["search_closeout_cost"],
             25,
         )
 
@@ -305,6 +431,7 @@ class V3PrototypeTests(unittest.TestCase):
                 (prototype_proposal(), another_non_improving_proposal()),
                 backend=PrototypeBackend(candidate_latency=256),
                 thread_id="track-a-8x-cap",
+                continuation_policy_mode="shadow",
             )
 
         self.assertEqual(result["status"], "DONE")
@@ -321,12 +448,41 @@ class V3PrototypeTests(unittest.TestCase):
         self.assertTrue(cap["reached"])
         self.assertGreaterEqual(cap["acceleration"], 8.0)
         accounting = result["track_a_budget_accounting"]
-        self.assertEqual(accounting["external_grader_cost"], 0)
+        self.assertEqual(
+            accounting["final_certification_agent_credits_charged"], 0
+        )
         self.assertTrue(accounting["reconciled"])
         self.assertEqual(
-            accounting["agent_search_cost"]
-            + accounting["internal_final_validation_cost"],
+            accounting["agent_search_cost"],
             result["budget"]["credits_used"],
+        )
+
+    def test_continuation_off_disables_eight_x_stop_for_a2_ablation(self) -> None:
+        project = Path(__file__).resolve().parents[1]
+        task = load_public_task(project / "examples" / "u55c_v2_optimize_task")
+        with tempfile.TemporaryDirectory() as directory:
+            result = run_v3_prototype(
+                task,
+                Path(directory) / "track-a-8x-cap-a2-off",
+                prototype_config(task, credit_limit=100),
+                (prototype_proposal(), another_non_improving_proposal()),
+                backend=PrototypeBackend(candidate_latency=256),
+                thread_id="track-a-8x-cap-a2-off",
+                continuation_policy_mode="off",
+            )
+
+        self.assertEqual(result["status"], "DONE")
+        self.assertEqual(result["rounds_completed"], 2)
+        self.assertNotEqual(
+            result["exploration_stop_reason"],
+            "ACCELERATION_CAP_REACHED",
+        )
+        self.assertFalse(
+            any(
+                event["node"] == "evaluate_round_budget"
+                and event["outcome"] == "ACCELERATION_CAP_REACHED"
+                for event in result["node_events"]
+            )
         )
 
     def test_shadow_continuation_persists_decision_without_changing_first_route(self) -> None:
@@ -347,6 +503,213 @@ class V3PrototypeTests(unittest.TestCase):
             self.assertEqual(decision["decision"], "ALLOW")
             self.assertEqual(decision["round_index"], 1)
             self.assertTrue((root / result["performance_area_ref"]).is_file())
+
+    def _invoke_continuation_route(
+        self,
+        *,
+        policy_mode: str,
+        policy_decision: str,
+        budget_allowed: bool,
+        round_index: int,
+    ) -> tuple[bool, dict[str, object]]:
+        self.assertIsNotNone(v3_prototype_module)
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = SimpleNamespace(
+                continuation_policy_mode=policy_mode,
+                run_root=Path(directory),
+                max_planner_rounds=2,
+                live_planner=None,
+                proposals=(prototype_proposal(), prototype_proposal()),
+                config=SimpleNamespace(budget=object()),
+            )
+            state = {
+                "round_index": round_index,
+                "mode": "OPTIMIZE",
+                "best_candidate_id": "candidate_000",
+                "baseline_candidate_id": "candidate_000",
+                "no_improvement_rounds": 0,
+            }
+
+            def decision(*_args: object, **_kwargs: object) -> dict[str, object]:
+                return {
+                    "schema_version": "v3.continuation-decision.v2",
+                    "mode": "OPTIMIZE",
+                    "decision": policy_decision,
+                    "confidence": "HIGH",
+                    "reason_codes": ["FIXTURE_DECISION"],
+                    "supporting_evidence": [],
+                    "fallback": "FOLLOW_EXISTING_MAIN_POLICY",
+                    "decision_digest": "d" * 64,
+                }
+
+            with (
+                patch.object(
+                    v3_prototype_module,
+                    "BudgetLedger",
+                    return_value=SimpleNamespace(snapshot=lambda: {}),
+                ),
+                patch.object(
+                    v3_prototype_module,
+                    "_continuation_history",
+                    return_value=((), (), (), None),
+                ),
+                patch.object(
+                    v3_prototype_module,
+                    "_continuation_evidence",
+                    return_value=({}, {}, {}, {}),
+                ),
+                patch.object(
+                    v3_prototype_module,
+                    "evidence_delta",
+                    return_value={},
+                ),
+                patch.object(
+                    v3_prototype_module,
+                    "strategy_novelty",
+                    return_value={},
+                ),
+                patch.object(
+                    v3_prototype_module,
+                    "performance_area_delta",
+                    return_value={},
+                ),
+                patch.object(
+                    v3_prototype_module,
+                    "_acceleration_cap_status",
+                    return_value={
+                        "baseline_latency": None,
+                        "incumbent_eligible": False,
+                        "csim_passed": False,
+                        "synth_passed": False,
+                        "cosim_required": False,
+                        "cosim_passed": False,
+                    },
+                ),
+                patch.object(
+                    v3_prototype_module,
+                    "continuation_cost",
+                    return_value={},
+                ),
+                patch.object(
+                    v3_prototype_module,
+                    "_continuation_v2_pre_state",
+                    return_value={},
+                ),
+                patch.object(
+                    v3_prototype_module,
+                    "continuation_decision_v2",
+                    side_effect=decision,
+                ),
+            ):
+                allowed, artifact, *_rest = (
+                    v3_prototype_module._apply_continuation_policy(
+                        runtime,
+                        state,
+                        budget_gate={"allowed": budget_allowed},
+                        estimated_tokens=0,
+                        estimated_credits=0,
+                    )
+                )
+        return allowed, artifact
+
+    def test_continuation_enforce_changes_only_allowed_followup_route(self) -> None:
+        shadow_allowed, shadow = self._invoke_continuation_route(
+            policy_mode="shadow",
+            policy_decision="BLOCK",
+            budget_allowed=True,
+            round_index=2,
+        )
+        enforce_allowed, enforce = self._invoke_continuation_route(
+            policy_mode="enforce",
+            policy_decision="BLOCK",
+            budget_allowed=True,
+            round_index=2,
+        )
+
+        self.assertTrue(shadow_allowed)
+        self.assertFalse(enforce_allowed)
+        self.assertEqual(shadow["decision"], "BLOCK")
+        self.assertEqual(enforce["decision"], "BLOCK")
+
+    def test_continuation_enforce_cannot_overturn_b1_budget_rejection(self) -> None:
+        allowed, artifact = self._invoke_continuation_route(
+            policy_mode="enforce",
+            policy_decision="ALLOW",
+            budget_allowed=False,
+            round_index=2,
+        )
+
+        self.assertFalse(allowed)
+        self.assertEqual(artifact["decision"], "ALLOW")
+
+    def test_continuation_enforce_always_allows_first_planner_call(self) -> None:
+        allowed, artifact = self._invoke_continuation_route(
+            policy_mode="enforce",
+            policy_decision="BLOCK",
+            budget_allowed=True,
+            round_index=1,
+        )
+
+        self.assertTrue(allowed)
+        self.assertEqual(artifact["decision"], "ALLOW")
+        self.assertIn("INITIAL_PLANNER_CALL", artifact["reason_codes"])
+
+    def test_evidence_memory_off_removes_cross_candidate_history_only(self) -> None:
+        project = Path(__file__).resolve().parents[1]
+        task = load_public_task(project / "examples" / "u55c_v2_optimize_task")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "b0-evidence-off"
+            result = run_v3_prototype(
+                task,
+                root,
+                prototype_config(task, credit_limit=100),
+                (
+                    non_improving_proposal(),
+                    another_non_improving_proposal(),
+                ),
+                backend=PrototypeBackend(),
+                thread_id="b0-evidence-off",
+                max_no_improvement_rounds=3,
+                evidence_memory_mode="off",
+                continuation_policy_mode="off",
+            )
+            second_input = json.loads(
+                (root / "planner" / "inputs" / "round_002.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            run_config = json.loads(
+                (root / "v3_run_config.json").read_text(encoding="utf-8")
+            )
+
+        self.assertEqual(result["status"], "DONE")
+        self.assertEqual(result["evidence_memory_mode"], "off")
+        self.assertEqual(second_input["history"], [])
+        self.assertEqual(
+            second_input["policy"]["evidence_memory_mode"], "off"
+        )
+        self.assertEqual(run_config["evidence_memory_mode"], "off")
+        self.assertGreater(result["budget"]["tool_used"]["csim"], 0)
+        self.assertGreater(result["budget"]["tool_used"]["synth"], 0)
+        self.assertNotIn("continuation_decision_ref", second_input)
+
+    def test_evidence_memory_off_rejects_hidden_continuation_dependency(self) -> None:
+        project = Path(__file__).resolve().parents[1]
+        task = load_public_task(project / "examples" / "u55c_v2_optimize_task")
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(
+                ValueError,
+                "Continuation requires evidence memory on",
+            ):
+                run_v3_prototype(
+                    task,
+                    Path(directory) / "invalid-a1-a2",
+                    prototype_config(task),
+                    prototype_proposal(),
+                    backend=PrototypeBackend(),
+                    evidence_memory_mode="off",
+                    continuation_policy_mode="shadow",
+                )
 
     def test_mode_specific_continuation_v2_is_bound_into_terminal_result(self) -> None:
         project = Path(__file__).resolve().parents[1]
@@ -374,19 +737,19 @@ class V3PrototypeTests(unittest.TestCase):
             decision["schema_version"], "v3.continuation-decision.v2"
         )
         self.assertEqual(
-            decision["policy_version"], "v3.continuation-policy.v2"
+            decision["policy_version"], "v3.continuation-policy.v3"
         )
         self.assertIn("pre_state", decision)
         self.assertNotIn("outcome", decision["pre_state"])
         self.assertNotIn("final_result", decision["pre_state"])
 
-    def test_continuation_enforce_fails_closed_without_v2_admission(self) -> None:
+    def test_removed_v1_is_rejected_and_enforce_requires_admission(self) -> None:
         project = Path(__file__).resolve().parents[1]
         task = load_public_task(project / "examples" / "u55c_v2_optimize_task")
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaisesRegex(
                 ValueError,
-                "requires the mode-specific v2 policy",
+                "only v2 is available",
             ):
                 run_v3_prototype(
                     task,
@@ -410,6 +773,35 @@ class V3PrototypeTests(unittest.TestCase):
                     continuation_policy_mode="enforce",
                     continuation_policy_version="v2",
                 )
+
+    def test_current_v3_gate_admission_enables_enforce_runtime(self) -> None:
+        project = Path(__file__).resolve().parents[1]
+        task = load_public_task(project / "examples" / "u55c_v2_optimize_task")
+        admission = (
+            project.parent
+            / "docs"
+            / "experiments"
+            / "artifacts"
+            / "2026-07-27-a2-a3-full-agent-closure"
+            / "a2"
+            / "continuation-v3-admission.json"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            result = run_v3_prototype(
+                task,
+                Path(directory) / "current-v3-enforce",
+                prototype_config(task),
+                prototype_proposal(),
+                backend=PrototypeBackend(),
+                continuation_policy_mode="enforce",
+                continuation_policy_version="v2",
+                continuation_admission_manifest=admission,
+            )
+
+        self.assertEqual(result["status"], "DONE")
+        self.assertEqual(result["continuation_policy_mode"], "enforce")
+        self.assertEqual(result["continuation_policy_version"], "v2")
+        self.assertIsInstance(result["continuation_admission_sha256"], str)
 
     def test_legacy_checkpoint_without_mode_keeps_optimize_cosim_route(self) -> None:
         self.assertIsNotNone(v3_prototype_module)
@@ -1253,6 +1645,122 @@ class V3PrototypeTests(unittest.TestCase):
         self.assertIn("record_rejected_proposal", nodes)
         self.assertLess(nodes.index("record_rejected_proposal"), nodes.index("candidate_csim"))
 
+    def test_hunk_coordinate_failure_is_precise_and_preserves_registry(
+        self,
+    ) -> None:
+        project = Path(__file__).resolve().parents[1]
+        task = load_public_task(project / "examples" / "u55c_v2_optimize_task")
+        backend = PrototypeBackend()
+
+        with tempfile.TemporaryDirectory() as directory:
+            run_root = Path(directory) / "v3-hunk-coordinate-then-promote"
+            result = run_v3_prototype(
+                task,
+                run_root,
+                prototype_config(task, credit_limit=75),
+                (wrong_new_start_proposal(), prototype_proposal()),
+                backend=backend,
+                thread_id="prototype-hunk-coordinate-then-promote-test",
+            )
+            registry = json.loads(
+                (run_root / "candidate_registry.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            rejection = json.loads(
+                (
+                    run_root
+                    / "control"
+                    / "proposal_rejections"
+                    / "round_001.json"
+                ).read_text(encoding="utf-8")
+            )
+            evidence_ref = rejection["patch_failure_evidence_ref"]
+            evidence_path = run_root / evidence_ref
+            evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+            evidence_file_sha256 = hashlib.sha256(
+                evidence_path.read_bytes()
+            ).hexdigest()
+            round_two = json.loads(
+                (
+                    run_root / "planner" / "inputs" / "round_002.json"
+                ).read_text(encoding="utf-8")
+            )
+
+        self.assertEqual(result["status"], "DONE")
+        self.assertEqual(result["best_candidate_id"], "candidate_001")
+        self.assertEqual(result["final_candidate_id"], "candidate_001")
+        self.assertEqual(
+            set(registry["candidates"]), {"candidate_000", "candidate_001"}
+        )
+        self.assertEqual(registry["candidates"]["candidate_000"]["kind"], "baseline")
+        self.assertEqual(rejection["reason"], "PATCH_POLICY_REJECTED")
+        self.assertEqual(
+            rejection["patch_error_type"],
+            "PATCH_HUNK_NEW_START_MISMATCH",
+        )
+        self.assertEqual(
+            rejection["patch_failure_evidence_sha256"],
+            evidence_file_sha256,
+        )
+        self.assertEqual(evidence["file"], "kernel.cpp")
+        self.assertEqual(
+            evidence["schema_version"],
+            "v3.patch-hunk-failure-evidence.v1",
+        )
+        self.assertEqual(evidence["hunk_index"], 2)
+        self.assertEqual(evidence["hunk_header"], "@@ -10,5 +10,5 @@")
+        self.assertEqual(evidence["declared_new_start"], 10)
+        self.assertEqual(evidence["expected_new_start"], 9)
+        self.assertEqual(evidence["declared_old_count"], 5)
+        self.assertEqual(evidence["actual_old_count"], 5)
+        self.assertEqual(evidence["declared_new_count"], 5)
+        self.assertEqual(evidence["actual_new_count"], 5)
+        self.assertEqual(
+            evidence["guidance"],
+            "regenerate the unified diff with corrected hunk coordinates",
+        )
+        self.assertIn("PATCH_HUNK_NEW_START_MISMATCH", evidence["message"])
+        self.assertIn("declared_new_start=10", evidence["message"])
+        self.assertIn("expected_new_start=9", evidence["message"])
+        self.assertEqual(
+            round_two["round"]["parent_candidate_id"], "candidate_000"
+        )
+        self.assertEqual(
+            round_two["incumbent"]["candidate_id"], "candidate_000"
+        )
+        self.assertEqual(
+            registry["candidates"]["candidate_001"]["parent_id"],
+            "candidate_000",
+        )
+        proposal_rejections = [
+            item
+            for item in round_two["history"]
+            if item.get("kind") == "proposal_rejection"
+        ]
+        self.assertEqual(len(proposal_rejections), 1)
+        self.assertEqual(
+            proposal_rejections[0]["patch_failure_evidence"],
+            {
+                "ref": evidence_ref,
+                "sha256": rejection["patch_failure_evidence_sha256"],
+            },
+        )
+        self.assertEqual(
+            [kind for kind, _optimized, _work in backend.calls],
+            [
+                "csim",
+                "synth",
+                "cosim",
+                "csim",
+                "synth",
+                "cosim",
+                "csim",
+                "synth",
+                "cosim",
+            ],
+        )
+
     def test_duplicate_patch_is_rejected_without_candidate_or_tool_replay(self) -> None:
         project = Path(__file__).resolve().parents[1]
         task = load_public_task(project / "examples" / "u55c_v2_optimize_task")
@@ -2085,18 +2593,18 @@ class V3PrototypeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             result = run_v3_prototype(
                 task,
-                Path(directory) / "v3-final-reserve",
+                Path(directory) / "v3-search-closeout-reserve",
                 prototype_config(task, credit_limit=55),
                 prototype_proposal(),
                 backend=backend,
-                thread_id="prototype-final-reserve-test",
+                thread_id="prototype-search-closeout-reserve-test",
             )
 
         self.assertEqual(result["status"], "DONE")
         self.assertEqual(result["final_candidate_id"], "candidate_000")
         self.assertEqual(result["budget"]["credits_used"], 50)
         self.assertEqual(
-            result["cosim_gate"]["reason"], "ROUND_SKIPPED_FINAL_RESERVE"
+            result["cosim_gate"]["reason"], "ROUND_SKIPPED_SEARCH_CLOSEOUT_RESERVE"
         )
         self.assertEqual(
             [kind for kind, _optimized, _work in backend.calls],
@@ -2321,7 +2829,7 @@ class V3PrototypeTests(unittest.TestCase):
                 value = json.loads(result_path.read_text(encoding="utf-8"))
                 if (
                     value.get("kind") == "synth"
-                    and value.get("validation_scope") == "final"
+                    and value.get("validation_scope") == "search_closeout"
                 ):
                     final_synth_paths.append(result_path)
             self.assertEqual(len(final_synth_paths), 1)
@@ -2434,7 +2942,7 @@ class V3PrototypeTests(unittest.TestCase):
                         encoding="utf-8"
                     )
                 )
-                if result.get("validation_scope") == "final":
+                if result.get("validation_scope") == "search_closeout":
                     final_evidence_paths.append(evidence_path)
             self.assertEqual(len(final_evidence_paths), 1)
             evidence = json.loads(

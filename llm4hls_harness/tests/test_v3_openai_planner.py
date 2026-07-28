@@ -18,6 +18,7 @@ from llm4hls_agent.optimization import select_optimization
 from llm4hls_agent.openai_provider import (
     OpenAICompatibleConfig,
     OpenAICompatibleOptimizationProvider,
+    build_task_aware_prompt,
 )
 from llm4hls_agent.task import load_public_task
 from llm4hls_agent.v3_openai_planner import (
@@ -25,6 +26,7 @@ from llm4hls_agent.v3_openai_planner import (
     OPENAI_V3_TASK_AWARE_REQUEST_SCHEMA,
     OpenAICompatibleV3PlannerAdapter,
     V3OpenAIPlannerError,
+    _basic_synth_metrics,
     _history_state,
     _metrics_with_evidence,
     _task_aware_failure_evidence,
@@ -102,6 +104,34 @@ def _task_aware_response(mode: str) -> str:
 
 
 class V3OpenAIPlannerTests(unittest.TestCase):
+    def test_a1_off_synth_projection_drops_refined_bottleneck_details(self) -> None:
+        report = {
+            "latency": {"best": 10, "average": 11, "worst": 12},
+            "interval": {"min": 1, "max": 2},
+            "estimated_clock_period_ns": 5.0,
+            "resources": {"LUT": 10},
+            "available_resources": {"LUT": 100},
+            "loop_evidence": {"loops": [{"name": "secret_loop", "ii": 8}]},
+            "evidence": ["refined scheduling diagnosis"],
+            "observations": [{"kind": "memory_port_contention"}],
+        }
+
+        projected = _basic_synth_metrics(report)
+
+        self.assertEqual(
+            set(projected),
+            {
+                "latency",
+                "interval",
+                "estimated_clock_period_ns",
+                "resources",
+                "available_resources",
+            },
+        )
+        self.assertNotIn("loop_evidence", projected)
+        self.assertNotIn("evidence", projected)
+        self.assertNotIn("observations", projected)
+
     def test_task_aware_mode_accepts_compatible_candidate_stage_failure(self) -> None:
         evidence = {
             "schema_version": "v3c.csim-failure-evidence.v1",
@@ -255,6 +285,97 @@ class V3OpenAIPlannerTests(unittest.TestCase):
         self.assertEqual(
             [row["candidate_id"] for row in rows],
             ["candidate_000", "candidate_001"],
+        )
+
+    def test_task_aware_history_includes_precise_patch_hunk_failure(
+        self,
+    ) -> None:
+        evidence = {
+            "schema_version": "v3.patch-hunk-failure-evidence.v1",
+            "error_type": "PATCH_HUNK_NEW_START_MISMATCH",
+            "file": "kernel.cpp",
+            "hunk_index": 2,
+            "hunk_header": "@@ -19,7 +18,7 @@",
+            "declared_old_start": 19,
+            "declared_new_start": 18,
+            "expected_new_start": 17,
+            "declared_old_count": 7,
+            "actual_old_count": 7,
+            "declared_new_count": 7,
+            "actual_new_count": 7,
+            "guidance": (
+                "regenerate the unified diff with corrected hunk coordinates"
+            ),
+            "message": (
+                "PATCH_HUNK_NEW_START_MISMATCH: file=kernel.cpp hunk=2 "
+                "declared_new_start=18 expected_new_start=17"
+            ),
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "evidence" / "failures" / "patch_round_001.json"
+            path.parent.mkdir(parents=True)
+            encoded = json.dumps(evidence).encode("utf-8")
+            path.write_bytes(encoded)
+            rows = _task_aware_recent_failures(
+                root,
+                [
+                    {
+                        "kind": "proposal_rejection",
+                        "round_index": 1,
+                        "parent_id": "candidate_000",
+                        "change_class": "SYNTHESIS_REPAIR",
+                        "reason": "PATCH_POLICY_REJECTED",
+                        "patch_failure_evidence": {
+                            "ref": str(path.relative_to(root)),
+                            "sha256": hashlib.sha256(encoded).hexdigest(),
+                        },
+                    }
+                ],
+                mode="SYNTH_FIX",
+                current_candidate_id="candidate_000",
+            )
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(
+            rows[0]["failure_kind"], "PATCH_HUNK_NEW_START_MISMATCH"
+        )
+        self.assertEqual(rows[0]["patch_failure"]["hunk_index"], 2)
+        self.assertEqual(
+            rows[0]["patch_failure"]["declared_new_start"], 18
+        )
+        self.assertEqual(
+            rows[0]["patch_failure"]["expected_new_start"], 17
+        )
+        self.assertEqual(rows[0]["summary"], evidence["message"])
+        prompt = build_task_aware_prompt(
+            {
+                "mode": "SYNTH_FIX",
+                "task": {"task_id": "fixture"},
+                "current_kernel": "void kernel() {}\n",
+                "description": "fixture",
+                "read_only_headers": {},
+                "failure_evidence": {
+                    "schema_version": "v3c.synth-failure-evidence.v1",
+                    "failure_kind": "SYNTH_ERROR",
+                },
+                "recent_failures": rows,
+                "budget": {"remaining_tokens": 1000},
+                "constraints": {"allowed_files": ["kernel.cpp"]},
+            }
+        )
+        self.assertIn("RECENT REJECTED CANDIDATE FAILURES", prompt)
+        self.assertIn("PATCH_HUNK_NEW_START_MISMATCH", prompt)
+        self.assertIn('"hunk_header": "@@ -19,7 +18,7 @@"', prompt)
+        self.assertIn('"declared_old_count": 7', prompt)
+        self.assertIn('"actual_old_count": 7', prompt)
+        self.assertIn('"declared_new_count": 7', prompt)
+        self.assertIn('"actual_new_count": 7', prompt)
+        self.assertIn('"declared_new_start": 18', prompt)
+        self.assertIn('"expected_new_start": 17', prompt)
+        self.assertIn(
+            "regenerate the unified diff with corrected hunk coordinates",
+            prompt,
         )
 
     def test_dynamic_policy_two_stage_prompt_matches_provider_max(self) -> None:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import inspect
 import unittest
@@ -73,7 +75,7 @@ class TokenBudgetPolicyTests(unittest.TestCase):
                 context_safety_margin_tokens=200,
                 token_budget_safety_margin=100,
                 future_round_token_reserve=1000,
-                final_token_reserve=300,
+                search_closeout_token_reserve=300,
                 configured_guidance_cap=600,
                 guidance_ratio=0.15,
             )
@@ -135,13 +137,13 @@ class TokenBudgetPolicyTests(unittest.TestCase):
         )
         self.assertEqual(run.effective_max_output_tokens, 800)
 
-    def test_input_future_and_final_reserves_are_deducted(self) -> None:
+    def test_input_future_and_search_closeout_reserves_are_deducted(self) -> None:
         envelope = self.allocate(
             budget_snapshot=snapshot(limit=6000, used=1000),
             estimated_input_tokens=1800,
             rounds_remaining=2,
         )
-        # 5000 remaining - 1800 input - 1000 future - 300 final - 100 safety.
+        # 5000 remaining - 1800 input - 1000 future - 300 closeout - 100 safety.
         self.assertEqual(envelope.effective_max_output_tokens, 1800)
         self.assertEqual(envelope.future_round_token_reserve, 1000)
 
@@ -209,7 +211,7 @@ class TokenBudgetPolicyTests(unittest.TestCase):
         )
         self.assertLess(after.effective_max_output_tokens, before.effective_max_output_tokens)
 
-    def test_mode_defaults_and_final_reserve_are_explicit(self) -> None:
+    def test_mode_defaults_and_search_closeout_reserve_are_explicit(self) -> None:
         expected = {
             "REPAIR": (1400, 700),
             "SYNTH_FIX": (1800, 800),
@@ -221,8 +223,8 @@ class TokenBudgetPolicyTests(unittest.TestCase):
             self.assertEqual(limits.mode_output_caps[mode], cap)
             self.assertEqual(limits.mode_minimum_viable_output[mode], minimum)
 
-        final_only = TokenBudgetPolicy(
-            TokenBudgetLimits(final_token_reserve=900)
+        closeout_only = TokenBudgetPolicy(
+            TokenBudgetLimits(search_closeout_token_reserve=900)
         ).allocate(
             budget_snapshot=snapshot(limit=2000, used=1100),
             mode="REPAIR",
@@ -231,13 +233,16 @@ class TokenBudgetPolicyTests(unittest.TestCase):
             estimated_input_tokens=0,
             rounds_remaining=1,
         )
-        self.assertFalse(final_only.planner_call_allowed)
-        self.assertIn("ONLY_FINAL_TOKEN_RESERVE_REMAINS", final_only.reason_codes)
+        self.assertFalse(closeout_only.planner_call_allowed)
+        self.assertIn(
+            "ONLY_SEARCH_CLOSEOUT_TOKEN_RESERVE_REMAINS",
+            closeout_only.reason_codes,
+        )
 
 
 class TokenPolicyIntegrationContractTests(unittest.TestCase):
-    def test_cli_defaults_to_fixed_and_exposes_all_dynamic_overrides(self) -> None:
-        args = _parser().parse_args(
+    def test_product_cli_is_fixed_only_and_experiment_cli_retains_replay(self) -> None:
+        args = _parser(experimental_token_policy=True).parse_args(
             [
                 "--task-dir",
                 "public-task",
@@ -288,6 +293,62 @@ class TokenPolicyIntegrationContractTests(unittest.TestCase):
             ]
         )
         self.assertEqual(defaults.token_budget_policy, "fixed")
+        self.assertEqual(defaults.evidence_memory, "on")
+        self.assertFalse(hasattr(defaults, "token_policy_config"))
+
+        with contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                _parser().parse_args(
+                    [
+                        "--task-dir",
+                        "public-task",
+                        "--patch-file",
+                        "candidate.diff",
+                        "--run-dir",
+                        "run",
+                        "--token-budget-policy",
+                        "dynamic",
+                    ]
+                )
+            with self.assertRaises(SystemExit):
+                _parser().parse_args(
+                    [
+                        "--task-dir",
+                        "public-task",
+                        "--patch-file",
+                        "candidate.diff",
+                        "--run-dir",
+                        "run",
+                        "--max-output-tokens",
+                        "1700",
+                    ]
+                )
+            with self.assertRaises(SystemExit):
+                _parser(experimental_token_policy=True).parse_args(
+                    [
+                        "--task-dir",
+                        "public-task",
+                        "--patch-file",
+                        "candidate.diff",
+                        "--run-dir",
+                        "run",
+                        "--token-budget-policy",
+                        "hybrid",
+                    ]
+                )
+            with self.assertRaises(SystemExit):
+                _parser().parse_args(
+                    [
+                        "--task-dir",
+                        "public-task",
+                        "--patch-file",
+                        "candidate.diff",
+                        "--run-dir",
+                        "run",
+                        "--mod",
+                        "untrusted-model",
+                    ]
+                )
 
     def test_token_policy_adds_no_graph_node(self) -> None:
         from llm4hls_agent import v3_prototype

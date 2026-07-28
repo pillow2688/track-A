@@ -11,7 +11,13 @@ from llm4hls_agent.token_policy_abc_runner import (
     CONDITIONS,
     MODES,
     RUN_SCHEMA,
+    TokenPolicyABCError,
+    _artifact_manifest,
     _condition_args,
+    _condition_executor,
+    _execution_identity,
+    _load_resumed_records,
+    _validate_common_config,
     load_matrix,
     reconcile_record_from_artifacts,
     run_matrix,
@@ -65,9 +71,163 @@ class TokenPolicyABCMatrixTests(unittest.TestCase):
             "--run-token-limit 12000",
             "--llm-temperature 0.0",
             "--llm-top-p 1.0",
-            "--max-planner-rounds 4",
         ):
             self.assertTrue(all(flag in value for value in joined.values()))
+        self.assertTrue(
+            all(
+                "--max-planner-rounds" not in value
+                and "--max-no-improvement-rounds" not in value
+                for value in joined.values()
+            )
+        )
+
+    def test_condition_executors_use_owned_round_controls(self) -> None:
+        matrix = load_matrix(matrix_path())
+        for condition in CONDITIONS:
+            executor = _condition_executor(matrix, condition)
+            self.assertTrue(executor.experimental_token_policy)
+            self.assertEqual(executor.max_planner_rounds, 4)
+            self.assertEqual(executor.max_no_improvement_rounds, 2)
+            self.assertNotIn("--max-planner-rounds", executor.extra_args)
+            self.assertNotIn(
+                "--max-no-improvement-rounds", executor.extra_args
+            )
+
+    def test_execution_identity_binds_model_and_executor(self) -> None:
+        matrix = load_matrix(matrix_path())
+        executors = {
+            condition: _condition_executor(matrix, condition)
+            for condition in CONDITIONS
+        }
+        first = _execution_identity(
+            matrix,
+            model="model-a",
+            vitis_root=Path("/opt/xilinx/2025.2/Vitis"),
+            executors=executors,
+        )
+        second = _execution_identity(
+            matrix,
+            model="model-b",
+            vitis_root=Path("/opt/xilinx/2025.2/Vitis"),
+            executors=executors,
+        )
+        self.assertNotEqual(
+            first["execution_identity_sha256"],
+            second["execution_identity_sha256"],
+        )
+
+    def test_declared_mode_minimums_must_match_runtime_defaults(self) -> None:
+        config = json.loads(matrix_path().read_text(encoding="utf-8"))
+        config["mode_minimum_viable_output"]["REPAIR"] += 1
+        with self.assertRaisesRegex(
+            TokenPolicyABCError, "versioned runtime defaults"
+        ):
+            _validate_common_config(config)
+
+    def test_resume_validates_record_and_artifact_identity(self) -> None:
+        matrix = load_matrix(matrix_path())
+        job = matrix.jobs[0]
+        execution_identity = {
+            "execution_identity_sha256": "e" * 64,
+            "model": "bound-model",
+        }
+        condition_config = matrix.config["conditions"][job.condition]
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            run_dir = output / "runs" / job.run_id
+            run_dir.mkdir(parents=True)
+            payload_path = run_dir / "durable.json"
+            payload_path.write_text('{"status":"DONE"}\n', encoding="utf-8")
+            artifact_manifest = _artifact_manifest(run_dir)
+            artifact_path = run_dir / "abc_artifact_hashes.json"
+            artifact_path.write_text(
+                json.dumps(artifact_manifest, sort_keys=True),
+                encoding="utf-8",
+            )
+            record = {
+                **job.to_dict(),
+                "schema_version": RUN_SCHEMA,
+                "matrix_config_sha256": matrix.config_sha256,
+                "implementation_sha256": matrix.implementation_sha256,
+                "corpus_manifest_sha256": matrix.corpus_manifest_sha256,
+                "execution_identity_sha256": "e" * 64,
+                "run_ref": f"runs/{job.run_id}",
+                "provider": matrix.config["provider"],
+                "model": "bound-model",
+                "token_budget_policy": condition_config[
+                    "token_budget_policy"
+                ],
+                "token_budget_visibility": condition_config[
+                    "token_budget_visibility"
+                ],
+                "artifact_manifest_ref": "abc_artifact_hashes.json",
+                "artifact_manifest_sha256": hashlib.sha256(
+                    artifact_path.read_bytes()
+                ).hexdigest(),
+            }
+            (run_dir / "abc_run_record.json").write_text(
+                json.dumps(record, sort_keys=True),
+                encoding="utf-8",
+            )
+            results_path = output / "token_policy_abc_results.jsonl"
+            results_path.write_text(
+                json.dumps(record, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            manifest_path = output / "manifest.json"
+            manifest_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "v3e.token-policy-abc-manifest.v1",
+                        "matrix_config_sha256": matrix.config_sha256,
+                        "implementation_sha256": matrix.implementation_sha256,
+                        "corpus_manifest_sha256": matrix.corpus_manifest_sha256,
+                        "execution_identity_sha256": "e" * 64,
+                        "planned_runs": 1,
+                    },
+                    sort_keys=True,
+                ),
+                encoding="utf-8",
+            )
+
+            resumed = _load_resumed_records(
+                matrix=matrix,
+                jobs=(job,),
+                output=output,
+                manifest_path=manifest_path,
+                results_path=results_path,
+                execution_identity=execution_identity,
+            )
+            self.assertEqual(set(resumed), {job.run_id})
+
+            with self.assertRaisesRegex(
+                TokenPolicyABCError,
+                "resume manifest identity mismatch",
+            ):
+                _load_resumed_records(
+                    matrix=matrix,
+                    jobs=(job,),
+                    output=output,
+                    manifest_path=manifest_path,
+                    results_path=results_path,
+                    execution_identity={
+                        "execution_identity_sha256": "f" * 64,
+                        "model": "other-model",
+                    },
+                )
+
+            payload_path.write_text('{"status":"CHANGED"}\n', encoding="utf-8")
+            with self.assertRaisesRegex(
+                TokenPolicyABCError, "resume run artifacts changed"
+            ):
+                _load_resumed_records(
+                    matrix=matrix,
+                    jobs=(job,),
+                    output=output,
+                    manifest_path=manifest_path,
+                    results_path=results_path,
+                    execution_identity=execution_identity,
+                )
 
     def test_dry_run_writes_manifest_without_external_execution(self) -> None:
         matrix = load_matrix(matrix_path())
@@ -100,7 +260,7 @@ class TokenPolicyABCAggregateTests(unittest.TestCase):
                         {
                             "backend_fingerprint": "llm4hls_agent.vitis.VitisBackend:v0.7",
                             "cached": False,
-                            "validation_scope": "final",
+                            "validation_scope": "search_closeout",
                         }
                     ),
                     encoding="utf-8",

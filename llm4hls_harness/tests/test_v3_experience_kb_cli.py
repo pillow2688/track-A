@@ -7,10 +7,12 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from llm4hls_agent.v3_experience import canonical_json
 from llm4hls_agent.v3_experience_kb import ExperienceKnowledgeBase, build_kb_query
-from llm4hls_agent.v3_experience_kb_cli import main
+from llm4hls_agent.v3_experience_kb_cli import _parser, main
 from llm4hls_agent.v3_experience_v2 import seal_experience_v2
 
 from .test_v3_experience_v2_schema import sample_body
@@ -44,6 +46,25 @@ class ExperienceKBCLITests(unittest.TestCase):
         with contextlib.redirect_stdout(stream):
             status = main(list(args))
         return status, json.loads(stream.getvalue())
+
+    def test_offline_import_commands_default_to_unspecified(self) -> None:
+        imported = _parser().parse_args(
+            [
+                "import",
+                "--source",
+                "source.json",
+                "--store",
+                "store.jsonl",
+                "--output-dir",
+                "output",
+            ]
+        )
+        postprocess = _parser().parse_args(
+            ["postprocess-run", "--run-root", "terminal-run"]
+        )
+
+        self.assertEqual(imported.task_split, "unspecified")
+        self.assertEqual(postprocess.task_split, "unspecified")
 
     def test_stats_and_snapshot_emit_machine_json(self) -> None:
         status, stats = self.invoke("stats", "--kb-root", str(self.kb.root))
@@ -117,6 +138,68 @@ class ExperienceKBCLITests(unittest.TestCase):
         self.assertEqual(status, 0)
         self.assertEqual(result["strategy_ranker"]["status"], "NOT_READY")
         self.assertFalse(result["complex_model_training_allowed"])
+
+    def test_postprocess_run_is_an_explicit_offline_command(self) -> None:
+        run_root = self.root / "terminal-run"
+        run_root.mkdir()
+        (run_root / "v3_prototype_result.json").write_text(
+            '{"status":"DONE"}\n', encoding="utf-8"
+        )
+        output_dir = self.root / "offline-output"
+        imported = SimpleNamespace(
+            records=({"record_id": "r1"},),
+            inserted_record_ids=("r1",),
+            duplicate_record_ids=(),
+        )
+        attribution = {
+            "record_count": 0,
+            "inserted": 0,
+            "duplicates": 0,
+        }
+        with (
+            patch(
+                "llm4hls_agent.v3_experience_kb_cli.import_historical_runs",
+                return_value=imported,
+            ) as import_runs,
+            patch(
+                "llm4hls_agent.v3_experience_kb_cli.write_import_artifacts",
+                return_value={"report": output_dir / "report.json"},
+            ),
+            patch(
+                "llm4hls_agent.v3_experience_attribution."
+                "persist_recommendation_attributions",
+                return_value=attribution,
+            ) as persist_attribution,
+        ):
+            status, result = self.invoke(
+                "postprocess-run",
+                "--run-root",
+                str(run_root),
+                "--output-dir",
+                str(output_dir),
+                "--task-split",
+                "train",
+            )
+
+        self.assertEqual(status, 0)
+        self.assertEqual(
+            result["execution_boundary"], "EXPLICIT_OFFLINE_POSTPROCESS"
+        )
+        self.assertEqual(result["llm_calls"], 0)
+        self.assertEqual(result["vitis_calls"], 0)
+        self.assertEqual(result["records"], 1)
+        self.assertEqual(result["task_split"], "train")
+        self.assertEqual(result["task_split_source"], "explicit_cli")
+        imported_sources = import_runs.call_args.args[0]
+        self.assertEqual(
+            imported_sources,
+            [run_root.resolve() / "v3_prototype_result.json"],
+        )
+        self.assertEqual(
+            import_runs.call_args.kwargs["policy"].task_split,
+            "train",
+        )
+        persist_attribution.assert_called_once_with(run_root.resolve())
 
 
 if __name__ == "__main__":

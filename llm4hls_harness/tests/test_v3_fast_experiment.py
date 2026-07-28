@@ -5,7 +5,9 @@ import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
+import llm4hls_agent.v3_prototype as v3_prototype_module
 from llm4hls_agent.budget import BudgetConfig
 from llm4hls_agent.openai_provider import (
     OpenAICompatibleConfig,
@@ -86,7 +88,7 @@ def fast_context() -> dict[str, object]:
             "rounds_completed": 1,
             "max_optimization_rounds": 4,
             "max_no_improvement_rounds": 2,
-            "final_reserve_credits": 25,
+            "search_closeout_reserve_credits": 25,
         },
         "constraints": {
             "allowed_files": ["dotProduct.cpp"],
@@ -206,6 +208,42 @@ def official_dot_task() -> object:
 
 
 class V3FastExperimentTests(unittest.TestCase):
+    def test_structural_risk_requires_exploration_cosim(self) -> None:
+        runtime = SimpleNamespace(task=official_dot_task())
+        base = dot_improving_proposal()
+        for dimension in (
+            "dataflow",
+            "stream",
+            "fifo",
+            "deadlock",
+            "interface protocol",
+            "RTL/C model mismatch",
+        ):
+            with self.subTest(dimension=dimension):
+                proposal = replace(
+                    base,
+                    risk=json.dumps(
+                        {"level": "MEDIUM", "dimensions": [dimension]}
+                    ),
+                )
+                decision = v3_prototype_module._fast_experiment_risk(
+                    runtime,
+                    proposal,
+                )
+                self.assertTrue(decision["requires_cosim"])
+
+        source_decision = v3_prototype_module._fast_experiment_risk(
+            runtime,
+            base,
+            candidate_source=(
+                "#pragma HLS DATAFLOW\n"
+                "hls::stream<int> fifo;\n"
+            ),
+        )
+        self.assertTrue(source_decision["requires_cosim"])
+        low_risk = v3_prototype_module._fast_experiment_risk(runtime, base)
+        self.assertFalse(low_risk["requires_cosim"])
+
     def test_experience_off_keeps_legacy_adapter_fingerprint(self) -> None:
         provider = OpenAICompatibleOptimizationProvider(
             OpenAICompatibleConfig(

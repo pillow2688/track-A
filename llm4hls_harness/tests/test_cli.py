@@ -39,7 +39,7 @@ def make_task(root: Path) -> None:
                 'kernel_file = "kernel.cpp"',
                 'header_files = ["kernel.h"]',
                 'public_tb = "kernel_tb.cpp"',
-                "budget = 40",
+                "budget = 160",
                 "[target]",
                 'part = "xcu55c-fsvh2892-2L-e"',
                 "clock_ns = 5.0",
@@ -433,7 +433,18 @@ class V3PrototypeCliTests(unittest.TestCase):
             "budget": {"credits_used": 30},
         }
 
-    def test_scripted_mode_preserves_legacy_budget_and_call_shape(self) -> None:
+    @classmethod
+    def _certified_result(cls) -> dict[str, object]:
+        result = cls._done_result()
+        result["agent_search_status"] = "DONE"
+        result["final_certification"] = {
+            "status": "PASS",
+            "budget_domain": "FINAL_CERTIFICATION_OUTSIDE_AGENT_BUDGET",
+            "agent_credits_charged": 0,
+        }
+        return result
+
+    def test_scripted_mode_uses_recorded_token_fallback_and_call_shape(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             task_dir = root / "task"
@@ -453,6 +464,9 @@ class V3PrototypeCliTests(unittest.TestCase):
             with patch.dict(
                 sys.modules,
                 {"llm4hls_agent.v3_prototype": prototype_module},
+            ), patch(
+                "llm4hls_agent.final_certification.certify_v3_search_result",
+                return_value=self._certified_result(),
             ), redirect_stdout(stdout):
                 return_code = v3_prototype_main(
                     [
@@ -474,7 +488,11 @@ class V3PrototypeCliTests(unittest.TestCase):
         self.assertEqual(len(proposals), 1)
         self.assertEqual(proposals[0].patch, "fixture patch")
         self.assertEqual(proposals[0].provider, "scripted-v3a0-prototype")
-        self.assertEqual(config.budget.token_limit, 4096)
+        self.assertEqual(config.budget.token_limit, 32768)
+        self.assertEqual(
+            config.budget.token_limit_source,
+            "development-fallback:max_tokens",
+        )
         self.assertEqual(config.budget.tool_limits["llm"], 1)
         self.assertEqual(config.budget.tool_limits["csim"], 3)
         self.assertIs(run.call_args.kwargs["backend"], backend)
@@ -514,6 +532,9 @@ class V3PrototypeCliTests(unittest.TestCase):
             ) as adapter_class, patch.dict(
                 sys.modules,
                 {"llm4hls_agent.v3_prototype": prototype_module},
+            ), patch(
+                "llm4hls_agent.final_certification.certify_v3_search_result",
+                return_value=self._certified_result(),
             ), redirect_stdout(stdout):
                 return_code = v3_prototype_main(
                     [
@@ -549,7 +570,7 @@ class V3PrototypeCliTests(unittest.TestCase):
         adapter_class.assert_called_once_with(
             run_dir.resolve(),
             provider,
-            final_reserve_credits=25,
+            search_closeout_reserve_credits=25,
             max_output_tokens=512,
             read_only_headers={"kernel.h": "void kernel();\n"},
             experience_mode="shadow",
@@ -605,6 +626,9 @@ class V3PrototypeCliTests(unittest.TestCase):
             ) as adapter_class, patch.dict(
                 sys.modules,
                 {"llm4hls_agent.v3_prototype": prototype_module},
+            ), patch(
+                "llm4hls_agent.final_certification.certify_v3_search_result",
+                return_value=self._certified_result(),
             ), redirect_stdout(stdout):
                 return_code = v3_prototype_main(
                     [
@@ -627,7 +651,7 @@ class V3PrototypeCliTests(unittest.TestCase):
         adapter_class.assert_called_once_with(
             run_dir.resolve(),
             provider,
-            final_reserve_credits=25,
+            search_closeout_reserve_credits=25,
             max_output_tokens=640,
             fast_experiment=True,
             read_only_headers={"kernel.h": "void kernel();\n"},

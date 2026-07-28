@@ -843,7 +843,7 @@ def _final_validation(
         and all(
             isinstance(validation.get(stage), Mapping)
             and validation[stage].get("status") == "PASS"
-            and validation[stage].get("validation_scope") == "final"
+            and validation[stage].get("validation_scope") == "search_closeout"
             for stage in ("csim", "synth", "cosim")
         )
         and isinstance(result.get("final_clock_constraint"), Mapping)
@@ -854,7 +854,7 @@ def _final_validation(
             validation,
             candidate_id=final_id,
             code_hash=final_candidate.get("code_hash"),
-            expected_scope="final",
+            expected_scope="search_closeout",
             stages=("csim", "synth", "cosim"),
         )
     )

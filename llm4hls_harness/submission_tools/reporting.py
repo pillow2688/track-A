@@ -115,15 +115,17 @@ def _latency_worst(root: Path, result: dict[str, Any], key: str) -> float | None
 
 
 def _all_final_pass(result: dict[str, Any]) -> bool:
-    validation = result.get("final_validation", {})
-    if not isinstance(validation, dict):
-        return False
-    return all(
-        isinstance(validation.get(tool), dict)
-        and validation[tool].get("status") == PASS
-        and validation[tool].get("validation_scope") == "final"
-        and validation[tool].get("cached") is False
-        for tool in ("csim", "synth", "cosim")
+    certification = result.get("final_certification", {})
+    return (
+        isinstance(certification, dict)
+        and certification.get("status") == PASS
+        and certification.get("budget_domain")
+        == "FINAL_CERTIFICATION_OUTSIDE_AGENT_BUDGET"
+        and certification.get("agent_credits_charged") == 0
+        and certification.get("feedback_policy")
+        == "NO_SAME_RUN_AGENT_FEEDBACK"
+        and isinstance(certification.get("receipt_ref"), str)
+        and bool(certification.get("receipt_ref"))
     )
 
 

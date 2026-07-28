@@ -945,7 +945,7 @@ def validate_real_vitis_evidence(
             record.get("status") != "PASS"
             or record.get("ok") is not True
             or record.get("phase") != "pass"
-            or record.get("validation_scope") != "final"
+            or record.get("validation_scope") != "search_closeout"
             or record.get("cached") is not False
             or not isinstance(action_id, str)
             or _SHA256.fullmatch(action_id) is None
@@ -982,7 +982,7 @@ def validate_real_vitis_evidence(
             "tool_config_hash": action_value.get("tool_config_hash"),
             "backend_fingerprint": action_value.get("backend_fingerprint"),
             "task_fingerprint": task_fingerprint,
-            "validation_scope": "final",
+            "validation_scope": "search_closeout",
         }
         terminal_binding_keys = (
             "action_id",
@@ -1002,7 +1002,7 @@ def validate_real_vitis_evidence(
             or action_value.get("result_ref") != result_ref
             or action_value.get("ok") is not True
             or action_value.get("phase") != "pass"
-            or action_value.get("validation_scope") != "final"
+            or action_value.get("validation_scope") != "search_closeout"
             or action_value.get("cached") is not False
             or any(record.get(key) != action_value.get(key) for key in terminal_binding_keys)
             or _canonical_sha256(expected_action_payload) != action_id
@@ -1010,6 +1010,118 @@ def validate_real_vitis_evidence(
             findings.append(
                 Finding("FINAL_ACTION_BINDING_MISMATCH", location, f"final {stage} action is not bound to task/Candidate/code")
             )
+
+    if result.get("status") != "DONE" or not isinstance(final_candidate_id, str):
+        return sorted(set(findings), key=lambda item: (item.code, item.detail))
+
+    certification = result.get("final_certification")
+    certification = certification if isinstance(certification, dict) else {}
+    receipt_ref = certification.get("receipt_ref")
+    receipt_artifact = _json_artifact(
+        run_root=run_root,
+        reference=receipt_ref,
+        expected_prefix=("certification",),
+        label="independent final certification receipt",
+        findings=findings,
+        code_prefix="FINAL_CERTIFICATION",
+    )
+    if receipt_artifact is None:
+        findings.append(
+            Finding(
+                "FINAL_CERTIFICATION_MISSING",
+                location,
+                "successful run lacks an independent certification receipt",
+            )
+        )
+    else:
+        receipt = receipt_artifact.payload
+        receipt_payload = {
+            key: value
+            for key, value in receipt.items()
+            if key != "receipt_sha256"
+        }
+        stages = receipt.get("stages")
+        stages = stages if isinstance(stages, dict) else {}
+        clock_gate = receipt.get("clock_gate")
+        clock_gate = clock_gate if isinstance(clock_gate, dict) else {}
+        agent_ledger = receipt.get("agent_ledger")
+        agent_ledger = agent_ledger if isinstance(agent_ledger, dict) else {}
+        receipt_valid = (
+            receipt.get("schema_version")
+            == "v3.final-certification-receipt.v1"
+            and receipt.get("status") == "PASS"
+            and receipt.get("budget_domain")
+            == "FINAL_CERTIFICATION_OUTSIDE_AGENT_BUDGET"
+            and receipt.get("agent_credits_charged") == 0
+            and receipt.get("feedback_policy")
+            == "NO_SAME_RUN_AGENT_FEEDBACK"
+            and receipt.get("receipt_sha256")
+            == _canonical_sha256(receipt_payload)
+            and certification.get("receipt_sha256")
+            == receipt.get("receipt_sha256")
+            and certification.get("status") == "PASS"
+            and certification.get("budget_domain")
+            == "FINAL_CERTIFICATION_OUTSIDE_AGENT_BUDGET"
+            and certification.get("agent_credits_charged") == 0
+            and all(
+                isinstance(stages.get(stage), dict)
+                and stages[stage].get("kind") == stage
+                and stages[stage].get("candidate_id") == final_candidate_id
+                and stages[stage].get("code_hash") == code_hash
+                and stages[stage].get("ok") is True
+                for stage in ("csim", "synth", "cosim")
+            )
+            and clock_gate.get("passed") is True
+            and clock_gate.get("maximum_period_ns") == 10.0
+            and agent_ledger.get("unchanged") is True
+            and agent_ledger.get("before_sha256")
+            == agent_ledger.get("after_sha256")
+        )
+        if not receipt_valid:
+            findings.append(
+                Finding(
+                    "FINAL_CERTIFICATION_INVALID",
+                    location,
+                    "independent certification receipt is incomplete or unbound",
+                )
+            )
+        freeze_ref = receipt.get("frozen_candidate_ref")
+        freeze_artifact = _json_artifact(
+            run_root=run_root,
+            reference=freeze_ref,
+            expected_prefix=("control",),
+            label="frozen final Candidate",
+            findings=findings,
+            code_prefix="FINAL_CERTIFICATION_FREEZE",
+        )
+        if (
+            freeze_artifact is None
+            or freeze_artifact.payload.get("schema_version")
+            != "v3.frozen-search-candidate.v1"
+            or freeze_artifact.payload.get("candidate_id") != final_candidate_id
+            or freeze_artifact.payload.get("source_sha256") != code_hash
+        ):
+            findings.append(
+                Finding(
+                    "FINAL_CERTIFICATION_FREEZE_INVALID",
+                    location,
+                    "certification does not bind the frozen final Candidate",
+                )
+            )
+        ledger_path = run_root / "budget_ledger.jsonl"
+        if ledger_path.is_file():
+            ledger_digest = hashlib.sha256(ledger_path.read_bytes()).hexdigest()
+            if (
+                agent_ledger.get("before_sha256") != ledger_digest
+                or agent_ledger.get("after_sha256") != ledger_digest
+            ):
+                findings.append(
+                    Finding(
+                        "FINAL_CERTIFICATION_LEDGER_MUTATED",
+                        location,
+                        "certification receipt does not preserve Agent Ledger bytes",
+                    )
+                )
     return sorted(set(findings), key=lambda item: (item.code, item.detail))
 
 

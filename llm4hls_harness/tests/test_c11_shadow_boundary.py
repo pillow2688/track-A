@@ -53,9 +53,17 @@ class _Coordinator:
             "similar_successes": [],
             "similar_failures": [],
             "recommended_strategy_bundles": [
-                {"strategy_bundle": ["FIX_LOOP_BOUND"], "utility": 0.5}
+                {
+                    "strategy_bundle": ["FIX_LOOP_BOUND"],
+                    "context": "MODE_SUBTYPE_PROFILE_BACKOFF",
+                    "attempts": 4,
+                    "successes": 4,
+                    "utility": 0.5,
+                }
             ],
-            "discouraged_strategy_bundles": [],
+            "discouraged_strategy_bundles": [
+                {"strategy_bundle": ["OTHER_FUNCTIONAL_REPAIR"], "utility": 0.1}
+            ],
             "confidence": 0.25,
             "supporting_record_ids": [],
             "fallback_reason": None,
@@ -305,6 +313,59 @@ class C11ShadowBoundaryTests(unittest.TestCase):
             self.assertTrue(decision["runtime_shadow_admitted"])
             self.assertEqual(decision["formal_matrix"]["experience"], "shadow")
             self.assertEqual(decision["formal_matrix"]["ranker"], "shadow")
+
+    def test_guided_recommend_injects_only_one_short_strategy_card(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            call = OpenAICompatibleV3PlannerAdapter(
+                root,
+                _provider(),
+                fast_experiment=True,
+                experience_mode="guided",
+                experience_coordinator=_Coordinator(),
+                experience_task_split="train",
+            ).prepare(_planner_input(root))
+
+        prompt = call.request["provider_request"]["http_body"]["messages"][1][
+            "content"
+        ]
+        self.assertIn("v3e.top1-strategy-card.v1", prompt)
+        self.assertIn('"strategy_atom": "FIX_LOOP_BOUND"', prompt)
+        self.assertIn('"source_family_count": 4', prompt)
+        self.assertIn('"avoid_or_high_risk": ["OTHER_FUNCTIONAL_REPAIR"]', prompt)
+        self.assertNotIn("supporting_record_ids", prompt)
+        self.assertNotIn("similar_successes", prompt)
+
+    def test_guided_abstain_does_not_change_provider_request(self) -> None:
+        class AbstainingCoordinator(_Coordinator):
+            def build_guidance(self, **facts):
+                guidance = super().build_guidance(**facts)
+                guidance["recommended_strategy_bundles"] = []
+                guidance["fallback_reason"] = "NO_SAFE_VERIFIED_STRATEGY"
+                return guidance
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            planner_input = _planner_input(root)
+            off = OpenAICompatibleV3PlannerAdapter(
+                root,
+                _provider(),
+                fast_experiment=True,
+                experience_mode="off",
+            ).prepare(planner_input)
+            guided = OpenAICompatibleV3PlannerAdapter(
+                root,
+                _provider(),
+                fast_experiment=True,
+                experience_mode="guided",
+                experience_coordinator=AbstainingCoordinator(),
+                experience_task_split="train",
+            ).prepare(planner_input)
+
+        self.assertEqual(
+            off.request["provider_request"],
+            guided.request["provider_request"],
+        )
 
     def test_ranker_v3_is_reachable_only_through_explicit_cli_adapter(self) -> None:
         package = Path(__file__).resolve().parents[1] / "llm4hls_agent"

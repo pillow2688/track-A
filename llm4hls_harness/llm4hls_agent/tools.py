@@ -14,11 +14,18 @@ from types import MappingProxyType
 from typing import Mapping, Protocol
 
 from .budget import BudgetLedger
+from .runtime_control import (
+    COSIM_NOT_STARTED_INSUFFICIENT_RUNTIME,
+    TOOL_NOT_STARTED_INSUFFICIENT_RUNTIME,
+    RuntimeDeadline,
+    RuntimePermit,
+    RuntimeUnavailable,
+)
 from .task import PublicTask
 
 
 _SAFE_TCL_ATOM = re.compile(r"\A[A-Za-z0-9_.+-]+\Z")
-_VALIDATION_SCOPES = {"exploration", "final"}
+_VALIDATION_SCOPES = {"exploration", "search_closeout"}
 
 
 class ToolArtifactError(RuntimeError):
@@ -159,6 +166,8 @@ class ToolConfig:
 
 @dataclass(frozen=True)
 class BackendResult:
+    """Backend outcome with artifact refs relative to ``work_dir.parent``."""
+
     ok: bool
     phase: str
     return_code: int
@@ -278,12 +287,14 @@ class ToolServer:
         run_root: str | Path,
         config: ToolConfig,
         backend: ToolBackend,
+        runtime_deadline: RuntimeDeadline | None = None,
     ) -> None:
         self.task = task
         self.budget = budget
         self.run_root = Path(run_root)
         self.config = config
         self._backend = backend
+        self.runtime_deadline = runtime_deadline
         self.backend_fingerprint = _backend_fingerprint(backend)
         self.task_fingerprint = _sha256(
             _canonical_json(
@@ -614,6 +625,75 @@ class ToolServer:
                 f"started action {action_id} had no durable result; charge was conserved"
             )
 
+        configured_timeout = self.config.timeout_for(kind)
+        if self.runtime_deadline is not None:
+            permit = self.runtime_deadline.permit(
+                configured_timeout,
+                operation=kind,
+                final_closure=validation_scope == "search_closeout",
+            )
+            if not permit.allowed:
+                self._trace(
+                    "TOOL_NOT_STARTED",
+                    action_id=action_id,
+                    candidate_id=candidate_id,
+                    kind=kind,
+                    validation_scope=validation_scope,
+                    reason_code=permit.reason_code,
+                    remaining_runtime_seconds=(
+                        permit.remaining_runtime_seconds
+                    ),
+                    cleanup_reserve_seconds=(
+                        permit.cleanup_reserve_seconds
+                    ),
+                    configured_timeout_seconds=(
+                        permit.configured_timeout_seconds
+                    ),
+                    effective_timeout_seconds=(
+                        permit.effective_timeout_seconds
+                    ),
+                    minimum_runtime_seconds=(
+                        permit.minimum_runtime_seconds
+                    ),
+                )
+                raise RuntimeUnavailable(permit)
+            effective_timeout = permit.effective_timeout_seconds
+            remaining_runtime = permit.remaining_runtime_seconds
+        else:
+            remaining_runtime = self.budget.remaining_runtime_seconds()
+            effective_timeout = min(configured_timeout, remaining_runtime)
+            if effective_timeout <= 0:
+                permit = RuntimePermit(
+                    allowed=False,
+                    operation=kind,
+                    remaining_runtime_seconds=max(0.0, remaining_runtime),
+                    cleanup_reserve_seconds=0.0,
+                    configured_timeout_seconds=configured_timeout,
+                    effective_timeout_seconds=0.0,
+                    minimum_runtime_seconds=0.0,
+                    reason_code=(
+                        COSIM_NOT_STARTED_INSUFFICIENT_RUNTIME
+                        if kind == "cosim"
+                        else TOOL_NOT_STARTED_INSUFFICIENT_RUNTIME
+                    ),
+                )
+                self._trace(
+                    "TOOL_NOT_STARTED",
+                    action_id=action_id,
+                    candidate_id=candidate_id,
+                    kind=kind,
+                    validation_scope=validation_scope,
+                    reason_code=permit.reason_code,
+                    remaining_runtime_seconds=max(
+                        0.0, remaining_runtime
+                    ),
+                    cleanup_reserve_seconds=0.0,
+                    configured_timeout_seconds=configured_timeout,
+                    effective_timeout_seconds=0.0,
+                    minimum_runtime_seconds=0.0,
+                )
+                raise RuntimeUnavailable(permit)
+
         self.budget.reserve(
             action_id=action_id,
             kind=kind,
@@ -622,8 +702,6 @@ class ToolServer:
             tool_config_hash=tool_config_hash,
         )
         self.budget.write_snapshot(self.budget_state_path)
-        remaining_runtime = self.budget.remaining_runtime_seconds()
-        effective_timeout = min(self.config.timeout_for(kind), remaining_runtime)
         self._trace(
             "TOOL_STARTED",
             action_id=action_id,
@@ -634,38 +712,28 @@ class ToolServer:
             tool_config_hash=tool_config_hash,
             backend_fingerprint=self.backend_fingerprint,
             task_fingerprint=self.task_fingerprint,
-            configured_timeout_seconds=self.config.timeout_for(kind),
+            configured_timeout_seconds=configured_timeout,
             effective_timeout_seconds=effective_timeout,
             cost=self.budget.cost(kind),
         )
 
-        if effective_timeout <= 0:
+        effective_config = self.config.with_timeout(kind, effective_timeout)
+        try:
+            backend_result = self._backend.run(
+                kind,
+                task=self.task,
+                kernel_bytes=kernel_bytes,
+                work_dir=result_path.parent / "work",
+                config=effective_config,
+            )
+        except Exception as exc:  # charged action still needs durable evidence
             backend_result = BackendResult(
                 ok=False,
-                phase="timeout",
+                phase="tool_error",
                 return_code=-1,
                 elapsed_s=0.0,
-                evidence=["runtime budget expired after action reservation"],
+                evidence=[f"{type(exc).__name__}: {exc}"],
             )
-            effective_timeout = max(remaining_runtime, 1e-9)
-        else:
-            effective_config = self.config.with_timeout(kind, effective_timeout)
-            try:
-                backend_result = self._backend.run(
-                    kind,
-                    task=self.task,
-                    kernel_bytes=kernel_bytes,
-                    work_dir=result_path.parent / "work",
-                    config=effective_config,
-                )
-            except Exception as exc:  # charged action still needs durable evidence
-                backend_result = BackendResult(
-                    ok=False,
-                    phase="tool_error",
-                    return_code=-1,
-                    elapsed_s=0.0,
-                    evidence=[f"{type(exc).__name__}: {exc}"],
-                )
 
         elapsed = float(backend_result.elapsed_s)
         if not math.isfinite(elapsed) or elapsed < 0:
