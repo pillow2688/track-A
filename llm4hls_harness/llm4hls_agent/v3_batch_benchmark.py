@@ -85,6 +85,7 @@ _CRITICAL_IMPLEMENTATION_MODULES = (
     "v3_phase_router.py",
     "v3_planner.py",
     "v3_planner_action.py",
+    "v3_search_control.py",
     "v3_openai_planner.py",
     "openai_provider.py",
     "repair.py",
@@ -92,6 +93,7 @@ _CRITICAL_IMPLEMENTATION_MODULES = (
     "budget.py",
     "tools.py",
     "vitis.py",
+    "v3_failure_evidence.py",
     "final_certification.py",
     "runtime_control.py",
 )
@@ -375,6 +377,7 @@ def _implementation_facts() -> dict[str, object]:
         "planner_and_prompts": (
             modules["v3_planner.py"],
             modules["v3_planner_action.py"],
+            modules["v3_search_control.py"],
             modules["v3_openai_planner.py"],
             modules["openai_provider.py"],
             modules["repair.py"],
@@ -397,6 +400,7 @@ def _implementation_facts() -> dict[str, object]:
             modules["tools.py"],
             modules["budget.py"],
             modules["v3_prototype.py"],
+            modules["v3_failure_evidence.py"],
             modules["final_certification.py"],
         ),
     }

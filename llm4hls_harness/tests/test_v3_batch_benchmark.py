@@ -2172,6 +2172,8 @@ class V3BatchBenchmarkTests(unittest.TestCase):
             self.assertIn("final_certification.py", facts["modules"])
             self.assertIn("full_agent_manifest.py", facts["modules"])
             self.assertIn("v3_continuation.py", facts["modules"])
+            self.assertIn("v3_search_control.py", facts["modules"])
+            self.assertIn("v3_failure_evidence.py", facts["modules"])
             self.assertNotIn("v3_experience_importer.py", facts["modules"])
             self.assertEqual(
                 facts["category_sha256"]["continuation_layer"],
@@ -2191,6 +2193,7 @@ class V3BatchBenchmarkTests(unittest.TestCase):
                         facts["modules"]["tools.py"],
                         facts["modules"]["budget.py"],
                         facts["modules"]["v3_prototype.py"],
+                        facts["modules"]["v3_failure_evidence.py"],
                         facts["modules"]["final_certification.py"],
                     ]
                 ),
