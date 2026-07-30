@@ -5217,6 +5217,12 @@ def _plan_candidate(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeSt
         experiment,
         historical_rows if isinstance(historical_rows, list) else [],
         terminal_failure=terminal_failure,
+        forbidden_action_families=(
+            control.get("forbidden_action_families", [])
+            if isinstance(control.get("forbidden_action_families", []), list)
+            else []
+        ),
+        required_action_family=control.get("required_action_family"),
     )
     if repeated_experiment:
         event = _event(
@@ -5226,8 +5232,9 @@ def _plan_candidate(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeSt
             candidate_id=state["best_candidate_id"],
             action="reject_repeated_terminal_action_family",
             why=(
-                "A terminal failure already evaluated this action family; the "
-                "next proposal must use a distinct family or the verified fallback."
+                "The persisted terminal evidence forbids this action family; "
+                "the next proposal must satisfy the recorded family contract or "
+                "use the verified fallback."
             ),
             outcome="DUPLICATE_HYPOTHESIS_ACTION_FAMILY",
             result_ref=output_ref,
@@ -6574,7 +6581,6 @@ def _advance_round(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeSta
             "DUPLICATE_PROPOSAL",
             "DUPLICATE_PATCH",
             "PROVIDER_OUTPUT_REJECTED",
-            "DUPLICATE_HYPOTHESIS_ACTION_FAMILY",
         )
     )
     no_improvement = 0 if improved else int(state.get("no_improvement_rounds", 0)) + 1

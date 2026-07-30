@@ -39,6 +39,17 @@ _DYNAMIC = re.compile(
     re.IGNORECASE,
 )
 
+# The Planner's public wire contract permits descriptive action-family labels.
+# Keep a small, evidence-based alias map so that a renamed FIFO-depth proposal
+# cannot evade the durable experiment-family boundary.  Unknown labels remain
+# distinct rather than being guessed into a more restrictive class.
+_ACTION_FAMILY_ALIASES = {
+    "STREAM_DEPTH_INCREASE": "FIFO_CAPACITY_OR_PROTOCOL",
+    "FIFO_DEPTH_INCREASE": "FIFO_CAPACITY_OR_PROTOCOL",
+    "FIFO_DEPTH_CHANGE": "FIFO_CAPACITY_OR_PROTOCOL",
+    "FIFO_CAPACITY_CHANGE": "FIFO_CAPACITY_OR_PROTOCOL",
+}
+
 
 def _text(value: object, *, limit: int = 240) -> str:
     if not isinstance(value, str):
@@ -51,6 +62,13 @@ def _digest(value: object) -> str:
         value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def canonical_action_family(value: object) -> str:
+    """Return a stable action-family label without inventing unknown classes."""
+
+    family = _text(value, limit=120).upper()
+    return _ACTION_FAMILY_ALIASES.get(family, family)
 
 
 def _failure_stage(raw: Mapping[str, object], phase: str, patch_error: str) -> str:
@@ -430,7 +448,9 @@ def proposal_experiment(
         proposal, "required_validation", ()
     )
     validation_plan = [str(item) for item in validations if str(item) in {"csim", "synth", "cosim"}]
-    declared_family = _text(getattr(proposal, "action_family", ""), limit=120)
+    declared_family = canonical_action_family(
+        getattr(proposal, "action_family", "")
+    )
     family = declared_family or action_family_for_proposal(
         proposal, obligation=obligation, patch_failure=patch_failure
     )
@@ -497,7 +517,7 @@ def search_control_state(
         experiment = row.get("proposal_experiment")
         if not isinstance(experiment, Mapping):
             continue
-        family = _text(experiment.get("action_family"), limit=96)
+        family = canonical_action_family(experiment.get("action_family"))
         hypothesis = _text(experiment.get("hypothesis"), limit=240)
         if family:
             attempted.append({"action_family": family, "hypothesis": hypothesis})
@@ -537,7 +557,7 @@ def search_control_state(
         experiment = row.get("proposal_experiment")
         if not isinstance(experiment, Mapping):
             continue
-        family = _text(experiment.get("action_family"), limit=96)
+        family = canonical_action_family(experiment.get("action_family"))
         hypothesis = _text(experiment.get("hypothesis"), limit=240)
         if not family or not hypothesis:
             continue
@@ -616,6 +636,34 @@ def search_control_state(
             "affected_regions": [],
         }
     )
+    # A terminal result with the same input signature falsifies the previously
+    # attempted transformation family.  The next live Planner request is
+    # therefore explicitly constrained to a different family.  For a visible
+    # stream dependency cycle after a FIFO-capacity attempt, the only useful
+    # next experiment is a topology/order change; another FIFO depth tweak is
+    # neither new evidence nor a new repair mechanism.
+    attempted_families = sorted(
+        {
+            family
+            for item in attempted
+            if isinstance((family := item.get("action_family")), str) and family
+        }
+    )
+    require_distinct_family = bool(
+        facts["terminal_failure"]
+        and attempted_families
+        and not new_evidence_since_last_planner
+    )
+    required_action_family: str | None = None
+    if (
+        require_distinct_family
+        and structure["has_stream_dependency_cycle"]
+        and "FIFO_CAPACITY_OR_PROTOCOL" in attempted_families
+    ):
+        required_action_family = "DATAFLOW_TOPOLOGY_OR_ORDER"
+        required_change = "REQUIRE_STREAM_TOPOLOGY_OR_VERIFIED_FALLBACK"
+    elif require_distinct_family:
+        required_change = "REQUIRE_DISTINCT_ACTION_FAMILY_OR_VERIFIED_FALLBACK"
     return {
         "schema_version": SEARCH_CONTROL_SCHEMA,
         "failure": facts,
@@ -638,14 +686,20 @@ def search_control_state(
         "attempted_experiments": attempted,
         "new_evidence_since_last_planner": new_evidence_since_last_planner,
         "required_next_change": required_change,
+        "forbidden_action_families": attempted_families if require_distinct_family else [],
+        "required_action_family": required_action_family,
         "recommended_continuation_action": chosen_action,
         "structural_facts": structure,
     }
 
 
 def is_repeated_terminal_experiment(
-    experiment: Mapping[str, object], history: Sequence[Mapping[str, object]], *, terminal_failure: bool) -> bool:
-    """Reject the same hypothesis *and* action family after a terminal fact.
+    experiment: Mapping[str, object], history: Sequence[Mapping[str, object]], *,
+    terminal_failure: bool,
+    forbidden_action_families: Sequence[object] = (),
+    required_action_family: object = None,
+) -> bool:
+    """Reject a terminal-repeat or a controller-forbidden action family.
 
     A different transformation family can test the same suspected cause, and
     a different hypothesis can use the same safe family.  Treating either
@@ -656,9 +710,17 @@ def is_repeated_terminal_experiment(
 
     if not terminal_failure:
         return False
-    family = experiment.get("action_family")
-    if not isinstance(family, str) or not family:
+    family = canonical_action_family(experiment.get("action_family"))
+    if not family:
         return False
+    forbidden = {
+        canonical_action_family(item)
+        for item in forbidden_action_families
+        if canonical_action_family(item)
+    }
+    required = canonical_action_family(required_action_family)
+    if family in forbidden or (required and family != required):
+        return True
     hypothesis = _text(experiment.get("hypothesis"), limit=240).casefold()
     if not hypothesis:
         return False
@@ -666,7 +728,7 @@ def is_repeated_terminal_experiment(
         previous = row.get("proposal_experiment")
         if (
             isinstance(previous, Mapping)
-            and previous.get("action_family") == family
+            and canonical_action_family(previous.get("action_family")) == family
             and _text(previous.get("hypothesis"), limit=240).casefold()
             == hypothesis
         ):
@@ -680,6 +742,7 @@ __all__ = [
     "CANDIDATE_STATE_SCHEMA",
     "OBLIGATION_STATE_SCHEMA",
     "candidate_state",
+    "canonical_action_family",
     "continuation_action",
     "failure_facts",
     "is_repeated_terminal_experiment",

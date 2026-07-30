@@ -7,6 +7,7 @@ import unittest
 from llm4hls_agent.repair import PatchProposal
 from llm4hls_agent.v3_search_control import (
     candidate_state,
+    canonical_action_family,
     continuation_action,
     failure_facts,
     is_repeated_terminal_experiment,
@@ -105,6 +106,73 @@ class SearchControlTests(unittest.TestCase):
         self.assertFalse(
             is_repeated_terminal_experiment(
                 distinct_hypothesis, history, terminal_failure=True
+            )
+        )
+        self.assertTrue(
+            is_repeated_terminal_experiment(
+                distinct_hypothesis,
+                history,
+                terminal_failure=True,
+                forbidden_action_families=[experiment["action_family"]],
+            )
+        )
+
+    def test_stream_depth_alias_cannot_bypass_terminal_family_boundary(self) -> None:
+        self.assertEqual(
+            canonical_action_family("STREAM_DEPTH_INCREASE"),
+            "FIFO_CAPACITY_OR_PROTOCOL",
+        )
+        history = [
+            {
+                "proposal_experiment": {
+                    "action_family": "STREAM_DEPTH_INCREASE",
+                    "hypothesis": "increase FIFO depth to two",
+                    "input_failure_signature": "a" * 64,
+                }
+            }
+        ]
+        source = """
+void first(hls::stream<int>& forward, hls::stream<int>& feedback) { forward.write(feedback.read()); }
+void second(hls::stream<int>& forward, hls::stream<int>& feedback) { feedback.write(forward.read()); }
+void top() { hls::stream<int> forward, feedback; first(forward, feedback); second(forward, feedback); }
+"""
+        base = dict(
+            mode="STRUCTURAL_FIX",
+            evidence={"phase": "cosim_fail", "failure_kind": "DEADLOCK"},
+            patch_failure=None,
+            semantic_no_improvement=1,
+            baseline_id="candidate_000",
+            incumbent_id="candidate_000",
+            source=source,
+        )
+        state = search_control_state(history=history, **base)
+        history[0]["proposal_experiment"]["input_failure_signature"] = state["failure"]["last_failure_signature"]
+        state = search_control_state(history=history, **base)
+        self.assertFalse(state["new_evidence_since_last_planner"])
+        self.assertEqual(
+            state["required_next_change"],
+            "REQUIRE_STREAM_TOPOLOGY_OR_VERIFIED_FALLBACK",
+        )
+        self.assertEqual(
+            state["required_action_family"], "DATAFLOW_TOPOLOGY_OR_ORDER"
+        )
+        self.assertEqual(state["forbidden_action_families"], ["FIFO_CAPACITY_OR_PROTOCOL"])
+        self.assertTrue(
+            is_repeated_terminal_experiment(
+                {"action_family": "STREAM_DEPTH_INCREASE", "hypothesis": "depth four"},
+                history,
+                terminal_failure=True,
+                forbidden_action_families=state["forbidden_action_families"],
+                required_action_family=state["required_action_family"],
+            )
+        )
+        self.assertFalse(
+            is_repeated_terminal_experiment(
+                {"action_family": "DATAFLOW_TOPOLOGY_OR_ORDER", "hypothesis": "break feedback edge"},
+                history,
+                terminal_failure=True,
+                forbidden_action_families=state["forbidden_action_families"],
+                required_action_family=state["required_action_family"],
             )
         )
 
