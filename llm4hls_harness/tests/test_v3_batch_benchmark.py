@@ -334,6 +334,7 @@ def write_real_fixture(
     tamper_provider_rejection_hash: bool = False,
     tamper_provider_rejection_identity: bool = False,
     provider_rejection_token_overrun: bool = False,
+    terminal_provider_rejection: bool = False,
 ) -> dict[str, object]:
     """Write a minimal internally hash-bound REAL terminal package."""
 
@@ -668,6 +669,7 @@ def write_real_fixture(
         provider_rejection = {
             "action_id": failure_action_id,
             "input_ref": failure_planner_input_ref,
+            "input_sha256": failure_planner_input_sha,
             "request_ref": failure_request_ref,
             "request_sha256": failure_request_sha,
             "started_ref": failure_started_ref,
@@ -841,6 +843,13 @@ def write_real_fixture(
             },
         },
     }
+    if terminal_provider_rejection:
+        if provider_rejection is None:
+            raise ValueError("terminal provider rejection requires a rejection")
+        result["planner_input_ref"] = provider_rejection["input_ref"]
+        result["planner_input_sha256"] = provider_rejection["input_sha256"]
+        result["planner_output_ref"] = provider_rejection["result_ref"]
+        result["planner_output_sha256"] = provider_rejection["result_sha256"]
     omitted_artifacts = set(provider_rejection_package_omissions)
     if provider_rejection is not None:
         omission_roles = {
@@ -2359,6 +2368,7 @@ class V3BatchBenchmarkTests(unittest.TestCase):
                 tamper_hash: bool = False,
                 tamper_identity: bool = False,
                 token_overrun: bool = False,
+                terminal_rejection: bool = False,
             ) -> tuple[BenchmarkRunSpec, dict[str, object]]:
                 spec = BenchmarkRunSpec(
                     task=descriptor.task,
@@ -2380,6 +2390,7 @@ class V3BatchBenchmarkTests(unittest.TestCase):
                     tamper_provider_rejection_hash=tamper_hash,
                     tamper_provider_rejection_identity=tamper_identity,
                     provider_rejection_token_overrun=token_overrun,
+                    terminal_provider_rejection=terminal_rejection,
                 )
                 return spec, result
 
@@ -2428,6 +2439,14 @@ class V3BatchBenchmarkTests(unittest.TestCase):
                     ),
                 }.issubset(manifest_paths)
             )
+
+            terminal_spec, terminal_result = fixture(
+                "terminal-provider-rejection", terminal_rejection=True
+            )
+            terminal_receipt = executor._validate_terminal_provenance(
+                terminal_spec, terminal_result
+            )
+            self.assertEqual(len(terminal_receipt["model_outcomes"]), 2)
 
             for name, omissions, message in (
                 (

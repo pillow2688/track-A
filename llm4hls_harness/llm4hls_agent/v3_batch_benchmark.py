@@ -2530,11 +2530,22 @@ class V3PrototypeCLIExecutor:
             digest_value=result.get("planner_input_sha256"),
             canonical_digest=True,
         )
+        planner_output_ref = result.get("planner_output_ref")
+        # Proposal outputs use canonical JSON digests.  Provider-output
+        # rejections are immutable audit records whose completed action and
+        # ledger bind the raw file digest instead.  Keep this exception strictly
+        # scoped to the provider-failure namespace and validate its full chain
+        # below.
+        planner_output_is_provider_rejection = (
+            isinstance(planner_output_ref, str)
+            and planner_output_ref.startswith("planner/provider_failures/")
+            and planner_output_ref.endswith(".json")
+        )
         planner_output = validate_json_ref(
             role="planner_output",
-            reference_value=result.get("planner_output_ref"),
+            reference_value=planner_output_ref,
             digest_value=result.get("planner_output_sha256"),
-            canonical_digest=True,
+            canonical_digest=not planner_output_is_provider_rejection,
         )
         if (planner_input is None) != (planner_output is None):
             raise BenchmarkExecutionError("V3 Planner input/output chain is incomplete")
@@ -2922,6 +2933,20 @@ class V3PrototypeCLIExecutor:
             raise BenchmarkExecutionError(
                 "V3 live Planner artifacts do not cover all completed ledger calls"
             )
+
+        if planner_output_is_provider_rejection:
+            matching_rejections = [
+                outcome
+                for outcome in model_outcomes
+                if outcome.get("outcome") == "PROVIDER_OUTPUT_REJECTED"
+                and outcome.get("outcome_ref") == planner_output_ref
+                and outcome.get("outcome_sha256")
+                == result.get("planner_output_sha256")
+            ]
+            if len(matching_rejections) != 1:
+                raise BenchmarkExecutionError(
+                    "V3 terminal provider rejection is not bound to one completed live Planner action"
+                )
 
         top_live_action_id = result.get("live_planner_action_id")
         if isinstance(top_live_action_id, str) and top_live_action_id:
