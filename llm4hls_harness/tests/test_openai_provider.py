@@ -395,12 +395,45 @@ class OpenAICompatibleProviderTests(unittest.TestCase):
 
                 self.assertIn("MODE\n" + mode, prompt)
                 self.assertIn("BOUNDED FAILURE EVIDENCE", prompt)
+                self.assertIn(
+                    "Return validation_plan exactly as "
+                    + json.dumps(list(expected_validation)),
+                    prompt,
+                )
                 self.assertNotIn("secret-test-key", prompt)
                 self.assertEqual(proposal.change_class, expected_class)
                 self.assertEqual(proposal.required_validation, expected_validation)
                 self.assertEqual(json.loads(proposal.risk)["mode"], mode)
                 self.assertIn("task-aware AMD Vitis HLS Planner", captured["messages"][0]["content"])  # type: ignore[index]
                 self.assertNotIn("secret-test-key", json.dumps(audit))
+
+    def test_task_aware_prompt_requires_cosim_plan_for_repair(self) -> None:
+        context_value = task_aware_context("REPAIR")
+        task = dict(context_value["task"])
+        task["requires_cosim"] = True
+        context_value["task"] = task
+
+        prompt = build_task_aware_prompt(context_value)
+
+        self.assertIn(
+            'Return validation_plan exactly as ["csim", "synth", "cosim"]',
+            prompt,
+        )
+
+    def test_task_aware_provider_keeps_partial_validation_plan_fail_closed(self) -> None:
+        response = json.loads(self.task_aware_response_content("REPAIR"))
+        response["validation_plan"] = ["csim"]
+        provider = OpenAICompatibleOptimizationProvider(
+            self.config(),
+            transport=lambda _request, _timeout: (
+                200,
+                {},
+                envelope(json.dumps(response)),
+            ),
+        )
+
+        with self.assertRaisesRegex(RepairProviderError, "must begin with csim,synth"):
+            provider.propose_task_aware(task_aware_context("REPAIR"))
 
     def test_task_aware_provider_rejects_class_outside_routed_mode(self) -> None:
         response = json.loads(self.task_aware_response_content("REPAIR"))

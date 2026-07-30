@@ -59,6 +59,28 @@ TASK_AWARE_CHANGE_CLASS = {
     "SYNTH_FIX": "SYNTHESIS_REPAIR",
     "STRUCTURAL_FIX": "STRUCTURAL_REPAIR",
 }
+
+
+def _task_aware_required_validation(
+    mode: str, *, requires_cosim: bool
+) -> tuple[str, ...]:
+    """Return the deterministic validation sequence for one routed repair mode.
+
+    The Planner declares this sequence; the deterministic execution layer still
+    owns running it.  Keeping the prompt and response validator on this single
+    rule prevents a correct Patch from being rejected solely because the model
+    abbreviates a required sequence as ``["csim"]``.
+    """
+
+    if mode == "REPAIR":
+        return ("csim", "synth", "cosim") if requires_cosim else ("csim", "synth")
+    if mode == "SYNTH_FIX":
+        return ("csim", "synth")
+    if mode == "STRUCTURAL_FIX":
+        return ("csim", "synth", "cosim")
+    raise ValueError("task-aware Planner mode is unsupported")
+
+
 _UNIFIED_HUNK_HEADER = re.compile(
     r"^@@ -(?P<old_start>\d+)(?:,\d+)? "
     r"\+(?P<new_start>\d+)(?:,\d+)? @@(?P<suffix>.*)$"
@@ -645,6 +667,15 @@ def build_task_aware_prompt(context: Mapping[str, object]) -> str:
     mode = str(context["mode"])
     if mode not in TASK_AWARE_CHANGE_CLASS:
         raise ValueError("task-aware Planner mode is unsupported")
+    task = context["task"]
+    requires_cosim = (
+        task.get("requires_cosim", False) if isinstance(task, Mapping) else False
+    )
+    if not isinstance(requires_cosim, bool):
+        raise ValueError("task-aware Planner task.requires_cosim must be boolean")
+    required_validation = _task_aware_required_validation(
+        mode, requires_cosim=requires_cosim
+    )
     objectives = {
         "REPAIR": (
             "Repair the observed CSim compile/runtime/functional failure while "
@@ -664,7 +695,7 @@ def build_task_aware_prompt(context: Mapping[str, object]) -> str:
         "hypothesis": "non-empty string",
         "action_family": "non-empty concise transformation family",
         "action_parameters": {"zero or more compact scalar parameters": "value"},
-        "validation_plan": ["ordered stages selected from csim, synth, cosim"],
+        "validation_plan": list(required_validation),
         "primary_failure": "non-empty string",
         "evidence_used": ["one or more concise supplied evidence facts"],
         "change_class": TASK_AWARE_CHANGE_CLASS[mode],
@@ -761,6 +792,10 @@ def build_task_aware_prompt(context: Mapping[str, object]) -> str:
                 "Keep the change minimal. Before returning, recount every hunk "
                 "old/new line count exactly."
             ),
+            "VALIDATION PLAN (MANDATORY)\nReturn validation_plan exactly as "
+            + json.dumps(list(required_validation))
+            + ". Do not abbreviate this sequence; deterministic code, not the "
+            "Planner, decides whether the corresponding tools run.",
             "OUTPUT SCHEMA\n"
             + json.dumps(response_contract, ensure_ascii=False, sort_keys=True)
             + "\nReturn exactly this JSON object and no Markdown fences or commentary.",
@@ -1547,18 +1582,12 @@ class OpenAICompatibleOptimizationProvider:
                     response_excerpt=completion.content[:2000],
                     finish_reason=completion.finish_reason,
                 )
-        if mode == "REPAIR":
-            required_validation = (
-                ("csim", "synth", "cosim")
-                if requires_cosim
-                else ("csim", "synth")
+        try:
+            required_validation = _task_aware_required_validation(
+                mode, requires_cosim=requires_cosim
             )
-        elif mode == "SYNTH_FIX":
-            required_validation = ("csim", "synth")
-        elif mode == "STRUCTURAL_FIX":
-            required_validation = ("csim", "synth", "cosim")
-        else:  # The strict parser already rejects unsupported modes.
-            raise RepairProviderError("task-aware Planner mode is unsupported")
+        except ValueError as exc:  # The strict parser already rejects unsupported modes.
+            raise RepairProviderError(str(exc)) from exc
         risk = dict(parsed["risk"])
         risk.update(
             {
