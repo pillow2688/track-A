@@ -1,0 +1,16 @@
+{
+  "current_commit": "6d04ac9d182afd4a2d236e6aede9a66b2afb2a5d",
+  "decision_schema": "v3.continuation-decision.v2",
+  "gate_json_path": "continuation-v3-gate.json",
+  "gate_json_sha256": "10eb6390a2481c9ff0f772e94d4a54353d4962d14b8d210daf76470dcb5af116",
+  "gate_status": "PASS",
+  "mode_coverage": {
+    "OPTIMIZE": 1,
+    "REPAIR": 1,
+    "STRUCTURAL_FIX": 1,
+    "SYNTH_FIX": 1
+  },
+  "policy_version": "v3.continuation-policy.v3",
+  "protocol_version": "v3.continuation-offline-replay.v1",
+  "schema_version": "v3.continuation-admission.v2"
+}

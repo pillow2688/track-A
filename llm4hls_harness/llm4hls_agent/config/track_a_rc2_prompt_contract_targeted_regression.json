@@ -1,0 +1,63 @@
+{
+  "schema_version": "track-a-full-agent.v1",
+  "profile": "competition-full-agent-v1",
+  "artifact_kind": "runtime_full_agent_manifest",
+  "status": "READY",
+  "runtime_loader": true,
+  "runtime_authority": "EXPLICIT_MANIFEST_PLUS_MATCHING_RUNTIME_ARGUMENTS",
+  "artifact_root": "../../..",
+  "token_policy": {
+    "mode": "fixed",
+    "dynamic_allowed": false
+  },
+  "components": {
+    "A1 Structured Evidence Memory": {
+      "mode": "on"
+    },
+    "A2 Budget-Aware Continuation": {
+      "mode": "enforce",
+      "external_version": "v2",
+      "implementation_version": "v3.continuation-policy.v3",
+      "decision_schema": "v3.continuation-decision.v2"
+    },
+    "A3 Experience Strategy Advisor": {
+      "mode": "guided",
+      "ranker_version": "v3",
+      "implementation_schema": "v3e.bayesian-strategy-ranker.v3.train-only-support.v1"
+    }
+  },
+  "foundations": {
+    "B1 Candidate and Safety Baseline": {
+      "enabled": true,
+      "ablatable": false
+    },
+    "B2 Independent Final Certification": {
+      "enabled": true,
+      "ablatable": false,
+      "budget_domain": "FINAL_CERTIFICATION_OUTSIDE_AGENT_BUDGET",
+      "feedback_policy": "NO_SAME_RUN_AGENT_FEEDBACK"
+    }
+  },
+  "artifacts": {
+    "a2_gate": {
+      "path": "docs/experiments/artifacts/2026-07-30-rc2-prompt-contract-freeze/a2/continuation-v3-gate.json",
+      "sha256": "10eb6390a2481c9ff0f772e94d4a54353d4962d14b8d210daf76470dcb5af116"
+    },
+    "a2_admission": {
+      "path": "docs/experiments/artifacts/2026-07-30-rc2-prompt-contract-freeze/a2/continuation-v3-admission.json",
+      "sha256": "a717419db46854240347066c5600927c0de72aa3ead4e7e628f8a1d31c3318e4"
+    },
+    "a3_store": {
+      "path": "docs/experiments/artifacts/2026-07-30-rc2-prompt-contract-freeze/a3/train-only-experience-store.jsonl",
+      "sha256": "59ea3f89da638405e231181fc158347f1e4c0385201c52720e049dcfc5395f06"
+    },
+    "a3_gate": {
+      "path": "docs/experiments/artifacts/2026-07-30-rc2-prompt-contract-freeze/a3/ranker-v3-gate.json",
+      "sha256": "740059de3fffd81860519a34f990d2602e5a40d7bd8b706c09b29d898ffbeed6"
+    },
+    "a3_admission": {
+      "path": "docs/experiments/artifacts/2026-07-30-rc2-prompt-contract-freeze/a3/admission.json",
+      "sha256": "2630214a3ae7f6ae49de210da157f608c89bc46a5644e4f8687398f3d7bae981"
+    }
+  }
+}

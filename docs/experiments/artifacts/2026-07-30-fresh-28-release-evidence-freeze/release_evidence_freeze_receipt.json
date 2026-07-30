@@ -1,0 +1,20 @@
+{
+  "schema_version": "track-a.release-evidence-freeze-receipt.v1",
+  "status": "FROZEN_READ_ONLY",
+  "frozen_at_utc": "2026-07-30T12:45:18.816362+00:00",
+  "snapshot_manifest": {
+    "path": "release_evidence_snapshot_manifest.json",
+    "sha256": "8f144d5b67f009fb4cff6a62473021b11275a6b4df59c7f9297274f29c00f127"
+  },
+  "fresh_28_run_file_manifest": {
+    "path": "fresh_28_run_file_manifest.json",
+    "sha256": "8e6d17529a70f323c200570014da2db2855c0f593790a28328439c6a7d313758",
+    "file_tree_sha256": "a21e7adaa44726a0bb69df10f84327051fa75cc8ec14b62d84cd6d52f997180c",
+    "file_count": 46488
+  },
+  "head": "6d04ac9d182afd4a2d236e6aede9a66b2afb2a5d",
+  "branch": "release/track-a-rc2-candidate",
+  "fresh_28_benchmark_fingerprint": "879b2bd4e609f3699a7773619789c4580c02c71935d22234980a25989752760a",
+  "fresh_28_status": "27_OF_28_REAL_E2E_CERTIFIED",
+  "immutable_run_root": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/runs/a02-fresh-full-ref-20260730T105924Z"
+}

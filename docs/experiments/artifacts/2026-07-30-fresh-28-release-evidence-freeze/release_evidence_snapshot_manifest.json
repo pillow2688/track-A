@@ -1,0 +1,957 @@
+{
+  "schema_version": "track-a.release-evidence-snapshot.v1",
+  "frozen_at_utc": "2026-07-30T12:45:18.806487+00:00",
+  "freeze_mode": "READ_ONLY_RELEASE_EVIDENCE_FREEZE",
+  "prohibited_actions_confirmed": [
+    "no_deepseek_call",
+    "no_vitis_action",
+    "no_product_code_change",
+    "no_historical_run_artifact_change",
+    "no_git_tag_change",
+    "no_commit_or_push"
+  ],
+  "git": {
+    "head": "6d04ac9d182afd4a2d236e6aede9a66b2afb2a5d",
+    "branch": "release/track-a-rc2-candidate",
+    "status_porcelain_v1": [
+      " M docs/status/a2_a3_runtime_contract.md",
+      " M docs/status/checkpoint_report.md",
+      " M docs/status/code_change_inventory.md",
+      " M docs/status/final_git_status.md",
+      " M docs/status/framework_failure_root_cause_audit.md",
+      " M docs/status/obligation_and_proposal_design.md",
+      " M docs/status/search_control_refactor_design.md",
+      " M docs/status/structural_fix_evidence_report.md",
+      " M docs/status/targeted_regression_report.md",
+      " M docs/status/test_results.md",
+      "?? docs/experiments/artifacts/2026-07-30-fresh-28-release-evidence-freeze/",
+      "?? docs/experiments/artifacts/2026-07-30-rc2-prompt-contract-freeze/",
+      "?? docs/experiments/artifacts/2026-07-30-rc2-search-control-freeze/",
+      "?? docs/status/2026-07-30-rc2-goal-completion-audit.md",
+      "?? docs/status/2026-07-30-rc2-main-and-ablation-execution-plan.md",
+      "?? docs/status/2026-07-30-rc2-search-control-targeted-regression-progress.md",
+      "?? llm4hls_harness/llm4hls_agent/config/track_a_rc2_prompt_contract_targeted_regression.json",
+      "?? llm4hls_harness/llm4hls_agent/config/track_a_rc2_search_control_targeted_regression.json",
+      "?? llm4hls_harness/scripts/run_rc2_real_host_a02.sh",
+      "?? llm4hls_harness/scripts/run_rc2_real_host_smoke.sh"
+    ],
+    "binary_diff_against_head_bytes": 28724,
+    "binary_diff_against_head_sha256": "c576b1406bd5a87472e20f27bc640303a22b165232579688fe71d9b3103d0227"
+  },
+  "runtime": {
+    "manifest": {
+      "path": "llm4hls_harness/llm4hls_agent/config/track_a_rc2_prompt_contract_targeted_regression.json",
+      "bytes": 2321,
+      "sha256": "31041f01ecab2a12f4af259dfcd0b8acc458cdf049763e08d53a08f6177c5f15"
+    },
+    "manifest_components": {
+      "A1 Structured Evidence Memory": {
+        "mode": "on"
+      },
+      "A2 Budget-Aware Continuation": {
+        "mode": "enforce",
+        "external_version": "v2",
+        "implementation_version": "v3.continuation-policy.v3",
+        "decision_schema": "v3.continuation-decision.v2"
+      },
+      "A3 Experience Strategy Advisor": {
+        "mode": "guided",
+        "ranker_version": "v3",
+        "implementation_schema": "v3e.bayesian-strategy-ranker.v3.train-only-support.v1"
+      }
+    },
+    "manifest_foundations": {
+      "B1 Candidate and Safety Baseline": {
+        "enabled": true,
+        "ablatable": false
+      },
+      "B2 Independent Final Certification": {
+        "enabled": true,
+        "ablatable": false,
+        "budget_domain": "FINAL_CERTIFICATION_OUTSIDE_AGENT_BUDGET",
+        "feedback_policy": "NO_SAME_RUN_AGENT_FEEDBACK"
+      }
+    },
+    "bound_artifacts": {
+      "a2_gate": {
+        "path": "docs/experiments/artifacts/2026-07-30-rc2-prompt-contract-freeze/a2/continuation-v3-gate.json",
+        "bytes": 8227,
+        "sha256": "10eb6390a2481c9ff0f772e94d4a54353d4962d14b8d210daf76470dcb5af116",
+        "manifest_declared_sha256": "10eb6390a2481c9ff0f772e94d4a54353d4962d14b8d210daf76470dcb5af116",
+        "manifest_hash_matches": true
+      },
+      "a2_admission": {
+        "path": "docs/experiments/artifacts/2026-07-30-rc2-prompt-contract-freeze/a2/continuation-v3-admission.json",
+        "bytes": 549,
+        "sha256": "a717419db46854240347066c5600927c0de72aa3ead4e7e628f8a1d31c3318e4",
+        "manifest_declared_sha256": "a717419db46854240347066c5600927c0de72aa3ead4e7e628f8a1d31c3318e4",
+        "manifest_hash_matches": true
+      },
+      "a3_store": {
+        "path": "docs/experiments/artifacts/2026-07-30-rc2-prompt-contract-freeze/a3/train-only-experience-store.jsonl",
+        "bytes": 608772,
+        "sha256": "59ea3f89da638405e231181fc158347f1e4c0385201c52720e049dcfc5395f06",
+        "manifest_declared_sha256": "59ea3f89da638405e231181fc158347f1e4c0385201c52720e049dcfc5395f06",
+        "manifest_hash_matches": true
+      },
+      "a3_gate": {
+        "path": "docs/experiments/artifacts/2026-07-30-rc2-prompt-contract-freeze/a3/ranker-v3-gate.json",
+        "bytes": 130656,
+        "sha256": "740059de3fffd81860519a34f990d2602e5a40d7bd8b706c09b29d898ffbeed6",
+        "manifest_declared_sha256": "740059de3fffd81860519a34f990d2602e5a40d7bd8b706c09b29d898ffbeed6",
+        "manifest_hash_matches": true
+      },
+      "a3_admission": {
+        "path": "docs/experiments/artifacts/2026-07-30-rc2-prompt-contract-freeze/a3/admission.json",
+        "bytes": 619,
+        "sha256": "2630214a3ae7f6ae49de210da157f608c89bc46a5644e4f8687398f3d7bae981",
+        "manifest_declared_sha256": "2630214a3ae7f6ae49de210da157f608c89bc46a5644e4f8687398f3d7bae981",
+        "manifest_hash_matches": true
+      }
+    },
+    "prompt_runtime_source": {
+      "path": "llm4hls_harness/llm4hls_agent/v3_openai_planner.py",
+      "bytes": 111243,
+      "sha256": "2ab2807aaac099a1fe538640dc1627a6df56cfd7623ff2301abeac9b9b69e7e4"
+    },
+    "runtime_sources": [
+      {
+        "path": "llm4hls_harness/llm4hls_agent/openai_provider.py",
+        "bytes": 72703,
+        "sha256": "3a3b80e864305556d4f25cd5cef4d5937818a70352a1514af17d9aac07d352a7"
+      },
+      {
+        "path": "llm4hls_harness/llm4hls_agent/repair.py",
+        "bytes": 60538,
+        "sha256": "1d07374565adc37e8988364cce7b0145b8e88781489c06d7810d0f22552cdd39"
+      },
+      {
+        "path": "llm4hls_harness/llm4hls_agent/runtime_control.py",
+        "bytes": 7681,
+        "sha256": "a1d4b155caf0c4996ffe887d2b873bb21b1997f13c75b9e6d936835acccef1da"
+      },
+      {
+        "path": "llm4hls_harness/llm4hls_agent/tools.py",
+        "bytes": 32037,
+        "sha256": "b072bf5bbbd9c0ce06bd16406e50d5c63342abf38729a2fd01e509c2c7bb7eff"
+      },
+      {
+        "path": "llm4hls_harness/llm4hls_agent/v3_batch_benchmark.py",
+        "bytes": 237094,
+        "sha256": "a946bb636e08ea745177dca29b8e89c025801f37d0424e9773dcb37000cc0b86"
+      },
+      {
+        "path": "llm4hls_harness/llm4hls_agent/v3_failure_evidence.py",
+        "bytes": 31469,
+        "sha256": "26aa6b66edba063316dc8d9e825f04095f0464e2a5b4febe808ac610208e4dfe"
+      },
+      {
+        "path": "llm4hls_harness/llm4hls_agent/v3_openai_planner.py",
+        "bytes": 111243,
+        "sha256": "2ab2807aaac099a1fe538640dc1627a6df56cfd7623ff2301abeac9b9b69e7e4"
+      },
+      {
+        "path": "llm4hls_harness/llm4hls_agent/v3_planner_action.py",
+        "bytes": 46251,
+        "sha256": "0f798045072702c6b6a6cc5860bd5982a836579472f330d759808cecfe9738e7"
+      },
+      {
+        "path": "llm4hls_harness/llm4hls_agent/v3_prototype.py",
+        "bytes": 352495,
+        "sha256": "51436b0ce92321e29fddc01d9596fea829e137cd6dbc17baa52d930129547351"
+      },
+      {
+        "path": "llm4hls_harness/llm4hls_agent/v3_prototype_cli.py",
+        "bytes": 35548,
+        "sha256": "c2c5d4637dab9b98f3f330472e8de16a473d098715e565084bd3dec95b0d1f44"
+      },
+      {
+        "path": "llm4hls_harness/llm4hls_agent/v3_search_control.py",
+        "bytes": 30853,
+        "sha256": "9d819438d51ca9b253520b2dff4409463b81b2d75fbe1366304f2ac0ff0bab72"
+      },
+      {
+        "path": "llm4hls_harness/llm4hls_agent/vitis.py",
+        "bytes": 35875,
+        "sha256": "ad2852632d20ab9e114e3ad16bc30b6d94c027ce09cb8ed524b7b087545cae7b"
+      },
+      {
+        "path": "llm4hls_harness/llm4hls_agent/workflow.py",
+        "bytes": 20756,
+        "sha256": "bb583af4fe33194ff4ba9b8eabb866579df262f19a58d9e069da80461feb14f8"
+      }
+    ],
+    "runtime_source_fingerprint": "92f8812a1f0e0eef38d5b09c96df47bb435ef5e967849718e491eb33c872662c",
+    "corpus_manifest": {
+      "path": "llm4hls_harness/task_corpus/v3d-fast/corpus_manifest.json",
+      "bytes": 12614,
+      "sha256": "9e374fa49e4c68315080ab93ba2f395deea5ae682dd145b791e1db52c2198691"
+    },
+    "environment": {
+      "os": "Linux-7.0.13-200.fc44.x86_64-x86_64-with-glibc2.43",
+      "python": "3.12.13 (main, Mar  3 2026, 14:59:34) [Clang 21.1.4 ]",
+      "machine": "x86_64",
+      "backend_from_completed_run": "llm4hls_agent.vitis.VitisBackend:v0.10",
+      "toolchain_from_completed_run": {
+        "clock_ns": 5.0,
+        "cosim_no_progress_timeout_seconds": 0.0,
+        "flow_target": "vivado",
+        "part": "xcu55c-fsvh2892-2L-e",
+        "timeouts": {
+          "cosim": 1800.0,
+          "csim": 300.0,
+          "synth": 1800.0
+        },
+        "toolchain_id": "Vitis 2025.2",
+        "vitis_root": "/home/ying/CompetitionTrackA/vitis/AMD/2025.2/Vitis"
+      },
+      "executor_fingerprints": [
+        "c3fb08a567b7fa9b7249cf6bcf6003a47d15c84c366f52967b9901e28ad8f4d3"
+      ],
+      "execution_binding_hashes": [
+        "08504069a0a4c168c0a0ea01cb9933fdef84367b2eca04c79f5f83a05065eba0",
+        "0c48fb514ed50dfa2f99dd147b12565f0ea6c5274a381b1aae7ce7f797355015",
+        "0fab17b315ad2951ce82400bf5b87a1bc5ec452849a5e30935d5d7c47e14dbb7",
+        "10b733dcbde2cdb7210274f247e35f64345f5e45bb7af968439c07aadae68316",
+        "10fa90891c02456e3f3e1440bf53635af07afccfab582401bf3ffd06ac2ff2fd",
+        "398f23ed23895f1dccba5403ab67ca7a057b7a02df4d05ed7500160b0fdc2e8a",
+        "3d2d5872230205fd63bfd0d182f0ad491204da91cc63e445f3b61ad1c6e16931",
+        "3e1b72c301d519414407dc556cba24032d1387a006e0afe501ae2e9cffa12ff1",
+        "42888d7cc27ece52f22bf6a054851574b4ea95ba813bdbe38ced4c1d28a5990c",
+        "5a84168534c3956cedf12e53614e7d983ffafbe413fabe639a623b82f73e1cb4",
+        "5ceec2f1d8fcbf0905063c3449793030b73c7adb89c0965d5c5d490e2e0e14ed",
+        "62ed4cdc7dbadf3af237c6d48eb31dee6c6c717a7581bfdeb7f5bbad279b5a38",
+        "645b4cabfc6dd2c4496a82144e881244a7d952b691a00d8e371912f256678a94",
+        "66011b5d11a0bb9e97f016112abfe519b11d4be0c0b78bdab340b4bf156fb5a6",
+        "67af331bc1b5aaa597842db5756cff58d5466f3506a07de44454149ad8cd28b2",
+        "828cb9ceb1d15260d5ddb0f5049974cfecf1da413cd8f5f160a2e12273985985",
+        "829247a23298b021892696894378a321d60869fb51506a035fc688dfa03ba1a0",
+        "834342b1fb7231b2846b627aee0787a16a2237938ceca131f17b85fa200ca620",
+        "849a93b0f3090015fc991e5316389d638c55ba7ba2db660e862f29e8fbf15d4b",
+        "85a5c36ba1cfc0f099862c77d26cb5cd5b82ec23846e9ee79ad0bca60f5739e0",
+        "8667c7b8557aad198fa738dd4703b0a696493e13d029ac106269bd0a9c3d5234",
+        "8b405580d67ae186b1a755ba6c70e688e90a057e2445a6248b14acba184430eb",
+        "93a6676792818fea7380236a119b9e132d1a891cf227a27c112eb10d4051765b",
+        "ae0cff6604b4422834b77017906f630d1413c3d6e53d4fd5cb4469023cef9437",
+        "b4e0f540a03ee5038aaddda458c09656e234447081ef20cec567ce020b67b59e",
+        "c2b1b5e61d3de0e2ec52512bff2710a5df05290810b7b978f9e8f5e335437afb",
+        "d31c98a590a7d2caf88d3971b9442fbace1b150143dee0b04abace1f49779941",
+        "f6a73949dbda9bb07474fc0307a4bc65bbce00cd2a82f0bd648b4eb7d8150558"
+      ],
+      "run_config_hashes": [
+        "00d1044fab3f80f37c329f947262e7b6f0743609373bc9e49b5dd7599bcfe503",
+        "012c6a0789242801df187abcd4ae4d283b98109f534843dabd1bd1cd3535e1ff",
+        "026a279342cf77fec390254618ea00d6f6c15f5a4201d867823bcf4fac482012",
+        "043e9450eca1d6d51ceab16cbc26ea7cd21f619ea8ef0e5b44bc04552bab8be3",
+        "09dc5338aa002eacec911e303478fab6a099744bd7162ea73bb9b8daf613cb7d",
+        "169eb590cf76cead9e5b3be2ada3aa280d981a37335685a56848323748b522c5",
+        "29c0c7ff48711dd7f5befde57611693c53f9574b1211aeeb81da53938cb9e246",
+        "331f9335d223103e38770ad1d030c05a27eb7370175ac5e498cf8acfb371aeab",
+        "356c6590eff4000e151b658ab9e68a155ca83455ca3fe591d61ec64a98a679ce",
+        "43f067add35486309b75626c248a216ff3542d5d694f4449d074516845b258fa",
+        "56235f77e4e07534144433a8c9141422ca995451beb889c466797f61c5deba63",
+        "5dc127fc55376121017c403db755b4a2e83e3374d57f4ecdae47980bc0d28e34",
+        "678f52b5ed224c9f9424eb2980e263a53a5d7f0bc62691cde479c3bf8bb4e24d",
+        "71aef445f9ebf0a67a5b2200ed7adfed9972717473215cda9ce5c79128b60a94",
+        "7848b95817e9fdea7994190fdbae229b4edde722a0df8b47e4f6d4772957dc7d",
+        "7da78780a752533e2df2a967d3d40e617c84db2a7bf2cb7f401a6b93fae7f2dd",
+        "8374849a03b94a931341f92490fee014ccaa263c93570e365970a57f7c9571b1",
+        "8d50f437425af095c828d7ea790b87dc56edb629bdf837db15d9750a92b69b13",
+        "8fae9ad76710845c28b6e5be48fade50b1dd8e80d00b20ab3cf26094ec3ba0d7",
+        "94b6504a18975b76feaf29be37b719ecd47a8eb3076d93ae010712555e06c942",
+        "a3b12f3d79ba9cf32263df54a9c488fb0c12458d5343502ecf48692cfb855a4b",
+        "a457126bb9dc41d86d5b177b9161ddd00a491921bf1d5bf80ddf5734f1c91a49",
+        "bb91aff2d744108e5f925a4b1f709ade315f85a49aca625573a77b81147e40e1",
+        "cb1e4b3c426dcab7be14d7fbc9567aeb71f36d3b7794366e316004a6d1f44fb1",
+        "cbbcd298246601dc6be273fd652468d424880d68dca10844bd0f534ac78cefe0",
+        "cffdf3fe67fea3390747f6a90c71a468f4b20c0d1c133b2a83f6dd1412a57b71",
+        "ebed15b5a34dfcf56e403c333d35ce204e34536eafd73c257426d2210541138d",
+        "fcb2e1beaf9d4ab75a4aebcdfa0a1f64e89962ca033c54fd69f7cdf5d64d5041"
+      ],
+      "environment_variables": {},
+      "secrets_redacted": true
+    }
+  },
+  "fresh_28_evidence": {
+    "run_root": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/runs/a02-fresh-full-ref-20260730T105924Z",
+    "run_file_manifest": "fresh_28_run_file_manifest.json",
+    "run_file_manifest_sha256": "8e6d17529a70f323c200570014da2db2855c0f593790a28328439c6a7d313758",
+    "run_file_tree_sha256": "a21e7adaa44726a0bb69df10f84327051fa75cc8ec14b62d84cd6d52f997180c",
+    "result_records": [
+      {
+        "task_id": "v3d_fast_001",
+        "run_id": "v3d_fast_001--deepseek-v4-pro--r001--3e966d3dbccd",
+        "status": "DONE",
+        "e2e_success": true,
+        "stop_reason": "REPAIR_FINALIZED",
+        "result_sha256": "aaf114f3298684a40894e3f79798cae6cf47f28ce403ce4b07b88fb9072ab0e9",
+        "run_dir": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/runs/a02-fresh-full-ref-20260730T105924Z/runs/v3d_fast_001--deepseek-v4-pro--r001--3e966d3dbccd",
+        "final_certification": {
+          "agent_credits_charged": 0,
+          "budget_domain": "FINAL_CERTIFICATION_OUTSIDE_AGENT_BUDGET",
+          "frozen_candidate": {
+            "ref": "control/frozen_candidate.json",
+            "sha256": "4261ab08d86510b3e8e58db1f6a346d52d1fd09ac5321c0fbe2b4a027e06d797"
+          },
+          "receipt": {
+            "file_sha256": "d70a4156462054ac509a87917ccc44d3005d713dab0cd56dcea907561a3ee24c",
+            "receipt_sha256": "bce961ca936a921bed52c829ccfc3f83e8b95dce39ce25aa8c775df15df37371",
+            "ref": "certification/3d828d79b502cb9b93e3003ae9fc5a82346ad537b39f431e1b0669f0fc450447/receipt.json"
+          },
+          "status": "PASS"
+        },
+        "package_manifest": {}
+      },
+      {
+        "task_id": "v3d_fast_002",
+        "run_id": "v3d_fast_002--deepseek-v4-pro--r001--95e140a32ca8",
+        "status": "DONE",
+        "e2e_success": true,
+        "stop_reason": "REPAIR_FINALIZED",
+        "result_sha256": "d8016f5314e85a86e0f3b9361ba1320f79619b3f64daa0ca5520113b717ed31d",
+        "run_dir": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/runs/a02-fresh-full-ref-20260730T105924Z/runs/v3d_fast_002--deepseek-v4-pro--r001--95e140a32ca8",
+        "final_certification": {
+          "agent_credits_charged": 0,
+          "budget_domain": "FINAL_CERTIFICATION_OUTSIDE_AGENT_BUDGET",
+          "frozen_candidate": {
+            "ref": "control/frozen_candidate.json",
+            "sha256": "6b7aa6a1df87c676d0ef70a4dc6a31e53494b6df2b933344c0456d51ead199ad"
+          },
+          "receipt": {
+            "file_sha256": "e49b0f934cd758d94a7eaa5edd884aa31b0c5262a3e6bebef3299df3621549f5",
+            "receipt_sha256": "c17b4014fbdc2a1bc706a89a96cd3d48ffffc61420aa1a065ecbb56c47550d48",
+            "ref": "certification/76a24978b88b50f821fd343f866bf4b57232ad72f275f70fec6d3d69caa2130a/receipt.json"
+          },
+          "status": "PASS"
+        },
+        "package_manifest": {}
+      },
+      {
+        "task_id": "v3d_fast_003",
+        "run_id": "v3d_fast_003--deepseek-v4-pro--r001--37c2bcfcdff2",
+        "status": "DONE",
+        "e2e_success": true,
+        "stop_reason": "REPAIR_FINALIZED",
+        "result_sha256": "6303439ee3cd2b46bb1f5f918f28d651f805630d0f3c79a0e80713f402bf01e9",
+        "run_dir": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/runs/a02-fresh-full-ref-20260730T105924Z/runs/v3d_fast_003--deepseek-v4-pro--r001--37c2bcfcdff2",
+        "final_certification": {
+          "agent_credits_charged": 0,
+          "budget_domain": "FINAL_CERTIFICATION_OUTSIDE_AGENT_BUDGET",
+          "frozen_candidate": {
+            "ref": "control/frozen_candidate.json",
+            "sha256": "9165513b1b1516d363154c74334afd2623aff07b55a67618dedef9f1e91a9418"
+          },
+          "receipt": {
+            "file_sha256": "62c1f7c215df5dfaa5d194b4c653d55186630c1374ab15f85297c532a266d1fd",
+            "receipt_sha256": "3ecbca0da3bfc5563c89d39fa5d13892566f61cffb042fbc3a1331ab9e6155ab",
+            "ref": "certification/3dbb4ea4c9f84b7db2172338e2e617b84917ace9f184da8ff964d655752df65f/receipt.json"
+          },
+          "status": "PASS"
+        },
+        "package_manifest": {}
+      },
+      {
+        "task_id": "v3d_fast_004",
+        "run_id": "v3d_fast_004--deepseek-v4-pro--r001--6e71ae33492d",
+        "status": "DONE",
+        "e2e_success": true,
+        "stop_reason": "REPAIR_FINALIZED",
+        "result_sha256": "1098be08317bd45d5c82e7e00d5459a5ca44f9eb0b4ce05896e6786f1387ece1",
+        "run_dir": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/runs/a02-fresh-full-ref-20260730T105924Z/runs/v3d_fast_004--deepseek-v4-pro--r001--6e71ae33492d",
+        "final_certification": {
+          "agent_credits_charged": 0,
+          "budget_domain": "FINAL_CERTIFICATION_OUTSIDE_AGENT_BUDGET",
+          "frozen_candidate": {
+            "ref": "control/frozen_candidate.json",
+            "sha256": "2440d0c2386cbaa50800f91404b09c7f03ede93de7db3bc22d2f0ccc2aece796"
+          },
+          "receipt": {
+            "file_sha256": "1aca6b323030809e1c269cecf236b624f9250690a76b29ec73288611041eb989",
+            "receipt_sha256": "186f6d37f5ab645d79b63418c425ecb421ca1a2225b897971298de2c565548de",
+            "ref": "certification/c4bc2162acbf0f7ef01cb53552a31a298fac9a5865bc7ce132f7c3aaa11b7ee3/receipt.json"
+          },
+          "status": "PASS"
+        },
+        "package_manifest": {}
+      },
+      {
+        "task_id": "v3d_fast_005",
+        "run_id": "v3d_fast_005--deepseek-v4-pro--r001--bd038ecbf9a1",
+        "status": "DONE",
+        "e2e_success": true,
+        "stop_reason": "REPAIR_FINALIZED",
+        "result_sha256": "92a957da2be3959c2e73002d0d3c40f728d79cdd699d8a10fb61f5c91f6db32f",
+        "run_dir": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/runs/a02-fresh-full-ref-20260730T105924Z/runs/v3d_fast_005--deepseek-v4-pro--r001--bd038ecbf9a1",
+        "final_certification": {
+          "agent_credits_charged": 0,
+          "budget_domain": "FINAL_CERTIFICATION_OUTSIDE_AGENT_BUDGET",
+          "frozen_candidate": {
+            "ref": "control/frozen_candidate.json",
+            "sha256": "9cafef7796e6721c0a3c475100006690d9d939b96efd4dad2283e174b1d4ade5"
+          },
+          "receipt": {
+            "file_sha256": "9082ad31860c0fa74b7c2f5dc66de83b4b4fcc9c9f62dfb652225396f1e99394",
+            "receipt_sha256": "f4cd9b0970780385192f14110ddc17d3e7e2e8df12246689ce3dfc335f27b943",
+            "ref": "certification/cbb26417528e0a2d5c27fbb3e134d020e4a743ac8642f31d9c693a1230c2ab91/receipt.json"
+          },
+          "status": "PASS"
+        },
+        "package_manifest": {}
+      },
+      {
+        "task_id": "v3d_fast_006",
+        "run_id": "v3d_fast_006--deepseek-v4-pro--r001--429631227b53",
+        "status": "DONE",
+        "e2e_success": true,
+        "stop_reason": "REPAIR_FINALIZED",
+        "result_sha256": "278c23fd6fe8ed13e62d1342a6c67189aa08983e33ecad72ee7eab32b913cf5d",
+        "run_dir": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/runs/a02-fresh-full-ref-20260730T105924Z/runs/v3d_fast_006--deepseek-v4-pro--r001--429631227b53",
+        "final_certification": {
+          "agent_credits_charged": 0,
+          "budget_domain": "FINAL_CERTIFICATION_OUTSIDE_AGENT_BUDGET",
+          "frozen_candidate": {
+            "ref": "control/frozen_candidate.json",
+            "sha256": "8a1ac2705931f04825648cfb4932104e8f828ccd7b9d33b33474896e94484a25"
+          },
+          "receipt": {
+            "file_sha256": "cfac057adec41c9546397d1946ee6a62e6861a6a89ceb60ee3e06af8661833a3",
+            "receipt_sha256": "ef1637b091bf2fb246682f353036d4643d7e1f1ead2c0901453cab444e13fb52",
+            "ref": "certification/ed9fb45b3b2739f4147f715ab33bb7cca81f70e755250b47ba00638d493fbc1d/receipt.json"
+          },
+          "status": "PASS"
+        },
+        "package_manifest": {}
+      },
+      {
+        "task_id": "v3d_fast_007",
+        "run_id": "v3d_fast_007--deepseek-v4-pro--r001--ace2adb1b47a",
+        "status": "DONE",
+        "e2e_success": true,
+        "stop_reason": "REPAIR_FINALIZED",
+        "result_sha256": "349a12c87b9b209bd098e9bbc0a9f18a36356f0f58c607f8c94479354db6b542",
+        "run_dir": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/runs/a02-fresh-full-ref-20260730T105924Z/runs/v3d_fast_007--deepseek-v4-pro--r001--ace2adb1b47a",
+        "final_certification": {
+          "agent_credits_charged": 0,
+          "budget_domain": "FINAL_CERTIFICATION_OUTSIDE_AGENT_BUDGET",
+          "frozen_candidate": {
+            "ref": "control/frozen_candidate.json",
+            "sha256": "492f7291b35f3654b7db1097b0bd9b3ec6a7f51dfb1bed1150428f32ffee894e"
+          },
+          "receipt": {
+            "file_sha256": "7420c6468e65219cfa756074cd3ba633edd3afc6350c948c994b994ce53ea3fe",
+            "receipt_sha256": "0b71e96821e83ee171ae6855c8de795e91ba701a43b5fba93c239af191efc443",
+            "ref": "certification/45a03c57647e527fec40fcb12ea9ef99dcc052ca23ed9eca06392d28f663e8b3/receipt.json"
+          },
+          "status": "PASS"
+        },
+        "package_manifest": {}
+      },
+      {
+        "task_id": "v3d_fast_008",
+        "run_id": "v3d_fast_008--deepseek-v4-pro--r001--2aa4a9a48935",
+        "status": "DONE",
+        "e2e_success": true,
+        "stop_reason": "REPAIR_FINALIZED",
+        "result_sha256": "2eab7811538e093673a2678b7ac40d7fe03b756f5a981e4a45a35c6fee165092",
+        "run_dir": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/runs/a02-fresh-full-ref-20260730T105924Z/runs/v3d_fast_008--deepseek-v4-pro--r001--2aa4a9a48935",
+        "final_certification": {
+          "agent_credits_charged": 0,
+          "budget_domain": "FINAL_CERTIFICATION_OUTSIDE_AGENT_BUDGET",
+          "frozen_candidate": {
+            "ref": "control/frozen_candidate.json",
+            "sha256": "ba491855e9dde3de334741b0fecd30c5370c9727c4f4f040963c896a65310c24"
+          },
+          "receipt": {
+            "file_sha256": "153611deb4b936d11ae78860d0d2b1e83e3e28b22734476a4958ee303ea245ef",
+            "receipt_sha256": "b5034cbf477c71684c60859aed6a4eba8c594a9c9d64d674899cf08314586f6a",
+            "ref": "certification/1822e2dc51ff07eb9c1032e91f2b80521838947327113d1c1fe1c4a2d05bceb8/receipt.json"
+          },
+          "status": "PASS"
+        },
+        "package_manifest": {}
+      },
+      {
+        "task_id": "v3d_fast_009",
+        "run_id": "v3d_fast_009--deepseek-v4-pro--r001--cefd5e429c5e",
+        "status": "DONE",
+        "e2e_success": true,
+        "stop_reason": "SYNTH_FIX_FINALIZED",
+        "result_sha256": "8f44740a6aa937714184e70d2a38226d17d87488a673e56edf75328a30e88faf",
+        "run_dir": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/runs/a02-fresh-full-ref-20260730T105924Z/runs/v3d_fast_009--deepseek-v4-pro--r001--cefd5e429c5e",
+        "final_certification": {
+          "agent_credits_charged": 0,
+          "budget_domain": "FINAL_CERTIFICATION_OUTSIDE_AGENT_BUDGET",
+          "frozen_candidate": {
+            "ref": "control/frozen_candidate.json",
+            "sha256": "7c6e92075c1575660410eefa7b8e0572ecd493183910c82662236d18237c0c04"
+          },
+          "receipt": {
+            "file_sha256": "7dc0d51648d90aa6dad8c6dc435fc2445b575509afeba99869f76bc77bfab355",
+            "receipt_sha256": "5877f90e2087f0e9a2bd45c67969ed48df87b862b32aca65ff53fb10922d228f",
+            "ref": "certification/0a706aa41b1be36982f46ab46cd2ca73b121aa6768518ae2b38535b115c53883/receipt.json"
+          },
+          "status": "PASS"
+        },
+        "package_manifest": {}
+      },
+      {
+        "task_id": "v3d_fast_010",
+        "run_id": "v3d_fast_010--deepseek-v4-pro--r001--92a1779a1983",
+        "status": "DONE",
+        "e2e_success": true,
+        "stop_reason": "SYNTH_FIX_FINALIZED",
+        "result_sha256": "3fdda7e523c6ff48a7c450c51df701717367339683d22e396ab68f326add95c2",
+        "run_dir": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/runs/a02-fresh-full-ref-20260730T105924Z/runs/v3d_fast_010--deepseek-v4-pro--r001--92a1779a1983",
+        "final_certification": {
+          "agent_credits_charged": 0,
+          "budget_domain": "FINAL_CERTIFICATION_OUTSIDE_AGENT_BUDGET",
+          "frozen_candidate": {
+            "ref": "control/frozen_candidate.json",
+            "sha256": "c6a9599c1b48ef4d51e6177388e880023c338bf3499d3bdd4c8b1955dc850b6f"
+          },
+          "receipt": {
+            "file_sha256": "9392ce12c09aa2bf22a97704b19abbf2ced4d636808c700f660de8f380550766",
+            "receipt_sha256": "e3824d1b7d6ccab8eb5b7baa1affc212ca54b9e99ab6ecdb2b1e2667c51ac252",
+            "ref": "certification/cadade4596a046e2e4c8faafbb691299f4c22ab3b4f686429462cf58072370c5/receipt.json"
+          },
+          "status": "PASS"
+        },
+        "package_manifest": {}
+      },
+      {
+        "task_id": "v3d_fast_011",
+        "run_id": "v3d_fast_011--deepseek-v4-pro--r001--b4ddfb295bcf",
+        "status": "DONE",
+        "e2e_success": true,
+        "stop_reason": "SYNTH_FIX_FINALIZED",
+        "result_sha256": "23afe2a0a6131cc696866904682e52c1487dd89684fc955608486c7426038fe1",
+        "run_dir": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/runs/a02-fresh-full-ref-20260730T105924Z/runs/v3d_fast_011--deepseek-v4-pro--r001--b4ddfb295bcf",
+        "final_certification": {
+          "agent_credits_charged": 0,
+          "budget_domain": "FINAL_CERTIFICATION_OUTSIDE_AGENT_BUDGET",
+          "frozen_candidate": {
+            "ref": "control/frozen_candidate.json",
+            "sha256": "19d7d5e9296a504c705ea954e9b4aab89bbdc2e84c9657b783d6049f83cd1f69"
+          },
+          "receipt": {
+            "file_sha256": "67fbc4702a072ce42b225ff180a58d7880cb0b7967e99b479e8fc0254a7aa984",
+            "receipt_sha256": "e49e0a920502d90be12fba864495bebf785f1a8b7335519dcb1d95b52e418a60",
+            "ref": "certification/0478df32182e4fc546628f854ec89e33313e39452c6bdd8efe26f5613c78c491/receipt.json"
+          },
+          "status": "PASS"
+        },
+        "package_manifest": {}
+      },
+      {
+        "task_id": "v3d_fast_012",
+        "run_id": "v3d_fast_012--deepseek-v4-pro--r001--cffab5dc5915",
+        "status": "DONE",
+        "e2e_success": true,
+        "stop_reason": "SYNTH_FIX_FINALIZED",
+        "result_sha256": "0e399b793ebafc3b1531ab7e04230ec2cb1fe472f04682668b894a3e0374c0c3",
+        "run_dir": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/runs/a02-fresh-full-ref-20260730T105924Z/runs/v3d_fast_012--deepseek-v4-pro--r001--cffab5dc5915",
+        "final_certification": {
+          "agent_credits_charged": 0,
+          "budget_domain": "FINAL_CERTIFICATION_OUTSIDE_AGENT_BUDGET",
+          "frozen_candidate": {
+            "ref": "control/frozen_candidate.json",
+            "sha256": "4fb060d3f992b3a25d1a7e1548cdd558e3023acef39ef688954704d2b540f368"
+          },
+          "receipt": {
+            "file_sha256": "03d79b8c9f600487f582c698466b5dc5fda1625181b3d94a971c50bbef9709cf",
+            "receipt_sha256": "4b6d6916062d05862662a5ca3b327a09556ead63e160556b247ea62438fd50b2",
+            "ref": "certification/fbcc5b0cc45930e164460783ffee203a4795f22ec7d01a86ef8c76427d7454db/receipt.json"
+          },
+          "status": "PASS"
+        },
+        "package_manifest": {}
+      },
+      {
+        "task_id": "v3d_fast_013",
+        "run_id": "v3d_fast_013--deepseek-v4-pro--r001--a97090a79ae4",
+        "status": "DONE",
+        "e2e_success": true,
+        "stop_reason": "SYNTH_FIX_FINALIZED",
+        "result_sha256": "850c10e306769f1fa750d2a2c34ef944bb71ceccc36c8f5317687a69bd1c6f89",
+        "run_dir": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/runs/a02-fresh-full-ref-20260730T105924Z/runs/v3d_fast_013--deepseek-v4-pro--r001--a97090a79ae4",
+        "final_certification": {
+          "agent_credits_charged": 0,
+          "budget_domain": "FINAL_CERTIFICATION_OUTSIDE_AGENT_BUDGET",
+          "frozen_candidate": {
+            "ref": "control/frozen_candidate.json",
+            "sha256": "c7c65b973bd849a8bc8772b615d2c4b35ed41195b16b7599778c683cef31311a"
+          },
+          "receipt": {
+            "file_sha256": "5c7bed4ab667ac330e7fa67d00c5067233eb71d20e84e2cc183f59a2c8d13524",
+            "receipt_sha256": "4a7b61e3a40590292c0377dc855cf2b595861cd58bab39b196eaea3c7ceb42bf",
+            "ref": "certification/99e9e13dbd0d8bc4f47355a3fc78628d9b33cf81b400a738c5fb5e06c626c9e0/receipt.json"
+          },
+          "status": "PASS"
+        },
+        "package_manifest": {}
+      },
+      {
+        "task_id": "v3d_fast_014",
+        "run_id": "v3d_fast_014--deepseek-v4-pro--r001--59af53dc513b",
+        "status": "DONE",
+        "e2e_success": true,
+        "stop_reason": "SYNTH_FIX_FINALIZED",
+        "result_sha256": "402a45f8b412349175b20bd9b25a33500e62bf9f10b51d4328c9333543369c75",
+        "run_dir": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/runs/a02-fresh-full-ref-20260730T105924Z/runs/v3d_fast_014--deepseek-v4-pro--r001--59af53dc513b",
+        "final_certification": {
+          "agent_credits_charged": 0,
+          "budget_domain": "FINAL_CERTIFICATION_OUTSIDE_AGENT_BUDGET",
+          "frozen_candidate": {
+            "ref": "control/frozen_candidate.json",
+            "sha256": "baca49161d4f0cdde5f7f037c5520d35e99a8b626527b79da42acf52ec15c3c4"
+          },
+          "receipt": {
+            "file_sha256": "908cc0227d74898c7e72e46ef68d55c787134b374a7cdcf677ffc3bafbe83a53",
+            "receipt_sha256": "711db178aed191ea735280d50b8578b73823bb65a821ff81d1bbb7f5fc6cc180",
+            "ref": "certification/e905c79157b1999bf48fd10ef681b036bf7d620ee6cc873eb7c0a476cd9e03ff/receipt.json"
+          },
+          "status": "PASS"
+        },
+        "package_manifest": {}
+      },
+      {
+        "task_id": "v3d_fast_015",
+        "run_id": "v3d_fast_015--deepseek-v4-pro--r001--a84f90f0b96d",
+        "status": "DONE",
+        "e2e_success": true,
+        "stop_reason": "STRUCTURAL_FIX_FINALIZED",
+        "result_sha256": "4415a468442ea20114dafdcda46455aa0cb03d2ad92c93f41ced81f3df6239ca",
+        "run_dir": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/runs/a02-fresh-full-ref-20260730T105924Z/runs/v3d_fast_015--deepseek-v4-pro--r001--a84f90f0b96d",
+        "final_certification": {
+          "agent_credits_charged": 0,
+          "budget_domain": "FINAL_CERTIFICATION_OUTSIDE_AGENT_BUDGET",
+          "frozen_candidate": {
+            "ref": "control/frozen_candidate.json",
+            "sha256": "36cf97276e9e23296336c7950ba7a047c67b05b97e90c4dee32ebceb4d2040e4"
+          },
+          "receipt": {
+            "file_sha256": "8e869f437c26d667cb784133872c4c60053d0c19915f8d1ddeaa8c4a37e56eb9",
+            "receipt_sha256": "b56d884e544145fe0d01cf9b3275b81e99b172f7524850ca62c5070c0c3202ca",
+            "ref": "certification/d00260c7800350d560e7df63c23bfeab3bc935d3549819a1174decf400467da9/receipt.json"
+          },
+          "status": "PASS"
+        },
+        "package_manifest": {}
+      },
+      {
+        "task_id": "v3d_fast_016",
+        "run_id": "v3d_fast_016--deepseek-v4-pro--r001--539c9292e17d",
+        "status": "DONE",
+        "e2e_success": true,
+        "stop_reason": "STRUCTURAL_FIX_FINALIZED",
+        "result_sha256": "33abefcc5cf388edf841560ae82b4cc5f04c3b9487d5094ab4d07514ca0c83a9",
+        "run_dir": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/runs/a02-fresh-full-ref-20260730T105924Z/runs/v3d_fast_016--deepseek-v4-pro--r001--539c9292e17d",
+        "final_certification": {
+          "agent_credits_charged": 0,
+          "budget_domain": "FINAL_CERTIFICATION_OUTSIDE_AGENT_BUDGET",
+          "frozen_candidate": {
+            "ref": "control/frozen_candidate.json",
+            "sha256": "6ebf2d0b1ad948c1ff137c8f47d560ad39fec08e7d4c6f2c7fc50f91c1af06ee"
+          },
+          "receipt": {
+            "file_sha256": "b9c59bcdc1e7096646918d63fe6f733bbb78012cd06e65d7ff632e35e50e2da9",
+            "receipt_sha256": "0267ecf020b560a2f4095136b4f3765fc799d6bc4653596889bf86943c8af551",
+            "ref": "certification/edb489798b9ae0a47015bbe4c6b8a9891a1e8b1d2f46a25c0adb91a6e274e8f1/receipt.json"
+          },
+          "status": "PASS"
+        },
+        "package_manifest": {}
+      },
+      {
+        "task_id": "v3d_fast_017",
+        "run_id": "v3d_fast_017--deepseek-v4-pro--r001--42bdf0ea022f",
+        "status": "DONE",
+        "e2e_success": true,
+        "stop_reason": "STRUCTURAL_FIX_FINALIZED",
+        "result_sha256": "e7eb71b439198914516b922ce67e7f35ad7fa635365f38c55a558d469e067c6b",
+        "run_dir": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/runs/a02-fresh-full-ref-20260730T105924Z/runs/v3d_fast_017--deepseek-v4-pro--r001--42bdf0ea022f",
+        "final_certification": {
+          "agent_credits_charged": 0,
+          "budget_domain": "FINAL_CERTIFICATION_OUTSIDE_AGENT_BUDGET",
+          "frozen_candidate": {
+            "ref": "control/frozen_candidate.json",
+            "sha256": "7eec477064d755a326341d4ac93be0429927b4d03ace3678ff0135a203e4584c"
+          },
+          "receipt": {
+            "file_sha256": "e5f1295b81e4cfe0d62110f8aabd6741ce8e28ea9b0fc67fd199bd6457d96400",
+            "receipt_sha256": "90d5badd88ea5d40e16eecb4a670a76a84311ba683972bbb1dac292e001fe7ad",
+            "ref": "certification/6bdfcf74840062ab71b5849c2cbcb5573e10b57a0a9f15e5b165a84fa9de6be9/receipt.json"
+          },
+          "status": "PASS"
+        },
+        "package_manifest": {}
+      },
+      {
+        "task_id": "v3d_fast_018",
+        "run_id": "v3d_fast_018--deepseek-v4-pro--r001--c5dd0fcd8eb4",
+        "status": "DONE",
+        "e2e_success": true,
+        "stop_reason": "CANDIDATE_PROMOTED_AND_FINALIZED",
+        "result_sha256": "76a2b4118109fee430c7fd9d1f8b5939bdb5886d8a5c8f52c9861ce89855e95b",
+        "run_dir": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/runs/a02-fresh-full-ref-20260730T105924Z/runs/v3d_fast_018--deepseek-v4-pro--r001--c5dd0fcd8eb4",
+        "final_certification": {
+          "agent_credits_charged": 0,
+          "budget_domain": "FINAL_CERTIFICATION_OUTSIDE_AGENT_BUDGET",
+          "frozen_candidate": {
+            "ref": "control/frozen_candidate.json",
+            "sha256": "5a8c06403aa9c926d7750b7d6b824ba3c8742c42912c13f2083f04a79e42657e"
+          },
+          "receipt": {
+            "file_sha256": "358a018fd4008f827761e76ca5a6d5849b017acf20822af7172ada39015e0dc9",
+            "receipt_sha256": "f022fd5db9da44da39b8c44c307eb845409967a1097383ee5370db63e58a9eea",
+            "ref": "certification/5519aca1f6f12e052797ce34859cc7d1ca56a1bfbda76490957ac9124aedcb45/receipt.json"
+          },
+          "status": "PASS"
+        },
+        "package_manifest": {}
+      },
+      {
+        "task_id": "v3d_fast_019",
+        "run_id": "v3d_fast_019--deepseek-v4-pro--r001--a103b8e6deb3",
+        "status": "DONE",
+        "e2e_success": true,
+        "stop_reason": "STRUCTURAL_FIX_FINALIZED",
+        "result_sha256": "e73106d30433e586503554764705fa1a166381cde61054090c3d77212869d100",
+        "run_dir": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/runs/a02-fresh-full-ref-20260730T105924Z/runs/v3d_fast_019--deepseek-v4-pro--r001--a103b8e6deb3",
+        "final_certification": {
+          "agent_credits_charged": 0,
+          "budget_domain": "FINAL_CERTIFICATION_OUTSIDE_AGENT_BUDGET",
+          "frozen_candidate": {
+            "ref": "control/frozen_candidate.json",
+            "sha256": "69d61dbeabe3db2e69980bb615724289e3c15b4a950b114ca60f582728a67959"
+          },
+          "receipt": {
+            "file_sha256": "70cf65b637c2ad6773ff1a335175786f5664cf9ce984d949be84c05adeda7915",
+            "receipt_sha256": "394c606981d55a1a8d4d586846dac380bfc719f9fcf2bf8378f1c4ab8a787eff",
+            "ref": "certification/efac143c3c124fe94ae0eab9a6f850dd2888890191f2f6d6c5f1088e90e3f55d/receipt.json"
+          },
+          "status": "PASS"
+        },
+        "package_manifest": {}
+      },
+      {
+        "task_id": "v3d_fast_020",
+        "run_id": "v3d_fast_020--deepseek-v4-pro--r001--7e0ffdfbe059",
+        "status": "FAILED",
+        "e2e_success": false,
+        "stop_reason": "TASK_REPAIR_NO_IMPROVEMENT_LIMIT",
+        "result_sha256": "2e9dea79fd2f2ee314112581c33a99db8583437e4698de8a2346e709334b33d8",
+        "run_dir": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/runs/a02-fresh-full-ref-20260730T105924Z/runs/v3d_fast_020--deepseek-v4-pro--r001--7e0ffdfbe059",
+        "final_certification": null,
+        "package_manifest": {}
+      },
+      {
+        "task_id": "v3d_fast_021",
+        "run_id": "v3d_fast_021--deepseek-v4-pro--r001--d7d4e849ddcd",
+        "status": "DONE",
+        "e2e_success": true,
+        "stop_reason": "CANDIDATE_PROMOTED_AND_FINALIZED",
+        "result_sha256": "05ed0836f006784f0e6141df68f32a30a9b43eb867f303699e8bbe515da2e273",
+        "run_dir": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/runs/a02-fresh-full-ref-20260730T105924Z/runs/v3d_fast_021--deepseek-v4-pro--r001--d7d4e849ddcd",
+        "final_certification": {
+          "agent_credits_charged": 0,
+          "budget_domain": "FINAL_CERTIFICATION_OUTSIDE_AGENT_BUDGET",
+          "frozen_candidate": {
+            "ref": "control/frozen_candidate.json",
+            "sha256": "e187636b9b1d74fd204e923ef2c5a8896665fb5d1ac0a5d5bd62d4c486c3722f"
+          },
+          "receipt": {
+            "file_sha256": "41b16b3130963cedecd35b957044b9a985f94fcb9e233db4a4166062b86f3bb0",
+            "receipt_sha256": "1ae6e0cd3a2607906cb56c9dd5e88ffbfed2ef3aa2b6e19533b5323a8cc86771",
+            "ref": "certification/b37e513f9423630e096f5601cdf0f40815fc3b6ed05eeb7d54d5ca92af7074c8/receipt.json"
+          },
+          "status": "PASS"
+        },
+        "package_manifest": {}
+      },
+      {
+        "task_id": "v3d_fast_022",
+        "run_id": "v3d_fast_022--deepseek-v4-pro--r001--b42843a3851b",
+        "status": "DONE",
+        "e2e_success": true,
+        "stop_reason": "CANDIDATE_PROMOTED_AND_FINALIZED",
+        "result_sha256": "4de6e60f0b5846a6deb0c69490057d1f13cb2ffa22df6e20caee869da3d6399b",
+        "run_dir": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/runs/a02-fresh-full-ref-20260730T105924Z/runs/v3d_fast_022--deepseek-v4-pro--r001--b42843a3851b",
+        "final_certification": {
+          "agent_credits_charged": 0,
+          "budget_domain": "FINAL_CERTIFICATION_OUTSIDE_AGENT_BUDGET",
+          "frozen_candidate": {
+            "ref": "control/frozen_candidate.json",
+            "sha256": "9f5867b91a33efe2d81056194a1ef76b5e1d0ec98655efd30bcbe9709bd39b00"
+          },
+          "receipt": {
+            "file_sha256": "77e8b65cd05e80c912e1103b7e83e892f68acc702b482940230bfa1d7c0386f4",
+            "receipt_sha256": "cd634c1ca350e6f04b7c5601595b05a81fdb33bf744d10559e0e67a1c9c9fa2b",
+            "ref": "certification/530ec9e12c60c088a5eb1b22824ccf94d68cb195a40a31a1950e10661b8b99ab/receipt.json"
+          },
+          "status": "PASS"
+        },
+        "package_manifest": {}
+      },
+      {
+        "task_id": "v3d_fast_023",
+        "run_id": "v3d_fast_023--deepseek-v4-pro--r001--f906c2e89eb1",
+        "status": "DONE",
+        "e2e_success": true,
+        "stop_reason": "CANDIDATE_PROMOTED_AND_FINALIZED",
+        "result_sha256": "7d3cc1b80262db37cf88796be3bd6d94d775cbdfb6246c61950fdb749d28b2aa",
+        "run_dir": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/runs/a02-fresh-full-ref-20260730T105924Z/runs/v3d_fast_023--deepseek-v4-pro--r001--f906c2e89eb1",
+        "final_certification": {
+          "agent_credits_charged": 0,
+          "budget_domain": "FINAL_CERTIFICATION_OUTSIDE_AGENT_BUDGET",
+          "frozen_candidate": {
+            "ref": "control/frozen_candidate.json",
+            "sha256": "7ea8cc7a3e2ab3c4842b5f13a389c82e35ad9da348484c7b7af25abfeea251bc"
+          },
+          "receipt": {
+            "file_sha256": "8e3de171b03b6bc29263fe6a538cc266c00b75f25991ea14b640a674c0df94e4",
+            "receipt_sha256": "4bbfde1cd09f5590156a5eb74b21eb6f70b693c8d240717109e78edc3ca6e80e",
+            "ref": "certification/24608ed20d08acb6495567fc96457ef86bb23edf4c8c65a78692d1c863c2ff58/receipt.json"
+          },
+          "status": "PASS"
+        },
+        "package_manifest": {}
+      },
+      {
+        "task_id": "v3d_fast_024",
+        "run_id": "v3d_fast_024--deepseek-v4-pro--r001--ee0c96fc3247",
+        "status": "DONE",
+        "e2e_success": true,
+        "stop_reason": "BASELINE_FINALIZED_NO_IMPROVEMENT",
+        "result_sha256": "8eba86227b464caa760ed260701d6b0924eb232ed67de4bfcc8d9f4928c1463d",
+        "run_dir": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/runs/a02-fresh-full-ref-20260730T105924Z/runs/v3d_fast_024--deepseek-v4-pro--r001--ee0c96fc3247",
+        "final_certification": {
+          "agent_credits_charged": 0,
+          "budget_domain": "FINAL_CERTIFICATION_OUTSIDE_AGENT_BUDGET",
+          "frozen_candidate": {
+            "ref": "control/frozen_candidate.json",
+            "sha256": "b05f41817abd34fe7d7f3d26ca240d841666b3d87cc823cdd2ea71af979d6338"
+          },
+          "receipt": {
+            "file_sha256": "a6ce39a6516a7f319180ac9b57095eeb42e33a82781d3edeeb37686090dc1070",
+            "receipt_sha256": "e5e4311907321b0a36618f22d2e6653d135271e4e694f813afcfbab5bf48d315",
+            "ref": "certification/ea8ba6c49c751d635e0ffd7a0e7f057dbce92dae44c5be043701e81ecdae962e/receipt.json"
+          },
+          "status": "PASS"
+        },
+        "package_manifest": {}
+      },
+      {
+        "task_id": "v3d_fast_025",
+        "run_id": "v3d_fast_025--deepseek-v4-pro--r001--cd2bf2e8874e",
+        "status": "DONE",
+        "e2e_success": true,
+        "stop_reason": "CANDIDATE_PROMOTED_AND_FINALIZED",
+        "result_sha256": "9e36743f6cd3556f7acdf01f9e730784ab3a0180e3110b535a6f30941ed41992",
+        "run_dir": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/runs/a02-fresh-full-ref-20260730T105924Z/runs/v3d_fast_025--deepseek-v4-pro--r001--cd2bf2e8874e",
+        "final_certification": {
+          "agent_credits_charged": 0,
+          "budget_domain": "FINAL_CERTIFICATION_OUTSIDE_AGENT_BUDGET",
+          "frozen_candidate": {
+            "ref": "control/frozen_candidate.json",
+            "sha256": "2f21999ce31b51d66ae62ae719a36f3fa011e34ee2c84a5c4a1ed5625aebf206"
+          },
+          "receipt": {
+            "file_sha256": "c8ac83f60928dc865d29b019e523bf3eb33649746f1d96c5d8de6696d2edca0f",
+            "receipt_sha256": "fa1f5df0d2f542d2c0e2bab37adbf74cbab6bd4beb1bcd79edaf02fc0a7325b3",
+            "ref": "certification/a550e36a659d6a518daaa8fd72e7c96769cbc23b5f65b9aec775c5aeecb4c65b/receipt.json"
+          },
+          "status": "PASS"
+        },
+        "package_manifest": {}
+      },
+      {
+        "task_id": "v3d_fast_026",
+        "run_id": "v3d_fast_026--deepseek-v4-pro--r001--53dbeb008e5a",
+        "status": "DONE",
+        "e2e_success": true,
+        "stop_reason": "CANDIDATE_PROMOTED_AND_FINALIZED",
+        "result_sha256": "ee8dc75075b418016f2760269c456d0587ca0f81066fb9b640044f5a0547df73",
+        "run_dir": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/runs/a02-fresh-full-ref-20260730T105924Z/runs/v3d_fast_026--deepseek-v4-pro--r001--53dbeb008e5a",
+        "final_certification": {
+          "agent_credits_charged": 0,
+          "budget_domain": "FINAL_CERTIFICATION_OUTSIDE_AGENT_BUDGET",
+          "frozen_candidate": {
+            "ref": "control/frozen_candidate.json",
+            "sha256": "00e1d6844245618b6b8ee328762c382fea4035b51f973574085b4c7a19aa7fbe"
+          },
+          "receipt": {
+            "file_sha256": "028683a366c5676308c6a48c90d755c73e6cc0bb5e551aa03c7054931e6be594",
+            "receipt_sha256": "4716bd35035150f46cb9322fb0a964a2e4f1796d1b3dbc36049ae8a55443ea98",
+            "ref": "certification/b7385bbcc5323c39765cbde4c897839fa5014062336163be418711b2d19b0435/receipt.json"
+          },
+          "status": "PASS"
+        },
+        "package_manifest": {}
+      },
+      {
+        "task_id": "v3d_fast_027",
+        "run_id": "v3d_fast_027--deepseek-v4-pro--r001--533ed50b280b",
+        "status": "DONE",
+        "e2e_success": true,
+        "stop_reason": "CANDIDATE_PROMOTED_AND_FINALIZED",
+        "result_sha256": "560e6d3cac09bbb3a9536d22468c46d2f8d6a8b107a325924cc00108dfe5e430",
+        "run_dir": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/runs/a02-fresh-full-ref-20260730T105924Z/runs/v3d_fast_027--deepseek-v4-pro--r001--533ed50b280b",
+        "final_certification": {
+          "agent_credits_charged": 0,
+          "budget_domain": "FINAL_CERTIFICATION_OUTSIDE_AGENT_BUDGET",
+          "frozen_candidate": {
+            "ref": "control/frozen_candidate.json",
+            "sha256": "75d29eb83565217b4680e38270de91cfa4a621b15ad91582155f58e2e3107396"
+          },
+          "receipt": {
+            "file_sha256": "1493fc7a66088fe88618fd73e861dae788cb6976abd776b8d156aba8ebcc57b4",
+            "receipt_sha256": "7f459eed52cd238dd7edfb0bee93504a5515903f1d22e9d28b0c982ffc4eadb9",
+            "ref": "certification/e8f70081f38427f606949dc5a8576317002355e509939058b759ab7199b337a6/receipt.json"
+          },
+          "status": "PASS"
+        },
+        "package_manifest": {}
+      },
+      {
+        "task_id": "v3d_fast_028",
+        "run_id": "v3d_fast_028--deepseek-v4-pro--r001--b849b783bb57",
+        "status": "DONE",
+        "e2e_success": true,
+        "stop_reason": "CANDIDATE_PROMOTED_AND_FINALIZED",
+        "result_sha256": "d2eaa7280469938cc6bada189d5e31e0fe1e39b9821e26383cbd8d45cea8152b",
+        "run_dir": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/runs/a02-fresh-full-ref-20260730T105924Z/runs/v3d_fast_028--deepseek-v4-pro--r001--b849b783bb57",
+        "final_certification": {
+          "agent_credits_charged": 0,
+          "budget_domain": "FINAL_CERTIFICATION_OUTSIDE_AGENT_BUDGET",
+          "frozen_candidate": {
+            "ref": "control/frozen_candidate.json",
+            "sha256": "978d0d7d8d3ec66caed41a796bb39685fa29bad1c6c116c6ce7183baa9408989"
+          },
+          "receipt": {
+            "file_sha256": "93afe190d800ef168540f1abb832503f4fe67a5739c6ee953e3f71b9172d13ef",
+            "receipt_sha256": "e40b3052498c20fa60727f6c0ba57230f16ef3fafa1ba5ffe7acda2373202c09",
+            "ref": "certification/eacd866812ca1c3fa86d4d18ae02cd03bc481e3bb14c827177c9ce03175f969e/receipt.json"
+          },
+          "status": "PASS"
+        },
+        "package_manifest": {}
+      }
+    ],
+    "summary": {
+      "benchmark_fingerprint": "879b2bd4e609f3699a7773619789c4580c02c71935d22234980a25989752760a",
+      "records": 28,
+      "real_e2e_successes": 27,
+      "real_e2e_success_rate": 0.9642857142857143,
+      "failures": {
+        "by_reason": {
+          "TASK_REPAIR_NO_IMPROVEMENT_LIMIT": 1
+        },
+        "by_stage": {
+          "COSIM": 1
+        },
+        "count": 1
+      }
+    }
+  }
+}
