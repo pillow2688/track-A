@@ -108,6 +108,7 @@ from .v3_planner_action import (
     LIVE_PROVIDER_REQUEST_SCHEMA,
     LivePlanner,
     PlannerActionJournal,
+    PlannerActionAmbiguous,
     PlannerActionError,
     PlannerActionRejected,
     PlannerActionResult,
@@ -5032,6 +5033,43 @@ def _plan_candidate(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeSt
                 "planner_output_sha256": exc.failure_sha256,
                 "node_events": [event],
             }
+        except PlannerActionAmbiguous as exc:
+            # The request crossed the non-replayable provider boundary but
+            # did not yield a complete, chargeable outcome.  Do not turn this
+            # into a zero-token rejection or issue another Planner request:
+            # preserve the conservative Ledger state and seal a formal
+            # terminal failure for external recovery/audit.
+            event = _event(
+                runtime,
+                node="plan_candidate",
+                phase=mode,
+                candidate_id=state["best_candidate_id"],
+                action="stop_after_nonreplayable_planner_usage_unknown",
+                why=(
+                    "The provider dispatch has unknown usage and cannot be "
+                    "safely replayed within this run."
+                ),
+                outcome="PLANNER_USAGE_UNKNOWN_AFTER_DISPATCH",
+                round_index=round_index,
+                details={
+                    "planner_input_ref": input_ref,
+                    "planner_input_sha256": input_sha256,
+                    "exception": str(exc),
+                },
+            )
+            return {
+                "phase": mode,
+                "status": "FAILED",
+                "stop_reason": "PLANNER_USAGE_UNKNOWN_AFTER_DISPATCH",
+                "exploration_stop_reason": "PLANNER_USAGE_UNKNOWN_AFTER_DISPATCH",
+                "last_tool_ok": False,
+                "last_tool_phase": "planner",
+                "last_tool_reason": "PLANNER_USAGE_UNKNOWN_AFTER_DISPATCH",
+                "last_round_improved": False,
+                "planner_input_ref": input_ref,
+                "planner_input_sha256": input_sha256,
+                "node_events": [event],
+            }
         proposal = live_result.proposal
         request_audit = _read_json_object(
             _safe_run_ref(runtime, live_result.request_ref)
@@ -8233,6 +8271,8 @@ def _pass_or_finalize(state: V3PrototypeState) -> str:
 
 
 def _plan_or_advance(state: V3PrototypeState) -> str:
+    if state.get("last_tool_reason") == "PLANNER_USAGE_UNKNOWN_AFTER_DISPATCH":
+        return "report"
     return "materialize" if state.get("last_tool_ok") is not False else "advance"
 
 
@@ -8415,7 +8455,11 @@ def build_v3_prototype_graph(runtime: _Runtime, checkpointer: SqliteSaver):
     graph.add_conditional_edges(
         "plan_candidate",
         _plan_or_advance,
-        {"materialize": "materialize_candidate", "advance": "advance_round"},
+        {
+            "materialize": "materialize_candidate",
+            "advance": "advance_round",
+            "report": "write_report",
+        },
     )
     graph.add_conditional_edges(
         "materialize_candidate",

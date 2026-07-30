@@ -277,10 +277,17 @@ def _default_transport(
         with urllib.request.urlopen(request, timeout=timeout) as response:
             return int(response.status), dict(response.headers.items()), response.read()
     except urllib.error.HTTPError as exc:
-        raise RepairProviderError(f"OpenAI-compatible API returned HTTP {exc.code}") from exc
+        # An HTTP failure does not provide a trustworthy provider-side usage
+        # receipt.  It must stay non-replayable and conservatively accounted,
+        # rather than being misclassified as a zero-token completed action.
+        raise RepairProviderError(
+            f"OpenAI-compatible API returned HTTP {exc.code}",
+            usage_complete=False,
+        ) from exc
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         raise RepairProviderError(
-            f"OpenAI-compatible API request failed ({type(exc).__name__})"
+            f"OpenAI-compatible API request failed ({type(exc).__name__})",
+            usage_complete=False,
         ) from exc
 
 

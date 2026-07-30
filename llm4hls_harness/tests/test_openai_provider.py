@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import json
 import unittest
+import urllib.error
+import urllib.request
+from unittest.mock import patch
 
 from llm4hls_agent.openai_provider import (
     DEFAULT_MODEL,
     OpenAICompatibleConfig,
     OpenAICompatibleOptimizationProvider,
     OpenAICompatibleRepairProvider,
+    _default_transport,
     build_optimization_prompt,
     build_repair_prompt,
     build_task_aware_prompt,
@@ -549,6 +553,18 @@ class OpenAICompatibleProviderTests(unittest.TestCase):
         with self.assertRaises(RepairProviderError) as caught:
             provider.propose_patch(context())
         self.assertNotIn("secret-test-key", str(caught.exception))
+
+    def test_transport_failure_has_unknown_usage_not_zero_usage(self) -> None:
+        request = urllib.request.Request("https://example.invalid/v1/chat/completions")
+        with patch(
+            "llm4hls_agent.openai_provider.urllib.request.urlopen",
+            side_effect=urllib.error.URLError("offline"),
+        ):
+            with self.assertRaises(RepairProviderError) as raised:
+                _default_transport(request, 1.0)
+        self.assertFalse(raised.exception.usage_complete)
+        self.assertEqual(raised.exception.input_tokens, 0)
+        self.assertEqual(raised.exception.output_tokens, 0)
 
 
 if __name__ == "__main__":

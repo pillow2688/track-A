@@ -11,8 +11,10 @@ from unittest.mock import patch
 
 from llm4hls_agent.budget import BudgetConfig
 from llm4hls_agent.repair import PatchProposal
+from llm4hls_agent.repair import RepairProviderError
 from llm4hls_agent.task import load_public_task
 from llm4hls_agent.tools import BackendResult, ToolConfig
+from llm4hls_agent.v3_planner_action import PreparedPlannerCall
 from llm4hls_agent.workflow import RunConfig
 
 try:
@@ -271,6 +273,73 @@ def prototype_config(task, *, credit_limit: int = 80) -> RunConfig:
 
 @unittest.skipIf(run_v3_prototype is None, "V3 optional dependencies are not installed")
 class V3PrototypeTests(unittest.TestCase):
+    def test_unknown_live_planner_usage_seals_a_formal_terminal_failure(self) -> None:
+        class UnknownUsagePlanner:
+            replay_policy = "NON_REPLAYABLE"
+
+            def __init__(self) -> None:
+                self.invoke_calls = 0
+
+            def fingerprint(self) -> str:
+                return "unknown-usage-live-planner-v1"
+
+            def prepare(self, value):
+                return PreparedPlannerCall(
+                    request={"model": "fixture", "messages": []},
+                    estimated_input_tokens=8,
+                    max_output_tokens=16,
+                )
+
+            def invoke(self, _prepared):
+                self.invoke_calls += 1
+                raise RepairProviderError(
+                    "transport unavailable",
+                    usage_complete=False,
+                )
+
+        project = Path(__file__).resolve().parents[1]
+        task = load_public_task(project / "examples" / "u55c_v2_optimize_task")
+        base = prototype_config(task, credit_limit=100)
+        config = replace(
+            base,
+            budget=BudgetConfig(
+                credit_limit=100,
+                costs={"csim": 1, "synth": 4, "cosim": 20, "llm": 1},
+                tool_limits={"csim": 5, "synth": 5, "cosim": 4, "llm": 2},
+                token_limit=1024,
+                runtime_limit_seconds=300.0,
+            ),
+        )
+        planner = UnknownUsagePlanner()
+        with tempfile.TemporaryDirectory() as directory:
+            run_root = Path(directory) / "unknown-provider-usage"
+            result = run_v3_prototype(
+                task,
+                run_root,
+                config,
+                backend=PrototypeBackend(),
+                planner=planner,
+                thread_id="unknown-provider-usage",
+                validation_profile="fast-experiment",
+                final_validation_policy="task_contract",
+            )
+            persisted = json.loads(
+                (run_root / "v3_prototype_result.json").read_text(encoding="utf-8")
+            )
+
+        self.assertEqual(planner.invoke_calls, 1)
+        self.assertEqual(result["status"], "FAILED")
+        self.assertEqual(
+            result["stop_reason"], "PLANNER_USAGE_UNKNOWN_AFTER_DISPATCH"
+        )
+        self.assertEqual(persisted["status"], "FAILED")
+        self.assertEqual(
+            persisted["stop_reason"], "PLANNER_USAGE_UNKNOWN_AFTER_DISPATCH"
+        )
+        self.assertEqual(result["budget"]["tool_used"]["llm"], 1)
+        self.assertFalse(result["budget"]["token_usage_complete"])
+        self.assertIsNone(result["final_candidate_id"])
+
     def test_planner_token_summary_rejects_ledger_mismatch(self) -> None:
         self.assertIsNotNone(v3_prototype_module)
 
