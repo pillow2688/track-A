@@ -55,6 +55,75 @@ _FORBIDDEN_PLANNER_PATH_COMPONENTS = frozenset(
 )
 
 
+def _compact_public_text(value: object, *, limit: int) -> str:
+    """Bound public prose without making a hidden source of context."""
+
+    text = str(value or "")
+    if len(text) <= limit:
+        return text
+    return text[:limit].rstrip() + "\n[public text truncated by deterministic Planner context limit]"
+
+
+def _compact_task_aware_source(
+    source: str,
+    failure_evidence: Mapping[str, object],
+    search_control: object,
+    *,
+    maximum_lines: int = 180,
+) -> tuple[str, dict[str, object]]:
+    """Provide deterministic source ranges instead of a whole large kernel.
+
+    The model gets enough original, unmodified lines to produce a unified diff,
+    plus their original coordinates.  No omitted source is fabricated and a
+    short kernel remains byte-for-byte visible.
+    """
+
+    lines = source.splitlines(keepends=True)
+    if len(lines) <= maximum_lines:
+        return source, {
+            "original_line_count": len(lines),
+            "included_line_ranges": [[1, len(lines)]],
+            "omitted": False,
+        }
+    locations = json.dumps(
+        {
+            "failure": dict(failure_evidence),
+            "control": search_control if isinstance(search_control, Mapping) else {},
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    anchors = {
+        max(1, int(match.group(1)))
+        for match in re.finditer(r"(?::|line[ =])(\d{1,6})\b", locations, re.IGNORECASE)
+        if int(match.group(1)) <= len(lines)
+    }
+    ranges: list[tuple[int, int]] = [(1, min(60, len(lines)))]
+    for anchor in sorted(anchors)[:3]:
+        ranges.append((max(1, anchor - 36), min(len(lines), anchor + 36)))
+    ranges.append((max(1, len(lines) - 35), len(lines)))
+    ranges.sort()
+    merged: list[tuple[int, int]] = []
+    for start, end in ranges:
+        if merged and start <= merged[-1][1] + 1:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    output: list[str] = []
+    for index, (start, end) in enumerate(merged):
+        if index:
+            output.append(
+                f"\n/* [OMITTED ORIGINAL LINES {merged[index - 1][1] + 1}-{start - 1}] */\n"
+            )
+        output.append(f"/* [ORIGINAL SOURCE LINES {start}-{end}] */\n")
+        output.extend(lines[start - 1 : end])
+    return "".join(output), {
+        "original_line_count": len(lines),
+        "included_line_ranges": [[start, end] for start, end in merged],
+        "omitted": True,
+    }
+
+
 class V3OpenAIPlannerError(RuntimeError):
     """The V3 input cannot be projected safely into the V2 provider contract."""
 
@@ -2009,6 +2078,11 @@ class OpenAICompatibleV3PlannerAdapter:
             failure_evidence = _task_aware_failure_evidence(
                 round_state, mode=mode_value
             )
+            compact_source, code_slice = _compact_task_aware_source(
+                source,
+                failure_evidence,
+                round_state.get("search_control"),
+            )
             recent_failures = _task_aware_recent_failures(
                 self.run_root,
                 value.get("history"),
@@ -2043,11 +2117,18 @@ class OpenAICompatibleV3PlannerAdapter:
                     "part": task.get("part"),
                     "clock_ns": task.get("clock_ns"),
                 },
-                "current_kernel": source,
-                "description": str(task.get("description") or ""),
-                "read_only_headers": dict(self.read_only_headers),
+                "current_kernel": compact_source,
+                "code_slice": code_slice,
+                "description": _compact_public_text(
+                    task.get("description"), limit=2_400
+                ),
+                "read_only_headers": {
+                    name: _compact_public_text(value, limit=2_400)
+                    for name, value in self.read_only_headers.items()
+                },
                 "failure_evidence": failure_evidence,
                 "recent_failures": recent_failures,
+                "search_control": round_state.get("search_control", {}),
                 "budget": {
                     "remaining_tokens": budget.get("tokens_remaining"),
                     "remaining_credits": budget.get("credits_remaining"),

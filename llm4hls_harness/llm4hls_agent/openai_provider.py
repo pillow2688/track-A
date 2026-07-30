@@ -597,6 +597,8 @@ def build_task_aware_prompt(context: Mapping[str, object]) -> str:
     optional = {
         "experience_guidance",
         "recent_failures",
+        "search_control",
+        "code_slice",
         "token_budget",
         "_effective_max_output_tokens",
     }
@@ -627,6 +629,12 @@ def build_task_aware_prompt(context: Mapping[str, object]) -> str:
         ).encode("utf-8")
     ) > 8_000:
         raise ValueError("recent_failures exceeds the bounded context limit")
+    search_control = context.get("search_control")
+    if search_control is not None and not isinstance(search_control, Mapping):
+        raise ValueError("search_control must be an object")
+    code_slice = context.get("code_slice")
+    if code_slice is not None and not isinstance(code_slice, Mapping):
+        raise ValueError("code_slice must be an object")
     mode = str(context["mode"])
     if mode not in TASK_AWARE_CHANGE_CLASS:
         raise ValueError("task-aware Planner mode is unsupported")
@@ -645,11 +653,17 @@ def build_task_aware_prompt(context: Mapping[str, object]) -> str:
         ),
     }
     response_contract = {
+        "target_obligation": "must equal SEARCH CONTROL primary_obligation",
         "hypothesis": "non-empty string",
+        "action_family": "non-empty concise transformation family",
+        "action_parameters": {"zero or more compact scalar parameters": "value"},
+        "validation_plan": ["ordered stages selected from csim, synth, cosim"],
         "primary_failure": "non-empty string",
         "evidence_used": ["one or more concise supplied evidence facts"],
         "change_class": TASK_AWARE_CHANGE_CLASS[mode],
         "expected_effect": "non-empty string",
+        "failure_criteria": "non-empty statement of what falsifies the hypothesis",
+        "fallback": "non-empty safe fallback strategy or ABSTAIN",
         "risk": {
             "level": "LOW|MEDIUM|HIGH",
             "dimensions": ["zero or more concise risk dimensions"],
@@ -663,7 +677,17 @@ def build_task_aware_prompt(context: Mapping[str, object]) -> str:
             "OBJECTIVE\n" + objectives[mode],
             "PUBLIC TASK\n"
             + json.dumps(context["task"], ensure_ascii=False, sort_keys=True),
-            "CURRENT KERNEL\n" + str(context["current_kernel"]),
+            "CURRENT KERNEL RELEVANT SLICE\n"
+            + str(context["current_kernel"])
+            + (
+                "\nSLICE COORDINATES\n"
+                + json.dumps(code_slice, ensure_ascii=False, sort_keys=True)
+                + "\nThe bracketed ORIGINAL SOURCE LINES / OMITTED markers are "
+                "context metadata, not code. Diff hunk coordinates must refer to "
+                "the original kernel; do not copy markers into the patch."
+                if code_slice is not None
+                else ""
+            ),
             "PUBLIC TASK DESCRIPTION\n" + str(context["description"]),
             "READ-ONLY HEADERS\n"
             + json.dumps(
@@ -683,6 +707,18 @@ def build_task_aware_prompt(context: Mapping[str, object]) -> str:
                     )
                 ]
                 if recent_failures
+                else []
+            ),
+            *(
+                [
+                    "SEARCH CONTROL (MANDATORY)\n"
+                    + json.dumps(search_control, ensure_ascii=False, sort_keys=True)
+                    + "\nYour hypothesis/action must satisfy required_next_change. "
+                    "Do not repeat an attempted action_family after a terminal "
+                    "failure; use the verified fallback parent when the control "
+                    "contract requires it."
+                ]
+                if search_control
                 else []
             ),
             "BUDGET SUMMARY\n"
@@ -739,11 +775,17 @@ def _strict_task_aware_response(
             "task-aware Planner response is not strict JSON"
         ) from exc
     required = {
+        "target_obligation",
         "hypothesis",
+        "action_family",
+        "action_parameters",
+        "validation_plan",
         "primary_failure",
         "evidence_used",
         "change_class",
         "expected_effect",
+        "failure_criteria",
+        "fallback",
         "risk",
         "patch",
     }
@@ -753,8 +795,12 @@ def _strict_task_aware_response(
         )
     for name in (
         "hypothesis",
+        "target_obligation",
+        "action_family",
         "primary_failure",
         "expected_effect",
+        "failure_criteria",
+        "fallback",
         "patch",
     ):
         if not isinstance(value[name], str) or not str(value[name]).strip():
@@ -762,6 +808,29 @@ def _strict_task_aware_response(
     if value["change_class"] != TASK_AWARE_CHANGE_CLASS[mode]:
         raise RepairProviderError(
             "task-aware Planner change_class does not match mode"
+        )
+    if (
+        not isinstance(value["action_parameters"], dict)
+        or len(value["action_parameters"]) > 12
+        or any(
+            not isinstance(key, str)
+            or not key
+            or not isinstance(item, (str, int, float, bool, type(None)))
+            or isinstance(item, str) and len(item) > 320
+            for key, item in value["action_parameters"].items()
+        )
+    ):
+        raise RepairProviderError("task-aware Planner action_parameters is invalid")
+    validation_plan = value["validation_plan"]
+    if (
+        not isinstance(validation_plan, list)
+        or not validation_plan
+        or any(item not in {"csim", "synth", "cosim"} for item in validation_plan)
+        or len(validation_plan) != len(set(validation_plan))
+        or validation_plan[:2] != ["csim", "synth"]
+    ):
+        raise RepairProviderError(
+            "task-aware Planner validation_plan must begin with csim,synth"
         )
     evidence = value["evidence_used"]
     if (
@@ -1425,11 +1494,17 @@ class OpenAICompatibleOptimizationProvider:
         _raise_if_truncated(
             completion,
             required_fields=(
+                "target_obligation",
                 "hypothesis",
+                "action_family",
+                "action_parameters",
+                "validation_plan",
                 "primary_failure",
                 "evidence_used",
                 "change_class",
                 "expected_effect",
+                "failure_criteria",
+                "fallback",
                 "risk",
                 "patch",
             ),
@@ -1447,6 +1522,24 @@ class OpenAICompatibleOptimizationProvider:
                 response_excerpt=completion.content[:2000],
                 finish_reason=completion.finish_reason,
             ) from exc
+        search_control = context.get("search_control")
+        if isinstance(search_control, Mapping):
+            required_obligation = search_control.get("primary_obligation")
+            if (
+                isinstance(required_obligation, str)
+                and required_obligation
+                and parsed["target_obligation"] != required_obligation
+            ):
+                raise RepairProviderError(
+                    "task-aware Planner target_obligation conflicts with search control",
+                    input_tokens=completion.input_tokens,
+                    output_tokens=completion.output_tokens,
+                    cached_input_tokens=completion.cached_input_tokens,
+                    duration_seconds=completion.duration_seconds,
+                    request_id=completion.request_id,
+                    response_excerpt=completion.content[:2000],
+                    finish_reason=completion.finish_reason,
+                )
         if mode == "REPAIR":
             required_validation = (
                 ("csim", "synth", "cosim")
@@ -1456,7 +1549,7 @@ class OpenAICompatibleOptimizationProvider:
         elif mode == "SYNTH_FIX":
             required_validation = ("csim", "synth")
         elif mode == "STRUCTURAL_FIX":
-            required_validation = ("csim", "cosim")
+            required_validation = ("csim", "synth", "cosim")
         else:  # The strict parser already rejects unsupported modes.
             raise RepairProviderError("task-aware Planner mode is unsupported")
         risk = dict(parsed["risk"])
@@ -1469,6 +1562,17 @@ class OpenAICompatibleOptimizationProvider:
                 ],
             }
         )
+        if tuple(parsed["validation_plan"]) != required_validation:
+            raise RepairProviderError(
+                "task-aware Planner validation_plan conflicts with deterministic mode policy",
+                input_tokens=completion.input_tokens,
+                output_tokens=completion.output_tokens,
+                cached_input_tokens=completion.cached_input_tokens,
+                duration_seconds=completion.duration_seconds,
+                request_id=completion.request_id,
+                response_excerpt=completion.content[:2000],
+                finish_reason=completion.finish_reason,
+            )
         return PatchProposal(
             patch=_normalize_unified_diff_hunk_counts(str(parsed["patch"])),
             provider="openai-compatible-task-aware",
@@ -1479,8 +1583,14 @@ class OpenAICompatibleOptimizationProvider:
             request_id=completion.request_id,
             duration_seconds=completion.duration_seconds,
             hypothesis=str(parsed["hypothesis"]),
+            target_obligation=str(parsed["target_obligation"]),
+            action_family=str(parsed["action_family"]),
+            action_parameters=dict(parsed["action_parameters"]),
+            validation_plan=tuple(str(item) for item in parsed["validation_plan"]),
             change_class=str(parsed["change_class"]),
             expected_effect=str(parsed["expected_effect"]),
+            failure_criteria=str(parsed["failure_criteria"]),
+            fallback=str(parsed["fallback"]),
             risk=json.dumps(risk, ensure_ascii=False, sort_keys=True),
             required_validation=required_validation,
             **_completion_proposal_metadata(completion),

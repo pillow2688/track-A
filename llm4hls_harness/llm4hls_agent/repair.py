@@ -202,8 +202,14 @@ class PatchProposal:
     request_id: str | None = None
     duration_seconds: float = 0.0
     hypothesis: str | None = None
+    target_obligation: str | None = None
+    action_family: str | None = None
+    action_parameters: Mapping[str, object] = field(default_factory=dict)
+    validation_plan: tuple[str, ...] = ()
     change_class: str | None = None
     expected_effect: str | None = None
+    failure_criteria: str | None = None
+    fallback: str | None = None
     risk: str | None = None
     required_validation: tuple[str, ...] = ("csim", "synth", "cosim")
     finish_reason: str | None = None
@@ -224,6 +230,21 @@ class PatchProposal:
             raise ValueError("provider duration must be finite and non-negative")
         if any(stage not in {"csim", "synth", "cosim"} for stage in self.required_validation):
             raise ValueError("required validation contains an unsupported stage")
+        if any(stage not in {"csim", "synth", "cosim"} for stage in self.validation_plan):
+            raise ValueError("validation_plan contains an unsupported stage")
+        if len(self.validation_plan) != len(set(self.validation_plan)):
+            raise ValueError("validation_plan contains duplicate stages")
+        if not isinstance(self.action_parameters, Mapping):
+            raise ValueError("action_parameters must be an object")
+        if len(self.action_parameters) > 12:
+            raise ValueError("action_parameters has too many fields")
+        for key, value in self.action_parameters.items():
+            if not isinstance(key, str) or not key or len(key) > 80:
+                raise ValueError("action_parameters key is invalid")
+            if isinstance(value, (Mapping, list, tuple, set, bytes)) or (
+                isinstance(value, str) and len(value) > 320
+            ):
+                raise ValueError("action_parameters value is not compact scalar data")
         if not isinstance(self.output_truncated, bool):
             raise ValueError("output_truncated must be boolean")
         for name in ("requested_max_output_tokens", "effective_max_output_tokens"):
@@ -257,8 +278,14 @@ class PatchProposal:
             "request_id",
             "duration_seconds",
             "hypothesis",
+            "target_obligation",
+            "action_family",
+            "action_parameters",
+            "validation_plan",
             "change_class",
             "expected_effect",
+            "failure_criteria",
+            "fallback",
             "risk",
             "required_validation",
             "finish_reason",
@@ -268,7 +295,26 @@ class PatchProposal:
             "requested_max_output_tokens",
             "effective_max_output_tokens",
         }
+        control_fields = {
+            "target_obligation",
+            "action_family",
+            "action_parameters",
+            "validation_plan",
+            "failure_criteria",
+            "fallback",
+        }
         legacy = expected.difference(
+            {
+                *control_fields,
+                "finish_reason",
+                "output_truncated",
+                "truncation_reason",
+                "provider_parameter_name",
+                "requested_max_output_tokens",
+                "effective_max_output_tokens",
+            }
+        )
+        legacy_without_execution = legacy.difference(
             {
                 "finish_reason",
                 "output_truncated",
@@ -278,7 +324,13 @@ class PatchProposal:
                 "effective_max_output_tokens",
             }
         )
-        if frozenset(value) not in {frozenset(expected), frozenset(legacy)}:
+        partial_control_without_plan = expected.difference({"validation_plan"})
+        if frozenset(value) not in {
+            frozenset(expected),
+            frozenset(partial_control_without_plan),
+            frozenset(legacy),
+            frozenset(legacy_without_execution),
+        }:
             missing = sorted(expected.difference(value))
             extra = sorted(set(value).difference(expected))
             raise ValueError(
@@ -322,6 +374,14 @@ class PatchProposal:
             value["output_truncated"], bool
         ):
             raise ValueError("proposal output_truncated must be boolean")
+        action_parameters = value.get("action_parameters", {})
+        if not isinstance(action_parameters, Mapping):
+            raise ValueError("proposal action_parameters must be an object")
+        validation_plan = value.get("validation_plan", ())
+        if not isinstance(validation_plan, (list, tuple)) or any(
+            not isinstance(item, str) for item in validation_plan
+        ):
+            raise ValueError("proposal validation_plan must be a string list")
         return cls(
             patch=required_text("patch"),
             provider=required_text("provider"),
@@ -333,8 +393,28 @@ class PatchProposal:
             request_id=optional_text("request_id"),
             duration_seconds=float(duration),
             hypothesis=optional_text("hypothesis"),
+            target_obligation=(
+                optional_text("target_obligation")
+                if "target_obligation" in value
+                else None
+            ),
+            action_family=(
+                optional_text("action_family")
+                if "action_family" in value
+                else None
+            ),
+            action_parameters=dict(action_parameters),
+            validation_plan=tuple(validation_plan),
             change_class=optional_text("change_class"),
             expected_effect=optional_text("expected_effect"),
+            failure_criteria=(
+                optional_text("failure_criteria")
+                if "failure_criteria" in value
+                else None
+            ),
+            fallback=(
+                optional_text("fallback") if "fallback" in value else None
+            ),
             risk=optional_text("risk"),
             required_validation=tuple(validations),
             finish_reason=(

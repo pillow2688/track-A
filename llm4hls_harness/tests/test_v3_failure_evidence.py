@@ -263,6 +263,29 @@ class CoSimFailureEvidenceTests(unittest.TestCase):
             )
         )
 
+    def test_runtime_progress_facts_do_not_invent_a_deadlock(self) -> None:
+        evidence = extract_cosim_failure_evidence(
+            tool_result(
+                "cosim",
+                phase="timeout",
+                evidence=[
+                    "xsim launched RTL simulation runtime",
+                    "transaction progress 0/1; no RTL test progress for 300 seconds",
+                ],
+                cosim={
+                    "status": "Timeout",
+                    "log_bytes": 1234,
+                    "output_bytes": 0,
+                },
+            )
+        ).to_dict()
+        self.assertTrue(evidence["xsim_started"])
+        self.assertEqual(evidence["runtime_stage"], "RUNTIME")
+        self.assertEqual(evidence["transaction_progress"], "0/1")
+        self.assertEqual(evidence["log_growth"], "1234")
+        self.assertEqual(evidence["output_growth"], "0")
+        self.assertEqual(evidence["failure_kind"], "TIMEOUT")
+
 
 class FailureEvidenceInputSafetyTests(unittest.TestCase):
     def test_very_long_absolute_path_line_is_bounded_and_redacted(self) -> None:

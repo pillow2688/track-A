@@ -27,6 +27,7 @@ from llm4hls_agent.v3_openai_planner import (
     OpenAICompatibleV3PlannerAdapter,
     V3OpenAIPlannerError,
     _basic_synth_metrics,
+    _compact_task_aware_source,
     _history_state,
     _metrics_with_evidence,
     _task_aware_failure_evidence,
@@ -84,13 +85,28 @@ def _task_aware_response(mode: str) -> str:
         "SYNTH_FIX": "SYNTHESIS_REPAIR",
         "STRUCTURAL_FIX": "STRUCTURAL_REPAIR",
     }[mode]
+    target_obligation = {
+        "REPAIR": "FUNCTIONAL_CORRECTNESS",
+        "SYNTH_FIX": "SYNTHESIS_LEGALITY",
+        "STRUCTURAL_FIX": "RTL_LIVENESS",
+    }[mode]
     return json.dumps(
         {
+            "target_obligation": target_obligation,
             "hypothesis": "apply the smallest repair supported by the evidence",
+            "action_family": "LOCAL_FUNCTIONAL_REPAIR",
+            "action_parameters": {"operator": "assignment"},
+            "validation_plan": (
+                ["csim", "synth", "cosim"]
+                if mode == "STRUCTURAL_FIX"
+                else ["csim", "synth"]
+            ),
             "primary_failure": "public validation failed",
             "evidence_used": ["kernel.cpp:1 reports the routed failure"],
             "change_class": change_class,
             "expected_effect": "restore the routed validation stage",
+            "failure_criteria": "the routed validation remains failing",
+            "fallback": "preserve the verified baseline",
             "risk": {"level": "LOW", "dimensions": []},
             "patch": (
                 "--- a/kernel.cpp\n"
@@ -105,6 +121,22 @@ def _task_aware_response(mode: str) -> str:
 
 
 class V3OpenAIPlannerTests(unittest.TestCase):
+    def test_task_aware_source_context_is_a_bounded_original_line_slice(self) -> None:
+        source = "".join(
+            f"int line_{index} = {index};\n" for index in range(1, 321)
+        )
+        compact, metadata = _compact_task_aware_source(
+            source,
+            {"error_summary": "kernel.cpp:240 synthesis failure"},
+            {"primary_obligation": "SYNTHESIS_LEGALITY"},
+        )
+        self.assertTrue(metadata["omitted"])
+        self.assertEqual(metadata["original_line_count"], 320)
+        self.assertLess(len(compact), len(source))
+        self.assertIn("[ORIGINAL SOURCE LINES", compact)
+        self.assertIn("int line_240 = 240;", compact)
+        self.assertNotIn("int line_150 = 150;", compact)
+
     def test_a3_advisory_persists_only_at_authorized_boundary(self) -> None:
         """A3 cannot leave a durable record merely because A2 estimates a call."""
 

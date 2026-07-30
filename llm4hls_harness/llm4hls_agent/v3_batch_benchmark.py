@@ -3412,6 +3412,21 @@ def _failure_stage(
         return "EXECUTOR"
     if str(result.get("status", "FAILED")).upper() == "DONE":
         return None
+    # The terminal state can subsequently record a policy stop (for example a
+    # search closeout decision) after a Candidate CoSim timeout.  The factual,
+    # bounded failure evidence remains the authoritative stage attribution;
+    # do not collapse it to UNKNOWN merely because ``last_tool_phase`` is the
+    # generic executor phase ``timeout``.
+    failure_evidence = _mapping(result.get("failure_evidence"))
+    evidence_schema = str(failure_evidence.get("schema_version", ""))
+    evidence_kind = str(failure_evidence.get("failure_kind", "NONE")).upper()
+    if evidence_kind != "NONE":
+        if evidence_schema == "v3c.cosim-failure-evidence.v1":
+            return "COSIM"
+        if evidence_schema == "v3c.synth-failure-evidence.v1":
+            return "SYNTH"
+        if evidence_schema == "v3c.csim-failure-evidence.v1":
+            return "CSIM"
     validation = _mapping(result.get("final_validation"))
     for stage in ("csim", "synth", "cosim"):
         record = _mapping(validation.get(stage))

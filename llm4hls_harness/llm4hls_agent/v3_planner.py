@@ -111,6 +111,7 @@ def validate_planner_input(value: Mapping[str, object]) -> dict[str, object]:
 def proposal_payload(proposal: PatchProposal) -> dict[str, object]:
     value = proposal.to_dict()
     value["required_validation"] = list(proposal.required_validation)
+    value["validation_plan"] = list(proposal.validation_plan)
     return value
 
 

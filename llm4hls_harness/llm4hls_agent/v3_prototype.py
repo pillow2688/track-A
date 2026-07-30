@@ -61,6 +61,12 @@ from .v3_failure_evidence import (
     extract_synth_failure_evidence,
 )
 from .v3_phase_router import PhaseMode, PhaseRoutingError, route_phase
+from .v3_search_control import (
+    failure_facts,
+    is_repeated_terminal_experiment,
+    proposal_experiment,
+    search_control_state,
+)
 from .v3_continuation import (
     POLICY_MODES as CONTINUATION_POLICY_MODES,
     continuation_cost,
@@ -239,6 +245,9 @@ class V3PrototypeState(TypedDict, total=False):
     baseline_candidate_id: str
     active_candidate_id: str | None
     best_candidate_id: str
+    verified_best_candidate_id: str
+    active_probe_candidate_id: str | None
+    fallback_parent_candidate_id: str
     final_attempt_candidate_id: str | None
     final_candidate_id: str | None
     planner_ref: str
@@ -247,6 +256,7 @@ class V3PrototypeState(TypedDict, total=False):
     planner_input_sha256: str
     planner_output_ref: str
     planner_output_sha256: str
+    search_control_ref: str
     patch_failure_evidence: dict[str, object]
     patch_failure_evidence_ref: str
     patch_failure_evidence_sha256: str
@@ -291,7 +301,11 @@ class V3PrototypeState(TypedDict, total=False):
     round_index: int
     rounds_completed: int
     no_improvement_rounds: int
+    semantic_no_improvement_rounds: int
+    mechanical_recovery_rounds: int
     last_round_improved: bool
+    proposal_experiment: dict[str, object]
+    parent_selection_reason: str
     exploration_stop_reason: str
     decision_ref: str
     registry_revision: int
@@ -299,6 +313,7 @@ class V3PrototypeState(TypedDict, total=False):
     final_attempted_candidate_ids: list[str]
     continuation_decision_ref: str
     continuation_decision_hash: str
+    continuation_action: str
     performance_area_ref: str
 
 
@@ -782,6 +797,7 @@ def _proposal_snapshot(
     selected = proposal or runtime.proposal
     value = selected.to_dict()
     value["required_validation"] = list(selected.required_validation)
+    value["validation_plan"] = list(selected.validation_plan)
     return value | {
         "parent_candidate_id": parent_candidate_id,
         "planner_mode": (
@@ -950,6 +966,7 @@ def _build_round_planner_input(
                         "selection_metrics_digest"
                     ),
                     "patch_sha256": candidate.get("patch_sha256"),
+                    "proposal_experiment": candidate.get("proposal_experiment"),
                     "metrics": _artifact_binding(
                         runtime, candidate.get("metrics_ref")
                     ),
@@ -1028,6 +1045,8 @@ def _build_round_planner_input(
                 raise RuntimeError(
                     "proposal rejection Patch evidence identity mismatch"
                 )
+        else:
+            patch_failure = {}
         history.append(
             {
                 "kind": "proposal_rejection",
@@ -1038,11 +1057,13 @@ def _build_round_planner_input(
                 "selection_metrics_digest": rejection.get(
                     "selection_metrics_digest"
                 ),
+                "proposal_experiment": rejection.get("proposal_experiment"),
                 "planner_action_id": rejection.get("planner_action_id"),
                 "planner_output": _artifact_binding(
                     runtime, rejection.get("planner_output_ref")
                 ),
                 "patch_failure_evidence": patch_failure_evidence,
+                "patch_failure_detail": patch_failure,
             }
         )
     history.sort(
@@ -1068,6 +1089,36 @@ def _build_round_planner_input(
         round_failure_evidence = _basic_failure_projection(
             round_failure_evidence
         )
+    latest_patch_failure = state.get("patch_failure_evidence")
+    if not isinstance(latest_patch_failure, Mapping) or not latest_patch_failure:
+        for item in reversed(history):
+            detail = item.get("patch_failure_detail")
+            if isinstance(detail, Mapping) and detail:
+                latest_patch_failure = detail
+                break
+    search_control = search_control_state(
+        mode=mode,
+        evidence=round_failure_evidence,
+        patch_failure=latest_patch_failure,
+        history=history,
+        semantic_no_improvement=int(
+            state.get("semantic_no_improvement_rounds", state.get("no_improvement_rounds", 0))
+        ),
+        baseline_id=baseline_id,
+        incumbent_id=incumbent_id,
+        source=_candidate_source(runtime, incumbent_id, registry=registry).decode(
+            "utf-8", errors="replace"
+        ),
+        candidate_records=(
+            candidates if isinstance(candidates, Mapping) else None
+        ),
+        active_probe_id=(
+            str(state["active_probe_candidate_id"])
+            if isinstance(state.get("active_probe_candidate_id"), str)
+            and state.get("active_probe_candidate_id")
+            else None
+        ),
+    )
     policy = {
         "minimum_frequency_mhz": runtime.config.minimum_frequency_mhz,
         "requires_cosim": runtime.task.requires_cosim,
@@ -1094,7 +1145,14 @@ def _build_round_planner_input(
             "consecutive_no_improvement": int(
                 state.get("no_improvement_rounds", 0)
             ),
+            "semantic_no_improvement_rounds": int(
+                state.get("semantic_no_improvement_rounds", state.get("no_improvement_rounds", 0))
+            ),
+            "mechanical_recovery_rounds": int(
+                state.get("mechanical_recovery_rounds", 0)
+            ),
             "parent_candidate_id": incumbent_id,
+            "search_control": search_control,
         },
         incumbent=_planner_candidate_facts(runtime, registry, incumbent_id),
         baseline=_planner_candidate_facts(runtime, registry, baseline_id),
@@ -3504,6 +3562,13 @@ def _initialize(runtime: _Runtime, _state: V3PrototypeState) -> V3PrototypeState
         ),
         "baseline_candidate_id": "candidate_000",
         "best_candidate_id": str(registry.get("best_candidate_id") or "candidate_000"),
+        "verified_best_candidate_id": str(
+            registry.get("best_candidate_id") or "candidate_000"
+        ),
+        "active_probe_candidate_id": None,
+        "fallback_parent_candidate_id": str(
+            registry.get("best_candidate_id") or "candidate_000"
+        ),
         "final_attempt_candidate_id": None,
         "final_candidate_id": None,
         "final_attempt_count": 0,
@@ -3522,6 +3587,7 @@ def _initialize(runtime: _Runtime, _state: V3PrototypeState) -> V3PrototypeState
         "exploration_stop_reason": "RUNNING",
         "continuation_decision_ref": "",
         "continuation_decision_hash": "",
+        "continuation_action": "CONTINUE_WITH_LLM",
         "performance_area_ref": "",
         "registry_revision": int(registry.get("v3_revision", 0)),
         "node_events": [event],
@@ -4292,7 +4358,9 @@ def _evaluate_task_round_budget(
         if runtime.live_planner is not None
         else len(runtime.proposals)
     )
-    no_improvement = int(state.get("no_improvement_rounds", 0))
+    no_improvement = int(
+        state.get("semantic_no_improvement_rounds", state.get("no_improvement_rounds", 0))
+    )
     required_tokens = 0
     next_credits = 0
     if round_index > planner_round_limit:
@@ -4311,7 +4379,7 @@ def _evaluate_task_round_budget(
             "required_calls": {},
             "required_credits": 0,
             "blockers": [
-                f"no_improvement:{no_improvement}>="
+                f"semantic_no_improvement:{no_improvement}>="
                 f"{runtime.max_no_improvement_rounds}"
             ],
         }
@@ -4614,7 +4682,9 @@ def _evaluate_round_budget(
     runtime: _Runtime, state: V3PrototypeState
 ) -> V3PrototypeState:
     round_index = int(state.get("round_index", 1))
-    no_improvement = int(state.get("no_improvement_rounds", 0))
+    no_improvement = int(
+        state.get("semantic_no_improvement_rounds", state.get("no_improvement_rounds", 0))
+    )
     required_tokens = 0
     planner_round_limit = (
         runtime.max_planner_rounds
@@ -4673,7 +4743,7 @@ def _evaluate_round_budget(
             "required_calls": {},
             "required_credits": 0,
             "blockers": [
-                f"no_improvement:{no_improvement}>="
+                f"semantic_no_improvement:{no_improvement}>="
                 f"{runtime.max_no_improvement_rounds}"
             ],
         }
@@ -4829,6 +4899,16 @@ def _plan_candidate(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeSt
         planner_input = current_input
     input_sha256 = canonical_sha256(planner_input)
     _write_once_or_verify(input_path, planner_input)
+    round_state = planner_input.get("round")
+    if not isinstance(round_state, Mapping) or not isinstance(
+        round_state.get("search_control"), Mapping
+    ):
+        raise RuntimeError("Planner input has no search-control contract")
+    search_control_ref = f"control/search_control/round_{round_index:03d}.json"
+    _write_once_or_verify(
+        runtime.run_root / search_control_ref,
+        dict(round_state["search_control"]),
+    )
     live_result: PlannerActionResult | None = None
     selection_metrics_digest: str | None = None
     if runtime.live_planner is not None:
@@ -5053,6 +5133,86 @@ def _plan_candidate(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeSt
     )
     if proposal_payload(durable_proposal) != proposal_payload(proposal):
         raise RuntimeError("durable Planner provenance diverged")
+    control = round_state.get("search_control")
+    if not isinstance(control, Mapping):
+        raise RuntimeError("Planner input search control is missing")
+    obligation = control.get("primary_obligation")
+    if not isinstance(obligation, str) or not obligation:
+        raise RuntimeError("Planner input primary obligation is missing")
+    continuation_action = control.get("recommended_continuation_action")
+    if continuation_action not in {
+        "STOP",
+        "CONTINUE_WITHOUT_LLM",
+        "CONTINUE_WITH_LLM",
+        "SWITCH_PARENT",
+        "FINALIZE",
+    }:
+        raise RuntimeError("Planner input continuation action is invalid")
+    failure = control.get("failure")
+    experiment = proposal_experiment(
+        durable_proposal,
+        obligation=obligation,
+        input_failure_signature=(
+            str(failure.get("last_failure_signature"))
+            if isinstance(failure, Mapping)
+            and isinstance(failure.get("last_failure_signature"), str)
+            else None
+        ),
+        patch_failure=(
+            state.get("patch_failure_evidence")
+            if isinstance(state.get("patch_failure_evidence"), Mapping)
+            else (
+                {"error_type": failure.get("patch_error_type")}
+                if isinstance(failure, Mapping) and failure.get("patch_error_type")
+                else None
+            )
+        ),
+    )
+    terminal_failure = (
+        isinstance(failure, Mapping) and failure.get("terminal_failure") is True
+    )
+    historical_rows = planner_input.get("history")
+    # Scripted sequences are deterministic fixture inputs used to prove
+    # Candidate recovery and replay.  A real Planner is the only untrusted
+    # proposal source for which this admission rule may reject a paid output.
+    repeated_experiment = runtime.live_planner is not None and is_repeated_terminal_experiment(
+        experiment,
+        historical_rows if isinstance(historical_rows, list) else [],
+        terminal_failure=terminal_failure,
+    )
+    if repeated_experiment:
+        event = _event(
+            runtime,
+            node="plan_candidate",
+            phase=mode,
+            candidate_id=state["best_candidate_id"],
+            action="reject_repeated_terminal_action_family",
+            why=(
+                "A terminal failure already evaluated this action family; the "
+                "next proposal must use a distinct family or the verified fallback."
+            ),
+            outcome="DUPLICATE_HYPOTHESIS_ACTION_FAMILY",
+            result_ref=output_ref,
+            round_index=round_index,
+            details={"proposal_experiment": experiment},
+        )
+        return {
+            "phase": mode,
+            "last_tool_ok": False,
+            "last_tool_reason": "DUPLICATE_HYPOTHESIS_ACTION_FAMILY",
+            "last_round_improved": False,
+            "planner_ref": proposal_ref,
+            "planner_action_id": action_id,
+            "planner_input_ref": input_ref,
+            "planner_input_sha256": input_sha256,
+            "planner_output_ref": output_ref,
+            "planner_output_sha256": output_sha256,
+            "search_control_ref": search_control_ref,
+            "proposal_experiment": experiment,
+            "parent_selection_reason": "VERIFIED_BASELINE_BRANCH_AFTER_TERMINAL_FAILURE",
+            "continuation_action": continuation_action,
+            "node_events": [event],
+        }
     event = _event(
         runtime,
         node="plan_candidate",
@@ -5084,6 +5244,11 @@ def _plan_candidate(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeSt
                 "required_validation": list(
                     durable_proposal.required_validation
                 ),
+                "validation_plan": list(durable_proposal.validation_plan),
+                "new_evidence_since_last_planner": control.get(
+                    "new_evidence_since_last_planner"
+                ),
+                "proposal_experiment": experiment,
                 "patch_sha256": hashlib.sha256(
                     durable_proposal.patch.encode("utf-8")
                 ).hexdigest(),
@@ -5118,7 +5283,21 @@ def _plan_candidate(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeSt
         "planner_input_sha256": input_sha256,
         "planner_output_ref": output_ref,
         "planner_output_sha256": output_sha256,
+        "search_control_ref": search_control_ref,
         "planner_selection_metrics_digest": selection_metrics_digest or "",
+        "proposal_experiment": experiment,
+        "continuation_action": continuation_action,
+        "parent_selection_reason": (
+            "SWITCH_PARENT_TO_VERIFIED_INCUMBENT"
+            if continuation_action == "SWITCH_PARENT"
+            else (
+                "VERIFIED_BASELINE_BRANCH_AFTER_TERMINAL_FAILURE"
+                if state.get("best_candidate_id") == state.get("baseline_candidate_id")
+                else "VERIFIED_INCUMBENT_FALLBACK_AFTER_TERMINAL_FAILURE"
+            )
+            if terminal_failure
+            else "VERIFIED_INCUMBENT"
+        ),
         "node_events": [event],
     }
     if live_result is not None:
@@ -5139,7 +5318,10 @@ def _plan_candidate(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeSt
 def _materialize_candidate(
     runtime: _Runtime, state: V3PrototypeState
 ) -> V3PrototypeState:
-    parent_id = state["best_candidate_id"]
+    parent_id = str(
+        state.get("fallback_parent_candidate_id")
+        or state["best_candidate_id"]
+    )
     mode = str(state.get("mode", PhaseMode.OPTIMIZE.value))
     round_index = int(state.get("round_index", 1))
     proposal = _current_proposal(runtime, state)
@@ -5318,6 +5500,11 @@ def _materialize_candidate(
             "expected_effect": proposal.expected_effect,
             "risk": proposal.risk,
             "required_validation": list(proposal.required_validation),
+            "validation_plan": list(proposal.validation_plan),
+            "proposal_experiment": state.get("proposal_experiment", {}),
+            "parent_selection_reason": state.get(
+                "parent_selection_reason", "VERIFIED_INCUMBENT"
+            ),
             "interface_guard": (
                 application.interface_guard.to_dict()
                 if application.interface_guard is not None
@@ -5379,6 +5566,7 @@ def _materialize_candidate(
     )
     return {
         "active_candidate_id": materialized.candidate_id,
+        "active_probe_candidate_id": materialized.candidate_id,
         "last_tool_ok": True,
         "candidate_metrics_ref": "",
         "candidate_synth_evidence_ref": "",
@@ -5400,13 +5588,16 @@ def _record_rejected_proposal(
     record = {
         "schema_version": "v3a.proposal-rejection.v1",
         "round_index": round_index,
-        "parent_candidate_id": state["best_candidate_id"],
+        "parent_candidate_id": state.get(
+            "fallback_parent_candidate_id", state["best_candidate_id"]
+        ),
         "planner_ref": state.get("planner_ref"),
         "planner_action_id": state.get("planner_action_id"),
         "planner_input_ref": state.get("planner_input_ref"),
         "planner_input_sha256": state.get("planner_input_sha256"),
         "planner_output_ref": state.get("planner_output_ref"),
         "planner_output_sha256": state.get("planner_output_sha256"),
+        "search_control_ref": state.get("search_control_ref"),
         "patch_failure_evidence_ref": (
             state.get("patch_failure_evidence_ref") or None
         ),
@@ -5419,6 +5610,7 @@ def _record_rejected_proposal(
             else None
         ),
         "change_class": _current_proposal(runtime, state).change_class,
+        "proposal_experiment": state.get("proposal_experiment", {}),
         "selection_metrics_digest": state.get(
             "planner_selection_metrics_digest"
         ),
@@ -6162,7 +6354,10 @@ def _promote_candidate(runtime: _Runtime, state: V3PrototypeState) -> V3Prototyp
     return {
         "phase": "DECIDE",
         "active_candidate_id": None,
+        "active_probe_candidate_id": None,
         "best_candidate_id": candidate_id,
+        "verified_best_candidate_id": candidate_id,
+        "fallback_parent_candidate_id": candidate_id,
         "best_metrics_ref": state["candidate_metrics_ref"],
         "best_synth_evidence_ref": state["candidate_synth_evidence_ref"],
         "best_synth_evidence_sha256": state[
@@ -6239,7 +6434,10 @@ def _promote_correctness_candidate(
     update: V3PrototypeState = {
         "phase": "DECIDE",
         "active_candidate_id": None,
+        "active_probe_candidate_id": None,
         "best_candidate_id": candidate_id,
+        "verified_best_candidate_id": candidate_id,
+        "fallback_parent_candidate_id": candidate_id,
         "last_round_improved": True,
         "rounds_completed": int(state.get("rounds_completed", 0)) + 1,
         "no_improvement_rounds": 0,
@@ -6309,6 +6507,9 @@ def _reject_candidate(runtime: _Runtime, state: V3PrototypeState) -> V3Prototype
     return {
         "phase": "DECIDE",
         "active_candidate_id": None,
+        "active_probe_candidate_id": None,
+        "fallback_parent_candidate_id": incumbent_id,
+        "verified_best_candidate_id": incumbent_id,
         "best_candidate_id": incumbent_id,
         "candidate_metrics_ref": "",
         "candidate_synth_evidence_ref": "",
@@ -6326,7 +6527,30 @@ def _reject_candidate(runtime: _Runtime, state: V3PrototypeState) -> V3Prototype
 def _advance_round(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeState:
     improved = state.get("last_round_improved") is True
     round_index = int(state.get("round_index", 1))
+    last_reason = str(state.get("last_tool_reason", "")).upper()
+    mechanical = any(
+        token in last_reason
+        for token in (
+            "PATCH_POLICY_REJECTED",
+            "PATCH_HUNK_",
+            "DUPLICATE_PROPOSAL",
+            "DUPLICATE_PATCH",
+            "PROVIDER_OUTPUT_REJECTED",
+            "DUPLICATE_HYPOTHESIS_ACTION_FAMILY",
+        )
+    )
     no_improvement = 0 if improved else int(state.get("no_improvement_rounds", 0)) + 1
+    semantic_no_improvement = (
+        0
+        if improved
+        else int(state.get("semantic_no_improvement_rounds", state.get("no_improvement_rounds", 0)))
+        + (0 if mechanical else 1)
+    )
+    mechanical_recovery = (
+        0
+        if improved
+        else int(state.get("mechanical_recovery_rounds", 0)) + (1 if mechanical else 0)
+    )
     event = _event(
         runtime,
         node="advance_round",
@@ -6338,14 +6562,26 @@ def _advance_round(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeSta
             if improved
             else "A rejected Candidate does not terminate exploration by itself."
         ),
-        outcome="IMPROVED" if improved else "NO_IMPROVEMENT",
+        outcome=(
+            "IMPROVED"
+            if improved
+            else "MECHANICAL_RECOVERY_REQUIRED"
+            if mechanical
+            else "SEMANTIC_NO_IMPROVEMENT"
+        ),
         round_index=round_index,
+        details={
+            "semantic_no_improvement_rounds": semantic_no_improvement,
+            "mechanical_recovery_rounds": mechanical_recovery,
+        },
     )
     return {
         "phase": str(state.get("mode", PhaseMode.OPTIMIZE.value)),
         "round_index": round_index + 1,
         "rounds_completed": int(state.get("rounds_completed", 0)) + 1,
         "no_improvement_rounds": no_improvement,
+        "semantic_no_improvement_rounds": semantic_no_improvement,
+        "mechanical_recovery_rounds": mechanical_recovery,
         "node_events": [event],
     }
 
@@ -7729,6 +7965,13 @@ def _write_report(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeStat
                 if not isinstance(raw_summary, Mapping):
                     raise RuntimeError("Planner experience summary must be an object")
                 experience_summary = dict(raw_summary)
+    terminal_failure = failure_facts(
+        state.get("failure_evidence"),
+        patch_failure=state.get("patch_failure_evidence"),
+    )
+    last_experiment = state.get("proposal_experiment")
+    if not isinstance(last_experiment, Mapping):
+        last_experiment = {}
     result: dict[str, object] = {
         "schema_version": 1,
         "result_schema": TERMINAL_RESULT_SCHEMA,
@@ -7773,16 +8016,38 @@ def _write_report(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeStat
         ),
         "continuation_decision_ref": state.get("continuation_decision_ref"),
         "continuation_decision_hash": state.get("continuation_decision_hash"),
+        "continuation_action": state.get("continuation_action"),
         "performance_area_ref": state.get("performance_area_ref"),
         "status": state.get("status", "FAILED"),
         "stop_reason": state.get("stop_reason", "UNKNOWN"),
+        "terminal_stop_reason": state.get("stop_reason", "UNKNOWN"),
+        "last_failure_stage": terminal_failure["last_failure_stage"],
+        "last_failure_kind": terminal_failure["last_failure_kind"],
+        "last_failure_signature": terminal_failure["last_failure_signature"],
+        "last_failed_candidate_id": terminal_failure["last_failed_candidate_id"],
+        "last_hypothesis_id": last_experiment.get("experiment_sha256"),
+        "last_action_family": last_experiment.get("action_family"),
+        "tool_report_ref": terminal_failure["tool_report_ref"],
+        "evidence_ref": state.get("failure_evidence_ref"),
+        "cosim_progress": terminal_failure["cosim_progress"],
+        "no_progress_seconds": terminal_failure["no_progress_seconds"],
         "exploration_stop_reason": state.get(
             "exploration_stop_reason", "UNKNOWN"
         ),
         "rounds_completed": int(state.get("rounds_completed", 0)),
         "no_improvement_rounds": int(state.get("no_improvement_rounds", 0)),
+        "semantic_no_improvement_rounds": int(
+            state.get("semantic_no_improvement_rounds", state.get("no_improvement_rounds", 0))
+        ),
+        "mechanical_recovery_rounds": int(
+            state.get("mechanical_recovery_rounds", 0)
+        ),
+        "last_proposal_experiment": dict(last_experiment),
         "baseline_candidate_id": state.get("baseline_candidate_id"),
         "best_candidate_id": state.get("best_candidate_id"),
+        "verified_best_candidate_id": state.get("verified_best_candidate_id"),
+        "active_probe_candidate_id": state.get("active_probe_candidate_id"),
+        "fallback_parent_candidate_id": state.get("fallback_parent_candidate_id"),
         "final_attempt_candidate_id": state.get("final_attempt_candidate_id"),
         "final_candidate_id": state.get("final_candidate_id"),
         "final_attempt_count": int(state.get("final_attempt_count", 0)),
@@ -7827,6 +8092,7 @@ def _write_report(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeStat
         "planner_input_sha256": state.get("planner_input_sha256"),
         "planner_output_ref": state.get("planner_output_ref"),
         "planner_output_sha256": state.get("planner_output_sha256"),
+        "search_control_ref": state.get("search_control_ref"),
         "baseline_metrics_ref": state.get("baseline_metrics_ref"),
         "candidate_metrics_ref": state.get("candidate_metrics_ref"),
         "final_metrics_ref": state.get("final_metrics_ref"),
@@ -7894,6 +8160,7 @@ def _write_report(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeStat
             "planner_inputs": "planner/inputs",
             "planner_outputs": "planner/outputs",
             "planner_call_gates": "planner/call_gates",
+            "search_control": "control/search_control",
             "performance_area": "performance_area",
             "synth_evidence": "evidence/synth",
             "failure_evidence": "evidence/failures",

@@ -174,13 +174,28 @@ class OpenAICompatibleProviderTests(unittest.TestCase):
             "SYNTH_FIX": "SYNTHESIS_REPAIR",
             "STRUCTURAL_FIX": "STRUCTURAL_REPAIR",
         }[mode]
+        target_obligation = {
+            "REPAIR": "FUNCTIONAL_CORRECTNESS",
+            "SYNTH_FIX": "SYNTHESIS_LEGALITY",
+            "STRUCTURAL_FIX": "RTL_LIVENESS",
+        }[mode]
         return json.dumps(
             {
+                "target_obligation": target_obligation,
                 "hypothesis": "the reported failure is caused by one local defect",
+                "action_family": "LOCAL_FUNCTIONAL_REPAIR",
+                "action_parameters": {"operator": "increment"},
+                "validation_plan": (
+                    ["csim", "synth", "cosim"]
+                    if mode == "STRUCTURAL_FIX"
+                    else ["csim", "synth"]
+                ),
                 "primary_failure": "public validation failure",
                 "evidence_used": ["kernel.cpp:1", "expected 1 actual -1"],
                 "change_class": change_class,
                 "expected_effect": "restore the routed validation stage",
+                "failure_criteria": "CSim remains failing",
+                "fallback": "preserve the verified baseline",
                 "risk": {"level": "LOW", "dimensions": []},
                 "patch": (
                     "--- a/kernel.cpp\n"
@@ -357,7 +372,7 @@ class OpenAICompatibleProviderTests(unittest.TestCase):
         for mode, expected_class, expected_validation in (
             ("REPAIR", "FUNCTIONAL_REPAIR", ("csim", "synth")),
             ("SYNTH_FIX", "SYNTHESIS_REPAIR", ("csim", "synth")),
-            ("STRUCTURAL_FIX", "STRUCTURAL_REPAIR", ("csim", "cosim")),
+            ("STRUCTURAL_FIX", "STRUCTURAL_REPAIR", ("csim", "synth", "cosim")),
         ):
             with self.subTest(mode=mode):
                 captured: dict[str, object] = {}

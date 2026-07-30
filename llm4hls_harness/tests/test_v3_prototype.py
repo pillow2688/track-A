@@ -774,7 +774,7 @@ class V3PrototypeTests(unittest.TestCase):
                     continuation_policy_version="v2",
                 )
 
-    def test_current_v3_gate_admission_enables_enforce_runtime(self) -> None:
+    def test_historical_v3_gate_admission_fails_closed_after_commit_change(self) -> None:
         project = Path(__file__).resolve().parents[1]
         task = load_public_task(project / "examples" / "u55c_v2_optimize_task")
         admission = (
@@ -787,21 +787,19 @@ class V3PrototypeTests(unittest.TestCase):
             / "continuation-v3-admission.json"
         )
         with tempfile.TemporaryDirectory() as directory:
-            result = run_v3_prototype(
-                task,
-                Path(directory) / "current-v3-enforce",
-                prototype_config(task),
-                prototype_proposal(),
-                backend=PrototypeBackend(),
-                continuation_policy_mode="enforce",
-                continuation_policy_version="v2",
-                continuation_admission_manifest=admission,
-            )
-
-        self.assertEqual(result["status"], "DONE")
-        self.assertEqual(result["continuation_policy_mode"], "enforce")
-        self.assertEqual(result["continuation_policy_version"], "v2")
-        self.assertIsInstance(result["continuation_admission_sha256"], str)
+            with self.assertRaisesRegex(
+                ValueError, "Continuation admission current commit mismatch"
+            ):
+                run_v3_prototype(
+                    task,
+                    Path(directory) / "historical-v3-enforce",
+                    prototype_config(task),
+                    prototype_proposal(),
+                    backend=PrototypeBackend(),
+                    continuation_policy_mode="enforce",
+                    continuation_policy_version="v2",
+                    continuation_admission_manifest=admission,
+                )
 
     def test_legacy_checkpoint_without_mode_keeps_optimize_cosim_route(self) -> None:
         self.assertIsNotNone(v3_prototype_module)
@@ -1745,6 +1743,16 @@ class V3PrototypeTests(unittest.TestCase):
                 "ref": evidence_ref,
                 "sha256": rejection["patch_failure_evidence_sha256"],
             },
+        )
+        search_control = round_two["round"]["search_control"]
+        self.assertTrue(search_control["failure"]["mechanical_failure"])
+        self.assertFalse(search_control["failure"]["terminal_failure"])
+        self.assertEqual(
+            search_control["recommended_continuation_action"],
+            "CONTINUE_WITHOUT_LLM",
+        )
+        self.assertEqual(
+            search_control["semantic_no_improvement_rounds"], 0
         )
         self.assertEqual(
             [kind for kind, _optimized, _work in backend.calls],

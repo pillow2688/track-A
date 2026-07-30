@@ -300,6 +300,13 @@ class CoSimFailureEvidence:
     actual: str | None
     stream_fifo_interface_findings: tuple[str, ...]
     relevant_log_lines: tuple[str, ...]
+    cosim_progress: str
+    no_progress_seconds: float | None
+    xsim_started: bool
+    runtime_stage: str
+    transaction_progress: str | None
+    log_growth: str | None
+    output_growth: str | None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -321,6 +328,13 @@ class CoSimFailureEvidence:
                 self.stream_fifo_interface_findings
             ),
             "relevant_log_lines": list(self.relevant_log_lines),
+            "cosim_progress": self.cosim_progress,
+            "no_progress_seconds": self.no_progress_seconds,
+            "xsim_started": self.xsim_started,
+            "runtime_stage": self.runtime_stage,
+            "transaction_progress": self.transaction_progress,
+            "log_growth": self.log_growth,
+            "output_growth": self.output_growth,
         }
 
 
@@ -611,6 +625,51 @@ def _recursive_number(value: object, key: str, *, depth: int = 0) -> float | Non
     return None
 
 
+def _compact_runtime_value(value: object) -> str | None:
+    if value is None or isinstance(value, (Mapping, list, tuple, set, bytes)):
+        return None
+    rendered = _sanitize_line(str(value))
+    return rendered or None
+
+
+def _cosim_runtime_facts(
+    *, lines: Sequence[str], cosim: Mapping[str, object]
+) -> tuple[bool, str, str | None, str | None, str | None]:
+    """Extract only explicit simulator-progress facts from bounded evidence."""
+
+    lowered = "\n".join(lines).casefold()
+    xsim_started = bool(
+        re.search(r"\bxsim\b|rtl simulation (?:started|running)|simulation started", lowered)
+        or cosim.get("xsim_started") is True
+    )
+    if any(token in lowered for token in ("runtime", "simulation running", "rtl test progress")):
+        stage = "RUNTIME"
+    elif "elaborat" in lowered:
+        stage = "ELABORATE"
+    elif "compil" in lowered:
+        stage = "COMPILE"
+    elif xsim_started:
+        stage = "XSIM_STARTED"
+    else:
+        stage = "UNKNOWN"
+    progress = _compact_runtime_value(cosim.get("transaction_progress"))
+    if progress is None:
+        for line in lines:
+            if "transaction" not in line.casefold() and "progress" not in line.casefold():
+                continue
+            match = re.search(r"\b\d+\s*/\s*\d+\b", line)
+            if match is not None:
+                progress = match.group(0)
+                break
+    log_growth = _compact_runtime_value(
+        cosim.get("log_growth") or cosim.get("log_bytes")
+    )
+    output_growth = _compact_runtime_value(
+        cosim.get("output_growth") or cosim.get("output_bytes")
+    )
+    return xsim_started, stage, progress, log_growth, output_growth
+
+
 def extract_csim_failure_evidence(
     result: object,
     *,
@@ -833,6 +892,35 @@ def extract_cosim_failure_evidence(
         failure_kind = "COSIM_FAILURE"
     else:
         failure_kind = "UNKNOWN"
+    explicit_no_progress = any(
+        "no rtl test progress" in line.casefold()
+        or "no progress" in line.casefold()
+        for line in diagnostic_lines
+    )
+    elapsed = _value(result, "elapsed_s")
+    no_progress_seconds = (
+        float(elapsed)
+        if explicit_no_progress
+        and isinstance(elapsed, (int, float))
+        and not isinstance(elapsed, bool)
+        and math.isfinite(float(elapsed))
+        and float(elapsed) >= 0
+        else None
+    )
+    progress = (
+        "NO_RTL_TEST_PROGRESS"
+        if explicit_no_progress
+        else "TIMEOUT_WITHOUT_PROGRESS_CLASSIFICATION"
+        if timeout
+        else "COMPLETED_OR_OBSERVED"
+    )
+    (
+        xsim_started,
+        runtime_stage,
+        transaction_progress,
+        log_growth,
+        output_growth,
+    ) = _cosim_runtime_facts(lines=diagnostic_lines, cosim=cosim)
     return CoSimFailureEvidence(
         schema_version=COSIM_FAILURE_EVIDENCE_SCHEMA,
         candidate_id=candidate_id,
@@ -858,6 +946,13 @@ def extract_cosim_failure_evidence(
             diagnostic_lines, _STREAM_TOKENS
         ),
         relevant_log_lines=relevant,
+        cosim_progress=progress,
+        no_progress_seconds=no_progress_seconds,
+        xsim_started=xsim_started,
+        runtime_stage=runtime_stage,
+        transaction_progress=transaction_progress,
+        log_growth=log_growth,
+        output_growth=output_growth,
     )
 
 

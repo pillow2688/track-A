@@ -1014,6 +1014,20 @@ class RealFixtureExecutor(FakeExecutor):
 
 
 class V3BatchBenchmarkTests(unittest.TestCase):
+    def test_cosim_evidence_beats_generic_terminal_timeout_for_stage(self) -> None:
+        result = {
+            "status": "FAILED",
+            "stop_reason": "TASK_REPAIR_NO_IMPROVEMENT_LIMIT",
+            "last_tool_phase": "timeout",
+            "last_tool_reason": "TASK_REPAIR_NO_IMPROVEMENT_LIMIT",
+            "failure_evidence": {
+                "schema_version": "v3c.cosim-failure-evidence.v1",
+                "failure_kind": "TIMEOUT",
+            },
+            "final_validation": {},
+        }
+        self.assertEqual(benchmark_module._failure_stage(result), "COSIM")
+
     def test_continuation_module_change_changes_implementation_fingerprint(
         self,
     ) -> None:
