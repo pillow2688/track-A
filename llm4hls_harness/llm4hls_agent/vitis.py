@@ -8,6 +8,7 @@ import shlex
 import signal
 import hashlib
 import json
+import re
 import shutil
 import subprocess
 import time
@@ -22,6 +23,12 @@ from .v3_evidence import parse_csynth_loop_evidence
 
 
 _RESOURCES = ("LUT", "FF", "DSP", "BRAM_18K", "URAM")
+_COSIM_TIMING_DIAGNOSTICS_SCHEMA = "v3.cosim-timing-diagnostics.v1"
+_COSIM_PROGRESS_SCHEMA = "v3.cosim-live-progress.v1"
+_COSIM_NO_PROGRESS_TIMEOUT = "COSIM_NO_RTL_TEST_PROGRESS_TIMEOUT"
+_RTL_SIMULATION_PROGRESS = re.compile(
+    r"RTL Simulation\s*:\s*(\d+)\s*/\s*(\d+)", re.IGNORECASE
+)
 
 
 def _to_int(text: str | None) -> int | None:
@@ -122,6 +129,65 @@ def parse_cosim_report(path: str | Path) -> dict[str, object] | None:
     return None
 
 
+def _write_cosim_timing_diagnostics(
+    *,
+    work_dir: Path,
+    process: "ProcessResult",
+    report_path: Path,
+    configured_no_progress_timeout_seconds: float,
+) -> str:
+    """Persist bounded, log-derived CoSim progress facts for timeout triage.
+
+    Vitis runs CoSim as one process, so the backend cannot truthfully assign
+    elapsed time to RTL generation, XSim compilation, and execution without
+    changing the tool invocation.  This receipt therefore records only total
+    elapsed time and observed log milestones; it deliberately does not claim
+    that an emitted XSim command actually completed execution.
+    """
+
+    combined = f"{process.stdout}\n{process.stderr}"
+    normalized = combined.casefold()
+    milestones = {
+        "rtl_generation_seen": "generating rtl" in normalized,
+        "xsim_hdl_compile_seen": (
+            "analyzing systemverilog file" in normalized
+            or "compiling module" in normalized
+        ),
+        "xsim_command_emitted": "# xsim " in normalized,
+        "cosim_report_present": report_path.is_file(),
+    }
+    if milestones["cosim_report_present"]:
+        last_milestone = "COSIM_REPORT_PRESENT"
+    elif milestones["xsim_command_emitted"]:
+        last_milestone = "XSIM_COMMAND_EMITTED_NO_REPORT"
+    elif milestones["xsim_hdl_compile_seen"]:
+        last_milestone = "XSIM_HDL_COMPILE_OR_ELABORATION"
+    elif milestones["rtl_generation_seen"]:
+        last_milestone = "RTL_GENERATION"
+    else:
+        last_milestone = "VITIS_SETUP_OR_UNCLASSIFIED"
+    payload = {
+        "schema_version": _COSIM_TIMING_DIAGNOSTICS_SCHEMA,
+        "total_elapsed_s": float(process.elapsed_s),
+        "timed_out": bool(process.timed_out),
+        "return_code": int(process.return_code),
+        "timeout_reason": process.timeout_reason,
+        "configured_no_progress_timeout_seconds": float(
+            configured_no_progress_timeout_seconds
+        ),
+        "last_rtl_test_progress": process.rtl_test_progress,
+        "observed_milestones": milestones,
+        "last_observed_milestone": last_milestone,
+        "inference_scope": "LOG_MILESTONES_ONLY_NOT_EXECUTION_PROOF",
+    }
+    path = work_dir / "cosim_timing.json"
+    path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return _artifact_ref(path, work_dir)
+
+
 @dataclass(frozen=True)
 class ProcessResult:
     return_code: int
@@ -129,6 +195,8 @@ class ProcessResult:
     stderr: str
     elapsed_s: float
     timed_out: bool
+    timeout_reason: str | None = None
+    rtl_test_progress: dict[str, int] | None = None
 
 
 @dataclass(frozen=True)
@@ -343,6 +411,173 @@ class SubprocessRunner:
             process.returncode in {124, 137},
         )
 
+    @staticmethod
+    def _terminate_process_group(process: subprocess.Popen[bytes]) -> tuple[bytes, bytes]:
+        """Terminate only this runner-owned session and collect its pipes."""
+
+        if os.name == "posix":
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            try:
+                return process.communicate(timeout=2.0)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                try:
+                    return process.communicate(timeout=2.0)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    try:
+                        return process.communicate(timeout=1.0)
+                    except subprocess.TimeoutExpired:
+                        return b"", b"process tree did not close pipes"
+        process.kill()
+        try:
+            return process.communicate(timeout=2.0)
+        except subprocess.TimeoutExpired:
+            return b"", b"process tree did not close pipes"
+
+    @staticmethod
+    def _rtl_test_progress(work_dir: Path) -> dict[str, int] | None:
+        """Read only Vitis' emitted RTL testcase counter, never infer progress.
+
+        The guard intentionally declines to act when Vitis does not expose this
+        counter.  File modification time, emitted simulated time and compiler
+        output are not proof that a testcase has advanced.
+        """
+
+        log_path = work_dir / "logs" / "hls_run_tcl.log"
+        try:
+            with log_path.open("rb") as stream:
+                stream.seek(0, os.SEEK_END)
+                size = stream.tell()
+                stream.seek(max(0, size - 262_144), os.SEEK_SET)
+                tail = stream.read().decode("utf-8", errors="replace")
+        except OSError:
+            return None
+        matches = list(_RTL_SIMULATION_PROGRESS.finditer(tail))
+        if not matches:
+            return None
+        completed, total = matches[-1].groups()
+        return {"completed": int(completed), "total": int(total)}
+
+    @staticmethod
+    def _write_cosim_progress(
+        path: Path,
+        *,
+        progress: dict[str, int],
+        no_progress_elapsed_seconds: float,
+        configured_no_progress_timeout_seconds: float,
+    ) -> None:
+        payload = {
+            "schema_version": _COSIM_PROGRESS_SCHEMA,
+            "status": "RUNNING",
+            "rtl_test_progress": dict(progress),
+            "no_progress_elapsed_seconds": round(
+                max(0.0, no_progress_elapsed_seconds), 3
+            ),
+            "configured_no_progress_timeout_seconds": float(
+                configured_no_progress_timeout_seconds
+            ),
+        }
+        temporary = path.with_suffix(path.suffix + ".tmp")
+        temporary.write_text(
+            json.dumps(payload, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        os.replace(temporary, path)
+
+    def run_cosim_with_no_progress_guard(
+        self,
+        command: list[str],
+        *,
+        cwd: Path,
+        timeout_s: float,
+        no_progress_timeout_seconds: float,
+        progress_path: Path,
+    ) -> ProcessResult:
+        """Run CoSim with a conservative RTL-testcase progress timeout.
+
+        This is deliberately narrower than a generic "log is quiet" timeout:
+        it starts only after Vitis has emitted an RTL completed/total counter,
+        resets only when the completed count rises, and returns a normal
+        timeout result with a durable reason rather than fabricating a result.
+        """
+
+        if no_progress_timeout_seconds <= 0:
+            return self.run(command, cwd=cwd, timeout_s=timeout_s)
+        started = time.monotonic()
+        process = subprocess.Popen(
+            command,
+            cwd=str(cwd),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=True,
+        )
+        last_completed: int | None = None
+        last_progress_at: float | None = None
+        observed_progress: dict[str, int] | None = None
+        while True:
+            elapsed = time.monotonic() - started
+            remaining = timeout_s - elapsed
+            if remaining <= 0:
+                stdout, stderr = self._terminate_process_group(process)
+                return ProcessResult(
+                    -1,
+                    _decode(stdout),
+                    _decode(stderr),
+                    time.monotonic() - started,
+                    True,
+                    rtl_test_progress=observed_progress,
+                )
+            try:
+                stdout, stderr = process.communicate(timeout=min(0.1, remaining))
+            except subprocess.TimeoutExpired:
+                now = time.monotonic()
+                progress = self._rtl_test_progress(cwd)
+                if progress is not None and progress["total"] > 0:
+                    observed_progress = progress
+                    if last_completed is None or progress["completed"] > last_completed:
+                        last_completed = progress["completed"]
+                        last_progress_at = now
+                    if last_progress_at is not None:
+                        no_progress_elapsed = now - last_progress_at
+                        self._write_cosim_progress(
+                            progress_path,
+                            progress=progress,
+                            no_progress_elapsed_seconds=no_progress_elapsed,
+                            configured_no_progress_timeout_seconds=(
+                                no_progress_timeout_seconds
+                            ),
+                        )
+                        if (
+                            progress["completed"] < progress["total"]
+                            and no_progress_elapsed >= no_progress_timeout_seconds
+                        ):
+                            stdout, stderr = self._terminate_process_group(process)
+                            return ProcessResult(
+                                -1,
+                                _decode(stdout),
+                                _decode(stderr),
+                                time.monotonic() - started,
+                                True,
+                                timeout_reason=_COSIM_NO_PROGRESS_TIMEOUT,
+                                rtl_test_progress=progress,
+                            )
+                continue
+            return ProcessResult(
+                process.returncode,
+                _decode(stdout),
+                _decode(stderr),
+                time.monotonic() - started,
+                process.returncode in {124, 137},
+                rtl_test_progress=observed_progress,
+            )
+
 
 def _artifact_ref(path: Path, work_dir: Path) -> str:
     return str(path.relative_to(work_dir.parent)).replace("\\", "/")
@@ -352,6 +587,8 @@ def _log_evidence(result: ProcessResult) -> list[str]:
     evidence = [f"return_code={result.return_code}"]
     if result.timed_out:
         evidence.append("subprocess timeout expired")
+    if result.timeout_reason is not None:
+        evidence.append(result.timeout_reason)
     combined = (result.stdout + "\n" + result.stderr).strip()
     if combined:
         lines = [
@@ -396,7 +633,7 @@ class VitisBackend:
     def fingerprint(self) -> str:
         """Stable cache identity; bump when command/report semantics change."""
 
-        return "llm4hls_agent.vitis.VitisBackend:v0.8"
+        return "llm4hls_agent.vitis.VitisBackend:v0.10"
 
     def _toolchain(self, config: ToolConfig) -> VitisToolchain:
         """Cache real detection; injected test runners stay deterministic."""
@@ -497,9 +734,25 @@ class VitisBackend:
             "exec timeout --signal=TERM --kill-after=2s "
             f"{timeout:.6f}s {invocation}"
         )
-        result = self._runner.run(
-            ["bash", "-c", inner], cwd=work_dir, timeout_s=timeout
-        )
+        progress_path = work_dir / "cosim_progress.json"
+        if (
+            kind == "cosim"
+            and config.cosim_no_progress_timeout_seconds > 0
+            and isinstance(self._runner, SubprocessRunner)
+        ):
+            result = self._runner.run_cosim_with_no_progress_guard(
+                ["bash", "-c", inner],
+                cwd=work_dir,
+                timeout_s=timeout,
+                no_progress_timeout_seconds=(
+                    config.cosim_no_progress_timeout_seconds
+                ),
+                progress_path=progress_path,
+            )
+        else:
+            result = self._runner.run(
+                ["bash", "-c", inner], cwd=work_dir, timeout_s=timeout
+            )
         stdout_path = work_dir / "vitis.stdout.log"
         stderr_path = work_dir / "vitis.stderr.log"
         stdout_path.write_text(result.stdout, encoding="utf-8")
@@ -510,6 +763,8 @@ class VitisBackend:
                 "vitis_stderr": _artifact_ref(stderr_path, work_dir),
             }
         )
+        if progress_path.is_file():
+            artifacts["cosim_progress"] = _artifact_ref(progress_path, work_dir)
         return result, artifacts
 
     def _run_csim(
@@ -655,6 +910,22 @@ class VitisBackend:
         process, artifacts = self._run_vitis(
             kind="cosim", tcl=tcl, work_dir=work_dir, config=config
         )
+        report_path = (
+            work_dir
+            / "cosim_proj"
+            / "sol"
+            / "sim"
+            / "report"
+            / f"{task.top}_cosim.rpt"
+        )
+        artifacts["cosim_timing"] = _write_cosim_timing_diagnostics(
+            work_dir=work_dir,
+            process=process,
+            report_path=report_path,
+            configured_no_progress_timeout_seconds=(
+                config.cosim_no_progress_timeout_seconds
+            ),
+        )
         if process.timed_out:
             return BackendResult(False, "timeout", -1, process.elapsed_s, _log_evidence(process), artifacts)
         synth_path = work_dir / "cosim_proj" / "sol" / "syn" / "report" / "csynth.xml"
@@ -664,7 +935,6 @@ class VitisBackend:
                 ["cosim synthesis report is missing"], artifacts,
             )
         artifacts["csynth_xml"] = _artifact_ref(synth_path, work_dir)
-        report_path = work_dir / "cosim_proj" / "sol" / "sim" / "report" / f"{task.top}_cosim.rpt"
         if not report_path.is_file():
             return BackendResult(
                 False, "cosim_fail", process.return_code, process.elapsed_s,

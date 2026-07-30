@@ -149,6 +149,13 @@ class PreparedPlannerCall:
     estimated_input_tokens: int
     max_output_tokens: int
     dispatch_context: object | None = None
+    # A3 may calculate an advisory while A2 is estimating the next call.  It
+    # must not become a durable runtime decision until that call has passed
+    # A2/the budget gate.  Keep the validated, secret-free advisory beside the
+    # prepared call so the runner can materialize it exactly once at that
+    # boundary without asking the ranker to make a second decision.
+    experience_guidance: Mapping[str, object] | None = None
+    experience_round_index: int | None = None
 
     def __post_init__(self) -> None:
         for name, value in (
@@ -164,6 +171,20 @@ class PreparedPlannerCall:
             raise ValueError("Planner request audit must be an object")
         _reject_secret_fields(canonical_request)
         object.__setattr__(self, "request", canonical_request)
+        if self.experience_guidance is not None:
+            canonical_guidance = json.loads(
+                canonical_json(dict(self.experience_guidance)).decode("utf-8")
+            )
+            if not isinstance(canonical_guidance, dict):
+                raise ValueError("experience guidance must be an object")
+            _reject_secret_fields(canonical_guidance)
+            object.__setattr__(self, "experience_guidance", canonical_guidance)
+        if self.experience_round_index is not None and (
+            isinstance(self.experience_round_index, bool)
+            or not isinstance(self.experience_round_index, int)
+            or self.experience_round_index <= 0
+        ):
+            raise ValueError("experience_round_index must be a positive integer")
 
     @property
     def estimated_tokens(self) -> int:
@@ -484,6 +505,15 @@ class PlannerActionJournal:
             raise TypeError("live Planner prepare() returned an invalid request")
         if prepared.estimated_tokens <= 0:
             raise ValueError("live Planner must reserve a positive token bound")
+
+        # A2/the budget gate has already selected this node before the journal
+        # is entered.  Let an A3-capable planner now persist its *one* advisory
+        # decision.  This deliberately happens after that authorization and
+        # before the LLM ledger reservation, so an A3 persistence error can
+        # never leave a charged-but-undispatched Planner action behind.
+        record_advisory = getattr(planner, "record_authorized_advisory", None)
+        if callable(record_advisory):
+            record_advisory(prepared)
 
         logical_operation_id = canonical_sha256(
             {

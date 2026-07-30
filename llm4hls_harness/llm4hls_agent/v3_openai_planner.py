@@ -177,6 +177,8 @@ class _BudgetedPreparedContext:
     provider_request: Mapping[str, object]
     envelope: TokenEnvelope
     estimate: TokenEstimate
+    # Full validated A3 decision, not the compact card injected into the
+    # provider request.  It is persisted only after A2 authorizes the call.
     guidance: Mapping[str, object] | None
 
 
@@ -186,6 +188,7 @@ class _BudgetedPreparedOptimization:
     provider_request: Mapping[str, object]
     envelope: TokenEnvelope
     estimate: TokenEstimate
+    guidance: Mapping[str, object] | None
 
 
 def _mapping(value: object, name: str) -> Mapping[str, object]:
@@ -1259,6 +1262,32 @@ class OpenAICompatibleV3PlannerAdapter:
         )
         self._experience_coordinator.persist_recommendation(round_index, guidance)
 
+    def record_authorized_advisory(
+        self, prepared: PreparedPlannerCall
+    ) -> None:
+        """Persist the A3 decision at the authorized A2 -> Planner boundary.
+
+        ``prepare()`` is also used by A2's token/budget preflight.  It must be
+        referentially transparent: otherwise a denied A2 call can leave a
+        durable A3 decision, and one allowed call can create two records.  The
+        action journal calls this method only after A2 has allowed the round.
+        A3 remains advisory: this method neither changes routing nor can it
+        create a Planner call by itself.
+        """
+
+        if (
+            self.experience_mode is ExperienceMode.OFF
+            or self._experience_disabled
+            or prepared.experience_guidance is None
+            or prepared.experience_round_index is None
+            or self._experience_coordinator is None
+        ):
+            return
+        guidance = validate_guidance(prepared.experience_guidance)
+        self._experience_coordinator.persist_recommendation(
+            prepared.experience_round_index, guidance
+        )
+
     def _build_experience_guidance(
         self,
         planner_input: Mapping[str, object],
@@ -1532,22 +1561,12 @@ class OpenAICompatibleV3PlannerAdapter:
             raise V3OpenAIPlannerError(
                 "Prompt TokenEnvelope and provider max output diverged"
             )
-        if self.experience_mode is ExperienceMode.SHADOW:
-            self._build_experience_guidance(
-                planner_input,
-                mode=mode,
-                guidance_token_cap=None,
-                persist=True,
-                **dict(guidance_kwargs),
-            )
-        else:
-            self._persist_guidance(planner_input, guidance)
         return _BudgetedPreparedContext(
             context=final_context,
             provider_request=final_request,
             envelope=envelope,
             estimate=final_estimate,
-            guidance=strategy_card,
+            guidance=guidance,
         )
 
     def _prepare_hard_capped_mapping_context(
@@ -1678,22 +1697,12 @@ class OpenAICompatibleV3PlannerAdapter:
             raise V3OpenAIPlannerError(
                 "hard-capped Provider max output diverged from TokenEnvelope"
             )
-        if self.experience_mode is ExperienceMode.SHADOW:
-            self._build_experience_guidance(
-                planner_input,
-                mode=mode,
-                guidance_token_cap=None,
-                persist=True,
-                **dict(guidance_kwargs),
-            )
-        else:
-            self._persist_guidance(planner_input, guidance)
         return _BudgetedPreparedContext(
             context=final_context,
             provider_request=final_request,
             envelope=envelope,
             estimate=final_estimate,
-            guidance=strategy_card,
+            guidance=guidance,
         )
 
     def _prepare_budgeted_optimization_context(
@@ -1848,18 +1857,6 @@ class OpenAICompatibleV3PlannerAdapter:
             raise V3OpenAIPlannerError(
                 "Prompt TokenEnvelope and provider max output diverged"
             )
-        if self.experience_mode is ExperienceMode.SHADOW:
-            self._build_experience_guidance(
-                planner_input,
-                mode="OPTIMIZE",
-                source=source,
-                synth_report=synth_report,
-                synth_evidence=synth_evidence,
-                guidance_token_cap=None,
-                persist=True,
-            )
-        else:
-            self._persist_guidance(planner_input, guidance)
         dispatch = _BudgetedOptimizationDispatch(
             context=context,
             token_envelope=envelope.to_dict(),
@@ -1871,6 +1868,7 @@ class OpenAICompatibleV3PlannerAdapter:
             provider_request=final_request,
             envelope=envelope,
             estimate=final_estimate,
+            guidance=guidance,
         )
 
     def _prepare_hard_capped_optimization_context(
@@ -1958,18 +1956,6 @@ class OpenAICompatibleV3PlannerAdapter:
             raise V3OpenAIPlannerError(
                 "hard-capped optimization Provider max diverged"
             )
-        if self.experience_mode is ExperienceMode.SHADOW:
-            self._build_experience_guidance(
-                planner_input,
-                mode="OPTIMIZE",
-                source=source,
-                synth_report=synth_report,
-                synth_evidence=synth_evidence,
-                guidance_token_cap=None,
-                persist=True,
-            )
-        else:
-            self._persist_guidance(planner_input, guidance)
         dispatch = _BudgetedOptimizationDispatch(
             context=context,
             token_envelope=envelope.to_dict(),
@@ -1981,6 +1967,7 @@ class OpenAICompatibleV3PlannerAdapter:
             provider_request=final_request,
             envelope=envelope,
             estimate=final_estimate,
+            guidance=guidance,
         )
 
     def prepare(
@@ -2003,6 +1990,10 @@ class OpenAICompatibleV3PlannerAdapter:
                 "Planner input evidence memory mode is unsupported"
             )
         enhanced_evidence = evidence_memory_mode == "on"
+        # This is an in-memory, pure preparation result.  It is deliberately
+        # not written until ``record_authorized_advisory`` is reached by the
+        # action journal after A2 has allowed the Planner call.
+        experience_guidance: Mapping[str, object] | None = None
 
         mode_value = round_state.get("mode", "OPTIMIZE")
         # V3-A1 inputs and in-flight checkpoints predate PhaseRouter. Preserve
@@ -2091,6 +2082,7 @@ class OpenAICompatibleV3PlannerAdapter:
                 provider_request = budgeted.provider_request
                 token_envelope = budgeted.envelope
                 estimated_input_tokens = budgeted.estimate.total_tokens
+                experience_guidance = budgeted.guidance
                 effective_max_output_tokens = (
                     budgeted.envelope.effective_max_output_tokens
                 )
@@ -2100,7 +2092,9 @@ class OpenAICompatibleV3PlannerAdapter:
                     mode=mode_value,
                     source=source,
                     failure_evidence=failure_evidence,
+                    persist=False,
                 )
+                experience_guidance = guidance
                 strategy_card = (
                     _guided_strategy_card(guidance)
                     if self.experience_mode is ExperienceMode.GUIDED
@@ -2150,6 +2144,8 @@ class OpenAICompatibleV3PlannerAdapter:
                 estimated_input_tokens=estimated_input_tokens,
                 max_output_tokens=effective_max_output_tokens,
                 dispatch_context=context,
+                experience_guidance=experience_guidance,
+                experience_round_index=int(round_state["round_index"]),
             )
 
         source, incumbent_report, incumbent_evidence = _source_and_report(
@@ -2252,6 +2248,7 @@ class OpenAICompatibleV3PlannerAdapter:
                 provider_request = budgeted.provider_request
                 token_envelope = budgeted.envelope
                 estimated_input_tokens = budgeted.estimate.total_tokens
+                experience_guidance = budgeted.guidance
                 effective_max_output_tokens = (
                     budgeted.envelope.effective_max_output_tokens
                 )
@@ -2262,7 +2259,9 @@ class OpenAICompatibleV3PlannerAdapter:
                     source=source,
                     synth_report=incumbent_report,
                     synth_evidence=incumbent_evidence,
+                    persist=False,
                 )
+                experience_guidance = guidance
                 strategy_card = (
                     _guided_strategy_card(guidance)
                     if self.experience_mode is ExperienceMode.GUIDED
@@ -2313,6 +2312,8 @@ class OpenAICompatibleV3PlannerAdapter:
                 estimated_input_tokens=estimated_input_tokens,
                 max_output_tokens=effective_max_output_tokens,
                 dispatch_context=context,
+                experience_guidance=experience_guidance,
+                experience_round_index=int(round_state["round_index"]),
             )
         attempted, failed_actions = _history_state(value.get("history"))
         decision = select_optimization(
@@ -2416,6 +2417,7 @@ class OpenAICompatibleV3PlannerAdapter:
             token_envelope = budgeted.envelope
             estimated_input_tokens = budgeted.estimate.total_tokens
             effective_max_output_tokens = budgeted.envelope.effective_max_output_tokens
+            experience_guidance = budgeted.guidance
         else:
             guidance = self._build_experience_guidance(
                 value,
@@ -2423,7 +2425,9 @@ class OpenAICompatibleV3PlannerAdapter:
                 source=source,
                 synth_report=incumbent_report,
                 synth_evidence=incumbent_evidence,
+                persist=False,
             )
+            experience_guidance = guidance
             strategy_card = (
                 _guided_strategy_card(guidance)
                 if self.experience_mode is ExperienceMode.GUIDED
@@ -2490,6 +2494,8 @@ class OpenAICompatibleV3PlannerAdapter:
             estimated_input_tokens=estimated_input_tokens,
             max_output_tokens=effective_max_output_tokens,
             dispatch_context=budgeted_dispatch or guided_dispatch or context,
+            experience_guidance=experience_guidance,
+            experience_round_index=int(round_state["round_index"]),
         )
 
     def invoke(self, prepared: PreparedPlannerCall) -> PatchProposal:

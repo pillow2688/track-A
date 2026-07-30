@@ -374,12 +374,18 @@ def _invoke_stage(
     *,
     candidate_id: str = "candidate_000",
     validation_scope: str = "exploration",
+    timeout_seconds: float | None = None,
 ) -> tuple[ToolResult | None, dict[str, object] | None, str | None]:
     try:
         result = getattr(server, stage)(
             kernel_bytes,
             candidate_id=candidate_id,
             validation_scope=validation_scope,
+            **(
+                {"timeout_seconds": timeout_seconds}
+                if timeout_seconds is not None
+                else {}
+            ),
         )
     except (
         BudgetError,

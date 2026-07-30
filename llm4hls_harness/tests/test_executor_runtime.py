@@ -433,6 +433,30 @@ class RuntimeDeadlineTests(unittest.TestCase):
         self.assertEqual(backend.calls, [])
         self.assertEqual(budget.snapshot()["tool_pending"]["cosim"], 0)
 
+    def test_default_cosim_window_blocks_partial_long_tail_run(self) -> None:
+        """The default must avoid a CoSim that cannot receive 10 minutes."""
+        clock = _Clock(100.0)
+        backend = _CaptureBackend()
+        budget, server = self._server(
+            RuntimeDeadline(
+                675.0,
+                cleanup_reserve_seconds=30.0,
+                monotonic=clock,
+            ),
+            backend,
+        )
+        with self.assertRaises(RuntimeUnavailable) as caught:
+            server.cosim(self.task.kernel_bytes)
+        self.assertEqual(
+            caught.exception.reason_code,
+            COSIM_NOT_STARTED_INSUFFICIENT_RUNTIME,
+        )
+        self.assertEqual(caught.exception.permit.effective_timeout_seconds, 545.0)
+        self.assertEqual(caught.exception.permit.minimum_runtime_seconds, 600.0)
+        self.assertEqual(backend.calls, [])
+        self.assertEqual(budget.snapshot()["tool_used"]["cosim"], 0)
+        self.assertEqual(budget.snapshot()["tool_pending"]["cosim"], 0)
+
     def test_final_closure_has_distinct_runtime_reason(self) -> None:
         clock = _Clock(130.0)
         permit = RuntimeDeadline(

@@ -252,6 +252,11 @@ class C11ShadowBoundaryTests(unittest.TestCase):
             )
             self.assertEqual(off_call.dispatch_context, shadow_call.dispatch_context)
             self.assertEqual(off.fingerprint(), shadow.fingerprint())
+            # A2's preflight can call prepare() only to estimate a request.
+            # Shadow A3 must remain pure until the Planner action is actually
+            # authorized by A2/B1.
+            self.assertEqual(coordinator.persisted, [])
+            shadow.record_authorized_advisory(shadow_call)
             self.assertEqual(coordinator.persisted, [1])
 
     def test_dynamic_policy_shadow_is_a_fully_equivalent_sidecar(self) -> None:

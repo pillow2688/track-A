@@ -73,6 +73,8 @@ class FakeLivePlanner:
     def __init__(self) -> None:
         self.prepare_calls = 0
         self.invoke_calls = 0
+        self.authorized_advisory_calls = 0
+        self.call_order: list[str] = []
         self.proposal = live_proposal()
 
     def fingerprint(self) -> str:
@@ -80,6 +82,7 @@ class FakeLivePlanner:
 
     def prepare(self, value) -> PreparedPlannerCall:
         self.prepare_calls += 1
+        self.call_order.append("prepare")
         self.last_input = value
         return PreparedPlannerCall(
             request={
@@ -93,8 +96,16 @@ class FakeLivePlanner:
             max_output_tokens=30,
         )
 
+    def record_authorized_advisory(
+        self, prepared: PreparedPlannerCall
+    ) -> None:
+        self.authorized_advisory_calls += 1
+        self.call_order.append("advisory")
+        self.last_authorized_advisory = prepared
+
     def invoke(self, prepared: PreparedPlannerCall) -> PatchProposal:
         self.invoke_calls += 1
+        self.call_order.append("invoke")
         self.last_prepared = prepared
         return self.proposal
 
@@ -178,6 +189,22 @@ class V3PlannerActionJournalTests(unittest.TestCase):
         self.assertEqual(snapshot["output_tokens_used"], 11)
         self.assertEqual(snapshot["cached_input_tokens_used"], 3)
         self.assertTrue(snapshot["token_usage_complete"])
+
+    def test_authorized_advisory_runs_once_after_prepare_and_before_invoke(self) -> None:
+        """A2's authorized action boundary owns A3 decision persistence."""
+
+        planner = FakeLivePlanner()
+
+        self.execute(self.journal(), planner)
+
+        self.assertEqual(planner.authorized_advisory_calls, 1)
+        self.assertEqual(planner.call_order, ["prepare", "advisory", "invoke"])
+
+        # A recovered completed action may be revalidated, but the coordinator
+        # must not manufacture a second Planner call or ledger charge.
+        self.execute(self.journal(), planner)
+        self.assertEqual(planner.authorized_advisory_calls, 2)
+        self.assertEqual(planner.invoke_calls, 1)
 
     def test_runtime_bounded_timeout_is_forwarded_before_dispatch(self) -> None:
         planner = FakeLivePlanner()

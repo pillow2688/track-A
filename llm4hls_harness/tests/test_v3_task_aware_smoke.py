@@ -39,6 +39,7 @@ class TaskAwareSmokeBackend:
     def __init__(self, task_id: str) -> None:
         self.task_id = task_id
         self.calls: list[tuple[str, bool]] = []
+        self.timeouts: list[tuple[str, bool, float]] = []
 
     def fingerprint(self) -> str:
         return f"v3-task-aware-smoke-{self.task_id}-v1"
@@ -59,11 +60,14 @@ class TaskAwareSmokeBackend:
         *,
         kernel_bytes: bytes,
         work_dir: Path,
-        **_kwargs: object,
+        **kwargs: object,
     ) -> BackendResult:
         del work_dir
         candidate = self._is_candidate(kernel_bytes)
         self.calls.append((kind, candidate))
+        config = kwargs.get("config")
+        if isinstance(config, ToolConfig):
+            self.timeouts.append((kind, candidate, config.timeout_for(kind)))
 
         if (
             self.task_id == "projection_bugfix"
@@ -364,7 +368,12 @@ class V3TaskAwareOfficialSmokeTests(unittest.TestCase):
             result = run_v3_prototype(
                 task,
                 run_root,
-                task_config(task),
+                replace(
+                    task_config(task),
+                    budget=replace(
+                        task_config(task).budget, runtime_limit_seconds=7200.0
+                    ),
+                ),
                 proposal or proposal_for(task_id),
                 backend=backend,
                 validation_profile="fast-experiment",
@@ -513,13 +522,68 @@ class V3TaskAwareOfficialSmokeTests(unittest.TestCase):
                 "synth",
                 "cosim",
                 "csim",
+                "synth",
                 "cosim",
                 "csim",
                 "synth",
                 "cosim",
             ],
         )
-        self.assertEqual(result["budget"]["credits_used"], 71)
+        self.assertEqual(result["budget"]["credits_used"], 75)
+
+    def test_structural_baseline_cosim_uses_bounded_probe_then_repairs(self) -> None:
+        task = load_official("residual_stream_deadlock")
+        backend = TaskAwareSmokeBackend(task.id)
+        config = task_config(task)
+        config = replace(
+            config,
+            budget=replace(config.budget, runtime_limit_seconds=7200.0),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            result = run_v3_prototype(
+                task,
+                Path(directory) / task.id,
+                config,
+                proposal_for(task.id),
+                backend=backend,
+                validation_profile="fast-experiment",
+                max_no_improvement_rounds=2,
+                baseline_cosim_probe_timeout_seconds=300.0,
+            )
+        self.assertEqual(result["status"], "DONE")
+        self.assertEqual(backend.timeouts[2], ("cosim", False, 300.0))
+        self.assertIn(("csim", True), backend.calls)
+        self.assertIn(("synth", True), backend.calls)
+        self.assertIn(("cosim", True), backend.calls)
+
+    def test_credits_do_not_bypass_insufficient_closeout_runtime(self) -> None:
+        task = load_official("residual_stream_deadlock")
+        backend = TaskAwareSmokeBackend(task.id)
+        with tempfile.TemporaryDirectory() as directory:
+            result = run_v3_prototype(
+                task,
+                Path(directory) / task.id,
+                replace(
+                    task_config(task),
+                    budget=replace(
+                        task_config(task).budget, runtime_limit_seconds=100.0
+                    ),
+                ),
+                proposal_for(task.id),
+                backend=backend,
+                validation_profile="fast-experiment",
+                max_no_improvement_rounds=2,
+                baseline_cosim_probe_timeout_seconds=300.0,
+            )
+        self.assertEqual(result["status"], "FAILED")
+        self.assertEqual(
+            result["stop_reason"], "BASELINE_AND_FINAL_CLOSURE_UNAFFORDABLE"
+        )
+        self.assertEqual(result["budget"]["credits_remaining"], 100)
+        self.assertIn(
+            "RUNTIME_CLOSEOUT_RESERVE_INSUFFICIENT",
+            result["budget_gate"]["blockers"],
+        )
 
     def test_synth_pass_with_resource_violation_routes_to_synth_fix(self) -> None:
         task = load_official("dotProduct_optimize")

@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import time
 import unittest
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -12,6 +13,7 @@ try:
     from llm4hls_agent.tools import ToolConfig
     from llm4hls_agent.vitis import (
         ProcessResult,
+        SubprocessRunner,
         VitisBackend,
         _default_version_probe,
         detect_vitis_toolchain,
@@ -23,7 +25,7 @@ except ModuleNotFoundError:
     def _missing(*_args: object, **_kwargs: object):
         raise AssertionError("Vitis backend is not implemented")
 
-    load_public_task = ToolConfig = ProcessResult = VitisBackend = _missing  # type: ignore[misc,assignment]
+    load_public_task = ToolConfig = ProcessResult = SubprocessRunner = VitisBackend = _missing  # type: ignore[misc,assignment]
     parse_cosim_report = parse_synth_report = detect_vitis_toolchain = _missing
     _default_version_probe = _missing
     vitis_invocation_command = _missing
@@ -159,19 +161,88 @@ class VitisBackendTests(unittest.TestCase):
         self.assertTrue((work / "run_hls.tcl").is_file())
 
     def test_cosim_timeout_is_structured(self) -> None:
-        runner = PlannedRunner([ProcessResult(-1, "", "hung", 30.0, True)])
+        runner = PlannedRunner(
+            [
+                ProcessResult(
+                    -1,
+                    "INFO: [HLS 200-10] -- Generating RTL\n"
+                    "Compiling module xil_defaultlib.kernel\n"
+                    "# xsim {kernel} -tclbatch {kernel.tcl}",
+                    "hung",
+                    30.0,
+                    True,
+                )
+            ]
+        )
+        work = self.root / "cosim-work"
 
         result = VitisBackend(runner).run(
             "cosim",
             task=self.task,
             kernel_bytes=self.task.kernel_bytes,
-            work_dir=self.root / "cosim-work",
+            work_dir=work,
             config=self.config,
         )
 
         self.assertFalse(result.ok)
         self.assertEqual(result.phase, "timeout")
         self.assertEqual(result.return_code, -1)
+        timing = json.loads((work / "cosim_timing.json").read_text(encoding="utf-8"))
+        self.assertEqual(timing["total_elapsed_s"], 30.0)
+        self.assertTrue(timing["timed_out"])
+        self.assertEqual(
+            timing["last_observed_milestone"],
+            "XSIM_COMMAND_EMITTED_NO_REPORT",
+        )
+        self.assertEqual(
+            timing["inference_scope"],
+            "LOG_MILESTONES_ONLY_NOT_EXECUTION_PROOF",
+        )
+        self.assertEqual(
+            result.artifacts["cosim_timing"],
+            "cosim-work/cosim_timing.json",
+        )
+
+    def test_cosim_no_progress_guard_requires_real_rtl_test_counter(self) -> None:
+        work = self.root / "guarded-cosim"
+        work.mkdir()
+        runner = SubprocessRunner()
+        result = runner.run_cosim_with_no_progress_guard(
+            [
+                "bash",
+                "-c",
+                "mkdir -p logs; while true; do "
+                "echo 'RTL Simulation : 0 / 1 [0%]' >> logs/hls_run_tcl.log; "
+                "sleep 0.02; done",
+            ],
+            cwd=work,
+            timeout_s=2.0,
+            no_progress_timeout_seconds=0.12,
+            progress_path=work / "cosim_progress.json",
+        )
+
+        self.assertTrue(result.timed_out)
+        self.assertEqual(result.timeout_reason, "COSIM_NO_RTL_TEST_PROGRESS_TIMEOUT")
+        self.assertEqual(result.rtl_test_progress, {"completed": 0, "total": 1})
+        self.assertLess(result.elapsed_s, 0.8)
+        progress = json.loads((work / "cosim_progress.json").read_text(encoding="utf-8"))
+        self.assertEqual(progress["rtl_test_progress"], {"completed": 0, "total": 1})
+
+    def test_cosim_no_progress_guard_does_not_activate_without_rtl_counter(self) -> None:
+        work = self.root / "unguarded-cosim"
+        work.mkdir()
+        runner = SubprocessRunner()
+        result = runner.run_cosim_with_no_progress_guard(
+            ["bash", "-c", "sleep 0.08"],
+            cwd=work,
+            timeout_s=1.0,
+            no_progress_timeout_seconds=0.02,
+            progress_path=work / "cosim_progress.json",
+        )
+
+        self.assertFalse(result.timed_out)
+        self.assertIsNone(result.timeout_reason)
+        self.assertFalse((work / "cosim_progress.json").exists())
 
     def test_cosim_nonzero_exit_cannot_be_overridden_by_pass_report(self) -> None:
         runner = PassingCosimReportRunner(
@@ -312,6 +383,64 @@ class VitisBackendTests(unittest.TestCase):
         second = VitisBackend(PlannedRunner([])).fingerprint()
         self.assertEqual(first, second)
         self.assertIn("VitisBackend", first)
+
+    def test_cosim_no_progress_timeout_is_bound_to_tool_identity(self) -> None:
+        guarded = ToolConfig(
+            vitis_root=self.config.vitis_root,
+            part=self.config.part,
+            clock_ns=self.config.clock_ns,
+            timeouts=self.config.timeouts,
+            cosim_no_progress_timeout_seconds=300.0,
+        )
+
+        self.assertNotEqual(
+            self.config.hash_for("cosim", backend_fingerprint="fixture"),
+            guarded.hash_for("cosim", backend_fingerprint="fixture"),
+        )
+        self.assertEqual(
+            guarded.to_dict()["cosim_no_progress_timeout_seconds"], 300.0
+        )
+
+    def test_backend_records_no_progress_timeout_as_cosim_timeout(self) -> None:
+        vitis_root = self.root / "guarded-Vitis"
+        executable = vitis_root / "bin" / "vitis-run"
+        executable.parent.mkdir(parents=True)
+        executable.write_text(
+            "#!/usr/bin/env bash\n"
+            "if [[ \"${1:-}\" == \"--version\" ]]; then echo 'vitis-run 2025.2'; exit 0; fi\n"
+            "mkdir -p logs\n"
+            "while true; do echo 'RTL Simulation : 0 / 1 [0%]' >> logs/hls_run_tcl.log; sleep 0.02; done\n",
+            encoding="utf-8",
+        )
+        executable.chmod(0o755)
+        config = ToolConfig(
+            vitis_root=str(vitis_root),
+            part=self.config.part,
+            clock_ns=self.config.clock_ns,
+            timeouts={"csim": 1.0, "synth": 1.0, "cosim": 2.0},
+            cosim_no_progress_timeout_seconds=0.12,
+        )
+
+        result = VitisBackend().run(
+            "cosim",
+            task=self.task,
+            kernel_bytes=self.task.kernel_bytes,
+            work_dir=self.root / "backend-guarded-cosim",
+            config=config,
+        )
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.phase, "timeout")
+        self.assertIn("COSIM_NO_RTL_TEST_PROGRESS_TIMEOUT", result.evidence)
+        self.assertIn("cosim_progress", result.artifacts)
+        timing = json.loads(
+            (self.root / "backend-guarded-cosim" / "cosim_timing.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(
+            timing["timeout_reason"], "COSIM_NO_RTL_TEST_PROGRESS_TIMEOUT"
+        )
 
     def _tool(self, name: str) -> Path:
         path = self.root / "Vitis" / "bin" / name

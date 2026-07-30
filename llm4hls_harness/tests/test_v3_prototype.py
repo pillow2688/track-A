@@ -782,7 +782,7 @@ class V3PrototypeTests(unittest.TestCase):
             / "docs"
             / "experiments"
             / "artifacts"
-            / "2026-07-27-a2-a3-full-agent-closure"
+            / "2026-07-28-track-a-rc1-head-bound"
             / "a2"
             / "continuation-v3-admission.json"
         )

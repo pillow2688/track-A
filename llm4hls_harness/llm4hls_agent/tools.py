@@ -103,6 +103,10 @@ class ToolConfig:
     timeouts: Mapping[str, float]
     flow_target: str = "vivado"
     toolchain_id: str = "Vitis 2025.2"
+    # Disabled by default.  When enabled, the Vitis backend may end a CoSim
+    # only after it has observed a real RTL testcase counter remain unchanged
+    # for this long.  This is still a timeout/failure, never a pass.
+    cosim_no_progress_timeout_seconds: float = 0.0
 
     def __post_init__(self) -> None:
         clock_ns = float(self.clock_ns)
@@ -121,8 +125,21 @@ class ToolConfig:
             raise ValueError("flow_target contains Tcl metacharacters")
         if not self.toolchain_id:
             raise ValueError("toolchain_id must not be empty")
+        no_progress_timeout = float(self.cosim_no_progress_timeout_seconds)
+        if (
+            not math.isfinite(no_progress_timeout)
+            or no_progress_timeout < 0
+        ):
+            raise ValueError(
+                "cosim_no_progress_timeout_seconds must be finite and non-negative"
+            )
         object.__setattr__(self, "clock_ns", clock_ns)
         object.__setattr__(self, "timeouts", MappingProxyType(timeouts))
+        object.__setattr__(
+            self,
+            "cosim_no_progress_timeout_seconds",
+            no_progress_timeout,
+        )
 
     def timeout_for(self, kind: str) -> float:
         try:
@@ -149,6 +166,9 @@ class ToolConfig:
             "timeout_seconds": self.timeout_for(kind),
             "flow_target": self.flow_target,
             "toolchain_id": self.toolchain_id,
+            "cosim_no_progress_timeout_seconds": (
+                self.cosim_no_progress_timeout_seconds
+            ),
             "backend_fingerprint": backend_fingerprint,
         }
         return _sha256(_canonical_json(payload).encode())
@@ -161,6 +181,9 @@ class ToolConfig:
             "timeouts": dict(self.timeouts),
             "flow_target": self.flow_target,
             "toolchain_id": self.toolchain_id,
+            "cosim_no_progress_timeout_seconds": (
+                self.cosim_no_progress_timeout_seconds
+            ),
         }
 
 
@@ -318,8 +341,11 @@ class ToolServer:
         *,
         candidate_id: str = "candidate_000",
         validation_scope: str = "exploration",
+        timeout_seconds: float | None = None,
     ) -> ToolResult:
-        return self._invoke("csim", kernel_code, candidate_id, validation_scope)
+        return self._invoke(
+            "csim", kernel_code, candidate_id, validation_scope, timeout_seconds
+        )
 
     def synth(
         self,
@@ -327,8 +353,11 @@ class ToolServer:
         *,
         candidate_id: str = "candidate_000",
         validation_scope: str = "exploration",
+        timeout_seconds: float | None = None,
     ) -> ToolResult:
-        return self._invoke("synth", kernel_code, candidate_id, validation_scope)
+        return self._invoke(
+            "synth", kernel_code, candidate_id, validation_scope, timeout_seconds
+        )
 
     def cosim(
         self,
@@ -336,8 +365,11 @@ class ToolServer:
         *,
         candidate_id: str = "candidate_000",
         validation_scope: str = "exploration",
+        timeout_seconds: float | None = None,
     ) -> ToolResult:
-        return self._invoke("cosim", kernel_code, candidate_id, validation_scope)
+        return self._invoke(
+            "cosim", kernel_code, candidate_id, validation_scope, timeout_seconds
+        )
 
     def _trace(self, event: str, **fields: object) -> None:
         _append_jsonl(
@@ -520,6 +552,7 @@ class ToolServer:
         kernel_code: str | bytes,
         candidate_id: str,
         validation_scope: str,
+        timeout_seconds: float | None = None,
     ) -> ToolResult:
         if validation_scope not in _VALIDATION_SCOPES:
             raise ValueError(f"unsupported validation scope: {validation_scope}")
@@ -528,8 +561,14 @@ class ToolServer:
             if isinstance(kernel_code, str)
             else bytes(kernel_code)
         )
+        effective_config = self.config
+        if timeout_seconds is not None:
+            requested_timeout = float(timeout_seconds)
+            if not math.isfinite(requested_timeout) or requested_timeout <= 0:
+                raise ValueError("timeout_seconds must be finite and positive")
+            effective_config = self.config.with_timeout(kind, requested_timeout)
         code_hash = _sha256(kernel_bytes)
-        tool_config_hash = self.config.hash_for(
+        tool_config_hash = effective_config.hash_for(
             kind, backend_fingerprint=self.backend_fingerprint
         )
         action_payload = {
@@ -625,7 +664,7 @@ class ToolServer:
                 f"started action {action_id} had no durable result; charge was conserved"
             )
 
-        configured_timeout = self.config.timeout_for(kind)
+        configured_timeout = effective_config.timeout_for(kind)
         if self.runtime_deadline is not None:
             permit = self.runtime_deadline.permit(
                 configured_timeout,
@@ -717,7 +756,7 @@ class ToolServer:
             cost=self.budget.cost(kind),
         )
 
-        effective_config = self.config.with_timeout(kind, effective_timeout)
+        effective_config = effective_config.with_timeout(kind, effective_timeout)
         try:
             backend_result = self._backend.run(
                 kind,

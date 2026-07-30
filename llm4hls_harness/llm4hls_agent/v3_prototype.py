@@ -323,6 +323,7 @@ class _Runtime:
     continuation_policy_version: str = "v2"
     continuation_admission: Mapping[str, object] | None = None
     runtime_deadline: RuntimeDeadline | None = None
+    baseline_cosim_probe_timeout_seconds: float = 300.0
 
     @property
     def proposal(self) -> PatchProposal:
@@ -428,6 +429,9 @@ def _run_config_snapshot(runtime: _Runtime) -> dict[str, object]:
             ),
         },
         "final_validation_policy": runtime.final_validation_policy,
+        "baseline_cosim_probe_timeout_seconds": (
+            runtime.baseline_cosim_probe_timeout_seconds
+        ),
     }
     if runtime.live_planner is None:
         identity["proposal_sha256"] = _sha256_json(runtime.proposal.to_dict())
@@ -2549,6 +2553,79 @@ def _load_terminal_result(runtime: _Runtime) -> dict[str, object] | None:
     return result
 
 
+def _runtime_stage_reserve_seconds(runtime: _Runtime, stage: str) -> float:
+    """Return a bounded planning window, not a replacement tool timeout.
+
+    The real tool retains its configured timeout.  This estimate is only used
+    before starting a repair to keep enough wall-clock for the mandatory
+    candidate, search-closeout and independent-certification sequence.
+    """
+
+    configured = runtime.config.tool.timeout_for(stage)
+    if stage == "csim":
+        return min(configured, 60.0)
+    if stage == "synth":
+        return min(configured, 120.0)
+    if stage == "cosim":
+        guard = runtime.config.tool.cosim_no_progress_timeout_seconds
+        minimum = (
+            guard
+            if guard > 0
+            else runtime.runtime_deadline.cosim_minimum_runtime_seconds
+            if runtime.runtime_deadline is not None
+            else 600.0
+        )
+        return min(configured, float(minimum))
+    raise ValueError(f"unsupported runtime reserve stage: {stage}")
+
+
+def _runtime_closeout_projection(
+    runtime: _Runtime, required_calls: Mapping[str, int], policy: str
+) -> dict[str, object] | None:
+    """Project bounded time for search work plus mandatory independent B2.
+
+    Credits remain solely in the Agent ledger.  B2 is added only to this
+    wall-clock projection, because it is an independent budget domain but
+    shares the one absolute task deadline.
+    """
+
+    if runtime.runtime_deadline is None:
+        return None
+    has_final_closure = (
+        "final_closure" in policy
+        or policy in {"candidate_cosim_plus_final_closure", "baseline_plus_final_closure"}
+    )
+    if not has_final_closure:
+        return None
+    planned = {
+        stage: int(required_calls.get(stage, 0))
+        for stage in _FULL_CLOSURE_CALLS
+    }
+    # Independent certification uses the frozen candidate after search has
+    # reached DONE.  It is not charged here, but it must remain possible.
+    for stage, count in _final_required_calls(runtime).items():
+        planned[stage] += int(count)
+    stage_windows = {
+        stage: _runtime_stage_reserve_seconds(runtime, stage)
+        for stage in _FULL_CLOSURE_CALLS
+    }
+    required_seconds = sum(
+        planned[stage] * stage_windows[stage] for stage in _FULL_CLOSURE_CALLS
+    )
+    available_seconds = max(
+        0.0,
+        runtime.runtime_deadline.remaining_runtime_seconds()
+        - runtime.runtime_deadline.cleanup_reserve_seconds,
+    )
+    return {
+        "planned_calls_including_independent_certification": planned,
+        "stage_reserve_seconds": stage_windows,
+        "required_seconds": required_seconds,
+        "available_seconds": available_seconds,
+        "allowed": available_seconds >= required_seconds,
+    }
+
+
 def _budget_affordability(
     runtime: _Runtime,
     *,
@@ -2618,6 +2695,13 @@ def _budget_affordability(
                 )
                 if reason not in blockers:
                     blockers.append(reason)
+        runtime_projection = _runtime_closeout_projection(
+            runtime, required_calls, policy
+        )
+        if runtime_projection is not None and not runtime_projection["allowed"]:
+            blockers.append("RUNTIME_CLOSEOUT_RESERVE_INSUFFICIENT")
+    else:
+        runtime_projection = None
     if (
         isinstance(required_tokens, bool)
         or not isinstance(required_tokens, int)
@@ -2637,6 +2721,7 @@ def _budget_affordability(
         "required_tokens": required_tokens,
         "tokens_remaining": snapshot["tokens_remaining"],
         "blockers": blockers,
+        "runtime_closeout_projection": runtime_projection,
     }
 
 
@@ -3044,6 +3129,7 @@ def _run_tool(
     stage: str,
     validation_scope: str,
     round_index: int | None = None,
+    timeout_seconds: float | None = None,
 ) -> tuple[ToolResult | None, dict[str, object], dict[str, object]]:
     _budget, server = _server(runtime)
     result, error, reason = _invoke_stage(
@@ -3052,6 +3138,7 @@ def _run_tool(
         _candidate_source(runtime, candidate_id),
         candidate_id=candidate_id,
         validation_scope=validation_scope,
+        timeout_seconds=timeout_seconds,
     )
     if result is None:
         record = dict(error or {
@@ -3555,6 +3642,28 @@ def _baseline_synth(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeSt
 
 def _baseline_cosim(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeState:
     candidate_id = state["baseline_candidate_id"]
+    candidate_and_search_closeout = {"csim": 2, "synth": 2, "cosim": 2}
+    projection = _runtime_closeout_projection(
+        runtime,
+        candidate_and_search_closeout,
+        "structural_fix_candidate_plus_final_closure",
+    )
+    available_probe_seconds = runtime.baseline_cosim_probe_timeout_seconds
+    if projection is not None and runtime.runtime_deadline is not None:
+        available_probe_seconds = max(
+            0.0,
+            runtime.runtime_deadline.remaining_runtime_seconds()
+            - runtime.runtime_deadline.cleanup_reserve_seconds
+            - float(projection["required_seconds"]),
+        )
+    probe_timeout = min(
+        runtime.baseline_cosim_probe_timeout_seconds,
+        available_probe_seconds,
+    )
+    # Never silently fall back to the ordinary (potentially 1800s) CoSim
+    # timeout.  A tiny bounded probe will either emit evidence or be refused by
+    # the absolute runtime gate; both outcomes remain fail-closed.
+    probe_timeout = max(1.0, probe_timeout)
     result, record, event = _run_tool(
         runtime,
         node="baseline_cosim",
@@ -3562,7 +3671,15 @@ def _baseline_cosim(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeSt
         candidate_id=candidate_id,
         stage="cosim",
         validation_scope="exploration",
+        timeout_seconds=probe_timeout,
     )
+    event["details"] = {
+        "baseline_cosim_probe_timeout_seconds": (
+            runtime.baseline_cosim_probe_timeout_seconds
+        ),
+        "effective_baseline_cosim_timeout_seconds": probe_timeout,
+        "post_probe_closeout_projection": projection,
+    }
     _save_validation(runtime, candidate_id, "cosim", record)
     ok = bool(result is not None and result.ok)
     if ok:
@@ -4209,7 +4326,7 @@ def _evaluate_task_round_budget(
             PhaseMode.SYNTH_FIX.value: {"csim": 1, "synth": 1, "cosim": 0},
             PhaseMode.STRUCTURAL_FIX.value: {
                 "csim": 1,
-                "synth": 0,
+                "synth": 1,
                 "cosim": 1,
             },
         }[mode]
@@ -6076,7 +6193,7 @@ def _promote_correctness_candidate(
             else ("csim", "synth")
         ),
         PhaseMode.SYNTH_FIX.value: ("csim", "synth"),
-        PhaseMode.STRUCTURAL_FIX.value: ("csim", "cosim"),
+        PhaseMode.STRUCTURAL_FIX.value: ("csim", "synth", "cosim"),
     }.get(mode)
     if required_stages is None:
         raise RuntimeError(f"correctness promotion received invalid mode: {mode}")
@@ -7878,8 +7995,6 @@ def _phase_mode_route(state: V3PrototypeState) -> str:
 def _candidate_csim_route(state: V3PrototypeState) -> str:
     if state.get("last_tool_ok") is not True:
         return "reject"
-    if state.get("mode") == PhaseMode.STRUCTURAL_FIX.value:
-        return "cosim"
     return "synth"
 
 
@@ -7889,7 +8004,10 @@ def _candidate_synth_route(runtime: _Runtime, state: V3PrototypeState) -> str:
     mode = str(state.get("mode", PhaseMode.OPTIMIZE.value))
     if mode == PhaseMode.OPTIMIZE.value:
         return "score"
-    if mode == PhaseMode.REPAIR.value and runtime.task.requires_cosim:
+    if mode in {
+        PhaseMode.REPAIR.value,
+        PhaseMode.STRUCTURAL_FIX.value,
+    } and runtime.task.requires_cosim:
         return "cosim"
     return "accept"
 
@@ -8150,6 +8268,7 @@ def run_v3_prototype(
     cosim_minimum_runtime_seconds: float = (
         DEFAULT_COSIM_MINIMUM_RUNTIME_SECONDS
     ),
+    baseline_cosim_probe_timeout_seconds: float = 300.0,
     monotonic: Callable[[], float] = time.monotonic,
 ) -> dict[str, object]:
     """Run the checkpointed V3-A1 graph and return its durable result.
@@ -8168,6 +8287,13 @@ def run_v3_prototype(
         raise ValueError("max_final_attempts must be positive")
     if max_planner_rounds <= 0:
         raise ValueError("max_planner_rounds must be positive")
+    if (
+        not math.isfinite(baseline_cosim_probe_timeout_seconds)
+        or baseline_cosim_probe_timeout_seconds <= 0
+    ):
+        raise ValueError(
+            "baseline_cosim_probe_timeout_seconds must be finite and positive"
+        )
     if validation_profile not in VALIDATION_PROFILES:
         raise ValueError("unsupported validation profile")
     if final_validation_policy not in FINAL_VALIDATION_POLICIES:
@@ -8257,6 +8383,9 @@ def run_v3_prototype(
         continuation_policy_version=continuation_policy_version,
         continuation_admission=continuation_admission,
         runtime_deadline=runtime_deadline,
+        baseline_cosim_probe_timeout_seconds=(
+            baseline_cosim_probe_timeout_seconds
+        ),
     )
     checkpoint_path = root / "graph_checkpoints.sqlite"
     graph_schema_path = root / "v3_graph_schema.json"

@@ -33,6 +33,7 @@ from llm4hls_agent.v3_openai_planner import (
     _task_aware_recent_failures,
 )
 from llm4hls_agent.v3_planner import build_planner_input
+from llm4hls_agent.v3_planner_action import PreparedPlannerCall
 import llm4hls_agent.v3_openai_planner as openai_planner_module
 from llm4hls_agent.v3_prototype import run_v3_prototype
 
@@ -104,6 +105,77 @@ def _task_aware_response(mode: str) -> str:
 
 
 class V3OpenAIPlannerTests(unittest.TestCase):
+    def test_a3_advisory_persists_only_at_authorized_boundary(self) -> None:
+        """A3 cannot leave a durable record merely because A2 estimates a call."""
+
+        class Provider:
+            def fingerprint(self) -> str:
+                return "fixture-provider"
+
+        class Coordinator:
+            requires_admission_gate = False
+            prompt_injection_authorized = False
+
+            def __init__(self) -> None:
+                self.persisted: list[tuple[int, dict[str, object]]] = []
+
+            def snapshot_metadata(self) -> dict[str, object]:
+                return {"schema_version": "fixture", "record_count": 0}
+
+            def fingerprint(self) -> dict[str, object]:
+                return {"schema_version": "fixture", "digest": "0" * 64}
+
+            def build_guidance(self, **_kwargs: object) -> dict[str, object]:
+                raise AssertionError("not used by this boundary unit test")
+
+            def persist_recommendation(
+                self, round_index: int, guidance: dict[str, object]
+            ) -> None:
+                self.persisted.append((round_index, guidance))
+
+        guidance = {
+            "schema_version": "v3e.experience-guidance.v1",
+            "similar_successes": [],
+            "similar_failures": [],
+            "recommended_strategy_bundles": [],
+            "discouraged_strategy_bundles": [],
+            "confidence": 0.0,
+            "supporting_record_ids": [],
+            "fallback_reason": "NO_MATCH",
+            "notice": "Historical advice remains advisory.",
+        }
+        coordinator = Coordinator()
+        adapter = OpenAICompatibleV3PlannerAdapter(
+            "/tmp/a2-a3-boundary",
+            Provider(),
+            max_output_tokens=10,
+            experience_mode="shadow",
+            experience_coordinator=coordinator,
+        )
+        prepared = PreparedPlannerCall(
+            request={"schema_version": "fixture", "messages": []},
+            estimated_input_tokens=1,
+            max_output_tokens=1,
+            experience_guidance=guidance,
+            experience_round_index=2,
+        )
+
+        # Preparation itself is pure.  The explicit authorized boundary is
+        # the sole point that writes the A3 record.
+        self.assertEqual(coordinator.persisted, [])
+        adapter.record_authorized_advisory(prepared)
+        self.assertEqual(len(coordinator.persisted), 1)
+        self.assertEqual(coordinator.persisted[0][0], 2)
+
+        off_adapter = OpenAICompatibleV3PlannerAdapter(
+            "/tmp/a2-a3-off-boundary",
+            Provider(),
+            max_output_tokens=10,
+            experience_mode="off",
+        )
+        off_adapter.record_authorized_advisory(prepared)
+        self.assertEqual(len(coordinator.persisted), 1)
+
     def test_a1_off_synth_projection_drops_refined_bottleneck_details(self) -> None:
         report = {
             "latency": {"best": 10, "average": 11, "worst": 12},

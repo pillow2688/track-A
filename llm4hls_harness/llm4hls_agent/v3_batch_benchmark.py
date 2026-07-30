@@ -1829,6 +1829,9 @@ class V3PrototypeCLIExecutor:
             "cost_csim": os.environ.get("LLM4HLS_COST_CSIM", ""),
             "cost_synth": os.environ.get("LLM4HLS_COST_SYNTH", ""),
             "cost_cosim": os.environ.get("LLM4HLS_COST_COSIM", ""),
+            "cosim_no_progress_timeout_s": os.environ.get(
+                "LLM4HLS_COSIM_NO_PROGRESS_TIMEOUT_S", "0"
+            ),
         }
         return _sha256_json(
             {

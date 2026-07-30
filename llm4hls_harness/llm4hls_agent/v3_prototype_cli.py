@@ -128,6 +128,28 @@ def _parser(
     parser.add_argument("--csim-timeout", type=float, default=300.0)
     parser.add_argument("--synth-timeout", type=float, default=1800.0)
     parser.add_argument("--cosim-timeout", type=float, default=1800.0)
+    parser.add_argument(
+        "--baseline-cosim-probe-timeout",
+        type=float,
+        default=float(
+            os.environ.get("LLM4HLS_BASELINE_COSIM_PROBE_TIMEOUT_S", "300")
+        ),
+        help=(
+            "Maximum seconds for baseline CoSim probing; the Agent retains "
+            "time for Candidate validation and independent certification."
+        ),
+    )
+    parser.add_argument(
+        "--cosim-no-progress-timeout",
+        type=float,
+        default=float(
+            os.environ.get("LLM4HLS_COSIM_NO_PROGRESS_TIMEOUT_S", "0")
+        ),
+        help=(
+            "Optional RTL testcase no-progress timeout for CoSim; 0 disables "
+            "the early timeout and preserves the configured CoSim maximum."
+        ),
+    )
     parser.add_argument("--minimum-frequency-mhz", type=float, default=100.0)
     parser.add_argument(
         "--model",
@@ -715,6 +737,9 @@ def main(
                     "cosim": args.cosim_timeout,
                 },
                 toolchain_id=str(args.toolchain_id),
+                cosim_no_progress_timeout_seconds=(
+                    args.cosim_no_progress_timeout
+                ),
             ),
             budget=BudgetConfig(
                 credit_limit=credit_limit.value,
@@ -768,6 +793,9 @@ def main(
                 cosim_minimum_runtime_seconds=(
                     args.cosim_minimum_runtime_seconds
                 ),
+                baseline_cosim_probe_timeout_seconds=(
+                    args.baseline_cosim_probe_timeout
+                ),
             )
         else:
             result = run_v3_prototype(
@@ -792,6 +820,9 @@ def main(
                 cleanup_reserve_seconds=args.cleanup_reserve_seconds,
                 cosim_minimum_runtime_seconds=(
                     args.cosim_minimum_runtime_seconds
+                ),
+                baseline_cosim_probe_timeout_seconds=(
+                    args.baseline_cosim_probe_timeout
                 ),
             )
         if result.get("status") == "DONE":

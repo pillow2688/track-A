@@ -9,7 +9,12 @@ from typing import Callable
 
 
 DEFAULT_CLEANUP_RESERVE_SECONDS = 30.0
-DEFAULT_COSIM_MINIMUM_RUNTIME_SECONDS = 60.0
+# A new CoSim should have a meaningful execution window after the run's
+# cleanup reserve.  A shorter window produces an auditable NOT_STARTED result
+# rather than launching a CoSim that the shared deadline will necessarily
+# interrupt.  This is a start gate only: it never changes an already-started
+# CoSim timeout or turns an unrun CoSim into a pass.
+DEFAULT_COSIM_MINIMUM_RUNTIME_SECONDS = 600.0
 
 TOOL_NOT_STARTED_INSUFFICIENT_RUNTIME = (
     "TOOL_NOT_STARTED_INSUFFICIENT_RUNTIME"
