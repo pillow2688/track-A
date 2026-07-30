@@ -112,6 +112,10 @@ def proposal_payload(proposal: PatchProposal) -> dict[str, object]:
     value = proposal.to_dict()
     value["required_validation"] = list(proposal.required_validation)
     value["validation_plan"] = list(proposal.validation_plan)
+    value["hypotheses_considered"] = list(proposal.hypotheses_considered)
+    value["complete_obligation_requirements"] = list(
+        proposal.complete_obligation_requirements
+    )
     return value
 
 

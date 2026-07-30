@@ -206,6 +206,11 @@ class PatchProposal:
     action_family: str | None = None
     action_parameters: Mapping[str, object] = field(default_factory=dict)
     validation_plan: tuple[str, ...] = ()
+    hypotheses_considered: tuple[str, ...] = ()
+    selected_hypothesis: str | None = None
+    selected_action_family: str | None = None
+    complete_obligation_requirements: tuple[str, ...] = ()
+    expected_topology_delta: str | None = None
     change_class: str | None = None
     expected_effect: str | None = None
     failure_criteria: str | None = None
@@ -234,6 +239,18 @@ class PatchProposal:
             raise ValueError("validation_plan contains an unsupported stage")
         if len(self.validation_plan) != len(set(self.validation_plan)):
             raise ValueError("validation_plan contains duplicate stages")
+        for name in ("hypotheses_considered", "complete_obligation_requirements"):
+            values = getattr(self, name)
+            if (
+                not isinstance(values, tuple)
+                or len(values) > (6 if name == "hypotheses_considered" else 8)
+                or any(not isinstance(item, str) or not item.strip() or len(item) > 320 for item in values)
+            ):
+                raise ValueError(f"{name} must be a bounded tuple of strings")
+        for name in ("selected_hypothesis", "selected_action_family", "expected_topology_delta"):
+            value = getattr(self, name)
+            if value is not None and (not isinstance(value, str) or not value.strip() or len(value) > 400):
+                raise ValueError(f"{name} must be a bounded string or null")
         if not isinstance(self.action_parameters, Mapping):
             raise ValueError("action_parameters must be an object")
         if len(self.action_parameters) > 12:
@@ -282,6 +299,11 @@ class PatchProposal:
             "action_family",
             "action_parameters",
             "validation_plan",
+            "hypotheses_considered",
+            "selected_hypothesis",
+            "selected_action_family",
+            "complete_obligation_requirements",
+            "expected_topology_delta",
             "change_class",
             "expected_effect",
             "failure_criteria",
@@ -325,12 +347,23 @@ class PatchProposal:
             }
         )
         partial_control_without_plan = expected.difference({"validation_plan"})
-        if frozenset(value) not in {
+        accepted_field_sets = {
             frozenset(expected),
             frozenset(partial_control_without_plan),
             frozenset(legacy),
             frozenset(legacy_without_execution),
-        }:
+        }
+        extensions = {
+            "hypotheses_considered",
+            "selected_hypothesis",
+            "selected_action_family",
+            "complete_obligation_requirements",
+            "expected_topology_delta",
+        }
+        # Old persisted Planner outputs remain readable, while a newly
+        # serialized proposal must carry all five extended planning fields.
+        accepted_field_sets |= {fields.difference(extensions) for fields in accepted_field_sets}
+        if frozenset(value) not in accepted_field_sets:
             missing = sorted(expected.difference(value))
             extra = sorted(set(value).difference(expected))
             raise ValueError(
@@ -382,6 +415,15 @@ class PatchProposal:
             not isinstance(item, str) for item in validation_plan
         ):
             raise ValueError("proposal validation_plan must be a string list")
+        hypotheses_considered = value.get("hypotheses_considered", ())
+        complete_requirements = value.get("complete_obligation_requirements", ())
+        if (
+            not isinstance(hypotheses_considered, (list, tuple))
+            or any(not isinstance(item, str) for item in hypotheses_considered)
+            or not isinstance(complete_requirements, (list, tuple))
+            or any(not isinstance(item, str) for item in complete_requirements)
+        ):
+            raise ValueError("proposal extended planning fields must be string lists")
         return cls(
             patch=required_text("patch"),
             provider=required_text("provider"),
@@ -405,6 +447,20 @@ class PatchProposal:
             ),
             action_parameters=dict(action_parameters),
             validation_plan=tuple(validation_plan),
+            hypotheses_considered=tuple(hypotheses_considered),
+            selected_hypothesis=(
+                optional_text("selected_hypothesis")
+                if "selected_hypothesis" in value else None
+            ),
+            selected_action_family=(
+                optional_text("selected_action_family")
+                if "selected_action_family" in value else None
+            ),
+            complete_obligation_requirements=tuple(complete_requirements),
+            expected_topology_delta=(
+                optional_text("expected_topology_delta")
+                if "expected_topology_delta" in value else None
+            ),
             change_class=optional_text("change_class"),
             expected_effect=optional_text("expected_effect"),
             failure_criteria=(

@@ -187,8 +187,13 @@ class OpenAICompatibleProviderTests(unittest.TestCase):
             {
                 "target_obligation": target_obligation,
                 "hypothesis": "the reported failure is caused by one local defect",
+                "hypotheses_considered": ["the reported failure is caused by one local defect"],
+                "selected_hypothesis": "the reported failure is caused by one local defect",
                 "action_family": "LOCAL_FUNCTIONAL_REPAIR",
+                "selected_action_family": "LOCAL_FUNCTIONAL_REPAIR",
                 "action_parameters": {"operator": "increment"},
+                "complete_obligation_requirements": ["resolve the routed public failure"],
+                "expected_topology_delta": "NOT_APPLICABLE",
                 "validation_plan": (
                     ["csim", "synth", "cosim"]
                     if mode == "STRUCTURAL_FIX"

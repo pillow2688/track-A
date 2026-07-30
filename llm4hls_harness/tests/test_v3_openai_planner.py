@@ -94,8 +94,13 @@ def _task_aware_response(mode: str) -> str:
         {
             "target_obligation": target_obligation,
             "hypothesis": "apply the smallest repair supported by the evidence",
+            "hypotheses_considered": ["apply the smallest repair supported by the evidence"],
+            "selected_hypothesis": "apply the smallest repair supported by the evidence",
             "action_family": "LOCAL_FUNCTIONAL_REPAIR",
+            "selected_action_family": "LOCAL_FUNCTIONAL_REPAIR",
             "action_parameters": {"operator": "assignment"},
+            "complete_obligation_requirements": ["resolve the routed public failure"],
+            "expected_topology_delta": "NOT_APPLICABLE",
             "validation_plan": (
                 ["csim", "synth", "cosim"]
                 if mode == "STRUCTURAL_FIX"

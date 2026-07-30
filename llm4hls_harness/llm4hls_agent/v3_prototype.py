@@ -65,7 +65,10 @@ from .v3_search_control import (
     failure_facts,
     is_repeated_terminal_experiment,
     proposal_experiment,
+    rtl_liveness_obligation,
+    semantic_progress_assessment,
     search_control_state,
+    structural_liveness_guard,
 )
 from .v3_continuation import (
     POLICY_MODES as CONTINUATION_POLICY_MODES,
@@ -316,6 +319,9 @@ class V3PrototypeState(TypedDict, total=False):
     continuation_decision_hash: str
     continuation_action: str
     performance_area_ref: str
+    structural_guard: dict[str, object]
+    semantic_progress: dict[str, object]
+    action_family_frontier: dict[str, object]
 
 
 @dataclass(frozen=True)
@@ -666,7 +672,22 @@ def _validate_planner_binding(
         parent_candidate_id=parent_candidate_id,
         round_index=round_index,
     )
-    if legacy_projection != expected_projection:
+    legacy_extension_fields = {
+        "hypotheses_considered",
+        "selected_hypothesis",
+        "selected_action_family",
+        "complete_obligation_requirements",
+        "expected_topology_delta",
+    }
+    expected_legacy_projection = {
+        key: value
+        for key, value in expected_projection.items()
+        if key not in legacy_extension_fields
+    }
+    if (
+        legacy_projection != expected_projection
+        and legacy_projection != expected_legacy_projection
+    ):
         raise RuntimeError("legacy Planner projection diverges from versioned output")
     completed = _read_json_object(_safe_run_ref(runtime, completed_ref))
     expected_completed = request | {
@@ -799,6 +820,10 @@ def _proposal_snapshot(
     value = selected.to_dict()
     value["required_validation"] = list(selected.required_validation)
     value["validation_plan"] = list(selected.validation_plan)
+    value["hypotheses_considered"] = list(selected.hypotheses_considered)
+    value["complete_obligation_requirements"] = list(
+        selected.complete_obligation_requirements
+    )
     return value | {
         "parent_candidate_id": parent_candidate_id,
         "planner_mode": (
@@ -955,6 +980,11 @@ def _build_round_planner_input(
                 raise RuntimeError(
                     "Candidate failure evidence binding mismatch"
                 )
+            failure_evidence_detail = (
+                _read_json_object(_safe_run_ref(runtime, candidate.get("failure_evidence_ref")))
+                if failure_evidence.get("ref") is not None
+                else {}
+            )
             history.append(
                 {
                     "kind": "candidate",
@@ -981,6 +1011,7 @@ def _build_round_planner_input(
                     ),
                     "rejection_reason": candidate.get("rejection_reason"),
                     "failure_evidence": failure_evidence,
+                    "failure_evidence_detail": failure_evidence_detail,
                 }
             )
     for rejection_path in sorted(
@@ -1119,6 +1150,7 @@ def _build_round_planner_input(
             and state.get("active_probe_candidate_id")
             else None
         ),
+        requires_cosim=runtime.task.requires_cosim,
     )
     policy = {
         "minimum_frequency_mhz": runtime.config.minimum_frequency_mhz,
@@ -4364,6 +4396,42 @@ def _evaluate_task_round_budget(
     )
     required_tokens = 0
     next_credits = 0
+    candidate_calls = {
+        PhaseMode.REPAIR.value: {
+            "csim": 1,
+            "synth": 1,
+            "cosim": 1 if runtime.task.requires_cosim else 0,
+        },
+        PhaseMode.SYNTH_FIX.value: {"csim": 1, "synth": 1, "cosim": 0},
+        PhaseMode.STRUCTURAL_FIX.value: {"csim": 1, "synth": 1, "cosim": 1},
+    }[mode]
+    structural_frontier: Mapping[str, object] | None = None
+    structural_frontier_allows_continue = False
+    if (
+        mode == PhaseMode.STRUCTURAL_FIX.value
+        and no_improvement >= runtime.max_no_improvement_rounds
+    ):
+        # This is a read-only reconstruction from durable artifacts.  It does
+        # not ask the Planner or start a metered action.  Its sole purpose is
+        # to prevent an old candidate-count threshold from hiding an
+        # applicable, evidence-bound alternative family.
+        current_input = _build_round_planner_input(runtime, state)
+        round_state = current_input.get("round_state")
+        control = (
+            round_state.get("search_control")
+            if isinstance(round_state, Mapping)
+            else None
+        )
+        candidate_frontier = (
+            control.get("action_family_frontier")
+            if isinstance(control, Mapping)
+            else None
+        )
+        if isinstance(candidate_frontier, Mapping):
+            structural_frontier = candidate_frontier
+            structural_frontier_allows_continue = (
+                candidate_frontier.get("has_high_value_untried_family") is True
+            )
     if round_index > planner_round_limit:
         gate: dict[str, object] = {
             "policy": "task_repair_round_limit",
@@ -4373,7 +4441,10 @@ def _evaluate_task_round_budget(
             "blockers": ["no_more_distinct_repair_proposals"],
         }
         reason = "MAX_TASK_REPAIR_ROUNDS"
-    elif no_improvement >= runtime.max_no_improvement_rounds:
+    elif (
+        no_improvement >= runtime.max_no_improvement_rounds
+        and not structural_frontier_allows_continue
+    ):
         gate = {
             "policy": "task_repair_no_improvement_limit",
             "allowed": False,
@@ -4386,19 +4457,6 @@ def _evaluate_task_round_budget(
         }
         reason = "TASK_REPAIR_NO_IMPROVEMENT_LIMIT"
     else:
-        candidate_calls = {
-            PhaseMode.REPAIR.value: {
-                "csim": 1,
-                "synth": 1,
-                "cosim": 1 if runtime.task.requires_cosim else 0,
-            },
-            PhaseMode.SYNTH_FIX.value: {"csim": 1, "synth": 1, "cosim": 0},
-            PhaseMode.STRUCTURAL_FIX.value: {
-                "csim": 1,
-                "synth": 1,
-                "cosim": 1,
-            },
-        }[mode]
         next_credits = sum(
             int(candidate_calls[stage]) * int(runtime.config.budget.costs[stage])
             for stage in candidate_calls
@@ -4441,7 +4499,9 @@ def _evaluate_task_round_budget(
                 required_tokens=required_tokens,
             )
             reason = (
-                "TASK_REPAIR_BUDGET_AVAILABLE"
+                "TASK_REPAIR_CONTINUE_UNTRIED_ACTION_FAMILY"
+                if gate["allowed"] is True and structural_frontier_allows_continue
+                else "TASK_REPAIR_BUDGET_AVAILABLE"
                 if gate["allowed"] is True
                 else "TASK_REPAIR_SKIPPED_SEARCH_CLOSEOUT_RESERVE"
             )
@@ -4466,6 +4526,10 @@ def _evaluate_task_round_budget(
         why="A repair attempt may start only when its mode-specific checks and fresh final closure remain affordable.",
         outcome=reason,
         round_index=round_index,
+        details={
+            "action_family_frontier": structural_frontier,
+            "semantic_no_improvement_rounds": no_improvement,
+        },
     )
     return {
         "budget_gate": gate,
@@ -5205,6 +5269,11 @@ def _plan_candidate(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeSt
                 else None
             )
         ),
+        action_family_frontier=(
+            control.get("action_family_frontier")
+            if isinstance(control.get("action_family_frontier"), Mapping)
+            else None
+        ),
     )
     terminal_failure = (
         isinstance(failure, Mapping) and failure.get("terminal_failure") is True
@@ -5331,6 +5400,11 @@ def _plan_candidate(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeSt
         "search_control_ref": search_control_ref,
         "planner_selection_metrics_digest": selection_metrics_digest or "",
         "proposal_experiment": experiment,
+        "action_family_frontier": (
+            dict(control["action_family_frontier"])
+            if isinstance(control.get("action_family_frontier"), Mapping)
+            else {}
+        ),
         "continuation_action": continuation_action,
         "parent_selection_reason": (
             "SWITCH_PARENT_TO_VERIFIED_INCUMBENT"
@@ -5451,6 +5525,16 @@ def _materialize_candidate(
             "node_events": [event],
         }
     patch_sha256 = hashlib.sha256(applied_patch.encode("utf-8")).hexdigest()
+    liveness_obligation = rtl_liveness_obligation(
+        requires_cosim=runtime.task.requires_cosim,
+        evidence=state.get("failure_evidence"),
+        source=source.decode("utf-8", errors="replace"),
+    )
+    structural_guard = structural_liveness_guard(
+        parent_source=source.decode("utf-8", errors="replace"),
+        candidate_source=application.patched_bytes.decode("utf-8", errors="replace"),
+        obligation=liveness_obligation,
+    )
     candidates = registry.get("candidates")
     duplicate_id = None
     duplicate_record: Mapping[str, object] | None = None
@@ -5547,6 +5631,8 @@ def _materialize_candidate(
             "required_validation": list(proposal.required_validation),
             "validation_plan": list(proposal.validation_plan),
             "proposal_experiment": state.get("proposal_experiment", {}),
+            "structural_liveness_obligation": liveness_obligation,
+            "structural_guard": structural_guard,
             "parent_selection_reason": state.get(
                 "parent_selection_reason", "VERIFIED_INCUMBENT"
             ),
@@ -5584,6 +5670,61 @@ def _materialize_candidate(
             ),
         },
     )
+    if structural_guard["eligible"] is not True:
+        evidence = {
+            "schema_version": "v3.structural-obligation-failure-evidence.v1",
+            "error_type": "STRUCTURAL_OBLIGATION_UNSATISFIED",
+            "failure_kind": "DEADLOCK",
+            "phase": "cosim_fail",
+            "candidate_id": materialized.candidate_id,
+            "round_index": round_index,
+            "parent_candidate_id": parent_id,
+            "planner_action_id": state.get("planner_action_id"),
+            "planner_output_ref": state.get("planner_output_ref"),
+            "planner_output_sha256": state.get("planner_output_sha256"),
+            "error_summary": (
+                "Candidate leaves an evidence-bound stream liveness obligation "
+                "unresolved before expensive validation."
+            ),
+            "structural_liveness_obligation": liveness_obligation,
+            "structural_guard": structural_guard,
+        }
+        evidence_ref = (
+            f"evidence/failures/{materialized.candidate_id}_structural_obligation.json"
+        )
+        evidence_path = runtime.run_root / evidence_ref
+        _write_once_or_verify(evidence_path, evidence)
+        evidence_sha256 = _sha256_file(evidence_path)
+        event = _event(
+            runtime,
+            node="materialize_candidate",
+            phase=mode,
+            candidate_id=materialized.candidate_id,
+            action="reject_unresolved_rtl_liveness_obligation_before_tools",
+            why="; ".join(str(item) for item in structural_guard["violations"]),
+            outcome="STRUCTURAL_OBLIGATION_UNSATISFIED",
+            result_ref=evidence_ref,
+            round_index=round_index,
+            details={
+                "structural_guard": structural_guard,
+                "patch_sha256": patch_sha256,
+            },
+        )
+        return {
+            "active_candidate_id": materialized.candidate_id,
+            "active_probe_candidate_id": materialized.candidate_id,
+            "last_tool_ok": False,
+            "last_tool_reason": "STRUCTURAL_OBLIGATION_UNSATISFIED",
+            "failure_evidence": evidence,
+            "failure_evidence_ref": evidence_ref,
+            "failure_evidence_sha256": evidence_sha256,
+            "structural_guard": structural_guard,
+            "cosim_gate": {
+                "eligible": False,
+                "reason": "STRUCTURAL_OBLIGATION_UNSATISFIED",
+            },
+            "node_events": [event],
+        }
     event = _event(
         runtime,
         node="materialize_candidate",
@@ -5620,6 +5761,7 @@ def _materialize_candidate(
         "candidate_clock": {},
         "candidate_resource": {},
         "cosim_gate": {"eligible": False, "reason": "NOT_EVALUATED"},
+        "structural_guard": structural_guard,
         "node_events": [event],
     }
 
@@ -6572,6 +6714,7 @@ def _reject_candidate(runtime: _Runtime, state: V3PrototypeState) -> V3Prototype
 def _advance_round(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeState:
     improved = state.get("last_round_improved") is True
     round_index = int(state.get("round_index", 1))
+    mode = str(state.get("mode", PhaseMode.OPTIMIZE.value))
     last_reason = str(state.get("last_tool_reason", "")).upper()
     mechanical = any(
         token in last_reason
@@ -6584,9 +6727,25 @@ def _advance_round(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeSta
         )
     )
     no_improvement = 0 if improved else int(state.get("no_improvement_rounds", 0)) + 1
+    progress = semantic_progress_assessment(
+        mode=mode,
+        facts=failure_facts(
+            state.get("failure_evidence"),
+            patch_failure=state.get("patch_failure_evidence"),
+        ),
+        experiment=state.get("proposal_experiment"),
+        structural_guard=state.get("structural_guard"),
+        frontier=state.get("action_family_frontier"),
+    )
+    # The new definition is deliberately scoped to STRUCTURAL_FIX.  Existing
+    # REPAIR, SYNTH_FIX and OPTIMIZE thresholds retain their exact behavior.
+    semantic_progress = (
+        mode == PhaseMode.STRUCTURAL_FIX.value
+        and progress.get("is_semantic_progress") is True
+    )
     semantic_no_improvement = (
         0
-        if improved
+        if improved or semantic_progress
         else int(state.get("semantic_no_improvement_rounds", state.get("no_improvement_rounds", 0)))
         + (0 if mechanical else 1)
     )
@@ -6598,7 +6757,7 @@ def _advance_round(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeSta
     event = _event(
         runtime,
         node="advance_round",
-        phase=str(state.get("mode", PhaseMode.OPTIMIZE.value)),
+        phase=mode,
         candidate_id=state["best_candidate_id"],
         action="advance_optimization_round",
         why=(
@@ -6611,12 +6770,15 @@ def _advance_round(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeSta
             if improved
             else "MECHANICAL_RECOVERY_REQUIRED"
             if mechanical
+            else "SEMANTIC_PROGRESS"
+            if semantic_progress
             else "SEMANTIC_NO_IMPROVEMENT"
         ),
         round_index=round_index,
         details={
             "semantic_no_improvement_rounds": semantic_no_improvement,
             "mechanical_recovery_rounds": mechanical_recovery,
+            "semantic_progress": progress,
         },
     )
     return {
@@ -6626,6 +6788,7 @@ def _advance_round(runtime: _Runtime, state: V3PrototypeState) -> V3PrototypeSta
         "no_improvement_rounds": no_improvement,
         "semantic_no_improvement_rounds": semantic_no_improvement,
         "mechanical_recovery_rounds": mechanical_recovery,
+        "semantic_progress": progress,
         "node_events": [event],
     }
 
@@ -8269,6 +8432,11 @@ def _pass_or_report(state: V3PrototypeState) -> str:
 
 
 def _pass_or_select(state: V3PrototypeState) -> str:
+    if (
+        state.get("last_tool_reason") == "STRUCTURAL_OBLIGATION_UNSATISFIED"
+        and state.get("active_candidate_id")
+    ):
+        return "reject"
     return "pass" if state.get("last_tool_ok") is True else "select"
 
 
@@ -8470,7 +8638,11 @@ def build_v3_prototype_graph(runtime: _Runtime, checkpointer: SqliteSaver):
     graph.add_conditional_edges(
         "materialize_candidate",
         _pass_or_select,
-        {"pass": "candidate_csim", "select": "record_rejected_proposal"},
+        {
+            "pass": "candidate_csim",
+            "reject": "reject_candidate",
+            "select": "record_rejected_proposal",
+        },
     )
     graph.add_edge("record_rejected_proposal", "advance_round")
     graph.add_conditional_edges(

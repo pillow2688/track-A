@@ -693,8 +693,13 @@ def build_task_aware_prompt(context: Mapping[str, object]) -> str:
     response_contract = {
         "target_obligation": "must equal SEARCH CONTROL primary_obligation",
         "hypothesis": "non-empty string",
+        "hypotheses_considered": ["one or more concise candidate hypotheses"],
+        "selected_hypothesis": "must equal hypothesis",
         "action_family": "non-empty concise transformation family",
+        "selected_action_family": "must equal action_family",
         "action_parameters": {"zero or more compact scalar parameters": "value"},
+        "complete_obligation_requirements": ["every remaining evidence-backed condition this patch resolves"],
+        "expected_topology_delta": "concise description; use NOT_APPLICABLE only when topology is not implicated",
         "validation_plan": list(required_validation),
         "primary_failure": "non-empty string",
         "evidence_used": ["one or more concise supplied evidence facts"],
@@ -708,6 +713,11 @@ def build_task_aware_prompt(context: Mapping[str, object]) -> str:
         },
         "patch": "one directly applicable unified diff",
     }
+    liveness_obligation = (
+        search_control.get("rtl_liveness_obligation")
+        if isinstance(search_control, Mapping)
+        else None
+    )
     return "\n".join(
         [
             "ROLE\nYou are the repair-capable mode of one task-aware AMD Vitis HLS Planner.",
@@ -757,6 +767,22 @@ def build_task_aware_prompt(context: Mapping[str, object]) -> str:
                     "contract requires it."
                 ]
                 if search_control
+                else []
+            ),
+            *(
+                [
+                    "RTL LIVENESS OBLIGATION (MANDATORY)\n"
+                    + json.dumps(
+                        liveness_obligation,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    )
+                    + "\nDo not submit a FIFO-depth-only patch. Do not merely remove "
+                    "one writer if a mutually waiting feedback cycle remains. The next "
+                    "candidate must remove the implicated multi-producer and uninitialized "
+                    "dependency cycle while preserving the public interface and functional semantics."
+                ]
+                if isinstance(liveness_obligation, Mapping)
                 else []
             ),
             "BUDGET SUMMARY\n"
@@ -819,8 +845,13 @@ def _strict_task_aware_response(
     required = {
         "target_obligation",
         "hypothesis",
+        "hypotheses_considered",
+        "selected_hypothesis",
         "action_family",
+        "selected_action_family",
         "action_parameters",
+        "complete_obligation_requirements",
+        "expected_topology_delta",
         "validation_plan",
         "primary_failure",
         "evidence_used",
@@ -837,8 +868,11 @@ def _strict_task_aware_response(
         )
     for name in (
         "hypothesis",
+        "selected_hypothesis",
         "target_obligation",
         "action_family",
+        "selected_action_family",
+        "expected_topology_delta",
         "primary_failure",
         "expected_effect",
         "failure_criteria",
@@ -847,6 +881,19 @@ def _strict_task_aware_response(
     ):
         if not isinstance(value[name], str) or not str(value[name]).strip():
             raise RepairProviderError(f"task-aware Planner field {name} is empty")
+    if value["selected_hypothesis"] != value["hypothesis"]:
+        raise RepairProviderError("selected_hypothesis must equal hypothesis")
+    if value["selected_action_family"] != value["action_family"]:
+        raise RepairProviderError("selected_action_family must equal action_family")
+    for name, maximum in (("hypotheses_considered", 6), ("complete_obligation_requirements", 8)):
+        entries = value[name]
+        if (
+            not isinstance(entries, list)
+            or not entries
+            or len(entries) > maximum
+            or any(not isinstance(item, str) or not item.strip() or len(item) > 320 for item in entries)
+        ):
+            raise RepairProviderError(f"task-aware Planner {name} is invalid")
     if value["change_class"] != TASK_AWARE_CHANGE_CLASS[mode]:
         raise RepairProviderError(
             "task-aware Planner change_class does not match mode"
@@ -1538,8 +1585,13 @@ class OpenAICompatibleOptimizationProvider:
             required_fields=(
                 "target_obligation",
                 "hypothesis",
+                "hypotheses_considered",
+                "selected_hypothesis",
                 "action_family",
+                "selected_action_family",
                 "action_parameters",
+                "complete_obligation_requirements",
+                "expected_topology_delta",
                 "validation_plan",
                 "primary_failure",
                 "evidence_used",
@@ -1619,9 +1671,16 @@ class OpenAICompatibleOptimizationProvider:
             request_id=completion.request_id,
             duration_seconds=completion.duration_seconds,
             hypothesis=str(parsed["hypothesis"]),
+            hypotheses_considered=tuple(str(item) for item in parsed["hypotheses_considered"]),
+            selected_hypothesis=str(parsed["selected_hypothesis"]),
             target_obligation=str(parsed["target_obligation"]),
             action_family=str(parsed["action_family"]),
+            selected_action_family=str(parsed["selected_action_family"]),
             action_parameters=dict(parsed["action_parameters"]),
+            complete_obligation_requirements=tuple(
+                str(item) for item in parsed["complete_obligation_requirements"]
+            ),
+            expected_topology_delta=str(parsed["expected_topology_delta"]),
             validation_plan=tuple(str(item) for item in parsed["validation_plan"]),
             change_class=str(parsed["change_class"]),
             expected_effect=str(parsed["expected_effect"]),

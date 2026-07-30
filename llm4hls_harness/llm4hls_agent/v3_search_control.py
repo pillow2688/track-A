@@ -19,6 +19,23 @@ SEARCH_CONTROL_SCHEMA = "v3.search-control.v1"
 PROPOSAL_EXPERIMENT_SCHEMA = "v3.proposal-experiment.v1"
 OBLIGATION_STATE_SCHEMA = "v3.obligation-state.v1"
 CANDIDATE_STATE_SCHEMA = "v3.candidate-state.v1"
+RTL_LIVENESS_OBLIGATION_SCHEMA = "v3.rtl-liveness-obligation.v1"
+STRUCTURAL_GUARD_SCHEMA = "v3.structural-liveness-guard.v1"
+ACTION_FAMILY_FRONTIER_SCHEMA = "v3.structural-action-family-frontier.v1"
+SEMANTIC_PROGRESS_SCHEMA = "v3.semantic-progress.v1"
+
+# These are the causal experiment families used for a liveness obligation.
+# They intentionally describe *how* a candidate changes a topology rather
+# than a task or a particular kernel.  The frontier is a planning aid; it does
+# not require every family to be attempted.
+STRUCTURAL_ACTION_FAMILIES = (
+    "capacity_adjustment",
+    "producer_normalization",
+    "topology_elimination",
+    "sequential_pipeline_fallback",
+    "protocol_initialization",
+    "stream_balance_repair",
+)
 
 _OBLIGATION_KIND = {
     "FUNCTIONAL_CORRECTNESS": "functional_correctness",
@@ -48,6 +65,12 @@ _ACTION_FAMILY_ALIASES = {
     "FIFO_DEPTH_INCREASE": "FIFO_CAPACITY_OR_PROTOCOL",
     "FIFO_DEPTH_CHANGE": "FIFO_CAPACITY_OR_PROTOCOL",
     "FIFO_CAPACITY_CHANGE": "FIFO_CAPACITY_OR_PROTOCOL",
+    "CAPACITY_ADJUSTMENT": "FIFO_CAPACITY_OR_PROTOCOL",
+    "PRODUCER_NORMALIZATION": "PRODUCER_NORMALIZATION",
+    "TOPOLOGY_ELIMINATION": "DATAFLOW_TOPOLOGY_OR_ORDER",
+    "SEQUENTIAL_PIPELINE_FALLBACK": "SEQUENTIAL_PIPELINE_FALLBACK",
+    "PROTOCOL_INITIALIZATION": "PROTOCOL_INITIALIZATION",
+    "STREAM_BALANCE_REPAIR": "STREAM_BALANCE_REPAIR",
 }
 
 
@@ -69,6 +92,32 @@ def canonical_action_family(value: object) -> str:
 
     family = _text(value, limit=120).upper()
     return _ACTION_FAMILY_ALIASES.get(family, family)
+
+
+def structural_action_family(value: object) -> str | None:
+    """Map a public proposal label to one structural frontier family.
+
+    Unknown labels deliberately remain unknown.  This prevents a generic
+    Planner label from borrowing evidence for one of the six audited families.
+    """
+
+    raw = _text(value, limit=120).casefold().replace("-", "_").replace(" ", "_")
+    canonical = canonical_action_family(value)
+    if raw in STRUCTURAL_ACTION_FAMILIES:
+        return raw
+    if canonical == "FIFO_CAPACITY_OR_PROTOCOL":
+        return "capacity_adjustment"
+    if canonical == "DATAFLOW_TOPOLOGY_OR_ORDER":
+        return "topology_elimination"
+    if canonical == "PRODUCER_NORMALIZATION":
+        return "producer_normalization"
+    if canonical == "SEQUENTIAL_PIPELINE_FALLBACK":
+        return "sequential_pipeline_fallback"
+    if canonical == "PROTOCOL_INITIALIZATION":
+        return "protocol_initialization"
+    if canonical == "STREAM_BALANCE_REPAIR":
+        return "stream_balance_repair"
+    return None
 
 
 def _failure_stage(raw: Mapping[str, object], phase: str, patch_error: str) -> str:
@@ -270,11 +319,18 @@ def continuation_action(
     incumbent_id: str,
     active_probe_id: str | None = None,
     final_reserve_only: bool = False,
+    action_family_frontier: Mapping[str, object] | None = None,
+    structural_guard_rejected: bool = False,
 ) -> str:
     """Choose one bounded continuation action from persisted facts only."""
 
     if final_reserve_only:
         return "FINALIZE"
+    if structural_guard_rejected and isinstance(action_family_frontier, Mapping):
+        if action_family_frontier.get("has_high_value_untried_family") is True:
+            return "CONTINUE_WITH_LLM"
+        if facts.get("terminal_failure") is True:
+            return "STOP"
     if facts.get("mechanical_failure") is True:
         # Header count/location normalization is deterministic and already
         # constrained by the complete Unified Diff dry-run contract.  If the
@@ -378,7 +434,78 @@ def structural_facts(source: object) -> dict[str, object]:
                         cycles.append(cycle)
                 elif child not in path and len(path) < 8:
                     stack.append((child, path + [child]))
+    cycle_initialization: list[dict[str, object]] = []
+    for cycle in cycles[:8]:
+        processes = set(cycle[:-1])
+        cycle_streams = [
+            str(item["stream"])
+            for item in facts
+            if isinstance(item, Mapping)
+            and set(item["producer_processes"]).intersection(processes)
+            and set(item["consumer_processes"]).intersection(processes)
+        ]
+        initializers: list[str] = []
+        # The initializer can be a source process outside the feedback SCC
+        # (for example a seed stage).  It is still relevant if it writes into
+        # the SCC without first consuming any SCC stream.
+        for process in sorted(functions):
+            body = functions.get(process, "")
+            # A process that can write into the SCC without first consuming an
+            # SCC stream is a statically visible initial-token source.  This is
+            # deliberately conservative: an unrecognised initialization remains
+            # UNKNOWN and is never used to waive the guard.
+            writes_cycle_stream = any(
+                re.search(rf"\b{re.escape(stream)}\s*\.\s*write\s*\(", body)
+                for stream in cycle_streams
+            )
+            reads_cycle_stream = any(
+                re.search(rf"\b{re.escape(stream)}\s*\.\s*read\s*\(", body)
+                for stream in cycle_streams
+            )
+            explicit_same_stream_initialization = any(
+                (
+                    (first_write := next(
+                        iter(re.finditer(
+                            rf"\b{re.escape(stream)}\s*\.\s*write\s*\(", body
+                        )),
+                        None,
+                    )) is not None
+                    and (first_read := next(
+                        iter(re.finditer(
+                            rf"\b{re.escape(stream)}\s*\.\s*read\s*\(", body
+                        )),
+                        None,
+                    )) is not None
+                    and first_write.start() < first_read.start()
+                )
+                for stream in cycle_streams
+            )
+            if writes_cycle_stream and (
+                not reads_cycle_stream
+                or explicit_same_stream_initialization
+            ):
+                initializers.append(process)
+        cycle_initialization.append(
+            {
+                "process_cycle": cycle,
+                "streams": cycle_streams,
+                "initial_token_processes": initializers,
+                "initialization": "PRESENT" if initializers else "UNKNOWN",
+            }
+        )
     fixed_trip_loops = len(re.findall(r"for\s*\([^;]+;[^;]*(?:<|<=)\s*\d+", text))
+    explicit_stream_initializers: list[dict[str, str]] = []
+    for stream in facts:
+        stream_name = str(stream.get("stream", ""))
+        if not stream_name:
+            continue
+        for process, body in functions.items():
+            writes = list(re.finditer(rf"\b{re.escape(stream_name)}\s*\.\s*write\s*\(", body))
+            reads = list(re.finditer(rf"\b{re.escape(stream_name)}\s*\.\s*read\s*\(", body))
+            if writes and reads and writes[0].start() < reads[0].start():
+                explicit_stream_initializers.append(
+                    {"stream": stream_name, "process": process}
+                )
     return {
         "dataflow_present": bool(re.search(r"#pragma\s+HLS\s+DATAFLOW", text, re.IGNORECASE)),
         "stream_count": len(streams),
@@ -393,9 +520,306 @@ def structural_facts(source: object) -> dict[str, object]:
         "stream_dependency_cycles": cycles[:8],
         "has_stream_dependency_cycle": bool(cycles),
         "fixed_trip_loop_count": fixed_trip_loops,
-        "feedback_initial_token": "UNKNOWN",
+        "feedback_initial_token": (
+            "PRESENT"
+            if (
+                any(item["initialization"] == "PRESENT" for item in cycle_initialization)
+                or explicit_stream_initializers
+            )
+            else "UNKNOWN"
+        ),
+        "cycle_initialization": cycle_initialization,
+        "explicit_stream_initializers": explicit_stream_initializers,
         "candidate_changes_stream_topology": "UNKNOWN",
         "topology_confidence": "SOURCE_PATTERN" if streams else "UNKNOWN",
+    }
+
+
+def _rtl_liveness_evidence(evidence: object) -> bool:
+    """Recognize bounded public evidence that makes a topology defect urgent."""
+
+    raw = evidence if isinstance(evidence, Mapping) else {}
+    facts = failure_facts(raw)
+    corpus = " ".join(
+        str(raw.get(key, ""))
+        for key in ("failure_kind", "phase", "error_summary", "synthesis_error", "cosim_progress")
+    ).casefold()
+    return (
+        facts["last_failure_kind"] in {"DEADLOCK", "RTL_MISMATCH", "TIMEOUT"}
+        or any(token in corpus for token in ("deadlock", "no progress", "no_progress", "rtl mismatch"))
+    )
+
+
+def rtl_liveness_obligation(
+    *, requires_cosim: bool, evidence: object, source: object
+) -> dict[str, object] | None:
+    """Create one high-priority, evidence-bound stream liveness obligation.
+
+    It is intentionally independent of task IDs and of A2/A3.  It appears
+    only when a task already requires CoSim, the persisted evidence is a
+    liveness signal, and the current public source exposes an implicated
+    multi-producer stream or dependency cycle.
+    """
+
+    facts = structural_facts(source)
+    implicated_streams = [
+        str(item["stream"])
+        for item in facts["streams"]
+        if isinstance(item, Mapping) and item.get("possible_multi_producer") is True
+    ]
+    cycles = facts["stream_dependency_cycles"]
+    if not (
+        requires_cosim
+        and _rtl_liveness_evidence(evidence)
+        and (implicated_streams or cycles)
+    ):
+        return None
+    return {
+        "schema_version": RTL_LIVENESS_OBLIGATION_SCHEMA,
+        "id": "RTL_LIVENESS_STREAM_TOPOLOGY",
+        "kind": "rtl_liveness",
+        "status": "OPEN",
+        "priority": 100,
+        "implicated_streams": implicated_streams,
+        "dependency_cycles": cycles,
+        "planner_requirements": [
+            "FIFO depth-only changes do not satisfy this obligation.",
+            "Removing one writer while retaining a mutually waiting feedback cycle does not satisfy this obligation.",
+            "Eliminate implicated multi-producer streams and uninitialized dependency cycles.",
+            "Prefer a unidirectional single-producer/single-consumer stream topology while preserving the top-level interface and functional semantics.",
+        ],
+        "source_topology": facts,
+    }
+
+
+def _topology_shape(facts: Mapping[str, object]) -> dict[str, object]:
+    """Keep only graph structure, excluding FIFO capacity and unrelated code."""
+
+    streams = facts.get("streams")
+    return {
+        "streams": [
+            {
+                "stream": item.get("stream"),
+                "producers": item.get("producer_processes", []),
+                "consumers": item.get("consumer_processes", []),
+            }
+            for item in streams
+            if isinstance(item, Mapping)
+        ]
+        if isinstance(streams, list)
+        else [],
+        "dependency_cycles": facts.get("stream_dependency_cycles", []),
+    }
+
+
+def structural_liveness_guard(
+    *, parent_source: object, candidate_source: object, obligation: object
+) -> dict[str, object]:
+    """Reject only candidates that leave an evidence-bound liveness defect open.
+
+    The guard is a static pre-tool admission check, not a general DATAFLOW
+    correctness proof.  No obligation means no restriction; ordinary acyclic
+    DATAFLOW and cycles with a statically visible initial token remain allowed.
+    """
+
+    active = obligation if isinstance(obligation, Mapping) else None
+    if not active:
+        return {
+            "schema_version": STRUCTURAL_GUARD_SCHEMA,
+            "eligible": True,
+            "reason": "NO_RTL_LIVENESS_OBLIGATION",
+        }
+    parent = structural_facts(parent_source)
+    candidate = structural_facts(candidate_source)
+    implicated = {
+        str(item) for item in active.get("implicated_streams", [])
+        if isinstance(item, str)
+    }
+    candidate_streams = {
+        str(item.get("stream")): item
+        for item in candidate["streams"]
+        if isinstance(item, Mapping)
+    }
+    residual_multi_producer = sorted(
+        name
+        for name in implicated
+        if isinstance(candidate_streams.get(name), Mapping)
+        and candidate_streams[name].get("possible_multi_producer") is True
+    )
+    residual_cycle = bool(candidate["has_stream_dependency_cycle"])
+    initialized_cycle = any(
+        item.get("initialization") == "PRESENT"
+        for item in candidate["cycle_initialization"]
+        if isinstance(item, Mapping)
+    )
+    topology_changed = _topology_shape(parent) != _topology_shape(candidate)
+    reasons: list[str] = []
+    if residual_multi_producer:
+        # Keep the former detailed code for existing evidence readers while
+        # emitting the short stable reason required by the public frontier.
+        reasons.extend(("MULTI_PRODUCER_REMAINS", "IMPLICATED_MULTI_PRODUCER_REMAINS"))
+    if residual_cycle and not initialized_cycle:
+        reasons.extend((
+            "RESIDUAL_UNINITIALIZED_CYCLE",
+            "UNINITIALIZED_STREAM_DEPENDENCY_CYCLE_REMAINS",
+        ))
+    if not topology_changed:
+        reasons.extend((
+            "DEPTH_ONLY_CHANGE",
+            "NO_TOPOLOGY_PROGRESS",
+            "DEPTH_ONLY_OR_TOPOLOGY_NEUTRAL_PATCH",
+        ))
+    return {
+        "schema_version": STRUCTURAL_GUARD_SCHEMA,
+        "eligible": not reasons,
+        "reason": "PASS" if not reasons else "STRUCTURAL_OBLIGATION_UNSATISFIED",
+        "violations": reasons,
+        "implicated_streams": sorted(implicated),
+        "parent_topology": parent,
+        "candidate_topology": candidate,
+        "topology_changed": topology_changed,
+        "candidate_has_explicit_initial_token": (
+            candidate.get("feedback_initial_token") == "PRESENT"
+        ),
+    }
+
+
+def structural_action_family_frontier(
+    *, facts: Mapping[str, object], history: Sequence[Mapping[str, object]]
+) -> dict[str, object]:
+    """Return the applicable, evidence-bound frontier for STRUCTURAL_FIX.
+
+    A family is marked attempted when it has a durable proposal experiment,
+    including a guard-rejected candidate.  It is *not* treated as validated
+    merely because an immutable candidate directory was allocated.
+    """
+
+    structure = facts.get("structural_facts")
+    structure = structure if isinstance(structure, Mapping) else {}
+    streams = structure.get("streams")
+    streams = streams if isinstance(streams, list) else []
+    has_multi_producer = any(
+        isinstance(item, Mapping) and item.get("possible_multi_producer") is True
+        for item in streams
+    )
+    has_balance_issue = any(
+        isinstance(item, Mapping)
+        and (
+            item.get("balance") == "UNBALANCED"
+            or item.get("possible_multi_consumer") is True
+        )
+        for item in streams
+    )
+    has_cycle = structure.get("has_stream_dependency_cycle") is True
+    dataflow = structure.get("dataflow_present") is True
+    applicability = {
+        "capacity_adjustment": bool(streams),
+        "producer_normalization": has_multi_producer,
+        "topology_elimination": has_cycle or has_multi_producer,
+        "sequential_pipeline_fallback": has_cycle and dataflow,
+        "protocol_initialization": has_cycle,
+        "stream_balance_repair": has_balance_issue or has_multi_producer,
+    }
+    attempted: set[str] = set()
+    rejected: set[str] = set()
+    signatures: dict[str, list[str]] = {name: [] for name in STRUCTURAL_ACTION_FAMILIES}
+    for row in history:
+        experiment = row.get("proposal_experiment")
+        if not isinstance(experiment, Mapping):
+            continue
+        family = structural_action_family(experiment.get("selected_action_family") or experiment.get("action_family"))
+        if family is None:
+            continue
+        attempted.add(family)
+        if str(row.get("status") or row.get("reason") or row.get("rejection_reason") or "").upper() not in {"", "PROMOTED", "PASS"}:
+            rejected.add(family)
+        observed = row.get("failure_evidence_detail")
+        observed_facts = failure_facts(observed) if isinstance(observed, Mapping) else {}
+        signature = (
+            experiment.get("observed_failure_signature")
+            or observed_facts.get("last_failure_signature")
+            or experiment.get("input_failure_signature")
+        )
+        if isinstance(signature, str) and re.fullmatch(r"[0-9a-f]{64}", signature):
+            signatures[family].append(signature)
+    untried = [
+        family for family in STRUCTURAL_ACTION_FAMILIES
+        if applicability[family] and family not in attempted
+    ]
+    # Prefer a structural mechanism that removes the observed defect, then a
+    # conservative sequential fallback.  This is a recommendation, never an
+    # instruction to apply a task-specific answer.
+    preferred = (
+        "topology_elimination" if has_cycle else
+        "producer_normalization" if has_multi_producer else
+        "stream_balance_repair" if has_balance_issue else
+        (untried[0] if untried else None)
+    )
+    if preferred not in untried:
+        preferred = untried[0] if untried else None
+    return {
+        "schema_version": ACTION_FAMILY_FRONTIER_SCHEMA,
+        "attempted_action_families": sorted(attempted),
+        "rejected_action_families": sorted(rejected),
+        "untried_action_families": untried,
+        "family_failure_signatures": {
+            family: sorted(set(values)) for family, values in signatures.items() if values
+        },
+        "recommended_fallback_family": preferred,
+        "has_high_value_untried_family": preferred is not None,
+        "applicability": applicability,
+    }
+
+
+def semantic_progress_assessment(
+    *,
+    mode: object,
+    facts: Mapping[str, object],
+    experiment: object,
+    structural_guard: object = None,
+    frontier: object = None,
+) -> dict[str, object]:
+    """Classify one completed/rejected round without equating failure to stasis."""
+
+    if str(mode).upper() != "STRUCTURAL_FIX":
+        return {
+            "schema_version": SEMANTIC_PROGRESS_SCHEMA,
+            "is_semantic_progress": False,
+            "reasons": [],
+            "mode_scope": "NON_STRUCTURAL_FIX",
+        }
+    record = experiment if isinstance(experiment, Mapping) else {}
+    guard = structural_guard if isinstance(structural_guard, Mapping) else {}
+    action = structural_action_family(
+        record.get("selected_action_family") or record.get("action_family")
+    )
+    input_signature = record.get("input_failure_signature")
+    current_signature = facts.get("last_failure_signature")
+    reasons: list[str] = []
+    if isinstance(input_signature, str) and isinstance(current_signature, str) and input_signature != current_signature:
+        reasons.append("NEW_FAILURE_SIGNATURE")
+    if record.get("frontier_was_untried") is True:
+        reasons.append("ACTION_FAMILY_EXCLUDED_OR_TESTED")
+    if (
+        guard.get("eligible") is False
+        and guard.get("violations")
+        and record.get("frontier_was_untried") is True
+    ):
+        reasons.append("STRUCTURAL_GUARD_NEW_UNMET_CONDITION")
+    if record.get("expected_topology_delta") and record.get("topology_progress") is True:
+        reasons.append("TOPOLOGY_PROGRESS")
+    if record.get("hypothesis_falsified") is True:
+        reasons.append("HYPOTHESIS_FALSIFIED")
+    if record.get("obligation_precision_increased") is True:
+        reasons.append("OBLIGATION_ROOT_CAUSE_MORE_PRECISE")
+    if isinstance(frontier, Mapping) and frontier.get("has_high_value_untried_family") is True:
+        reasons.append("UNTRIED_FALLBACK_REMAINS")
+    return {
+        "schema_version": SEMANTIC_PROGRESS_SCHEMA,
+        "is_semantic_progress": bool(reasons),
+        "reasons": sorted(set(reasons)),
+        "action_family": action,
+        "failure_signature": current_signature if isinstance(current_signature, str) else None,
     }
 
 
@@ -434,6 +858,7 @@ def proposal_experiment(
     obligation: str,
     patch_failure: object = None,
     input_failure_signature: str | None = None,
+    action_family_frontier: object = None,
 ) -> dict[str, object]:
     """Create the durable proposal-experiment record before materialization."""
 
@@ -449,7 +874,8 @@ def proposal_experiment(
     )
     validation_plan = [str(item) for item in validations if str(item) in {"csim", "synth", "cosim"}]
     declared_family = canonical_action_family(
-        getattr(proposal, "action_family", "")
+        getattr(proposal, "selected_action_family", "")
+        or getattr(proposal, "action_family", "")
     )
     family = declared_family or action_family_for_proposal(
         proposal, obligation=obligation, patch_failure=patch_failure
@@ -466,6 +892,25 @@ def proposal_experiment(
         "target_obligation": obligation,
         "hypothesis": hypothesis,
         "action_family": family,
+        "selected_action_family": _text(
+            getattr(proposal, "selected_action_family", ""), limit=120
+        ) or family,
+        "selected_hypothesis": _text(
+            getattr(proposal, "selected_hypothesis", ""), limit=400
+        ) or hypothesis,
+        "hypotheses_considered": [
+            _text(item, limit=240)
+            for item in getattr(proposal, "hypotheses_considered", ())
+            if _text(item, limit=240)
+        ][:6],
+        "complete_obligation_requirements": [
+            _text(item, limit=240)
+            for item in getattr(proposal, "complete_obligation_requirements", ())
+            if _text(item, limit=240)
+        ][:8],
+        "expected_topology_delta": _text(
+            getattr(proposal, "expected_topology_delta", ""), limit=320
+        ) or "NOT_DECLARED",
         "action_parameters": normalized_parameters,
         "expected_effect": expected or "VERIFY_ROUTED_FAILURE_IS_REMOVED",
         "validation_plan": validation_plan,
@@ -488,6 +933,13 @@ def proposal_experiment(
             else None
         ),
     }
+    frontier = action_family_frontier if isinstance(action_family_frontier, Mapping) else {}
+    structural_family = structural_action_family(record["selected_action_family"])
+    record["structural_action_family"] = structural_family
+    record["frontier_was_untried"] = bool(
+        structural_family
+        and structural_family in frontier.get("untried_action_families", [])
+    )
     record["experiment_sha256"] = _digest(record)
     return record
 
@@ -504,6 +956,7 @@ def search_control_state(
     candidate_records: Mapping[str, object] | None = None,
     active_probe_id: str | None = None,
     final_reserve_only: bool = False,
+    requires_cosim: bool = False,
 ) -> dict[str, object]:
     """Build a bounded planner-visible control contract from durable history."""
 
@@ -517,7 +970,9 @@ def search_control_state(
         experiment = row.get("proposal_experiment")
         if not isinstance(experiment, Mapping):
             continue
-        family = canonical_action_family(experiment.get("action_family"))
+        family = canonical_action_family(
+            experiment.get("selected_action_family") or experiment.get("action_family")
+        )
         hypothesis = _text(experiment.get("hypothesis"), limit=240)
         if family:
             attempted.append({"action_family": family, "hypothesis": hypothesis})
@@ -557,7 +1012,9 @@ def search_control_state(
         experiment = row.get("proposal_experiment")
         if not isinstance(experiment, Mapping):
             continue
-        family = canonical_action_family(experiment.get("action_family"))
+        family = canonical_action_family(
+            experiment.get("selected_action_family") or experiment.get("action_family")
+        )
         hypothesis = _text(experiment.get("hypothesis"), limit=240)
         if not family or not hypothesis:
             continue
@@ -573,16 +1030,13 @@ def search_control_state(
                 "failure_signature": facts["last_failure_signature"],
             }
         )
-    chosen_action = continuation_action(
-        facts=facts,
-        attempted=attempted,
-        baseline_id=baseline_id,
-        incumbent_id=incumbent_id,
-        active_probe_id=active_probe_id,
-        final_reserve_only=final_reserve_only,
-    )
     raw_evidence = evidence if isinstance(evidence, Mapping) else {}
     structure = structural_facts(source)
+    liveness_obligation = rtl_liveness_obligation(
+        requires_cosim=requires_cosim,
+        evidence=raw_evidence,
+        source=source,
+    )
     topology_attempts = [
         item.get("proposal_experiment", {}).get("changes_stream_topology")
         for item in history
@@ -590,6 +1044,23 @@ def search_control_state(
     ]
     if topology_attempts:
         structure["candidate_changes_stream_topology"] = bool(topology_attempts[-1])
+    structural_frontier = structural_action_family_frontier(
+        facts={"structural_facts": structure}, history=history
+    ) if str(mode).upper() == "STRUCTURAL_FIX" else None
+    chosen_action = continuation_action(
+        facts=facts,
+        attempted=attempted,
+        baseline_id=baseline_id,
+        incumbent_id=incumbent_id,
+        active_probe_id=active_probe_id,
+        final_reserve_only=final_reserve_only,
+        action_family_frontier=structural_frontier,
+        structural_guard_rejected=(
+            str(facts.get("last_failure_kind")) == "DEADLOCK"
+            and isinstance(raw_evidence.get("structural_guard"), Mapping)
+            and raw_evidence["structural_guard"].get("eligible") is False
+        ),
+    )
     structure["cosim_runtime"] = {
         key: raw_value
         for key, raw_value in (
@@ -604,6 +1075,18 @@ def search_control_state(
         if raw_value is not None
     }
     obligations = [obligation_record]
+    if liveness_obligation is not None:
+        obligations.append(
+            {
+                "schema_version": OBLIGATION_STATE_SCHEMA,
+                "id": liveness_obligation["id"],
+                "kind": liveness_obligation["kind"],
+                "status": liveness_obligation["status"],
+                "priority": liveness_obligation["priority"],
+                "evidence_refs": list(obligation_record["evidence_refs"]),
+                "affected_regions": list(liveness_obligation["implicated_streams"]),
+            }
+        )
     if structure["has_stream_dependency_cycle"] or any(
         item.get("possible_multi_producer") is True
         or item.get("possible_multi_consumer") is True
@@ -690,6 +1173,8 @@ def search_control_state(
         "required_action_family": required_action_family,
         "recommended_continuation_action": chosen_action,
         "structural_facts": structure,
+        "rtl_liveness_obligation": liveness_obligation,
+        "action_family_frontier": structural_frontier,
     }
 
 
@@ -749,6 +1234,8 @@ __all__ = [
     "obligation_state",
     "primary_obligation",
     "proposal_experiment",
+    "rtl_liveness_obligation",
     "search_control_state",
+    "structural_liveness_guard",
     "structural_facts",
 ]
