@@ -1,0 +1,11 @@
+{
+  "schema_version": "expanded.public.mutation.v1",
+  "task_id": "expanded_optimize_03",
+  "mode": "OPTIMIZE",
+  "difficulty": 3,
+  "requires_cosim": false,
+  "family": "expanded_public",
+  "operator": "nested_stencil",
+  "root_cause": "correct nested-loop baseline",
+  "expected_failure_stage": "NONE"
+}

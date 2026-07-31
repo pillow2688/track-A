@@ -1,0 +1,11 @@
+{
+  "schema_version": "expanded.public.mutation.v1",
+  "task_id": "expanded_synth_03",
+  "mode": "SYNTH_FIX",
+  "difficulty": 3,
+  "requires_cosim": false,
+  "family": "expanded_public",
+  "operator": "std_vector",
+  "root_cause": "dynamic STL container in kernel",
+  "expected_failure_stage": "SYNTH_FAIL"
+}

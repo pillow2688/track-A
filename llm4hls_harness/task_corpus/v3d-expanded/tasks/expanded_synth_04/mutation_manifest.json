@@ -1,0 +1,11 @@
+{
+  "schema_version": "expanded.public.mutation.v1",
+  "task_id": "expanded_synth_04",
+  "mode": "SYNTH_FIX",
+  "difficulty": 3,
+  "requires_cosim": false,
+  "family": "expanded_public",
+  "operator": "type_erased_callable",
+  "root_cause": "std::function type-erased callable is unsupported in the synthesis path",
+  "expected_failure_stage": "SYNTH_FAIL"
+}

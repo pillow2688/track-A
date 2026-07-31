@@ -1,0 +1,190 @@
+{
+  "schema_version": "v3d.expanded-public-corpus.v1",
+  "status": "READY_FOR_FULL_46",
+  "task_count": 18,
+  "mode_counts": {
+    "REPAIR": 5,
+    "SYNTH_FIX": 4,
+    "STRUCTURAL_FIX": 6,
+    "OPTIMIZE": 3
+  },
+  "planner_input_policy": {
+    "allowed_paths": [
+      "task.toml",
+      "description.md",
+      "kernel.cpp",
+      "kernel.h",
+      "kernel_tb.cpp"
+    ],
+    "forbidden_components": [
+      "answer",
+      "golden",
+      "hidden",
+      "reference"
+    ]
+  },
+  "tasks": [
+    {
+      "task_id": "expanded_optimize_01",
+      "mode": "OPTIMIZE",
+      "difficulty": 3,
+      "requires_cosim": false,
+      "family": "expanded_public",
+      "operator": "unpipelled_map",
+      "path": "tasks/expanded_optimize_01"
+    },
+    {
+      "task_id": "expanded_optimize_02",
+      "mode": "OPTIMIZE",
+      "difficulty": 3,
+      "requires_cosim": false,
+      "family": "expanded_public",
+      "operator": "unrolled_reduction",
+      "path": "tasks/expanded_optimize_02"
+    },
+    {
+      "task_id": "expanded_optimize_03",
+      "mode": "OPTIMIZE",
+      "difficulty": 3,
+      "requires_cosim": false,
+      "family": "expanded_public",
+      "operator": "nested_stencil",
+      "path": "tasks/expanded_optimize_03"
+    },
+    {
+      "task_id": "expanded_repair_01",
+      "mode": "REPAIR",
+      "difficulty": 2,
+      "requires_cosim": false,
+      "family": "expanded_public",
+      "operator": "wrong_bias",
+      "path": "tasks/expanded_repair_01"
+    },
+    {
+      "task_id": "expanded_repair_02",
+      "mode": "REPAIR",
+      "difficulty": 2,
+      "requires_cosim": false,
+      "family": "expanded_public",
+      "operator": "off_by_one",
+      "path": "tasks/expanded_repair_02"
+    },
+    {
+      "task_id": "expanded_repair_03",
+      "mode": "REPAIR",
+      "difficulty": 2,
+      "requires_cosim": false,
+      "family": "expanded_public",
+      "operator": "fir_coefficient",
+      "path": "tasks/expanded_repair_03"
+    },
+    {
+      "task_id": "expanded_repair_04",
+      "mode": "REPAIR",
+      "difficulty": 2,
+      "requires_cosim": false,
+      "family": "expanded_public",
+      "operator": "prefix_seed",
+      "path": "tasks/expanded_repair_04"
+    },
+    {
+      "task_id": "expanded_repair_05",
+      "mode": "REPAIR",
+      "difficulty": 2,
+      "requires_cosim": false,
+      "family": "expanded_public",
+      "operator": "reverse_index",
+      "path": "tasks/expanded_repair_05"
+    },
+    {
+      "task_id": "expanded_structural_01",
+      "mode": "STRUCTURAL_FIX",
+      "difficulty": 4,
+      "requires_cosim": true,
+      "family": "expanded_public",
+      "operator": "fifo_order_main_then_side",
+      "path": "tasks/expanded_structural_01"
+    },
+    {
+      "task_id": "expanded_structural_02",
+      "mode": "STRUCTURAL_FIX",
+      "difficulty": 4,
+      "requires_cosim": true,
+      "family": "expanded_public",
+      "operator": "fifo_order_side_then_main",
+      "path": "tasks/expanded_structural_02"
+    },
+    {
+      "task_id": "expanded_structural_03",
+      "mode": "STRUCTURAL_FIX",
+      "difficulty": 4,
+      "requires_cosim": true,
+      "family": "expanded_public",
+      "operator": "burst_fifo_pressure",
+      "path": "tasks/expanded_structural_03"
+    },
+    {
+      "task_id": "expanded_structural_04",
+      "mode": "STRUCTURAL_FIX",
+      "difficulty": 4,
+      "requires_cosim": true,
+      "family": "expanded_public",
+      "operator": "cross_channel_fifo_dependency",
+      "path": "tasks/expanded_structural_04"
+    },
+    {
+      "task_id": "expanded_structural_05",
+      "mode": "REPAIR",
+      "difficulty": 4,
+      "requires_cosim": true,
+      "family": "expanded_public",
+      "operator": "side_channel_extra_token_functional_mismatch",
+      "path": "tasks/expanded_structural_05"
+    },
+    {
+      "task_id": "expanded_structural_06",
+      "mode": "STRUCTURAL_FIX",
+      "difficulty": 4,
+      "requires_cosim": true,
+      "family": "expanded_public",
+      "operator": "bounded_feedback_seed_pressure",
+      "path": "tasks/expanded_structural_06"
+    },
+    {
+      "task_id": "expanded_synth_01",
+      "mode": "SYNTH_FIX",
+      "difficulty": 3,
+      "requires_cosim": false,
+      "family": "expanded_public",
+      "operator": "dynamic_allocation",
+      "path": "tasks/expanded_synth_01"
+    },
+    {
+      "task_id": "expanded_synth_02",
+      "mode": "SYNTH_FIX",
+      "difficulty": 3,
+      "requires_cosim": false,
+      "family": "expanded_public",
+      "operator": "recursion",
+      "path": "tasks/expanded_synth_02"
+    },
+    {
+      "task_id": "expanded_synth_03",
+      "mode": "SYNTH_FIX",
+      "difficulty": 3,
+      "requires_cosim": false,
+      "family": "expanded_public",
+      "operator": "std_vector",
+      "path": "tasks/expanded_synth_03"
+    },
+    {
+      "task_id": "expanded_synth_04",
+      "mode": "SYNTH_FIX",
+      "difficulty": 3,
+      "requires_cosim": false,
+      "family": "expanded_public",
+      "operator": "type_erased_callable",
+      "path": "tasks/expanded_synth_04"
+    }
+  ]
+}

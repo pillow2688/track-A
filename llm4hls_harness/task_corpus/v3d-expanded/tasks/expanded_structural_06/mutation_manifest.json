@@ -1,0 +1,11 @@
+{
+  "schema_version": "expanded.public.mutation.v1",
+  "task_id": "expanded_structural_06",
+  "mode": "STRUCTURAL_FIX",
+  "difficulty": 4,
+  "requires_cosim": true,
+  "family": "expanded_public",
+  "operator": "bounded_feedback_seed_pressure",
+  "root_cause": "feedback seeding overfills a depth-one FIFO before the feedback cycle can drain",
+  "expected_failure_stage": "COSIM_FAIL"
+}

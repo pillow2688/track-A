@@ -1,0 +1,63 @@
+{
+  "schema_version": "track-a-full-agent.v1",
+  "profile": "competition-full-agent-v1",
+  "artifact_kind": "runtime_full_agent_manifest",
+  "status": "READY",
+  "runtime_loader": true,
+  "runtime_authority": "EXPLICIT_MANIFEST_PLUS_MATCHING_RUNTIME_ARGUMENTS",
+  "artifact_root": "../../..",
+  "token_policy": {
+    "mode": "fixed",
+    "dynamic_allowed": false
+  },
+  "components": {
+    "A1 Structured Evidence Memory": {
+      "mode": "on"
+    },
+    "A2 Budget-Aware Continuation": {
+      "mode": "enforce",
+      "external_version": "v2",
+      "implementation_version": "v3.continuation-policy.v3",
+      "decision_schema": "v3.continuation-decision.v2"
+    },
+    "A3 Experience Strategy Advisor": {
+      "mode": "guided",
+      "ranker_version": "v3",
+      "implementation_schema": "v3e.bayesian-strategy-ranker.v3.train-only-support.v1"
+    }
+  },
+  "foundations": {
+    "B1 Candidate and Safety Baseline": {
+      "enabled": true,
+      "ablatable": false
+    },
+    "B2 Independent Final Certification": {
+      "enabled": true,
+      "ablatable": false,
+      "budget_domain": "FINAL_CERTIFICATION_OUTSIDE_AGENT_BUDGET",
+      "feedback_policy": "NO_SAME_RUN_AGENT_FEEDBACK"
+    }
+  },
+  "artifacts": {
+    "a2_gate": {
+      "path": "docs/experiments/artifacts/2026-07-30-structural-search-continuation-runtime-overlay/a2/continuation-v3-gate.json",
+      "sha256": "8c7321a91c8a7851e0d12fdec501f7106b792a8f58474e0693113c6bba8446f4"
+    },
+    "a2_admission": {
+      "path": "docs/experiments/artifacts/2026-07-30-structural-search-continuation-runtime-overlay/a2/continuation-v3-admission.json",
+      "sha256": "40d55864b6442c0342d3db4c6f1d882088dd232afd6baeb0703590efb65ddcba"
+    },
+    "a3_store": {
+      "path": "docs/experiments/artifacts/2026-07-30-structural-search-continuation-runtime-overlay/a3/train-only-experience-store.jsonl",
+      "sha256": "59ea3f89da638405e231181fc158347f1e4c0385201c52720e049dcfc5395f06"
+    },
+    "a3_gate": {
+      "path": "docs/experiments/artifacts/2026-07-30-structural-search-continuation-runtime-overlay/a3/ranker-v3-gate.json",
+      "sha256": "740059de3fffd81860519a34f990d2602e5a40d7bd8b706c09b29d898ffbeed6"
+    },
+    "a3_admission": {
+      "path": "docs/experiments/artifacts/2026-07-30-structural-search-continuation-runtime-overlay/a3/admission.json",
+      "sha256": "909e1d5baf4fb508296be908c8c12cf33e8b5e55b4cbc6c984e035e53de97d92"
+    }
+  }
+}

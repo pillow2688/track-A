@@ -1,0 +1,11 @@
+{
+  "schema_version": "expanded.public.mutation.v1",
+  "task_id": "expanded_repair_05",
+  "mode": "REPAIR",
+  "difficulty": 2,
+  "requires_cosim": false,
+  "family": "expanded_public",
+  "operator": "reverse_index",
+  "root_cause": "reverse-index boundary error",
+  "expected_failure_stage": "CSIM_FAIL"
+}

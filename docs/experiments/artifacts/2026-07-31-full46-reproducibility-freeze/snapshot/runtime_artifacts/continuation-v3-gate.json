@@ -1,0 +1,189 @@
+{
+  "audited_samples": [
+    {
+      "candidate_outcome": {
+        "candidate_id": "candidate_001",
+        "decision": "FINAL_VERIFIED",
+        "latency_worst": 18.0
+      },
+      "current_decision": {
+        "confidence": "LOW",
+        "decision": "ALLOW",
+        "decision_digest": "6b401c9ca5484a24b96b8d44076c65f732770965569ac3b71d88214025b56d18",
+        "fallback": "FOLLOW_EXISTING_MAIN_POLICY",
+        "mode": "REPAIR",
+        "policy_version": "v3.continuation-policy.v3",
+        "reason_codes": [
+          "INCOMPLETE_EVIDENCE_CONTINUE_CONSERVATIVELY"
+        ],
+        "schema_version": "v3.continuation-decision.v2",
+        "supporting_evidence": [
+          "one_failure_is_not_a_stop_condition"
+        ]
+      },
+      "leakage_violations": 0,
+      "mode": "REPAIR",
+      "outcome": "ESSENTIAL_FOR_CORRECTNESS",
+      "pre_state_migrations": [],
+      "pre_state_sha256": "cf1bada259104a997dd434d1e53023098384deba47d866e5d0c3e0fb1ad370e6",
+      "round_index": 1,
+      "sample_id": "b595fefc8a360046f6346966eae95bd56c17d4537e385c9233eab798c40bbd98",
+      "source": {
+        "kind": "REAL_VITIS_HISTORICAL_ARTIFACT",
+        "planner_gate_path": "runs/full-agent-current-fresh-28-20260729-a01/001_v3d_fast_001/runs/v3d_fast_001--deepseek-v4-pro--r001--9b8c45586aa1/planner/call_gates/round_001.json",
+        "planner_gate_sha256": "c77de430c7b18eec5601996f37a5b7e61870758c588c852b267c0edebef19a0c",
+        "run_result_path": "runs/full-agent-current-fresh-28-20260729-a01/001_v3d_fast_001/runs/v3d_fast_001--deepseek-v4-pro--r001--9b8c45586aa1/v3_prototype_result.json",
+        "run_result_sha256": "adeaa0ec361f7dfe2f2bde86720bb4459ff154bba13f8edc8fdc1bc5c20e8217",
+        "stored_policy_version": "v3.continuation-policy.v3"
+      },
+      "task_id": "v3d_fast_001"
+    },
+    {
+      "candidate_outcome": {
+        "candidate_id": "candidate_001",
+        "decision": "FINAL_VERIFIED",
+        "latency_worst": 18.0
+      },
+      "current_decision": {
+        "confidence": "LOW",
+        "decision": "ALLOW",
+        "decision_digest": "b52790cb2c8832b99018b4716e11a5e590ce0f98b7ca94987590a66cb8525688",
+        "fallback": "FOLLOW_EXISTING_MAIN_POLICY",
+        "mode": "SYNTH_FIX",
+        "policy_version": "v3.continuation-policy.v3",
+        "reason_codes": [
+          "INCOMPLETE_EVIDENCE_CONTINUE_CONSERVATIVELY"
+        ],
+        "schema_version": "v3.continuation-decision.v2",
+        "supporting_evidence": [
+          "synth_failure_is_not_a_stop_condition"
+        ]
+      },
+      "leakage_violations": 0,
+      "mode": "SYNTH_FIX",
+      "outcome": "ESSENTIAL_FOR_CORRECTNESS",
+      "pre_state_migrations": [],
+      "pre_state_sha256": "6fee5cc31780106ebdd77a10081d802e74352636914bd98ea7ba82c141b73731",
+      "round_index": 1,
+      "sample_id": "7728e23fd61cc7926278c753d5d04ece76e4787311f3aef29b558d6da26f7962",
+      "source": {
+        "kind": "REAL_VITIS_HISTORICAL_ARTIFACT",
+        "planner_gate_path": "runs/full-agent-current-fresh-28-20260729-a01/009_v3d_fast_009/runs/v3d_fast_009--deepseek-v4-pro--r001--579a6e0bfd6e/planner/call_gates/round_001.json",
+        "planner_gate_sha256": "1f15d0c548b5290b1db2ad5caf3bb9dd12d92cf1e49cb098edfaca22a43b8368",
+        "run_result_path": "runs/full-agent-current-fresh-28-20260729-a01/009_v3d_fast_009/runs/v3d_fast_009--deepseek-v4-pro--r001--579a6e0bfd6e/v3_prototype_result.json",
+        "run_result_sha256": "1194568242f85602b804a96d9b7f88994e585dbfcba6e83b0ccd43f3f1fe17f7",
+        "stored_policy_version": "v3.continuation-policy.v3"
+      },
+      "task_id": "v3d_fast_009"
+    },
+    {
+      "candidate_outcome": {
+        "candidate_id": "candidate_001",
+        "decision": "FINAL_VERIFIED",
+        "latency_worst": 39.0
+      },
+      "current_decision": {
+        "confidence": "LOW",
+        "decision": "ALLOW",
+        "decision_digest": "944d3d416f31a41bc70f875de9cc6b447dc586f1bde8ba6cc1866c56c0577345",
+        "fallback": "FOLLOW_EXISTING_MAIN_POLICY",
+        "mode": "STRUCTURAL_FIX",
+        "policy_version": "v3.continuation-policy.v3",
+        "reason_codes": [
+          "STRUCTURAL_STOP_CONDITIONS_NOT_ALL_MET"
+        ],
+        "schema_version": "v3.continuation-decision.v2",
+        "supporting_evidence": [
+          "structural_policy_is_false_block_averse"
+        ]
+      },
+      "leakage_violations": 0,
+      "mode": "STRUCTURAL_FIX",
+      "outcome": "ESSENTIAL_FOR_CORRECTNESS",
+      "pre_state_migrations": [],
+      "pre_state_sha256": "93eb286c46765b6482b42c4cb67767d4366d1a3d6181a80906b03631c26557a7",
+      "round_index": 1,
+      "sample_id": "250696efb38ff1cefa4bd61b940f03d2072ef1021435bf2dca517e9e5ac3730a",
+      "source": {
+        "kind": "REAL_VITIS_HISTORICAL_ARTIFACT",
+        "planner_gate_path": "runs/full-agent-current-fresh-28-20260729-a01/015_v3d_fast_015/runs/v3d_fast_015--deepseek-v4-pro--r001--8016b1a9744b/planner/call_gates/round_001.json",
+        "planner_gate_sha256": "af81419376c80c46ce2a805c97e13ad281ed7e12ff0b9b07119ce087b4d903e2",
+        "run_result_path": "runs/full-agent-current-fresh-28-20260729-a01/015_v3d_fast_015/runs/v3d_fast_015--deepseek-v4-pro--r001--8016b1a9744b/v3_prototype_result.json",
+        "run_result_sha256": "63c479fbdb88e228c9e78c4a980c9a6183416854ea3b1822b960488eb29dc655",
+        "stored_policy_version": "v3.continuation-policy.v3"
+      },
+      "task_id": "v3d_fast_015"
+    },
+    {
+      "candidate_outcome": {
+        "candidate_id": "candidate_002",
+        "decision": "REJECTED",
+        "latency_worst": 8.0
+      },
+      "current_decision": {
+        "confidence": "HIGH",
+        "decision": "ALLOW",
+        "decision_digest": "9c8aafc389c0aaed911e2e76aefd0c3feaad1d17dbac0846ad7f9ccaf64ebb05",
+        "fallback": "FOLLOW_EXISTING_MAIN_POLICY",
+        "mode": "OPTIMIZE",
+        "policy_version": "v3.continuation-policy.v3",
+        "reason_codes": [
+          "SIGNIFICANT_LATENCY_IMPROVEMENT",
+          "TRANSACTION_INTERVAL_IMPROVED",
+          "CLOCK_IMPROVED",
+          "BOTTLENECK_CHANGED",
+          "NEW_OPTIMIZATION_STRATEGY"
+        ],
+        "schema_version": "v3.continuation-decision.v2",
+        "supporting_evidence": [
+          "significant_latency_improvement",
+          "transaction_interval_improved",
+          "clock_improved",
+          "bottleneck_changed",
+          "new_optimization_strategy"
+        ]
+      },
+      "leakage_violations": 0,
+      "mode": "OPTIMIZE",
+      "outcome": "HARMFUL",
+      "pre_state_migrations": [],
+      "pre_state_sha256": "9c5d1609d00ba16216a767aa33cf8c875ca6118147269f6fb18c36d6497a2566",
+      "round_index": 2,
+      "sample_id": "c463186139e4f2af907f69c373833f14300d96a83aa7757ad0b2c20e7ad69c59",
+      "source": {
+        "kind": "REAL_VITIS_HISTORICAL_ARTIFACT",
+        "planner_gate_path": "runs/full-agent-current-fresh-28-20260729-a01/021_v3d_fast_021/runs/v3d_fast_021--deepseek-v4-pro--r001--9fe24d5a320b/planner/call_gates/round_002.json",
+        "planner_gate_sha256": "d1819b303e6e8830aa5fe6e058aa699ef20652d1c694d761f4ff697645261ef4",
+        "run_result_path": "runs/full-agent-current-fresh-28-20260729-a01/021_v3d_fast_021/runs/v3d_fast_021--deepseek-v4-pro--r001--9fe24d5a320b/v3_prototype_result.json",
+        "run_result_sha256": "9c2f4610bd97e3ec146d21e6eed807cfc0b79ff0f0f98c616f878cb6c9065246",
+        "stored_policy_version": "v3.continuation-policy.v3"
+      },
+      "task_id": "v3d_fast_021"
+    }
+  ],
+  "current_commit": "6f1e31a86159dd26fa8f7c161b77e3aaaa25a0b4",
+  "decision_schema": "v3.continuation-decision.v2",
+  "gate_status": "PASS",
+  "metrics": {
+    "beneficial_samples": 0,
+    "essential_samples": 3,
+    "false_blocks": 0,
+    "leakage_violations": 0,
+    "sample_count": 4
+  },
+  "mode_coverage": {
+    "OPTIMIZE": 1,
+    "REPAIR": 1,
+    "STRUCTURAL_FIX": 1,
+    "SYNTH_FIX": 1
+  },
+  "policy_version": "v3.continuation-policy.v3",
+  "protocol_version": "v3.continuation-offline-replay.v1",
+  "schema_version": "v3.continuation-offline-gate.v1",
+  "source_manifest_sha256": "56b81a72019af5e6bca6a3d763d296c0606c077fbf92f7cff66293864d1d7b19",
+  "thresholds": {
+    "maximum_false_blocks": 0,
+    "maximum_leakage_violations": 0,
+    "minimum_samples_per_mode": 1
+  }
+}

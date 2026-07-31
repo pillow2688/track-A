@@ -1,0 +1,11 @@
+{
+  "schema_version": "expanded.public.mutation.v1",
+  "task_id": "expanded_optimize_02",
+  "mode": "OPTIMIZE",
+  "difficulty": 3,
+  "requires_cosim": false,
+  "family": "expanded_public",
+  "operator": "unrolled_reduction",
+  "root_cause": "correct scalar reduction baseline",
+  "expected_failure_stage": "NONE"
+}

@@ -1,0 +1,11 @@
+{
+  "schema_version": "expanded.public.mutation.v1",
+  "task_id": "expanded_synth_02",
+  "mode": "SYNTH_FIX",
+  "difficulty": 3,
+  "requires_cosim": false,
+  "family": "expanded_public",
+  "operator": "recursion",
+  "root_cause": "recursive helper in synthesis path",
+  "expected_failure_stage": "SYNTH_FAIL"
+}

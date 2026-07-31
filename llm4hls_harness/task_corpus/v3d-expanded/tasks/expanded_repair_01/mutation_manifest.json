@@ -1,0 +1,11 @@
+{
+  "schema_version": "expanded.public.mutation.v1",
+  "task_id": "expanded_repair_01",
+  "mode": "REPAIR",
+  "difficulty": 2,
+  "requires_cosim": false,
+  "family": "expanded_public",
+  "operator": "wrong_bias",
+  "root_cause": "arithmetic sign/bias error",
+  "expected_failure_stage": "CSIM_FAIL"
+}

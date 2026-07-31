@@ -1,0 +1,11 @@
+{
+  "schema_version": "expanded.public.mutation.v1",
+  "task_id": "expanded_structural_04",
+  "mode": "STRUCTURAL_FIX",
+  "difficulty": 4,
+  "requires_cosim": true,
+  "family": "expanded_public",
+  "operator": "cross_channel_fifo_dependency",
+  "root_cause": "the producer fills a depth-one main FIFO with a pair before emitting side data while the consumer waits for side first",
+  "expected_failure_stage": "COSIM_FAIL"
+}

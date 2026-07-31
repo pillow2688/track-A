@@ -1,0 +1,11 @@
+{
+  "schema_version": "expanded.public.acceptance.v1",
+  "verification": [
+    "csim",
+    "synth",
+    "cosim",
+    "independent_final_certification",
+    "100mhz_gate"
+  ],
+  "expected_output": "kernel_tb.cpp"
+}

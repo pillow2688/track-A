@@ -1,0 +1,11 @@
+{
+  "schema_version": "expanded.public.mutation.v1",
+  "task_id": "expanded_structural_02",
+  "mode": "STRUCTURAL_FIX",
+  "difficulty": 4,
+  "requires_cosim": true,
+  "family": "expanded_public",
+  "operator": "fifo_order_side_then_main",
+  "root_cause": "producer fills a bounded side FIFO before emitting paired main tokens",
+  "expected_failure_stage": "COSIM_FAIL"
+}

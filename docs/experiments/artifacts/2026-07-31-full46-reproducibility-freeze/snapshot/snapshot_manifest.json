@@ -1,0 +1,2404 @@
+{
+  "branch_at_snapshot": "release/track-a-rc2-full-46-freeze",
+  "copied_inputs": {
+    "benchmark_plan": {
+      "sha256": "eaf257419f0b72af412012af7a8812daf2120bcfbdbb4a611cc549053aedcc21",
+      "size_bytes": 22516,
+      "snapshot": "/home/ying/CompetitionTrackA/track-A-rc1/docs/experiments/artifacts/2026-07-31-full46-reproducibility-freeze/snapshot/benchmark_plan.json",
+      "source": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/runs/rc2-full-ref-46-20260731T063617Z/benchmark_plan.json"
+    },
+    "full_agent_manifest": {
+      "sha256": "154756c17eff7b423b3460fc5f4d802e675328bd34bbe1179b83d43f8b15c3fd",
+      "size_bytes": 2421,
+      "snapshot": "/home/ying/CompetitionTrackA/track-A-rc1/docs/experiments/artifacts/2026-07-31-full46-reproducibility-freeze/snapshot/runtime_full_agent_manifest.json",
+      "source": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/llm4hls_agent/config/track_a_rc2_structural_search_continuation_020.json"
+    },
+    "official_scoring": {
+      "sha256": "5f65aaa27bfc3cd488ae2294aa4cf463b6be4399306ffb847c44cdd3861d33fe",
+      "size_bytes": 5686,
+      "snapshot": "/home/ying/CompetitionTrackA/track-A-rc1/docs/experiments/artifacts/2026-07-31-full46-reproducibility-freeze/snapshot/official_scoring.py",
+      "source": "/home/ying/下载/scoring.py"
+    }
+  },
+  "evidence_commit": "21df31499fd0b8af1f616f5ee6d30fa067a2e5f1",
+  "excluded_path_components": [
+    "answer",
+    "golden",
+    "hidden",
+    "hidden_like",
+    "reference"
+  ],
+  "experiment_config_snapshot_sha256": "b176323c77875ddfdfcab924db867fdb5bdc29e737a5254cb2a320d0ac26a170",
+  "frozen_report_hashes": [
+    {
+      "path": "docs/experiments/artifacts/2026-07-31-experiment-framework-enhancement/experiment_freeze_46.md",
+      "sha256": "4a3762ee8db9d8a342e0ab36e27e6545e808ee6745eaa7c99fb1e3e31760753f",
+      "size_bytes": 35355
+    },
+    {
+      "path": "docs/experiments/artifacts/2026-07-31-experiment-framework-enhancement/full_46_results.jsonl",
+      "sha256": "34294b7f087280365346fa3a38a1f36a0af8021427e67b9b61ab6ca8c1fba9f2",
+      "size_bytes": 126806
+    },
+    {
+      "path": "docs/experiments/artifacts/2026-07-31-experiment-framework-enhancement/full_46_summary.csv",
+      "sha256": "ce705898abdc31c32043f87ba043b3c9a431f3bb3ff44268933d83614a7eb99b",
+      "size_bytes": 529
+    },
+    {
+      "path": "docs/experiments/artifacts/2026-07-31-experiment-framework-enhancement/full_46_scorecards.csv",
+      "sha256": "0156d983eaf50789a00648896ce29df8f87431cbcbd60074368458193dbd9af2",
+      "size_bytes": 6074
+    },
+    {
+      "path": "docs/experiments/artifacts/2026-07-31-experiment-framework-enhancement/full_46_benchmark_report.md",
+      "sha256": "327f8ff77f5f10daaef967b22517000bff843b555246de116a2b4fe280a62289",
+      "size_bytes": 7993
+    },
+    {
+      "path": "docs/experiments/artifacts/2026-07-31-experiment-framework-enhancement/full_46_failure_inventory.csv",
+      "sha256": "950251b050165173600551632870a14ef4b6bba0faf1f19a53d35fbd595a15f1",
+      "size_bytes": 7810
+    },
+    {
+      "path": "docs/experiments/artifacts/2026-07-31-experiment-framework-enhancement/full_46_integrity_audit.md",
+      "sha256": "30caa1843fa2dc3fca819d0025ac365d0ca4430362284799302573b673b1e22e",
+      "size_bytes": 1171
+    }
+  ],
+  "mode_counts": {
+    "OPTIMIZE": 11,
+    "REPAIR": 14,
+    "STRUCTURAL_FIX": 11,
+    "SYNTH_FIX": 10
+  },
+  "public_task_files": [
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/README.md",
+      "sha256": "915e1055aa3e319b250d81836924845bb22d0f358642f04fc3a5f47c04a6f714",
+      "size_bytes": 351
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/corpus_manifest.json",
+      "sha256": "9e374fa49e4c68315080ab93ba2f395deea5ae682dd145b791e1db52c2198691",
+      "size_bytes": 12614
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/schema/acceptance.schema.json",
+      "sha256": "a34484be9f135dc4cbb87867b776c6bf882b2d4f416798c76960588e066993da",
+      "size_bytes": 4208
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/schema/corpus-manifest.schema.json",
+      "sha256": "a553a078fb111b717a48a980b743cc6cbd38fcbd3e7fb05e081c0d93506ef645",
+      "size_bytes": 3347
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/schema/mutation-manifest.schema.json",
+      "sha256": "0eaa955bc1146bb2c017a8ec0f6c056f39b38d5759b86a9c287cb1f2505ec3e8",
+      "size_bytes": 2306
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_001/acceptance.json",
+      "sha256": "d51d351c1a02bf592449ac47227aac5cdd491de913da6735aeea6f3da6d5e21c",
+      "size_bytes": 892
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_001/description.md",
+      "sha256": "3ef4e1bcdda241c99c782f3b8ce4affa88cd810253dd70f33890dbfc1ea03992",
+      "size_bytes": 556
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_001/kernel.cpp",
+      "sha256": "595b8f33918139c986af8b3403085bb5a0466d4249e50f2ce7b1d2a8ae1672da",
+      "size_bytes": 235
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_001/kernel.h",
+      "sha256": "2a6de5cc045595bb4705c287c6fc8d33cbd19502dc8f0b5fbc12d760221f467a",
+      "size_bytes": 143
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_001/kernel_tb.cpp",
+      "sha256": "a373853921f90bc870bd6193f57427fee32e65ef43ec75b6002e75ed90219b8d",
+      "size_bytes": 539
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_001/mutation_manifest.json",
+      "sha256": "d29af3562c2c10d235acfda57df41cf99329f7584d43d1e80fa4bef8f34aabe8",
+      "size_bytes": 768
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_001/task.toml",
+      "sha256": "f23a9f044b7e5ed5b5f01251742931e5d1fd71452420dab6117f4f2073d4e84c",
+      "size_bytes": 422
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_002/acceptance.json",
+      "sha256": "6f62af2cb0274db85919b7641ccf94e13e85b7e824a76456e99f81323bf430a1",
+      "size_bytes": 892
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_002/description.md",
+      "sha256": "3ef4e1bcdda241c99c782f3b8ce4affa88cd810253dd70f33890dbfc1ea03992",
+      "size_bytes": 556
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_002/kernel.cpp",
+      "sha256": "94afd2fd4aba3d896ddd7d0478a14f1bdbe7b1a5624391ec17521ebd50dd7be7",
+      "size_bytes": 231
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_002/kernel.h",
+      "sha256": "2a6de5cc045595bb4705c287c6fc8d33cbd19502dc8f0b5fbc12d760221f467a",
+      "size_bytes": 143
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_002/kernel_tb.cpp",
+      "sha256": "a373853921f90bc870bd6193f57427fee32e65ef43ec75b6002e75ed90219b8d",
+      "size_bytes": 539
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_002/mutation_manifest.json",
+      "sha256": "5ac74ac6b0c54a60b5143144800b287d27ab50862959c91800a5fab62d90decf",
+      "size_bytes": 780
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_002/task.toml",
+      "sha256": "57eabe00244821d6f8f2a887fa9bcbdeb73216d6560663078084175eff7e6f4d",
+      "size_bytes": 422
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_003/acceptance.json",
+      "sha256": "c4df2c1580ad9a26b67a9db4e8afc1a63764922171785d066acc552ea5ff92a9",
+      "size_bytes": 892
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_003/description.md",
+      "sha256": "3ef4e1bcdda241c99c782f3b8ce4affa88cd810253dd70f33890dbfc1ea03992",
+      "size_bytes": 556
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_003/kernel.cpp",
+      "sha256": "cb372e9e80b015dd0ff2fcf84954779f371ba05d707f66c6d57cc7db53fb353a",
+      "size_bytes": 231
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_003/kernel.h",
+      "sha256": "2a6de5cc045595bb4705c287c6fc8d33cbd19502dc8f0b5fbc12d760221f467a",
+      "size_bytes": 143
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_003/kernel_tb.cpp",
+      "sha256": "a373853921f90bc870bd6193f57427fee32e65ef43ec75b6002e75ed90219b8d",
+      "size_bytes": 539
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_003/mutation_manifest.json",
+      "sha256": "ea4bf78d371e3d74c67f548531efd076f60497fcc627af09017a505a227b25db",
+      "size_bytes": 758
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_003/task.toml",
+      "sha256": "db1bcf8223130d4c46de843a0602d2558ede6fbfda63b47c92932bbbfd78d442",
+      "size_bytes": 422
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_004/acceptance.json",
+      "sha256": "a53257713454b09d2f9e0223c110079c82476de0b0001da35e492c2718f5d054",
+      "size_bytes": 892
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_004/description.md",
+      "sha256": "cbb851a00b6c0caf57011886d414d2c467396a74aa201f82f06fcde1afc64519",
+      "size_bytes": 654
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_004/kernel.cpp",
+      "sha256": "c84fdb10b8d8f7fc4f59105416a455e5bfa9fbab7385b210a9445039ceedd6ee",
+      "size_bytes": 403
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_004/kernel.h",
+      "sha256": "5d745e1d045c637b555c42d41dcc15c54295340397dc958f6b04b24e35cb09eb",
+      "size_bytes": 274
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_004/kernel_tb.cpp",
+      "sha256": "657913656833ebd8a1eface075960aad94eff1c3d18d28af50367030ec0cda6c",
+      "size_bytes": 503
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_004/mutation_manifest.json",
+      "sha256": "be02a3fa3d94fea4fc39fb91412f86aaee1da9918110c67a5e04428c5ba289f1",
+      "size_bytes": 785
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_004/task.toml",
+      "sha256": "0d94de5138dbe39d6f8265898008236b72f98c28e55e18ffa8e986d0fc555665",
+      "size_bytes": 491
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_005/acceptance.json",
+      "sha256": "3c5f67ce7ff1b6fe6e65923cca92701f209573721621ac362cb03065ed132bbe",
+      "size_bytes": 892
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_005/description.md",
+      "sha256": "a7645b11184a33bc6eded9d023de35871608dd9c2250a0dd948a8d285d7d13af",
+      "size_bytes": 592
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_005/kernel.cpp",
+      "sha256": "df8e9d495ef20e9bbc1923d602f6e9b953436beff7653a5f6d6ace1062137c18",
+      "size_bytes": 278
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_005/kernel.h",
+      "sha256": "5bf44b90892014875158eea85762b5a02eed397a70b790023f8326c5616ba877",
+      "size_bytes": 173
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_005/kernel_tb.cpp",
+      "sha256": "f3d83959492667ae970483f91b339086b4ea2700b561d93499450d55240d5c14",
+      "size_bytes": 460
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_005/mutation_manifest.json",
+      "sha256": "5a3c654f1bb391b10ccd1f78373cdf89b28914defc9d1f4bad38415a4cfc0eff",
+      "size_bytes": 785
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_005/task.toml",
+      "sha256": "f0d25931de8cd4387966cde12027be3e1a5d707173487a0c7a45713b68b467bc",
+      "size_bytes": 473
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_006/acceptance.json",
+      "sha256": "21f8545124b2f58c12e6027733035f6ff9e7481c1b8032c8f997a89b614cce65",
+      "size_bytes": 892
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_006/description.md",
+      "sha256": "9c2873b3d0eb9144765c06feec5a0574a728c53fcabaa4b9390ed5f9f083d2bc",
+      "size_bytes": 650
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_006/kernel.cpp",
+      "sha256": "cdab3f98419591c1d60aea7839ffac0523b6e960ac98a2a3511a2fff8c03e942",
+      "size_bytes": 456
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_006/kernel.h",
+      "sha256": "b239fbfe8021a765ad07f1387c6a22778b5cfc56cb6db058ccf7169c739a1604",
+      "size_bytes": 231
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_006/kernel_tb.cpp",
+      "sha256": "c9968bea5dcc32bb4d7b88b08c8b583dbf85f0fde74de116aff80be0b672e645",
+      "size_bytes": 586
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_006/mutation_manifest.json",
+      "sha256": "2eea6be52856e7b016966de09073f75ecd660bc1e1f975fdc1812dc15f5074b6",
+      "size_bytes": 795
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_006/task.toml",
+      "sha256": "ebbc4a49f6f8964af9c424aa06cc4bc2fb206646f82510bb239b8fd76cbc2706",
+      "size_bytes": 492
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_007/acceptance.json",
+      "sha256": "836e64b8a094118c9908234463629215b8503e02326c7e170f0d222c356ca093",
+      "size_bytes": 892
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_007/description.md",
+      "sha256": "17ba9bf58a3eaa2b4385298417a2df553fa04c1c9fb6e2e21285a00b0f767458",
+      "size_bytes": 595
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_007/kernel.cpp",
+      "sha256": "4ee48186dd8dbdf2e0f3f60625319c07583b7629b6a9d28527bd01d394af4e67",
+      "size_bytes": 333
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_007/kernel.h",
+      "sha256": "c45800cb15d6f46c450b76365c0af7396526a4f807b70629f6a4669495d1dcaa",
+      "size_bytes": 207
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_007/kernel_tb.cpp",
+      "sha256": "e10e93ab391a6e8bc40ee21dad888d34282c5bb52d26bc74c011bbf0eee7943a",
+      "size_bytes": 601
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_007/mutation_manifest.json",
+      "sha256": "d2272e736d3c2671e8dd969a4ac322703bb45e204d672896ad77a95c281c1dcc",
+      "size_bytes": 794
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_007/task.toml",
+      "sha256": "c81d0ebd6e6722766d78014809b9f35447e0c00bc25c5bd1ab4d9bd680b54cee",
+      "size_bytes": 444
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_008/acceptance.json",
+      "sha256": "62e5b9cdf12c6957eee258bfd2ba47eb17e228f19b4ed8bcad6410ea858f9a86",
+      "size_bytes": 892
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_008/description.md",
+      "sha256": "0b27e67736f9237c17cdc1b62ebeabcfbe5d90d2ecc1762852f1d3200689419b",
+      "size_bytes": 655
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_008/kernel.cpp",
+      "sha256": "c50ce3c852ecac4b4ecd44baec140c1a2d40d57b1d66451513f0984b8278ced7",
+      "size_bytes": 396
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_008/kernel.h",
+      "sha256": "c86303d651c18234ed3ef1049acb72fef1e5bca4b4a6a61a92892ad2601538b5",
+      "size_bytes": 164
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_008/kernel_tb.cpp",
+      "sha256": "f9a15be00c6c5d673190a1f03f8672890f1d88b1b8ba9f068c15c1c460510d44",
+      "size_bytes": 538
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_008/mutation_manifest.json",
+      "sha256": "5c3fd53ce3ba82d78f82f96a50accc49aa07ca26df687bac16c3e32decc8f384",
+      "size_bytes": 795
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_008/task.toml",
+      "sha256": "a919b48650aedfa61b0c637f8ff76ca80e16ca2b4289bcd0fb19a7062ec5615d",
+      "size_bytes": 518
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_009/acceptance.json",
+      "sha256": "b3cd2b071d75e50fe5ca423646b9513fec4cfee80bb24d0e226bf9de030bd3b7",
+      "size_bytes": 893
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_009/description.md",
+      "sha256": "3ef4e1bcdda241c99c782f3b8ce4affa88cd810253dd70f33890dbfc1ea03992",
+      "size_bytes": 556
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_009/kernel.cpp",
+      "sha256": "f7b1dbe0d63585132e5f7b6893516a79f418978ef44ab5877a1bcec40b39c5e1",
+      "size_bytes": 312
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_009/kernel.h",
+      "sha256": "2a6de5cc045595bb4705c287c6fc8d33cbd19502dc8f0b5fbc12d760221f467a",
+      "size_bytes": 143
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_009/kernel_tb.cpp",
+      "sha256": "a373853921f90bc870bd6193f57427fee32e65ef43ec75b6002e75ed90219b8d",
+      "size_bytes": 539
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_009/mutation_manifest.json",
+      "sha256": "85383c0c76ff055bcd7b72881841937e2f76f4ce35daa648f582b30c7c72e0e6",
+      "size_bytes": 794
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_009/task.toml",
+      "sha256": "dbc99f6f8ab73606510d570ff2755227937ed614a9f0d3c95d28cd3ed326e653",
+      "size_bytes": 422
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_010/acceptance.json",
+      "sha256": "7bde423b3e87c108372c79dd24686854d1c58073f916ca115497a54d7247ab88",
+      "size_bytes": 893
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_010/description.md",
+      "sha256": "3ef4e1bcdda241c99c782f3b8ce4affa88cd810253dd70f33890dbfc1ea03992",
+      "size_bytes": 556
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_010/kernel.cpp",
+      "sha256": "6c2ea6bb32614034b019b5b123cfbc4f64982aea0f31557210f3d877c8e9b04f",
+      "size_bytes": 425
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_010/kernel.h",
+      "sha256": "2a6de5cc045595bb4705c287c6fc8d33cbd19502dc8f0b5fbc12d760221f467a",
+      "size_bytes": 143
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_010/kernel_tb.cpp",
+      "sha256": "a373853921f90bc870bd6193f57427fee32e65ef43ec75b6002e75ed90219b8d",
+      "size_bytes": 539
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_010/mutation_manifest.json",
+      "sha256": "78bebbe1d90daf08ca2774fe161b4704e9e6a2d4ba955026976616aef72530b2",
+      "size_bytes": 779
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_010/task.toml",
+      "sha256": "3a78fa93fefcd7746e7872f9e34601bbdc452bb109a1fff54d6cfca8bc9491b5",
+      "size_bytes": 422
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_011/acceptance.json",
+      "sha256": "f3ed531058daea029948e4f5f1194b29c96f10b30c99c865ecccc93e2963cb40",
+      "size_bytes": 893
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_011/description.md",
+      "sha256": "3ef4e1bcdda241c99c782f3b8ce4affa88cd810253dd70f33890dbfc1ea03992",
+      "size_bytes": 556
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_011/kernel.cpp",
+      "sha256": "bca45331375d90e8c63fcb0c4676e9f49cc972f005b2022888e82999530ecc72",
+      "size_bytes": 312
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_011/kernel.h",
+      "sha256": "2a6de5cc045595bb4705c287c6fc8d33cbd19502dc8f0b5fbc12d760221f467a",
+      "size_bytes": 143
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_011/kernel_tb.cpp",
+      "sha256": "a373853921f90bc870bd6193f57427fee32e65ef43ec75b6002e75ed90219b8d",
+      "size_bytes": 539
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_011/mutation_manifest.json",
+      "sha256": "ab2d2f1bbc6344ac6037091493cf362a6c3830ce5abbce104d15f580d4cfdab7",
+      "size_bytes": 808
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_011/task.toml",
+      "sha256": "0d3b45e1f6980051305def226e9dbe2bf104efa66903f478c287c67c8e0474fc",
+      "size_bytes": 422
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_012/acceptance.json",
+      "sha256": "29d74d8dc8911b973fbf5ebb46d0c25733eafe8b5a6c9c372a35aa2b1286d267",
+      "size_bytes": 893
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_012/description.md",
+      "sha256": "e80d24ebf389cf1477224424228b990250b8010ff3e11ca82e4f462f23a353fa",
+      "size_bytes": 612
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_012/kernel.cpp",
+      "sha256": "2af0d9af04c956e11f815d67fdca0c482ee43626fe5aafaa60dfac99cba9d343",
+      "size_bytes": 845
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_012/kernel.h",
+      "sha256": "6eb28c22de60c52beb671769315464b22c8fb264146ccba4dd27e005d33aa6db",
+      "size_bytes": 250
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_012/kernel_tb.cpp",
+      "sha256": "386fcd99596c7f0a843b15864b380d058243072d3e693556dcbccc3beb4b1693",
+      "size_bytes": 883
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_012/mutation_manifest.json",
+      "sha256": "6429c0d99cb88904aa3a0db854f934e8cde17deb69758a4e4d0ae1b57d258513",
+      "size_bytes": 804
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_012/task.toml",
+      "sha256": "cf7ac00d9f2e586235a20b81886370faf463f74d69ff012046519d822cd773eb",
+      "size_bytes": 465
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_013/acceptance.json",
+      "sha256": "084979e81d43fc00b4167db8f8684f763b3c249c6b31b824f1544a29acce198f",
+      "size_bytes": 893
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_013/description.md",
+      "sha256": "b2a5ebc15d1f066cd4c7be174313e6aec9862c1361e005f3be186c47ad4a3b74",
+      "size_bytes": 661
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_013/kernel.cpp",
+      "sha256": "2f872443720c8b9b55692213be695dbcb0ff4baef743f60420f8b45e9a541248",
+      "size_bytes": 1077
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_013/kernel.h",
+      "sha256": "c5af78448bc23df629a9002ca2c3930612c7f5e2e2dd0df2592d4358fb145979",
+      "size_bytes": 299
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_013/kernel_tb.cpp",
+      "sha256": "b08c72cd02be2dbd74b7abeda8a7b2d9c257e18991ba6ba0ffcd8470acaff027",
+      "size_bytes": 1158
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_013/mutation_manifest.json",
+      "sha256": "123606de29de02cd3decd70fec8cd38ee88642bf964eba29033740b6d99501c2",
+      "size_bytes": 836
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_013/task.toml",
+      "sha256": "b0c6c5cbc1c58bb3a3cc9a4287b83ead3f0bebb74e6d53d92bbfde9b12cf2605",
+      "size_bytes": 494
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_014/acceptance.json",
+      "sha256": "27aa8d9f28fedf6670867667675466744c272e66b6df09557b6aca0bf2751cdb",
+      "size_bytes": 893
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_014/description.md",
+      "sha256": "4edccbe66015c24877a699cc7c2c49604c25bdf219ab3deced8cee34a2c726c7",
+      "size_bytes": 584
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_014/kernel.cpp",
+      "sha256": "18c38ba2133b05f64dce17bf18b29a8b781685a2c3afa41ee7f2f323911f844f",
+      "size_bytes": 386
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_014/kernel.h",
+      "sha256": "370ce2e3f551175c30be05aface2c8cd5118b69f60a8fa4a8f98e30f023dac90",
+      "size_bytes": 164
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_014/kernel_tb.cpp",
+      "sha256": "fec4bc8536679600b7153f147a72ba14ec8c6188f7b73914655a470627a67004",
+      "size_bytes": 530
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_014/mutation_manifest.json",
+      "sha256": "1bf1c1349a373c0ff3872e0d3c6d3f782b26d8167952cb39004e6166856dba6e",
+      "size_bytes": 812
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_014/task.toml",
+      "sha256": "d636fd50aeecbf41bbd797536be380a7f0c1c5e9d5c00c09d826897681f98753",
+      "size_bytes": 454
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_015/acceptance.json",
+      "sha256": "0e0c4dc38fff804b328bd9e662252a5558f438ee073a19ea148bd25af56c421e",
+      "size_bytes": 894
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_015/description.md",
+      "sha256": "4d51a3c2ffb1d60bbb1478093da4738da5a0fcd547513c24e5073134b132827b",
+      "size_bytes": 556
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_015/kernel.cpp",
+      "sha256": "13fbb3c35eb8710662198e609b3f43df40c6a2bb5bfc39342c819d2494c11cf3",
+      "size_bytes": 1011
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_015/kernel.h",
+      "sha256": "7e03e10dfbd796b730e4a59025c09c38710ec0b9a83f7ad6d0cf4b866fc14f3b",
+      "size_bytes": 542
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_015/kernel_tb.cpp",
+      "sha256": "c1eed665e793bb7bf07c150b8e91e4d1e8ec290d9dcb9eeac263837be721ec36",
+      "size_bytes": 539
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_015/mutation_manifest.json",
+      "sha256": "6a1255c90e486fc7f15e03ef0383d838756c50e4ef85f645d5b6a0f875f13e99",
+      "size_bytes": 810
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_015/task.toml",
+      "sha256": "9f1180189ed9cf19238d5a6ff5f1ba03b5de419365fef6af84bdf73d543c121f",
+      "size_bytes": 422
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_016/acceptance.json",
+      "sha256": "ad998945ee3f2798e2e253f3a23ca854259baad7d5b782e07a348f28da9fcbdf",
+      "size_bytes": 894
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_016/description.md",
+      "sha256": "4d51a3c2ffb1d60bbb1478093da4738da5a0fcd547513c24e5073134b132827b",
+      "size_bytes": 556
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_016/kernel.cpp",
+      "sha256": "56df635d7e811d72dac01f5e6f911d8af3a0b0566c66aa64589990894532e0fe",
+      "size_bytes": 1011
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_016/kernel.h",
+      "sha256": "7e03e10dfbd796b730e4a59025c09c38710ec0b9a83f7ad6d0cf4b866fc14f3b",
+      "size_bytes": 542
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_016/kernel_tb.cpp",
+      "sha256": "c1eed665e793bb7bf07c150b8e91e4d1e8ec290d9dcb9eeac263837be721ec36",
+      "size_bytes": 539
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_016/mutation_manifest.json",
+      "sha256": "6b5c1a5b296a3fa269ea5012aaf72b1cdffc1d9935e8c22e8603a344ac5225a2",
+      "size_bytes": 813
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_016/task.toml",
+      "sha256": "9c1840fecbe0b3d5ce6ec1aec303c8e5c267ab3eaed63c8d8556488691024e98",
+      "size_bytes": 422
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_017/acceptance.json",
+      "sha256": "3a96e2c56cddf70aacd88f4516204e8644c9355d0ebbffd565835da4f47873c3",
+      "size_bytes": 894
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_017/description.md",
+      "sha256": "4d51a3c2ffb1d60bbb1478093da4738da5a0fcd547513c24e5073134b132827b",
+      "size_bytes": 556
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_017/kernel.cpp",
+      "sha256": "73826474ea2f8acbf710b37d3ab3990ae2cdd74a66e5e7e5ff4ec2d298f5301f",
+      "size_bytes": 1225
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_017/kernel.h",
+      "sha256": "7e03e10dfbd796b730e4a59025c09c38710ec0b9a83f7ad6d0cf4b866fc14f3b",
+      "size_bytes": 542
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_017/kernel_tb.cpp",
+      "sha256": "c1eed665e793bb7bf07c150b8e91e4d1e8ec290d9dcb9eeac263837be721ec36",
+      "size_bytes": 539
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_017/mutation_manifest.json",
+      "sha256": "17f229a93c5f00a81f3e93f337914a4378ed99f2b0f46b9e8d2da4ab308add19",
+      "size_bytes": 805
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_017/task.toml",
+      "sha256": "731072c53b995fb851b2522cbfe36b11281558ad24eebd2ef506cf18fa0b476b",
+      "size_bytes": 422
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_018/acceptance.json",
+      "sha256": "3840f4558b6f2f8cf82745fc4b38f7a50e21dab577f58a72c20401d9e86f7b86",
+      "size_bytes": 894
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_018/description.md",
+      "sha256": "4d51a3c2ffb1d60bbb1478093da4738da5a0fcd547513c24e5073134b132827b",
+      "size_bytes": 556
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_018/kernel.cpp",
+      "sha256": "6f2db94db472c9ec24b6af69045d3b3be13def04967976285d9533de1c50702f",
+      "size_bytes": 1148
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_018/kernel.h",
+      "sha256": "7e03e10dfbd796b730e4a59025c09c38710ec0b9a83f7ad6d0cf4b866fc14f3b",
+      "size_bytes": 542
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_018/kernel_tb.cpp",
+      "sha256": "c1eed665e793bb7bf07c150b8e91e4d1e8ec290d9dcb9eeac263837be721ec36",
+      "size_bytes": 539
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_018/mutation_manifest.json",
+      "sha256": "93229fd4416c715c15666ea4425cd1837abce51cff821f19129162cabad1d0f2",
+      "size_bytes": 802
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_018/task.toml",
+      "sha256": "2930358c7f4ef97be7de85d1e59412f02962a4f9cf0cbb36bab3944d08f81b92",
+      "size_bytes": 422
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_019/acceptance.json",
+      "sha256": "f5b678feaf2debffe03421f07b0161d14dc86f316835ee2e572da046554fb60c",
+      "size_bytes": 894
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_019/description.md",
+      "sha256": "4d51a3c2ffb1d60bbb1478093da4738da5a0fcd547513c24e5073134b132827b",
+      "size_bytes": 556
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_019/kernel.cpp",
+      "sha256": "694b458fd80997fec2d2ce8165252afddbb273256e795ce9d7a25cf80556708c",
+      "size_bytes": 1211
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_019/kernel.h",
+      "sha256": "7e03e10dfbd796b730e4a59025c09c38710ec0b9a83f7ad6d0cf4b866fc14f3b",
+      "size_bytes": 542
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_019/kernel_tb.cpp",
+      "sha256": "c1eed665e793bb7bf07c150b8e91e4d1e8ec290d9dcb9eeac263837be721ec36",
+      "size_bytes": 539
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_019/mutation_manifest.json",
+      "sha256": "4464f330b6d281edb4997bccf0e96a76c070c9ecf314e1a5c9c5e4bf473838f6",
+      "size_bytes": 836
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_019/task.toml",
+      "sha256": "d0669e9842643a20a1c0eb9dec99bddf496abfa1ecca5d661738f1a51462ae9e",
+      "size_bytes": 422
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_020/acceptance.json",
+      "sha256": "e54b10d56d28210ff7e4ab18cefc0a3e784e540c8a2e126e017f76baedcdc5fd",
+      "size_bytes": 894
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_020/description.md",
+      "sha256": "4d51a3c2ffb1d60bbb1478093da4738da5a0fcd547513c24e5073134b132827b",
+      "size_bytes": 556
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_020/kernel.cpp",
+      "sha256": "b8274124e9c9a124864a32f24721aa68d467290d6ecab58639b00f06f8ebf3b4",
+      "size_bytes": 1401
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_020/kernel.h",
+      "sha256": "7e03e10dfbd796b730e4a59025c09c38710ec0b9a83f7ad6d0cf4b866fc14f3b",
+      "size_bytes": 542
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_020/kernel_tb.cpp",
+      "sha256": "c1eed665e793bb7bf07c150b8e91e4d1e8ec290d9dcb9eeac263837be721ec36",
+      "size_bytes": 539
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_020/mutation_manifest.json",
+      "sha256": "c4aa8170d9d33641197f55e6782c791dd4ac49571eb8a188dd3797c97300ec33",
+      "size_bytes": 794
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_020/task.toml",
+      "sha256": "ba37cc82d6ad7a6c65ed51fb7a2e75d179fc2211b507f4fd828fe6d861c589cd",
+      "size_bytes": 422
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_021/acceptance.json",
+      "sha256": "111c8b039c54fc02f7274c2d5fd86543ea4a2f512d7b60d83e5ad7d77a29db70",
+      "size_bytes": 890
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_021/description.md",
+      "sha256": "3ef4e1bcdda241c99c782f3b8ce4affa88cd810253dd70f33890dbfc1ea03992",
+      "size_bytes": 556
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_021/kernel.cpp",
+      "sha256": "6940119591ffdc3e06d3c5f4be77109e2f705746004b076811441c5cded32190",
+      "size_bytes": 189
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_021/kernel.h",
+      "sha256": "2a6de5cc045595bb4705c287c6fc8d33cbd19502dc8f0b5fbc12d760221f467a",
+      "size_bytes": 143
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_021/kernel_tb.cpp",
+      "sha256": "a373853921f90bc870bd6193f57427fee32e65ef43ec75b6002e75ed90219b8d",
+      "size_bytes": 539
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_021/mutation_manifest.json",
+      "sha256": "070bf87bb930093a72cb8d4b3bdf5f3c503bffcf7bc2d04bc238f5cf5f49beb7",
+      "size_bytes": 807
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_021/task.toml",
+      "sha256": "00f442adbb6a2f23554f6bc633569524fa9caf56088d0d261ebe57c751313c5e",
+      "size_bytes": 423
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_022/acceptance.json",
+      "sha256": "c9aa041295deba822d704c97e6ba30e575cd66e49989f5b7dd0a7f77fb74367e",
+      "size_bytes": 890
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_022/description.md",
+      "sha256": "3ef4e1bcdda241c99c782f3b8ce4affa88cd810253dd70f33890dbfc1ea03992",
+      "size_bytes": 556
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_022/kernel.cpp",
+      "sha256": "e29e48bf8fd0c342f7c6318a6cd0cc114bff81dbb55efcdc18eeec6506cafdec",
+      "size_bytes": 374
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_022/kernel.h",
+      "sha256": "2a6de5cc045595bb4705c287c6fc8d33cbd19502dc8f0b5fbc12d760221f467a",
+      "size_bytes": 143
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_022/kernel_tb.cpp",
+      "sha256": "a373853921f90bc870bd6193f57427fee32e65ef43ec75b6002e75ed90219b8d",
+      "size_bytes": 539
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_022/mutation_manifest.json",
+      "sha256": "7f4a4208975dde38102ef6203f74487f11e8a5ae5a08c3694949978368b64080",
+      "size_bytes": 792
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_022/task.toml",
+      "sha256": "62894ee9457e5a5f2a33d58597fafcb95241c4fc823f50e38a008b06d7762acb",
+      "size_bytes": 423
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_023/acceptance.json",
+      "sha256": "44cb6e2e2f540380a09abb8c5c7e9c50cd256d44e93bf7e076c08529a6ecc48d",
+      "size_bytes": 890
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_023/description.md",
+      "sha256": "d01e1ced059ec07431e905f41288c68d17c4505e35bfe7bf2843205055196629",
+      "size_bytes": 596
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_023/kernel.cpp",
+      "sha256": "a1ade15eeebd84f4c05a70247dde1f322d90839958356123f76a3fd1a64eb1c3",
+      "size_bytes": 297
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_023/kernel.h",
+      "sha256": "0cecf09742f437c2e375228020e96c22edbfea682f7b0b790861eb0f005aac72",
+      "size_bytes": 182
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_023/kernel_tb.cpp",
+      "sha256": "8dd26a251f3c6cb53e45b3400d6b4efa23e3f6a09988270fadaf926c26c7bef8",
+      "size_bytes": 546
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_023/mutation_manifest.json",
+      "sha256": "e3db61acb28f03c8862144bc8ee8b5dc46a372ec3a25c880c8c7af0df7bc8327",
+      "size_bytes": 774
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_023/task.toml",
+      "sha256": "bdcb2f38ab55dcb8f04d404e84cd365166e2425685eb7791beb56006e798bb95",
+      "size_bytes": 467
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_024/acceptance.json",
+      "sha256": "6f907e4371fa01d1e75e64e2c21e8cc63982bd3d0f689386d3e4c2d67a6b355c",
+      "size_bytes": 890
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_024/description.md",
+      "sha256": "3ef4e1bcdda241c99c782f3b8ce4affa88cd810253dd70f33890dbfc1ea03992",
+      "size_bytes": 556
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_024/kernel.cpp",
+      "sha256": "5d879d8765b54a4286e241cb5440e2dd1a2c019d803934dc722fc61628141bad",
+      "size_bytes": 346
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_024/kernel.h",
+      "sha256": "2a6de5cc045595bb4705c287c6fc8d33cbd19502dc8f0b5fbc12d760221f467a",
+      "size_bytes": 143
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_024/kernel_tb.cpp",
+      "sha256": "a373853921f90bc870bd6193f57427fee32e65ef43ec75b6002e75ed90219b8d",
+      "size_bytes": 539
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_024/mutation_manifest.json",
+      "sha256": "306c73718f49d5bb6d3fb6d63c16ab16e986385c22ee46d8535fa4c3fcb322db",
+      "size_bytes": 768
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_024/task.toml",
+      "sha256": "537c6d13de676b59af3e9b2da6763b9e91119334154a5e5f2bd31fbbd6f01129",
+      "size_bytes": 423
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_025/acceptance.json",
+      "sha256": "e9ed0a799f4dd41ee19f923dbbd3468c8c2e1688d974eea4cb50d4e1c3df7c05",
+      "size_bytes": 890
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_025/description.md",
+      "sha256": "cf2dcec09b9582d8c953d4bb52eb846c9931598322946459179d323eea061d23",
+      "size_bytes": 547
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_025/kernel.cpp",
+      "sha256": "d695b64f8672d1e72ab0bf16589e0d7e82f2427700f2c3c9d8b2a4ad04165f08",
+      "size_bytes": 760
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_025/kernel.h",
+      "sha256": "09d5710bb9c0a6c12f541655f0120a902d05fb244e9d639cf0c493bfecbcf208",
+      "size_bytes": 179
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_025/kernel_tb.cpp",
+      "sha256": "aa86057d51f9a6b448f3686720140ba9176d8ef76125f5156247b669d5468f64",
+      "size_bytes": 490
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_025/mutation_manifest.json",
+      "sha256": "8afff755964f67e0c1630b970a5d39c876d4ec3d9a162d2fc4f0e252e17d2bb3",
+      "size_bytes": 790
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_025/task.toml",
+      "sha256": "fc0ec07321f671735c5af84ccc2d03ee0c60b50ba177d2225a96085e45681d03",
+      "size_bytes": 441
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_026/acceptance.json",
+      "sha256": "249234815b7f8d0e97ced1ef072fba89cd2bbb2fc1127afd97fcd36358d57dd1",
+      "size_bytes": 890
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_026/description.md",
+      "sha256": "0ba4bf6d0dd85623184205dd4f9d9131edd349a3f79176b69779ee7bbb48a9c6",
+      "size_bytes": 595
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_026/kernel.cpp",
+      "sha256": "2a1d82f6f12f0b41e69ef2293bbaa12a76ad809f7d7709b0c425026faed544c8",
+      "size_bytes": 672
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_026/kernel.h",
+      "sha256": "f8c924724212be9904bd860f8f4668b0bbe64e806f66cda40f1c5110486d61c1",
+      "size_bytes": 227
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_026/kernel_tb.cpp",
+      "sha256": "985053cc354857a90cedce0ac06359b86a35101eeccd3f35a59353ce3873edd4",
+      "size_bytes": 611
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_026/mutation_manifest.json",
+      "sha256": "5832e69d488828f5e83f8dc6eaecb48377586c561a3df5321b11846d22a4aba4",
+      "size_bytes": 795
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_026/task.toml",
+      "sha256": "13728bb721a828e97f3134886bee73baad717fb0619c2c10391eb955f3db7b3b",
+      "size_bytes": 477
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_027/acceptance.json",
+      "sha256": "daed05b18e724d3ed8e369a999f011348048621937c771becc5d4129bbe9ddef",
+      "size_bytes": 890
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_027/description.md",
+      "sha256": "a7b387a8be653752c2832d0920894fa121fbb38b37ca49c589db5668354b3cff",
+      "size_bytes": 553
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_027/kernel.cpp",
+      "sha256": "af283eef1057a04be89160c0213a88a63bf212e34e504eb9f8a03ad865fe3c37",
+      "size_bytes": 500
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_027/kernel.h",
+      "sha256": "ab84bfadc9c4e19dbf7c0cf07f0bffe1f052d7127982a917b8ec57a70e8b54a7",
+      "size_bytes": 188
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_027/kernel_tb.cpp",
+      "sha256": "318b1e700c8e061755dd93bec34f743e834be8687c1dc7b8f2dfe616ead950bd",
+      "size_bytes": 505
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_027/mutation_manifest.json",
+      "sha256": "65ab06eb9e754b56cee9aabee34af2cb2bbecc5506959adc91cfba4293d80004",
+      "size_bytes": 829
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_027/task.toml",
+      "sha256": "fc4fabc0cd12db8a1360a48f584ad2707ac73cf2bf6c0f25eb583906389c7e28",
+      "size_bytes": 447
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_028/acceptance.json",
+      "sha256": "b41b645d25a659a333c158a2e89299eb15d61f11ca4e11c6639265421520f1e1",
+      "size_bytes": 886
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_028/description.md",
+      "sha256": "3ef4e1bcdda241c99c782f3b8ce4affa88cd810253dd70f33890dbfc1ea03992",
+      "size_bytes": 556
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_028/kernel.cpp",
+      "sha256": "3b8fd92c95c0abe127e345a70713cb1f70ca63e3c92268c6a576d0173b409b9d",
+      "size_bytes": 362
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_028/kernel.h",
+      "sha256": "2a6de5cc045595bb4705c287c6fc8d33cbd19502dc8f0b5fbc12d760221f467a",
+      "size_bytes": 143
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_028/kernel_tb.cpp",
+      "sha256": "a373853921f90bc870bd6193f57427fee32e65ef43ec75b6002e75ed90219b8d",
+      "size_bytes": 539
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_028/mutation_manifest.json",
+      "sha256": "e1ed97435dc353f175ebab020339f38e650a73f10d5930d9bc40f66e3e8bfcbc",
+      "size_bytes": 800
+    },
+    {
+      "corpus": "v3d-fast",
+      "path": "task_corpus/v3d-fast/tasks/v3d_fast_028/task.toml",
+      "sha256": "4f13252c8c060230a83b00fe329af50757ed066ecfdce7932ffd3fbad1acc788",
+      "size_bytes": 422
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/corpus_manifest.json",
+      "sha256": "2e7497b52bc1a6144c74e47fce5a6282f287b78aaef58970d8935d202cf6c6cc",
+      "size_bytes": 5040
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_optimize_01/acceptance.json",
+      "sha256": "247662654673eba7f345e52f46284dea157a4e12a1eb4c85d4da2bfae6a64696",
+      "size_bytes": 201
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_optimize_01/description.md",
+      "sha256": "ef46fa2e6eca4a9f86cd9bab4139491309f3f802f1620de95fed801a4a36c09a",
+      "size_bytes": 265
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_optimize_01/kernel.cpp",
+      "sha256": "db5723cb5aaf5add7f92a8a2c28b7df16c70db7476e2fb4438cd5195d92d5fea",
+      "size_bytes": 122
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_optimize_01/kernel.h",
+      "sha256": "5296435067ee8e8bc6184d75d0ec13eb583eea0ae705bf83dfc82a0dd352c34c",
+      "size_bytes": 91
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_optimize_01/kernel_tb.cpp",
+      "sha256": "16f4ef1d4f96fc8f25fcb18d4e4bcc468bef338e517fa7abff7139f0fbb7977a",
+      "size_bytes": 275
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_optimize_01/mutation_manifest.json",
+      "sha256": "6e70ff4f12d2c1a7aa4a7e3ce6e67622a8f408eda0350f5b0eb95aa8b1d952c4",
+      "size_bytes": 309
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_optimize_01/task.toml",
+      "sha256": "deb5ddc7500590f8c500d6bfc696d47061a17bf243955f5a985feafe2c849bb3",
+      "size_bytes": 373
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_optimize_02/acceptance.json",
+      "sha256": "247662654673eba7f345e52f46284dea157a4e12a1eb4c85d4da2bfae6a64696",
+      "size_bytes": 201
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_optimize_02/description.md",
+      "sha256": "f44ad575ef9aed5b31fe4bdc20f96613494d5092e4d7d817362ae45cda45d0ff",
+      "size_bytes": 267
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_optimize_02/kernel.cpp",
+      "sha256": "88ce01562bdfaf60bd419b55a2f8ab993ae163f5b8a705476e95dfd6531cefb2",
+      "size_bytes": 155
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_optimize_02/kernel.h",
+      "sha256": "5296435067ee8e8bc6184d75d0ec13eb583eea0ae705bf83dfc82a0dd352c34c",
+      "size_bytes": 91
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_optimize_02/kernel_tb.cpp",
+      "sha256": "a4def9707a389cbb725919ae4d8fe0b8b932a6a973ebabe1f4ef221333ad6220",
+      "size_bytes": 327
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_optimize_02/mutation_manifest.json",
+      "sha256": "72fcadd4946d90893d0496fcc38130d614eb2e65194f16584080ce3b9cbf3bb6",
+      "size_bytes": 315
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_optimize_02/task.toml",
+      "sha256": "6d87a8c94c05f16cbf5b59fdc6004717d4d93c83f2b8bd4071b901b6e4aee369",
+      "size_bytes": 373
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_optimize_03/acceptance.json",
+      "sha256": "247662654673eba7f345e52f46284dea157a4e12a1eb4c85d4da2bfae6a64696",
+      "size_bytes": 201
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_optimize_03/description.md",
+      "sha256": "fccc58131a42718bf0a3ed861d1a6f01f0588442d6e9dee847e68c227b140c51",
+      "size_bytes": 262
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_optimize_03/kernel.cpp",
+      "sha256": "54cfbeeaaa99b8f52bef97617b7303b4a06c8aca20ee49fd39fe83cb18da26b6",
+      "size_bytes": 168
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_optimize_03/kernel.h",
+      "sha256": "5296435067ee8e8bc6184d75d0ec13eb583eea0ae705bf83dfc82a0dd352c34c",
+      "size_bytes": 91
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_optimize_03/kernel_tb.cpp",
+      "sha256": "ad6ac811107c226288f13784542cac4824387f1501e4899c63c9a9d49a2d1006",
+      "size_bytes": 307
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_optimize_03/mutation_manifest.json",
+      "sha256": "1fe93945ebe811c6e950376e41e34191c6d1e462439aaef4d7aa777c88a25451",
+      "size_bytes": 306
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_optimize_03/task.toml",
+      "sha256": "d710841e9896e1bf8146bbe7c0cad5db543fc7b0323dede840d36e89eaba6a77",
+      "size_bytes": 373
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_repair_01/acceptance.json",
+      "sha256": "247662654673eba7f345e52f46284dea157a4e12a1eb4c85d4da2bfae6a64696",
+      "size_bytes": 201
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_repair_01/description.md",
+      "sha256": "d31ad5d1d6ee1ef1a5c9ac8284971f08629e23bd51ae934df33ff6ba6a67e77b",
+      "size_bytes": 261
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_repair_01/kernel.cpp",
+      "sha256": "2de9f6443a14668f08ebc87bcd797eedbe3ad225866e1d0d68ca90ed89665191",
+      "size_bytes": 124
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_repair_01/kernel.h",
+      "sha256": "5296435067ee8e8bc6184d75d0ec13eb583eea0ae705bf83dfc82a0dd352c34c",
+      "size_bytes": 91
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_repair_01/kernel_tb.cpp",
+      "sha256": "16f4ef1d4f96fc8f25fcb18d4e4bcc468bef338e517fa7abff7139f0fbb7977a",
+      "size_bytes": 275
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_repair_01/mutation_manifest.json",
+      "sha256": "15d5f2bf18f6eef937da4a4d898a660adad1bfbaadeebbfb130843a4355c8a80",
+      "size_bytes": 301
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_repair_01/task.toml",
+      "sha256": "86382601f457043cac445acfe955b979905d037b39b276545101ab1ef9554f49",
+      "size_bytes": 370
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_repair_02/acceptance.json",
+      "sha256": "247662654673eba7f345e52f46284dea157a4e12a1eb4c85d4da2bfae6a64696",
+      "size_bytes": 201
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_repair_02/description.md",
+      "sha256": "6014a9e64370c565f52a41df26e78d9d1bb109ecc0c6bcae8bf86648297a70c1",
+      "size_bytes": 255
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_repair_02/kernel.cpp",
+      "sha256": "eb6ef545565800086d8d146ab327738bc4e3301ff7b019eaa2802fb68c0659bf",
+      "size_bytes": 126
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_repair_02/kernel.h",
+      "sha256": "5296435067ee8e8bc6184d75d0ec13eb583eea0ae705bf83dfc82a0dd352c34c",
+      "size_bytes": 91
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_repair_02/kernel_tb.cpp",
+      "sha256": "544a99b21b1b3ab4e71f1f31dbc2272d1046f2ef12a0a8aa84d741dd0cfea2b7",
+      "size_bytes": 275
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_repair_02/mutation_manifest.json",
+      "sha256": "ccb8837e32a08b0a6d6f5c4aa6c64e284155184ce7f7bf1f0dd0197d9c152235",
+      "size_bytes": 295
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_repair_02/task.toml",
+      "sha256": "34da667ef241fcb730a081b889feb70eeebf9d64579a5da55c57c4cd4980f44b",
+      "size_bytes": 370
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_repair_03/acceptance.json",
+      "sha256": "247662654673eba7f345e52f46284dea157a4e12a1eb4c85d4da2bfae6a64696",
+      "size_bytes": 201
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_repair_03/description.md",
+      "sha256": "2125ca1750cf09a7a8031bfa51ba80cd5e8d85333ab7f8465aa063d01fb8b1bb",
+      "size_bytes": 266
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_repair_03/kernel.cpp",
+      "sha256": "004a491527bce97210b62f76ccc3ecace5ba59e1055f190e33ef838e14f1d63d",
+      "size_bytes": 134
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_repair_03/kernel.h",
+      "sha256": "5296435067ee8e8bc6184d75d0ec13eb583eea0ae705bf83dfc82a0dd352c34c",
+      "size_bytes": 91
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_repair_03/kernel_tb.cpp",
+      "sha256": "81a31d812950d626ac4779a4222922e9be12a722250d2f82a219743c0376988f",
+      "size_bytes": 287
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_repair_03/mutation_manifest.json",
+      "sha256": "75eed25ff3ea96a2acf7c86ed494874440f88a4996b06313db50a9617eb0f35b",
+      "size_bytes": 311
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_repair_03/task.toml",
+      "sha256": "790211c4f381cb446b03f3a0b87532337cdfa194fcbaaa709f25701484f937e3",
+      "size_bytes": 370
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_repair_04/acceptance.json",
+      "sha256": "247662654673eba7f345e52f46284dea157a4e12a1eb4c85d4da2bfae6a64696",
+      "size_bytes": 201
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_repair_04/description.md",
+      "sha256": "aa8ca60f08232367388a034610e659d924a3ef51ef78508f3d785e61ebbe9585",
+      "size_bytes": 277
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_repair_04/kernel.cpp",
+      "sha256": "47e2f3188e7935262e4d642fc1e4df0d4a7d55eb76e1f6b85d52bd34226b650e",
+      "size_bytes": 134
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_repair_04/kernel.h",
+      "sha256": "5296435067ee8e8bc6184d75d0ec13eb583eea0ae705bf83dfc82a0dd352c34c",
+      "size_bytes": 91
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_repair_04/kernel_tb.cpp",
+      "sha256": "6cacd08dce98cdfb21b03fed022e65a67b46d782f492720e76d3d40ad3519a12",
+      "size_bytes": 324
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_repair_04/mutation_manifest.json",
+      "sha256": "3d813d5085d8ed9bdc2702d4f9f1b161286444cf82b96561fadc1486eff23f93",
+      "size_bytes": 318
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_repair_04/task.toml",
+      "sha256": "8fb46b29cc8bfc3d261a83bebc8eaf4ab68cdd76aa0623e8ab510ddd72ac29ed",
+      "size_bytes": 370
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_repair_05/acceptance.json",
+      "sha256": "247662654673eba7f345e52f46284dea157a4e12a1eb4c85d4da2bfae6a64696",
+      "size_bytes": 201
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_repair_05/description.md",
+      "sha256": "da4ec7d869401ac9fe41af431721c1bd813eb9ea11225fe28d4b8c4b3c6bc89b",
+      "size_bytes": 263
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_repair_05/kernel.cpp",
+      "sha256": "e620d35dcb5bf42e53ca10c03dedbfb040392c040f0d73b692d779a962d207ba",
+      "size_bytes": 126
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_repair_05/kernel.h",
+      "sha256": "5296435067ee8e8bc6184d75d0ec13eb583eea0ae705bf83dfc82a0dd352c34c",
+      "size_bytes": 91
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_repair_05/kernel_tb.cpp",
+      "sha256": "89d4435de17ecc54e773fe24fd2b52db8027ec5f7657ace6324915df16c8f670",
+      "size_bytes": 279
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_repair_05/mutation_manifest.json",
+      "sha256": "434a488e0518c0e334cc52e9893b8bf586b69d9d98fef574c01ecd3af72144be",
+      "size_bytes": 306
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_repair_05/task.toml",
+      "sha256": "a5d83516787594011dfdbf30764b9cb5513c3ba2fa37f5d61d897541e4828fcb",
+      "size_bytes": 370
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_structural_01/acceptance.json",
+      "sha256": "2983b96d6b60fc9a8251807ace61b792b3275e1a7d3401fff60d279433e7a426",
+      "size_bytes": 214
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_structural_01/description.md",
+      "sha256": "b62932cd21929c16ab4dc2ea685822ff966816a02dda25e466044538c73fb7ca",
+      "size_bytes": 351
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_structural_01/kernel.cpp",
+      "sha256": "1cb320409c2e2078ec5896339b36b21c66c4693e991c163f8ac310bf98f0bedf",
+      "size_bytes": 840
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_structural_01/kernel.h",
+      "sha256": "5296435067ee8e8bc6184d75d0ec13eb583eea0ae705bf83dfc82a0dd352c34c",
+      "size_bytes": 91
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_structural_01/kernel_tb.cpp",
+      "sha256": "2bd7cdf7a935fbdeae5be8560d86ce64ee3401fcd5bd62919b6b7551d9cb8411",
+      "size_bytes": 277
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_structural_01/mutation_manifest.json",
+      "sha256": "c8b93270b78428a464c14ef22533217b6c7b277b259ff8760d13f8e1ac2bfb3a",
+      "size_bytes": 375
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_structural_01/task.toml",
+      "sha256": "819ebe0fd73d9e7cf3c4cb9a0963bfe0f3abac3394096a2552bf0c0936e929d6",
+      "size_bytes": 374
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_structural_02/acceptance.json",
+      "sha256": "2983b96d6b60fc9a8251807ace61b792b3275e1a7d3401fff60d279433e7a426",
+      "size_bytes": 214
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_structural_02/description.md",
+      "sha256": "858f661b3594fc3d700a3977491b225b78223968658bdf9b6156fbaa6993403e",
+      "size_bytes": 351
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_structural_02/kernel.cpp",
+      "sha256": "d7424b81816f93e76379b86332ba0d487c8b9b63261b5eda0b2dd56c56890156",
+      "size_bytes": 852
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_structural_02/kernel.h",
+      "sha256": "5296435067ee8e8bc6184d75d0ec13eb583eea0ae705bf83dfc82a0dd352c34c",
+      "size_bytes": 91
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_structural_02/kernel_tb.cpp",
+      "sha256": "2bd7cdf7a935fbdeae5be8560d86ce64ee3401fcd5bd62919b6b7551d9cb8411",
+      "size_bytes": 277
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_structural_02/mutation_manifest.json",
+      "sha256": "91445d38e2fd79b0a2c8d183b2f76d801e7809cb2980cdb1d4f1865be4a7c8d7",
+      "size_bytes": 371
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_structural_02/task.toml",
+      "sha256": "0911ec69222138e74795ce60f0b788ab52ef9e2ee756afe780b18873a891afb8",
+      "size_bytes": 374
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_structural_03/acceptance.json",
+      "sha256": "2983b96d6b60fc9a8251807ace61b792b3275e1a7d3401fff60d279433e7a426",
+      "size_bytes": 214
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_structural_03/description.md",
+      "sha256": "62e46237a45dd292770656cca95c8a80eff2c03b97d50f103ea4cfb8fd7db88c",
+      "size_bytes": 338
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_structural_03/kernel.cpp",
+      "sha256": "a9858bd392f5179e2e20972e102a134ea695afad922d9e54b47608ada27998d6",
+      "size_bytes": 971
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_structural_03/kernel.h",
+      "sha256": "5296435067ee8e8bc6184d75d0ec13eb583eea0ae705bf83dfc82a0dd352c34c",
+      "size_bytes": 91
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_structural_03/kernel_tb.cpp",
+      "sha256": "2bd7cdf7a935fbdeae5be8560d86ce64ee3401fcd5bd62919b6b7551d9cb8411",
+      "size_bytes": 277
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_structural_03/mutation_manifest.json",
+      "sha256": "814108c715528a9f45f29623133bda83e9643345dab69023f49559b5bddccfd1",
+      "size_bytes": 358
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_structural_03/task.toml",
+      "sha256": "ae61f7d3a00755dae67e5af50d09603869c8b917ff58bd296b1ea07ab6adb3c0",
+      "size_bytes": 374
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_structural_04/acceptance.json",
+      "sha256": "2983b96d6b60fc9a8251807ace61b792b3275e1a7d3401fff60d279433e7a426",
+      "size_bytes": 214
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_structural_04/description.md",
+      "sha256": "e0c0d35b71162652c907ba2db31b2686bef175c8763e61b2c3e46c295bfd03f9",
+      "size_bytes": 401
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_structural_04/kernel.cpp",
+      "sha256": "a3581e9df66307e32bec85951889b9253b100835c71292321da1b9bf71448a98",
+      "size_bytes": 1031
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_structural_04/kernel.h",
+      "sha256": "5296435067ee8e8bc6184d75d0ec13eb583eea0ae705bf83dfc82a0dd352c34c",
+      "size_bytes": 91
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_structural_04/kernel_tb.cpp",
+      "sha256": "2bd7cdf7a935fbdeae5be8560d86ce64ee3401fcd5bd62919b6b7551d9cb8411",
+      "size_bytes": 277
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_structural_04/mutation_manifest.json",
+      "sha256": "a3207eeff1951da1f7e891261a2250b8f51bd33384cbf94a9cba3016557f5c40",
+      "size_bytes": 424
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_structural_04/task.toml",
+      "sha256": "7e988db9e4771aca5ca6439edef3ed1e51af591fd216a1ac589b2d8a2d62b4e4",
+      "size_bytes": 374
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_structural_05/acceptance.json",
+      "sha256": "2983b96d6b60fc9a8251807ace61b792b3275e1a7d3401fff60d279433e7a426",
+      "size_bytes": 214
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_structural_05/description.md",
+      "sha256": "178174dbd2d2d661058050876365dcbfdab8946ffe764211ec7e9ec604a6a3e1",
+      "size_bytes": 389
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_structural_05/kernel.cpp",
+      "sha256": "007ba7cb1b7306702497b7f0d3061bdf996f3ba5389edad0d3995e7116a23f65",
+      "size_bytes": 853
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_structural_05/kernel.h",
+      "sha256": "5296435067ee8e8bc6184d75d0ec13eb583eea0ae705bf83dfc82a0dd352c34c",
+      "size_bytes": 91
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_structural_05/kernel_tb.cpp",
+      "sha256": "2bd7cdf7a935fbdeae5be8560d86ce64ee3401fcd5bd62919b6b7551d9cb8411",
+      "size_bytes": 277
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_structural_05/mutation_manifest.json",
+      "sha256": "f29f50a021d463e6e32cfce38f8155583c3f519d7695ba79a2085c8d5b8e84d1",
+      "size_bytes": 457
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_structural_05/task.toml",
+      "sha256": "673cc33c06ea0f63997637bae6cd760f6612df04f05b8e9e30d12cf3307846be",
+      "size_bytes": 372
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_structural_06/acceptance.json",
+      "sha256": "2983b96d6b60fc9a8251807ace61b792b3275e1a7d3401fff60d279433e7a426",
+      "size_bytes": 214
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_structural_06/description.md",
+      "sha256": "e6a7a15388484b7811b035fbf0ad6ba68a8c732a9c1f9d59aa5f4659d2adc7b4",
+      "size_bytes": 324
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_structural_06/kernel.cpp",
+      "sha256": "a2239697e0d1e546b2a313468047e0a3e949b94ba844c2796a0b7f04a93d7b3b",
+      "size_bytes": 1091
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_structural_06/kernel.h",
+      "sha256": "5296435067ee8e8bc6184d75d0ec13eb583eea0ae705bf83dfc82a0dd352c34c",
+      "size_bytes": 91
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_structural_06/kernel_tb.cpp",
+      "sha256": "2bd7cdf7a935fbdeae5be8560d86ce64ee3401fcd5bd62919b6b7551d9cb8411",
+      "size_bytes": 277
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_structural_06/mutation_manifest.json",
+      "sha256": "1529c423d92a7d1f49822b6cf072d3d16847eeb37929b57268e5516350ef8c44",
+      "size_bytes": 386
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_structural_06/task.toml",
+      "sha256": "732d42fa305c2310901738640aa4cf99e204d7839fd9d159674c871d0d6282de",
+      "size_bytes": 374
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_synth_01/acceptance.json",
+      "sha256": "247662654673eba7f345e52f46284dea157a4e12a1eb4c85d4da2bfae6a64696",
+      "size_bytes": 201
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_synth_01/description.md",
+      "sha256": "407a7dab9ada376207a8b9fcb3438e003876c622b2a16334f7de9b157b365880",
+      "size_bytes": 266
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_synth_01/kernel.cpp",
+      "sha256": "7c7785209a27ea4d9a8044bf38db4508b25f0deee54541638c93392c0bb1b159",
+      "size_bytes": 176
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_synth_01/kernel.h",
+      "sha256": "5296435067ee8e8bc6184d75d0ec13eb583eea0ae705bf83dfc82a0dd352c34c",
+      "size_bytes": 91
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_synth_01/kernel_tb.cpp",
+      "sha256": "7b9677add206bd44bd27526effd5b87aefeb1c7eab8b4ce25e342137dd8c89fa",
+      "size_bytes": 277
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_synth_01/mutation_manifest.json",
+      "sha256": "d34314d167457989f83e7342a8481ae2c3012cb7231a72624cc86107ef81cc98",
+      "size_bytes": 314
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_synth_01/task.toml",
+      "sha256": "6ff94387ddaca38593b0aea091b3faef61173f13bc7cbf8e90efa949289fc5b2",
+      "size_bytes": 369
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_synth_02/acceptance.json",
+      "sha256": "247662654673eba7f345e52f46284dea157a4e12a1eb4c85d4da2bfae6a64696",
+      "size_bytes": 201
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_synth_02/description.md",
+      "sha256": "9de126ef40c414d543776f32eea5fbaa9470ff49c6ac26815a97cf150354999f",
+      "size_bytes": 272
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_synth_02/kernel.cpp",
+      "sha256": "648d42e900d2b5cd34be09dc597057d30bf7095fc6ad38123b93b11f677a435e",
+      "size_bytes": 163
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_synth_02/kernel.h",
+      "sha256": "5296435067ee8e8bc6184d75d0ec13eb583eea0ae705bf83dfc82a0dd352c34c",
+      "size_bytes": 91
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_synth_02/kernel_tb.cpp",
+      "sha256": "7b9677add206bd44bd27526effd5b87aefeb1c7eab8b4ce25e342137dd8c89fa",
+      "size_bytes": 277
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_synth_02/mutation_manifest.json",
+      "sha256": "1c99e38b61744931e9d1b9ceddc2d973c4e3cdc25d2d79bbe768d21b175a7cfe",
+      "size_bytes": 311
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_synth_02/task.toml",
+      "sha256": "3f9a7194c0c484b33b61252f0306e4ff5e2bec128e8567465da886e839dabd5e",
+      "size_bytes": 369
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_synth_03/acceptance.json",
+      "sha256": "247662654673eba7f345e52f46284dea157a4e12a1eb4c85d4da2bfae6a64696",
+      "size_bytes": 201
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_synth_03/description.md",
+      "sha256": "72f7a930e0bd029794620213948f35c737d9bd1f182fef425c5761846fd8316b",
+      "size_bytes": 269
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_synth_03/kernel.cpp",
+      "sha256": "455d33dc223a92d8531e1e7f7da9c51aa3d153076628898db3e90e53275a8e34",
+      "size_bytes": 178
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_synth_03/kernel.h",
+      "sha256": "5296435067ee8e8bc6184d75d0ec13eb583eea0ae705bf83dfc82a0dd352c34c",
+      "size_bytes": 91
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_synth_03/kernel_tb.cpp",
+      "sha256": "7b9677add206bd44bd27526effd5b87aefeb1c7eab8b4ce25e342137dd8c89fa",
+      "size_bytes": 277
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_synth_03/mutation_manifest.json",
+      "sha256": "88ac7e1589204e5eb1036beecd1d19543185fe0be9dc27406afa360c23501c9f",
+      "size_bytes": 309
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_synth_03/task.toml",
+      "sha256": "740ea228529e8e18d15d00552daaf77ee2b2949af38797414cd81f252ecc05b1",
+      "size_bytes": 369
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_synth_04/acceptance.json",
+      "sha256": "247662654673eba7f345e52f46284dea157a4e12a1eb4c85d4da2bfae6a64696",
+      "size_bytes": 201
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_synth_04/description.md",
+      "sha256": "5bf744232c1137cebc1f4fc3a67ca3c028faaeb23bb59089ff7b0ef5ca0006a2",
+      "size_bytes": 317
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_synth_04/kernel.cpp",
+      "sha256": "08f493613d570c4e15b6977c097f95451f7416f9e6d2c122cff9ec5b65ee92d6",
+      "size_bytes": 261
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_synth_04/kernel.h",
+      "sha256": "5296435067ee8e8bc6184d75d0ec13eb583eea0ae705bf83dfc82a0dd352c34c",
+      "size_bytes": 91
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_synth_04/kernel_tb.cpp",
+      "sha256": "7b9677add206bd44bd27526effd5b87aefeb1c7eab8b4ce25e342137dd8c89fa",
+      "size_bytes": 277
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_synth_04/mutation_manifest.json",
+      "sha256": "9b185b0f4099504bf759ade6241784ad14a4727ed0bebf259cfcb9bb05c9180c",
+      "size_bytes": 359
+    },
+    {
+      "corpus": "v3d-expanded",
+      "path": "task_corpus/v3d-expanded/tasks/expanded_synth_04/task.toml",
+      "sha256": "ea630fee721955568d870ea58f0d4067eeaec2ccdd419e04c5bfddecb5cd49f3",
+      "size_bytes": 369
+    }
+  ],
+  "purpose": "recover frozen public inputs and independently verify the FULL46 evidence contract",
+  "runtime_artifact_copies": {
+    "a2_admission": {
+      "sha256": "40d55864b6442c0342d3db4c6f1d882088dd232afd6baeb0703590efb65ddcba",
+      "size_bytes": 549,
+      "snapshot": "/home/ying/CompetitionTrackA/track-A-rc1/docs/experiments/artifacts/2026-07-31-full46-reproducibility-freeze/snapshot/runtime_artifacts/continuation-v3-admission.json",
+      "source": "/home/ying/CompetitionTrackA/track-A-rc1/docs/experiments/artifacts/2026-07-30-structural-search-continuation-runtime-overlay/a2/continuation-v3-admission.json"
+    },
+    "a2_gate": {
+      "sha256": "8c7321a91c8a7851e0d12fdec501f7106b792a8f58474e0693113c6bba8446f4",
+      "size_bytes": 8227,
+      "snapshot": "/home/ying/CompetitionTrackA/track-A-rc1/docs/experiments/artifacts/2026-07-31-full46-reproducibility-freeze/snapshot/runtime_artifacts/continuation-v3-gate.json",
+      "source": "/home/ying/CompetitionTrackA/track-A-rc1/docs/experiments/artifacts/2026-07-30-structural-search-continuation-runtime-overlay/a2/continuation-v3-gate.json"
+    },
+    "a3_admission": {
+      "sha256": "909e1d5baf4fb508296be908c8c12cf33e8b5e55b4cbc6c984e035e53de97d92",
+      "size_bytes": 619,
+      "snapshot": "/home/ying/CompetitionTrackA/track-A-rc1/docs/experiments/artifacts/2026-07-31-full46-reproducibility-freeze/snapshot/runtime_artifacts/admission.json",
+      "source": "/home/ying/CompetitionTrackA/track-A-rc1/docs/experiments/artifacts/2026-07-30-structural-search-continuation-runtime-overlay/a3/admission.json"
+    },
+    "a3_gate": {
+      "sha256": "740059de3fffd81860519a34f990d2602e5a40d7bd8b706c09b29d898ffbeed6",
+      "size_bytes": 130656,
+      "snapshot": "/home/ying/CompetitionTrackA/track-A-rc1/docs/experiments/artifacts/2026-07-31-full46-reproducibility-freeze/snapshot/runtime_artifacts/ranker-v3-gate.json",
+      "source": "/home/ying/CompetitionTrackA/track-A-rc1/docs/experiments/artifacts/2026-07-30-structural-search-continuation-runtime-overlay/a3/ranker-v3-gate.json"
+    },
+    "a3_store": {
+      "sha256": "59ea3f89da638405e231181fc158347f1e4c0385201c52720e049dcfc5395f06",
+      "size_bytes": 608772,
+      "snapshot": "/home/ying/CompetitionTrackA/track-A-rc1/docs/experiments/artifacts/2026-07-31-full46-reproducibility-freeze/snapshot/runtime_artifacts/train-only-experience-store.jsonl",
+      "source": "/home/ying/CompetitionTrackA/track-A-rc1/docs/experiments/artifacts/2026-07-30-structural-search-continuation-runtime-overlay/a3/train-only-experience-store.jsonl"
+    }
+  },
+  "schema_version": "full46.reproducibility-snapshot.v1",
+  "task_count": 46,
+  "tasks": [
+    {
+      "corpus": "v3d-expanded",
+      "difficulty": 3,
+      "mode": "OPTIMIZE",
+      "requires_cosim": false,
+      "task_id": "expanded_optimize_01"
+    },
+    {
+      "corpus": "v3d-expanded",
+      "difficulty": 3,
+      "mode": "OPTIMIZE",
+      "requires_cosim": false,
+      "task_id": "expanded_optimize_02"
+    },
+    {
+      "corpus": "v3d-expanded",
+      "difficulty": 3,
+      "mode": "OPTIMIZE",
+      "requires_cosim": false,
+      "task_id": "expanded_optimize_03"
+    },
+    {
+      "corpus": "v3d-expanded",
+      "difficulty": 2,
+      "mode": "REPAIR",
+      "requires_cosim": false,
+      "task_id": "expanded_repair_01"
+    },
+    {
+      "corpus": "v3d-expanded",
+      "difficulty": 2,
+      "mode": "REPAIR",
+      "requires_cosim": false,
+      "task_id": "expanded_repair_02"
+    },
+    {
+      "corpus": "v3d-expanded",
+      "difficulty": 2,
+      "mode": "REPAIR",
+      "requires_cosim": false,
+      "task_id": "expanded_repair_03"
+    },
+    {
+      "corpus": "v3d-expanded",
+      "difficulty": 2,
+      "mode": "REPAIR",
+      "requires_cosim": false,
+      "task_id": "expanded_repair_04"
+    },
+    {
+      "corpus": "v3d-expanded",
+      "difficulty": 2,
+      "mode": "REPAIR",
+      "requires_cosim": false,
+      "task_id": "expanded_repair_05"
+    },
+    {
+      "corpus": "v3d-expanded",
+      "difficulty": 4,
+      "mode": "STRUCTURAL_FIX",
+      "requires_cosim": true,
+      "task_id": "expanded_structural_01"
+    },
+    {
+      "corpus": "v3d-expanded",
+      "difficulty": 4,
+      "mode": "STRUCTURAL_FIX",
+      "requires_cosim": true,
+      "task_id": "expanded_structural_02"
+    },
+    {
+      "corpus": "v3d-expanded",
+      "difficulty": 4,
+      "mode": "STRUCTURAL_FIX",
+      "requires_cosim": true,
+      "task_id": "expanded_structural_03"
+    },
+    {
+      "corpus": "v3d-expanded",
+      "difficulty": 4,
+      "mode": "STRUCTURAL_FIX",
+      "requires_cosim": true,
+      "task_id": "expanded_structural_04"
+    },
+    {
+      "corpus": "v3d-expanded",
+      "difficulty": 4,
+      "mode": "REPAIR",
+      "requires_cosim": true,
+      "task_id": "expanded_structural_05"
+    },
+    {
+      "corpus": "v3d-expanded",
+      "difficulty": 4,
+      "mode": "STRUCTURAL_FIX",
+      "requires_cosim": true,
+      "task_id": "expanded_structural_06"
+    },
+    {
+      "corpus": "v3d-expanded",
+      "difficulty": 3,
+      "mode": "SYNTH_FIX",
+      "requires_cosim": false,
+      "task_id": "expanded_synth_01"
+    },
+    {
+      "corpus": "v3d-expanded",
+      "difficulty": 3,
+      "mode": "SYNTH_FIX",
+      "requires_cosim": false,
+      "task_id": "expanded_synth_02"
+    },
+    {
+      "corpus": "v3d-expanded",
+      "difficulty": 3,
+      "mode": "SYNTH_FIX",
+      "requires_cosim": false,
+      "task_id": "expanded_synth_03"
+    },
+    {
+      "corpus": "v3d-expanded",
+      "difficulty": 3,
+      "mode": "SYNTH_FIX",
+      "requires_cosim": false,
+      "task_id": "expanded_synth_04"
+    },
+    {
+      "corpus": "v3d-fast",
+      "difficulty": 1,
+      "mode": "REPAIR",
+      "requires_cosim": false,
+      "task_id": "v3d_fast_001"
+    },
+    {
+      "corpus": "v3d-fast",
+      "difficulty": 1,
+      "mode": "REPAIR",
+      "requires_cosim": false,
+      "task_id": "v3d_fast_002"
+    },
+    {
+      "corpus": "v3d-fast",
+      "difficulty": 1,
+      "mode": "REPAIR",
+      "requires_cosim": false,
+      "task_id": "v3d_fast_003"
+    },
+    {
+      "corpus": "v3d-fast",
+      "difficulty": 2,
+      "mode": "REPAIR",
+      "requires_cosim": false,
+      "task_id": "v3d_fast_004"
+    },
+    {
+      "corpus": "v3d-fast",
+      "difficulty": 2,
+      "mode": "REPAIR",
+      "requires_cosim": false,
+      "task_id": "v3d_fast_005"
+    },
+    {
+      "corpus": "v3d-fast",
+      "difficulty": 2,
+      "mode": "REPAIR",
+      "requires_cosim": false,
+      "task_id": "v3d_fast_006"
+    },
+    {
+      "corpus": "v3d-fast",
+      "difficulty": 2,
+      "mode": "REPAIR",
+      "requires_cosim": false,
+      "task_id": "v3d_fast_007"
+    },
+    {
+      "corpus": "v3d-fast",
+      "difficulty": 2,
+      "mode": "REPAIR",
+      "requires_cosim": false,
+      "task_id": "v3d_fast_008"
+    },
+    {
+      "corpus": "v3d-fast",
+      "difficulty": 2,
+      "mode": "SYNTH_FIX",
+      "requires_cosim": false,
+      "task_id": "v3d_fast_009"
+    },
+    {
+      "corpus": "v3d-fast",
+      "difficulty": 3,
+      "mode": "SYNTH_FIX",
+      "requires_cosim": false,
+      "task_id": "v3d_fast_010"
+    },
+    {
+      "corpus": "v3d-fast",
+      "difficulty": 3,
+      "mode": "SYNTH_FIX",
+      "requires_cosim": false,
+      "task_id": "v3d_fast_011"
+    },
+    {
+      "corpus": "v3d-fast",
+      "difficulty": 2,
+      "mode": "SYNTH_FIX",
+      "requires_cosim": false,
+      "task_id": "v3d_fast_012"
+    },
+    {
+      "corpus": "v3d-fast",
+      "difficulty": 3,
+      "mode": "SYNTH_FIX",
+      "requires_cosim": false,
+      "task_id": "v3d_fast_013"
+    },
+    {
+      "corpus": "v3d-fast",
+      "difficulty": 3,
+      "mode": "SYNTH_FIX",
+      "requires_cosim": false,
+      "task_id": "v3d_fast_014"
+    },
+    {
+      "corpus": "v3d-fast",
+      "difficulty": 4,
+      "mode": "STRUCTURAL_FIX",
+      "requires_cosim": true,
+      "task_id": "v3d_fast_015"
+    },
+    {
+      "corpus": "v3d-fast",
+      "difficulty": 4,
+      "mode": "STRUCTURAL_FIX",
+      "requires_cosim": true,
+      "task_id": "v3d_fast_016"
+    },
+    {
+      "corpus": "v3d-fast",
+      "difficulty": 4,
+      "mode": "STRUCTURAL_FIX",
+      "requires_cosim": true,
+      "task_id": "v3d_fast_017"
+    },
+    {
+      "corpus": "v3d-fast",
+      "difficulty": 4,
+      "mode": "STRUCTURAL_FIX",
+      "requires_cosim": true,
+      "task_id": "v3d_fast_018"
+    },
+    {
+      "corpus": "v3d-fast",
+      "difficulty": 4,
+      "mode": "STRUCTURAL_FIX",
+      "requires_cosim": true,
+      "task_id": "v3d_fast_019"
+    },
+    {
+      "corpus": "v3d-fast",
+      "difficulty": 4,
+      "mode": "STRUCTURAL_FIX",
+      "requires_cosim": true,
+      "task_id": "v3d_fast_020"
+    },
+    {
+      "corpus": "v3d-fast",
+      "difficulty": 2,
+      "mode": "OPTIMIZE",
+      "requires_cosim": false,
+      "task_id": "v3d_fast_021"
+    },
+    {
+      "corpus": "v3d-fast",
+      "difficulty": 2,
+      "mode": "OPTIMIZE",
+      "requires_cosim": false,
+      "task_id": "v3d_fast_022"
+    },
+    {
+      "corpus": "v3d-fast",
+      "difficulty": 2,
+      "mode": "OPTIMIZE",
+      "requires_cosim": false,
+      "task_id": "v3d_fast_023"
+    },
+    {
+      "corpus": "v3d-fast",
+      "difficulty": 2,
+      "mode": "OPTIMIZE",
+      "requires_cosim": false,
+      "task_id": "v3d_fast_024"
+    },
+    {
+      "corpus": "v3d-fast",
+      "difficulty": 2,
+      "mode": "OPTIMIZE",
+      "requires_cosim": false,
+      "task_id": "v3d_fast_025"
+    },
+    {
+      "corpus": "v3d-fast",
+      "difficulty": 3,
+      "mode": "OPTIMIZE",
+      "requires_cosim": false,
+      "task_id": "v3d_fast_026"
+    },
+    {
+      "corpus": "v3d-fast",
+      "difficulty": 3,
+      "mode": "OPTIMIZE",
+      "requires_cosim": false,
+      "task_id": "v3d_fast_027"
+    },
+    {
+      "corpus": "v3d-fast",
+      "difficulty": 3,
+      "mode": "OPTIMIZE",
+      "requires_cosim": true,
+      "task_id": "v3d_fast_028"
+    }
+  ]
+}

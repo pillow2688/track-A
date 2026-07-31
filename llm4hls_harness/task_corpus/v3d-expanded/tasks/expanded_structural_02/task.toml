@@ -1,0 +1,14 @@
+task_id = "expanded_structural_02"
+task_type = "generate"
+difficulty = 4
+top = "kernel"
+kernel_file = "kernel.cpp"
+header_files = ["kernel.h"]
+public_tb = "kernel_tb.cpp"
+max_credits = 100
+requires_cosim = true
+initial_condition = "公开测试由 kernel_tb.cpp 定义；不得修改接口、头文件或 testbench。"
+
+[target]
+part = "xcu55c-fsvh2892-2L-e"
+clock_ns = 5.0

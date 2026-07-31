@@ -1,0 +1,415 @@
+{
+  "backend": "vitis",
+  "branch_at_snapshot": "release/track-a-rc2-full-46-freeze",
+  "budget": {
+    "source": "each task.toml; no upward override",
+    "task_entries": [
+      {
+        "corpus": "v3d-fast",
+        "max_credits": 60,
+        "max_tokens": null,
+        "requires_cosim": false,
+        "task_id": "v3d_fast_001",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_001/task.toml"
+      },
+      {
+        "corpus": "v3d-fast",
+        "max_credits": 60,
+        "max_tokens": null,
+        "requires_cosim": false,
+        "task_id": "v3d_fast_002",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_002/task.toml"
+      },
+      {
+        "corpus": "v3d-fast",
+        "max_credits": 60,
+        "max_tokens": null,
+        "requires_cosim": false,
+        "task_id": "v3d_fast_003",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_003/task.toml"
+      },
+      {
+        "corpus": "v3d-fast",
+        "max_credits": 60,
+        "max_tokens": null,
+        "requires_cosim": false,
+        "task_id": "v3d_fast_004",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_004/task.toml"
+      },
+      {
+        "corpus": "v3d-fast",
+        "max_credits": 60,
+        "max_tokens": null,
+        "requires_cosim": false,
+        "task_id": "v3d_fast_005",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_005/task.toml"
+      },
+      {
+        "corpus": "v3d-fast",
+        "max_credits": 60,
+        "max_tokens": null,
+        "requires_cosim": false,
+        "task_id": "v3d_fast_006",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_006/task.toml"
+      },
+      {
+        "corpus": "v3d-fast",
+        "max_credits": 60,
+        "max_tokens": null,
+        "requires_cosim": false,
+        "task_id": "v3d_fast_007",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_007/task.toml"
+      },
+      {
+        "corpus": "v3d-fast",
+        "max_credits": 60,
+        "max_tokens": null,
+        "requires_cosim": false,
+        "task_id": "v3d_fast_008",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_008/task.toml"
+      },
+      {
+        "corpus": "v3d-fast",
+        "max_credits": 60,
+        "max_tokens": null,
+        "requires_cosim": false,
+        "task_id": "v3d_fast_009",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_009/task.toml"
+      },
+      {
+        "corpus": "v3d-fast",
+        "max_credits": 60,
+        "max_tokens": null,
+        "requires_cosim": false,
+        "task_id": "v3d_fast_010",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_010/task.toml"
+      },
+      {
+        "corpus": "v3d-fast",
+        "max_credits": 60,
+        "max_tokens": null,
+        "requires_cosim": false,
+        "task_id": "v3d_fast_011",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_011/task.toml"
+      },
+      {
+        "corpus": "v3d-fast",
+        "max_credits": 60,
+        "max_tokens": null,
+        "requires_cosim": false,
+        "task_id": "v3d_fast_012",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_012/task.toml"
+      },
+      {
+        "corpus": "v3d-fast",
+        "max_credits": 60,
+        "max_tokens": null,
+        "requires_cosim": false,
+        "task_id": "v3d_fast_013",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_013/task.toml"
+      },
+      {
+        "corpus": "v3d-fast",
+        "max_credits": 60,
+        "max_tokens": null,
+        "requires_cosim": false,
+        "task_id": "v3d_fast_014",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_014/task.toml"
+      },
+      {
+        "corpus": "v3d-fast",
+        "max_credits": 100,
+        "max_tokens": null,
+        "requires_cosim": true,
+        "task_id": "v3d_fast_015",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_015/task.toml"
+      },
+      {
+        "corpus": "v3d-fast",
+        "max_credits": 100,
+        "max_tokens": null,
+        "requires_cosim": true,
+        "task_id": "v3d_fast_016",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_016/task.toml"
+      },
+      {
+        "corpus": "v3d-fast",
+        "max_credits": 100,
+        "max_tokens": null,
+        "requires_cosim": true,
+        "task_id": "v3d_fast_017",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_017/task.toml"
+      },
+      {
+        "corpus": "v3d-fast",
+        "max_credits": 100,
+        "max_tokens": null,
+        "requires_cosim": true,
+        "task_id": "v3d_fast_018",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_018/task.toml"
+      },
+      {
+        "corpus": "v3d-fast",
+        "max_credits": 100,
+        "max_tokens": null,
+        "requires_cosim": true,
+        "task_id": "v3d_fast_019",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_019/task.toml"
+      },
+      {
+        "corpus": "v3d-fast",
+        "max_credits": 100,
+        "max_tokens": null,
+        "requires_cosim": true,
+        "task_id": "v3d_fast_020",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_020/task.toml"
+      },
+      {
+        "corpus": "v3d-fast",
+        "max_credits": 100,
+        "max_tokens": null,
+        "requires_cosim": false,
+        "task_id": "v3d_fast_021",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_021/task.toml"
+      },
+      {
+        "corpus": "v3d-fast",
+        "max_credits": 100,
+        "max_tokens": null,
+        "requires_cosim": false,
+        "task_id": "v3d_fast_022",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_022/task.toml"
+      },
+      {
+        "corpus": "v3d-fast",
+        "max_credits": 100,
+        "max_tokens": null,
+        "requires_cosim": false,
+        "task_id": "v3d_fast_023",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_023/task.toml"
+      },
+      {
+        "corpus": "v3d-fast",
+        "max_credits": 100,
+        "max_tokens": null,
+        "requires_cosim": false,
+        "task_id": "v3d_fast_024",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_024/task.toml"
+      },
+      {
+        "corpus": "v3d-fast",
+        "max_credits": 100,
+        "max_tokens": null,
+        "requires_cosim": false,
+        "task_id": "v3d_fast_025",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_025/task.toml"
+      },
+      {
+        "corpus": "v3d-fast",
+        "max_credits": 100,
+        "max_tokens": null,
+        "requires_cosim": false,
+        "task_id": "v3d_fast_026",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_026/task.toml"
+      },
+      {
+        "corpus": "v3d-fast",
+        "max_credits": 100,
+        "max_tokens": null,
+        "requires_cosim": false,
+        "task_id": "v3d_fast_027",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_027/task.toml"
+      },
+      {
+        "corpus": "v3d-fast",
+        "max_credits": 100,
+        "max_tokens": null,
+        "requires_cosim": true,
+        "task_id": "v3d_fast_028",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-fast/tasks/v3d_fast_028/task.toml"
+      },
+      {
+        "corpus": "v3d-expanded",
+        "max_credits": 100,
+        "max_tokens": null,
+        "requires_cosim": false,
+        "task_id": "expanded_optimize_01",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-expanded/tasks/expanded_optimize_01/task.toml"
+      },
+      {
+        "corpus": "v3d-expanded",
+        "max_credits": 100,
+        "max_tokens": null,
+        "requires_cosim": false,
+        "task_id": "expanded_optimize_02",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-expanded/tasks/expanded_optimize_02/task.toml"
+      },
+      {
+        "corpus": "v3d-expanded",
+        "max_credits": 100,
+        "max_tokens": null,
+        "requires_cosim": false,
+        "task_id": "expanded_optimize_03",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-expanded/tasks/expanded_optimize_03/task.toml"
+      },
+      {
+        "corpus": "v3d-expanded",
+        "max_credits": 60,
+        "max_tokens": null,
+        "requires_cosim": false,
+        "task_id": "expanded_repair_01",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-expanded/tasks/expanded_repair_01/task.toml"
+      },
+      {
+        "corpus": "v3d-expanded",
+        "max_credits": 60,
+        "max_tokens": null,
+        "requires_cosim": false,
+        "task_id": "expanded_repair_02",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-expanded/tasks/expanded_repair_02/task.toml"
+      },
+      {
+        "corpus": "v3d-expanded",
+        "max_credits": 60,
+        "max_tokens": null,
+        "requires_cosim": false,
+        "task_id": "expanded_repair_03",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-expanded/tasks/expanded_repair_03/task.toml"
+      },
+      {
+        "corpus": "v3d-expanded",
+        "max_credits": 60,
+        "max_tokens": null,
+        "requires_cosim": false,
+        "task_id": "expanded_repair_04",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-expanded/tasks/expanded_repair_04/task.toml"
+      },
+      {
+        "corpus": "v3d-expanded",
+        "max_credits": 60,
+        "max_tokens": null,
+        "requires_cosim": false,
+        "task_id": "expanded_repair_05",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-expanded/tasks/expanded_repair_05/task.toml"
+      },
+      {
+        "corpus": "v3d-expanded",
+        "max_credits": 100,
+        "max_tokens": null,
+        "requires_cosim": true,
+        "task_id": "expanded_structural_01",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-expanded/tasks/expanded_structural_01/task.toml"
+      },
+      {
+        "corpus": "v3d-expanded",
+        "max_credits": 100,
+        "max_tokens": null,
+        "requires_cosim": true,
+        "task_id": "expanded_structural_02",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-expanded/tasks/expanded_structural_02/task.toml"
+      },
+      {
+        "corpus": "v3d-expanded",
+        "max_credits": 100,
+        "max_tokens": null,
+        "requires_cosim": true,
+        "task_id": "expanded_structural_03",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-expanded/tasks/expanded_structural_03/task.toml"
+      },
+      {
+        "corpus": "v3d-expanded",
+        "max_credits": 100,
+        "max_tokens": null,
+        "requires_cosim": true,
+        "task_id": "expanded_structural_04",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-expanded/tasks/expanded_structural_04/task.toml"
+      },
+      {
+        "corpus": "v3d-expanded",
+        "max_credits": 100,
+        "max_tokens": null,
+        "requires_cosim": true,
+        "task_id": "expanded_structural_05",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-expanded/tasks/expanded_structural_05/task.toml"
+      },
+      {
+        "corpus": "v3d-expanded",
+        "max_credits": 100,
+        "max_tokens": null,
+        "requires_cosim": true,
+        "task_id": "expanded_structural_06",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-expanded/tasks/expanded_structural_06/task.toml"
+      },
+      {
+        "corpus": "v3d-expanded",
+        "max_credits": 60,
+        "max_tokens": null,
+        "requires_cosim": false,
+        "task_id": "expanded_synth_01",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-expanded/tasks/expanded_synth_01/task.toml"
+      },
+      {
+        "corpus": "v3d-expanded",
+        "max_credits": 60,
+        "max_tokens": null,
+        "requires_cosim": false,
+        "task_id": "expanded_synth_02",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-expanded/tasks/expanded_synth_02/task.toml"
+      },
+      {
+        "corpus": "v3d-expanded",
+        "max_credits": 60,
+        "max_tokens": null,
+        "requires_cosim": false,
+        "task_id": "expanded_synth_03",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-expanded/tasks/expanded_synth_03/task.toml"
+      },
+      {
+        "corpus": "v3d-expanded",
+        "max_credits": 60,
+        "max_tokens": null,
+        "requires_cosim": false,
+        "task_id": "expanded_synth_04",
+        "task_toml": "/home/ying/CompetitionTrackA/track-A-rc1/llm4hls_harness/task_corpus/v3d-expanded/tasks/expanded_synth_04/task.toml"
+      }
+    ]
+  },
+  "components": {
+    "A1": "on",
+    "A2": "enforce",
+    "A3": "guided",
+    "B1": "on",
+    "B2": "on",
+    "token_policy": "fixed"
+  },
+  "evidence_commit": "21df31499fd0b8af1f616f5ee6d30fa067a2e5f1",
+  "execution_policy_fingerprint": "d5c688eedd1cb28f6eebbafa09625630dbffd7027fdea48c6d8bc1b4a2c6d196",
+  "executor_fingerprint": "ffb0f18bd71d5339359d762ad60da22dd5ff6f51a48be92c309f1a8fe498a080",
+  "full_agent_manifest_sha256": "154756c17eff7b423b3460fc5f4d802e675328bd34bbe1179b83d43f8b15c3fd",
+  "implementation_fingerprint": "1daa4fcc684178d20f5494d395f3852640f0fa95d96c7e169c202b95aa5789b9",
+  "model": [
+    "deepseek-v4-pro"
+  ],
+  "planner": {
+    "max_rounds": 4,
+    "repeats": 1,
+    "retry_failures": false
+  },
+  "provider": "openai-compatible",
+  "schema_version": "full46.reproducibility-config.v1",
+  "timeouts": {
+    "max_runtime_seconds": null,
+    "source": "per-tool runtime configuration captured in the benchmark plan and run artifacts"
+  },
+  "toolchain": {
+    "clock_ns": [
+      5.0
+    ],
+    "minimum_frequency_mhz": 100,
+    "parts": [
+      "xcu55c-fsvh2892-2L-e"
+    ],
+    "vitis_root": "/home/ying/CompetitionTrackA/vitis/AMD/2025.2/Vitis",
+    "vitis_version": "vitis-run v2025.2; SW Build 6295257; 2025-11-13-01:29:13"
+  }
+}

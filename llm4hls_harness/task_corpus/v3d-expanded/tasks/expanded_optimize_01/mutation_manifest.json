@@ -1,0 +1,11 @@
+{
+  "schema_version": "expanded.public.mutation.v1",
+  "task_id": "expanded_optimize_01",
+  "mode": "OPTIMIZE",
+  "difficulty": 3,
+  "requires_cosim": false,
+  "family": "expanded_public",
+  "operator": "unpipelled_map",
+  "root_cause": "correct sequential map baseline",
+  "expected_failure_stage": "NONE"
+}

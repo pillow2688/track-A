@@ -1,0 +1,11 @@
+{
+  "schema_version": "expanded.public.mutation.v1",
+  "task_id": "expanded_repair_03",
+  "mode": "REPAIR",
+  "difficulty": 2,
+  "requires_cosim": false,
+  "family": "expanded_public",
+  "operator": "fir_coefficient",
+  "root_cause": "causal FIR coefficient mismatch",
+  "expected_failure_stage": "CSIM_FAIL"
+}

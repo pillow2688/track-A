@@ -1,0 +1,11 @@
+{
+  "schema_version": "expanded.public.mutation.v1",
+  "task_id": "expanded_structural_05",
+  "mode": "REPAIR",
+  "difficulty": 4,
+  "requires_cosim": true,
+  "family": "expanded_public",
+  "operator": "side_channel_extra_token_functional_mismatch",
+  "root_cause": "the producer emits an extra side-channel token per element while the consumer reads one token, shifting the public result after the first element",
+  "expected_failure_stage": "CSIM_FAIL"
+}
